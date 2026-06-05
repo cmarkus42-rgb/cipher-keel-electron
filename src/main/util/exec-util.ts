@@ -1,5 +1,8 @@
 import { execFile } from 'child_process'
+import { promisify } from 'util'
 import * as os from 'os'
+
+export const execFileAsync = promisify(execFile)
 
 /**
  * Extended PATH for Electron — GUI apps on macOS don't inherit
