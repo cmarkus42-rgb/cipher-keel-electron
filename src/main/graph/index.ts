@@ -52,3 +52,9 @@ export {
   GraphMcpServer, startStdioServer, TOOL_DEFINITIONS,
   type McpToolDef, type JsonRpcRequest, type JsonRpcResponse
 } from './mcp-server'
+export {
+  parseVaultFile, contentHash, atomicVaultWrite, buildVaultContent,
+  writeInferredEdges, fullReindex, incrementalIndex, handleVaultDeletion,
+  getIndexVersion, VaultConflictError,
+  type ParsedVaultFile, type InferredEdge, type IndexResult
+} from './vault'
