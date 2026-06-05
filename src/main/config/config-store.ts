@@ -14,6 +14,14 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { MAX_SESSIONS, DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT } from '../../shared/constants'
 
+export interface ProjectRecord {
+  id: string
+  name: string
+  rootPath: string
+  createdAt: string
+  workspaceIds: string[]
+}
+
 export interface CipherKeelConfig {
   app: {
     maxSessions: number
@@ -40,6 +48,10 @@ export interface CipherKeelConfig {
   voice: {
     enabled: boolean
     piperVoice: string
+  }
+  projects: {
+    list: ProjectRecord[]
+    activeId: string | null
   }
 }
 
@@ -69,6 +81,10 @@ const defaults: CipherKeelConfig = {
   voice: {
     enabled: true,
     piperVoice: 'de_DE-cipher_adult-medium',
+  },
+  projects: {
+    list: [],
+    activeId: null,
   },
 }
 
