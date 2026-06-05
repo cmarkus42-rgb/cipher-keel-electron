@@ -82,6 +82,9 @@ export class NoteManager {
       from_session?: string
       to_entity?: string
       handoff_status?: HandoffStatus
+      'dokument-typ'?: string
+      'phasenuebergang'?: string
+      'status'?: 'entwurf' | 'freigegeben' | 'abgeloest'
     }
 
     const id = path.basename(filePath, '.md')
@@ -100,9 +103,12 @@ export class NoteManager {
       ...(fm.from_session ? { fromSession: fm.from_session } : {}),
       ...(fm.to_entity ? { toEntity: fm.to_entity } : {}),
       ...(fm.handoff_status ? { handoffStatus: fm.handoff_status } : {}),
+      ...(fm['dokument-typ'] ? { dokumentTyp: fm['dokument-typ'] } : {}),
+      ...(fm['phasenuebergang'] ? { phasenuebergang: fm['phasenuebergang'] } : {}),
+      ...(fm['status'] ? { uebergabeStatus: fm['status'] } : {}),
     }
 
-    return { info, body }
+    return { info, body, rawContent: raw }
   }
 
   private stringify(fm: Record<string, unknown>, body: string): string {
@@ -111,16 +117,22 @@ export class NoteManager {
 
   // --- Public API ---
 
-  async create(title: string, body: string, tags?: string[]): Promise<NoteInfo> {
+  async create(title: string, body: string, tags?: string[], noteType?: string): Promise<NoteInfo> {
     const id = ulid()
     const now = new Date().toISOString()
     await fs.mkdir(this.notesDir, { recursive: true })
 
     const finalTitle = title || this.extractTitle(body)
     const tagList = tags ?? []
+
+    // Resolve type: explicit noteType param > tag-based convention
+    const typeFromTag = tagList.includes('kind:testcase') ? 'testcase'
+      : tagList.includes('kind:uebergabedokument') ? 'uebergabedokument'
+      : noteType
+
     const fm: Record<string, unknown> = {
       title: finalTitle,
-      ...(tagList.includes('kind:testcase') ? { type: 'testcase' } : {}),
+      ...(typeFromTag ? { type: typeFromTag } : {}),
       tags: tagList,
       created: now,
       modified: now,
@@ -137,10 +149,11 @@ export class NoteManager {
       relativePath: `${id}.md`,
       createdAt: now,
       modifiedAt: now,
+      ...(typeFromTag ? { noteType: typeFromTag } : {}),
     }
   }
 
-  async list(filterTags?: string[]): Promise<NoteInfo[]> {
+  async list(filterTags?: string[], filterNoteType?: string): Promise<NoteInfo[]> {
     let entries: string[]
     try {
       entries = await fs.readdir(this.notesDir)
@@ -163,6 +176,10 @@ export class NoteManager {
       filtered = filtered.filter(n =>
         n.tags.some(t => tagSet.has(t.toLowerCase()))
       )
+    }
+
+    if (filterNoteType) {
+      filtered = filtered.filter(n => n.noteType === filterNoteType)
     }
 
     return filtered.sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt))
