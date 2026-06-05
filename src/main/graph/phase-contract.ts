@@ -12,6 +12,8 @@
 
 import type Database from 'better-sqlite3'
 import { graphQuery } from './query'
+import { GraphWriter } from './writer'
+import type { GateBefundAttrs } from './node-types'
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -148,4 +150,78 @@ export function createPhaseContract(
 
     phasenoutput
   }
+}
+
+// ---------------------------------------------------------------------------
+// autoGateBefund (CK-PROC-005)
+// ---------------------------------------------------------------------------
+
+/**
+ * Execute gate_structural_coverage for a phase, compute the structural signal,
+ * write a gate_befund node + gate_fuer edge, and return the GateBefundAttrs.
+ *
+ * strukturell values:
+ *   'gruen'     — all aktiv anforderungen covered (or no anforderungen exist)
+ *   'rot'       — no anforderungen covered (but some exist)
+ *   'teilweise' — some, but not all, anforderungen covered
+ *
+ * The function is async to match the PhaseContract interface convention
+ * (CK-PROC-003) even though the underlying DB operations are synchronous.
+ *
+ * @param graphDb   — open better-sqlite3 database handle
+ * @param phaseUid  — UID of the phase node to assess
+ * @param gateTyp   — gate_typ label stored in the befund (e.g. 'coverage')
+ */
+export async function autoGateBefund(
+  graphDb: Database.Database,
+  phaseUid: string,
+  gateTyp: string
+): Promise<GateBefundAttrs> {
+  // 1. Run structural coverage query
+  const coverageResult = graphQuery(graphDb, {
+    template: 'gate_structural_coverage',
+    params: { edge_type: 'setzt_um', phase_uid: phaseUid }
+  })
+
+  const row = coverageResult.rows[0] ?? { total: 0, covered: 0 }
+  const total = Number(row.total)
+  const covered = Number(row.covered)
+
+  // 2. Derive strukturell signal
+  let strukturell: string
+  if (total === 0 || covered === total) {
+    strukturell = 'gruen'
+  } else if (covered === 0) {
+    strukturell = 'rot'
+  } else {
+    strukturell = 'teilweise'
+  }
+
+  const attrs: GateBefundAttrs = {
+    phase_uid: phaseUid,
+    strukturell,
+    plausibilitaet: null,
+    gewichtung: '',
+    gate_typ: gateTyp
+  }
+
+  // 3. Write gate_befund node
+  const writer = new GraphWriter(graphDb)
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const befund = writer.upsertNode({
+    kind: 'gate_befund',
+    title: `Auto Gate: ${gateTyp}`,
+    path: `/gates/${phaseUid}/${gateTyp}-${timestamp}`,
+    frontmatter: { ...attrs }
+  })
+
+  // 4. Link gate_fuer edge (gate_befund → phase)
+  writer.linkEdge({
+    src: befund.uid,
+    dst: phaseUid,
+    type: 'gate_fuer',
+    source: 'inferred'
+  })
+
+  return attrs
 }

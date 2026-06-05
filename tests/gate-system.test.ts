@@ -9,6 +9,7 @@ import type Database from 'better-sqlite3'
 import { openGraphDb } from '../src/main/graph/db'
 import { GraphWriter } from '../src/main/graph/writer'
 import { graphQuery, QUERY_TEMPLATES } from '../src/main/graph/query'
+import { autoGateBefund } from '../src/main/graph/phase-contract'
 import {
   NODE_KINDS, isValidKind,
   REQUIRED_FRONTMATTER_FIELDS, ALLOWED_FRONTMATTER_FIELDS,
@@ -254,5 +255,110 @@ describe('gate_befunde_aggregiert template (PROC-005)', () => {
     expect(phaseRows).toHaveLength(1)
     // The returned befund is one of the two (not null)
     expect([b1.uid, b2.uid]).toContain(phaseRows[0].befund_uid)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// autoGateBefund (CK-PROC-005)
+// ---------------------------------------------------------------------------
+
+describe('autoGateBefund (PROC-005)', () => {
+  it('returns strukturell=gruen and writes befund when all anforderungen are covered', async () => {
+    const phase = makePhase('requirements', 2)
+
+    const req = writer.upsertNode({
+      kind: 'anforderung', title: 'REQ-001', path: '/req/001.md', frontmatter: {}
+    })
+    writer.linkEdge({ src: req.uid, dst: phase.uid, type: 'traegt_phase', source: 'inferred' })
+
+    const artefakt = writer.upsertNode({
+      kind: 'artefakt', title: 'impl.ts', path: '/src/impl.ts', frontmatter: {}
+    })
+    writer.linkEdge({ src: artefakt.uid, dst: req.uid, type: 'setzt_um', source: 'inferred' })
+
+    const attrs = await autoGateBefund(db, phase.uid, 'coverage')
+
+    expect(attrs.strukturell).toBe('gruen')
+    expect(attrs.gate_typ).toBe('coverage')
+    expect(attrs.phase_uid).toBe(phase.uid)
+    expect(attrs.plausibilitaet).toBeNull()
+
+    // Verify the node was written to the DB with gate_fuer edge
+    const befunde = graphQuery(db, {
+      template: 'gate_befunde_fuer_phase',
+      params: { phase_uid: phase.uid }
+    })
+    expect(befunde.count).toBe(1)
+    const fm = JSON.parse(befunde.rows[0].frontmatter as string)
+    expect(fm.strukturell).toBe('gruen')
+    expect(fm.gate_typ).toBe('coverage')
+  })
+
+  it('returns strukturell=rot when no anforderungen are covered', async () => {
+    const phase = makePhase('requirements', 2)
+
+    const req = writer.upsertNode({
+      kind: 'anforderung', title: 'REQ-001', path: '/req/001.md', frontmatter: {}
+    })
+    writer.linkEdge({ src: req.uid, dst: phase.uid, type: 'traegt_phase', source: 'inferred' })
+    // No setzt_um edge — req is uncovered
+
+    const attrs = await autoGateBefund(db, phase.uid, 'coverage')
+
+    expect(attrs.strukturell).toBe('rot')
+
+    const befunde = graphQuery(db, {
+      template: 'gate_befunde_fuer_phase',
+      params: { phase_uid: phase.uid }
+    })
+    expect(befunde.count).toBe(1)
+  })
+
+  it('returns strukturell=teilweise when some anforderungen are covered', async () => {
+    const phase = makePhase('requirements', 2)
+
+    const req1 = writer.upsertNode({
+      kind: 'anforderung', title: 'REQ-001', path: '/req/001.md', frontmatter: {}
+    })
+    const req2 = writer.upsertNode({
+      kind: 'anforderung', title: 'REQ-002', path: '/req/002.md', frontmatter: {}
+    })
+    writer.linkEdge({ src: req1.uid, dst: phase.uid, type: 'traegt_phase', source: 'inferred' })
+    writer.linkEdge({ src: req2.uid, dst: phase.uid, type: 'traegt_phase', source: 'inferred' })
+
+    const artefakt = writer.upsertNode({
+      kind: 'artefakt', title: 'impl.ts', path: '/src/impl.ts', frontmatter: {}
+    })
+    writer.linkEdge({ src: artefakt.uid, dst: req1.uid, type: 'setzt_um', source: 'inferred' })
+    // req2 remains uncovered
+
+    const attrs = await autoGateBefund(db, phase.uid, 'coverage')
+
+    expect(attrs.strukturell).toBe('teilweise')
+  })
+
+  it('returns strukturell=gruen when phase has no anforderungen', async () => {
+    const phase = makePhase('ideation', 1)
+
+    const attrs = await autoGateBefund(db, phase.uid, 'coverage')
+
+    expect(attrs.strukturell).toBe('gruen')
+
+    const befunde = graphQuery(db, {
+      template: 'gate_befunde_fuer_phase',
+      params: { phase_uid: phase.uid }
+    })
+    expect(befunde.count).toBe(1)
+  })
+
+  it('gate_befunde_aggregiert picks up the auto-written befund', async () => {
+    makePhase('ideation', 1)
+    const req = makePhase('requirements', 2)
+
+    await autoGateBefund(db, req.uid, 'coverage')
+
+    const result = graphQuery(db, { template: 'gate_befunde_aggregiert' })
+    const reqRow = result.rows.find(r => r.phase_name === 'requirements')!
+    expect(reqRow.befund_uid).not.toBeNull()
   })
 })
