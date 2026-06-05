@@ -97,7 +97,8 @@ function loadConfig(): CipherKeelConfig {
   try {
     const raw = fs.readFileSync(getConfigPath(), 'utf-8')
     if (!raw.trim()) return { ...defaults }
-    return deepMerge(defaults, JSON.parse(raw))
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    return deepMerge({ ...defaults } as unknown as Record<string, unknown>, parsed) as unknown as CipherKeelConfig
   } catch {
     return { ...defaults }
   }
