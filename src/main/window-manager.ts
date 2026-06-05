@@ -131,8 +131,15 @@ export function createProjectWindow(_services: AppServices): BrowserWindow {
     win.show()
   })
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    win.loadURL(`${process.env.ELECTRON_RENDERER_URL}/windows/project-window.html`)
+  const url = process.env.ELECTRON_RENDERER_URL
+  if (url) {
+    // electron-vite dev: try subdirectory path first, fallback to root-level
+    win.loadURL(`${url}/windows/project-window.html`).catch(() => {
+      console.warn('[window-manager] /windows/ path failed, trying root-level')
+      win.loadURL(`${url}/project-window.html`).catch((err: Error) =>
+        console.error('[window-manager] project-window load failed:', err.message)
+      )
+    })
   } else {
     win.loadFile(join(__dirname, '../renderer/windows/project-window.html'))
   }

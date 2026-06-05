@@ -55,8 +55,22 @@ const _nanoClawAdapter = new NanoClawChannelAdapter(services.nanoClawBridge)
 // ---------------------------------------------------------------------------
 
 app.whenReady().then(() => {
+  console.log('[main] app ready — registering handlers + creating project window')
   registerIpcHandlers(services)
-  createProjectWindow(services)
+  const win = createProjectWindow(services)
+  console.log('[main] project window created, id:', win.id)
+
+  win.on('closed', () => {
+    console.log('[main] project window closed')
+  })
+
+  win.webContents.on('did-fail-load', (_ev, code, desc) => {
+    console.error('[main] project window failed to load:', code, desc)
+  })
+
+  win.webContents.on('did-finish-load', () => {
+    console.log('[main] project window finished loading')
+  })
 
   // macOS: re-create window when dock icon is clicked and no windows are open
   app.on('activate', () => {
