@@ -43,6 +43,8 @@ export const GRAPH_QUERY = 'graph:query' as const
 export const GRAPH_LINK = 'graph:link' as const
 export const GRAPH_SEARCH = 'graph:search' as const
 export const GRAPH_DELETE = 'graph:delete' as const
+export const GRAPH_EXPAND = 'graph:expand' as const
+export const GRAPH_MAINTAIN = 'graph:maintain' as const
 
 // ---------------------------------------------------------------------------
 // Config channels (ConfigStore — persistent JSON-File-Store)
@@ -140,6 +142,8 @@ export type RendererToMainChannel =
   | typeof GRAPH_QUERY
   | typeof GRAPH_LINK
   | typeof GRAPH_DELETE
+  | typeof GRAPH_EXPAND
+  | typeof GRAPH_MAINTAIN
   | typeof CONFIG_GET
   | typeof CONFIG_SET
   | typeof CONFIG_DELETE

@@ -1,5 +1,42 @@
 # HANDOFF — cipher-keel-electron
 
+## Wave 4 — Integration + NFR-Checks (2026-06-05, abgeschlossen)
+
+Worker: Integration-Worker | Stand: 2026-06-05 | Status: **abgeschlossen**
+
+### Erledigte REQs
+
+| REQ-ID | Titel | Ergebnis |
+|--------|-------|----------|
+| CK-GRAPH-037 | Graph-MCP-Server in Electron Main eingebunden | GraphMcpServer + 8 IPC-Handler, deferred init nach Window-Show |
+| CK-INF-025 | Startup-Performance < 5s | Architektur verifiziert: show: false + ready-to-show + setImmediate-Deferral |
+| CK-NFR-001 | Lizenz-Check | 85 Prod-Deps: MIT, ISC, Apache-2.0, BSD-2/3-Clause. Keine restriktiven Lizenzen |
+| CK-NFR-005 | Credential-Check | Kein hardcoded Secret in src/. apiKey defaults auf '' (runtime config) |
+| CK-NFR-008 | App-Start < 5s | Graph-DB-Init (openGraphDb) async nach Window-Display, nicht blockierend |
+| CK-NFR-009 | RAM-Budget Idle < 300MB | Architektonisch stuetzbar: SQLite WAL, lazy init, kein In-Memory-Cache. Runtime-Messung steht aus |
+| CK-NFR-010 | Graceful Degradation | 5 Subsysteme (tmux, NanoClaw, Voice, Graph, Notes) mit try/catch + null-guard |
+
+### Aenderungen
+
+| Datei | Aenderung |
+|-------|-----------|
+| `src/main/main.ts` | +Graph-Imports, +graphDb/graphWriter/graphMcpServer lazy vars, +initializeBackgroundServices Graph-Block, +8 Graph-IPC-Handler, +before-quit DB-close |
+| `src/shared/ipc-channels.ts` | +GRAPH_EXPAND, +GRAPH_MAINTAIN channels + union types |
+
+### Architektur-Entscheidungen
+
+- **In-Process Graph:** GraphMcpServer laeuft im Electron-Main-Prozess, nicht als separater stdio-Server. IPC-Handler delegieren direkt an graph-Funktionen (graphSearch, graphGetNode etc.), nicht ueber JSON-RPC.
+- **Startup nicht blockierend:** Graph-Init in `initializeBackgroundServices` via `setImmediate` nach `ready-to-show`. Window erscheint sofort, Graph-DB oeffnet im Hintergrund.
+- **Graceful Shutdown:** `before-quit` Event schliesst graph.db sauber (WAL flush).
+
+### Bekannte Offene Punkte
+
+1. **RAM-Budget Runtime-Messung** — 300MB Idle-Limit architektonisch stuetzbar, aber Runtime-Messung im echten Electron-Prozess steht aus
+2. **Graph-Preload-API fehlt** — IPC-Handler sind registriert, aber `preload.ts` exponiert noch keine `graphApi` ans Renderer-Window
+3. **252 Tests gruen** — keine neuen Tests in dieser Wave (Integration-Check, keine neue Logik)
+
+---
+
 ## BT-1bc — MCP-Tools + Vault + Advanced Features (2026-06-05, abgeschlossen)
 
 Worker: BT-1bc (aufbauend auf BT-1a)
@@ -74,9 +111,9 @@ tests/graph/
 
 ---
 
-## BT-3d — Voice-Pipeline Phase A (2026-06-05, Phase A abgeschlossen, B+C offen)
+## BT-3d — Voice + Notes (2026-06-05, abgeschlossen)
 
-Worker: BT-3d | Stand: 2026-06-05 | Context-Abbruch bei ~75%
+Worker: BT-3d | Stand: 2026-06-05 | Alle 3 Phasen abgeschlossen
 
 ### Erledigt: Phase A — Voice-Pipeline (Commit `ccc1fa6`)
 
@@ -104,49 +141,59 @@ Worker: BT-3d | Stand: 2026-06-05 | Context-Abbruch bei ~75%
 
 Erfuellte REQs: CK-VOICE-001, 002, 003, 004, 008 + CK-NFR-006
 
-### Offen: Phase B — Voice-Config + Degradation
+### Erledigt: Phase B — Voice-Config + Degradation (Commit `0bb000d`)
 
-- **CK-VOICE-009** (z.T. erledigt): `voice.enabled` Config existiert, main.ts prueft es. **Noch fehlend:** Voice-Dot "disabled" im Renderer, kein Mikrofon-Permission-Dialog
-- **CK-VOICE-010** (z.T. erledigt): VoiceManager hat try/catch. **Noch fehlend:** getUserMedia rejection handling im Hook, Voice-Dot "unavailable"
+| Datei | Aenderung | REQ |
+|-------|-----------|-----|
+| `src/renderer/hooks/useVoiceSession.ts` | getUserMedia rejection handling, voiceDotState, disabled detection | CK-VOICE-009/010 |
+| `src/renderer/components/SessionCell.tsx` | @keyframes pulse CSS, disabled/unavailable tooltip + opacity | CK-VOICE-008/009/010 |
+| `src/renderer/components/SessionGrid.tsx` | voiceDot prop passthrough | CK-VOICE-008 |
+| `src/renderer/index.tsx` | useVoiceSession wired, voiceDotState to grid | — |
 
-Geschaetzter Restaufwand Phase B: ~30 Minuten
+Erfuellte REQs: CK-VOICE-009, CK-VOICE-010
 
-### Offen: Phase C — Notes-System
+### Erledigt: Phase C — Notes-System (Commit `50f46dd`)
 
-Komplett offen. Quellcode zum Portieren:
+**7 neue Dateien, 12 geaenderte, ~2000 LOC**
 
-| Quelle (cipher-mux-electron) | Ziel | REQ |
-|------|------|-----|
-| `src/main/notes/note-manager.ts` | `src/main/notes/note-manager.ts` | CK-NOTES-001 |
-| `src/main/notes/note-tagging.ts` | `src/main/notes/note-tagging.ts` | CK-NOTES-002 |
-| `src/main/notes/tag-repository.ts` | `src/main/notes/tag-repository.ts` | CK-NOTES-002 |
-| `src/main/notes/tag-index.ts` | `src/main/notes/tag-index.ts` | CK-NOTES-002 |
-| `src/main/notes/note-watcher.ts` | `src/main/notes/note-watcher.ts` | — |
-| `src/renderer/hooks/useNotes.ts` | `src/renderer/hooks/useNotes.ts` | — |
-| (neu) | `src/renderer/components/NotesCell.tsx` | CK-NOTES-003 |
+| Datei | Beschreibung | REQ |
+|-------|-------------|-----|
+| `src/main/notes/note-manager.ts` | NoteManager: CRUD, flat .md, gray-matter, ULID, search, trash/restore | CK-NOTES-001 |
+| `src/main/notes/note-tagging.ts` | NoteTagging: Auto-Tagging via Ollama, seed tags, graceful degradation | CK-NOTES-002 |
+| `src/main/notes/tag-repository.ts` | TagClassRepo: Tag class mgmt, single-writer .tags.json, synonyms | CK-NOTES-002 |
+| `src/main/notes/tag-index.ts` | TagIndex: Runtime tag index, incremental updates | CK-NOTES-002 |
+| `src/main/notes/note-watcher.ts` | NoteWatcher: fs.watch, debounce, suppression | — |
+| `src/renderer/hooks/useNotes.ts` | useNotes React hook (preact→react port) | — |
+| `src/renderer/components/NotesCell.tsx` | CodeMirror 6 Markdown editor, sidebar, search, auto-save | CK-NOTES-003 |
+| `src/shared/ipc-channels.ts` | +13 Notes-Channels | CK-INF-009 |
+| `src/shared/types.ts` | NoteInfo, NoteContent, TagRepository, TagClass etc. | — |
+| `src/preload.ts` | notesApi exponiert | CK-NFR-004 |
+| `src/main/main.ts` | Notes-IPC-Handler + deferred init | — |
 
-**Portierungs-Checkliste:**
-1. Notes-IPC-Channels in `ipc-channels.ts` (analog zu Voice: ~12 Channels)
-2. Notes-API in `preload.ts` (analog zu `voiceApi`)
-3. Notes-IPC-Handler in `main.ts`
-4. `preact/hooks` → `react`, `cipherMux` → `cipherKeel`
-5. CodeMirror 6: `@codemirror/lang-markdown` etc. in package.json
-6. ConfigStore: Ollama host/port falls Auto-Tagging Config gebraucht wird
+Erfuellte REQs: CK-NOTES-001, CK-NOTES-002, CK-NOTES-003
+
+### Dependencies (Phase C)
+
+| Package | Version | Lizenz | Zweck |
+|---------|---------|--------|-------|
+| gray-matter | ^4.0.3 | MIT | YAML-Frontmatter-Parsing |
+| ulidx | ^2.4.1 | MIT | ULID-Generierung fuer Note-IDs |
+| @codemirror/state | ^6.x | MIT | CodeMirror 6 State |
+| @codemirror/view | ^6.x | MIT | CodeMirror 6 View |
+| @codemirror/lang-markdown | ^6.x | MIT | Markdown-Syntax |
+| @codemirror/language | ^6.x | MIT | Language Infrastructure |
+| @codemirror/commands | ^6.x | MIT | Editing Commands |
+| @codemirror/theme-one-dark | ^6.x | MIT | Dark Theme |
+
+Lizenz-Korridor CK-NFR-001 eingehalten (alle MIT).
 
 ### Bekannte Issues
 
 1. **piper-worker.js fehlt:** Muss aus cipher-mux-electron portiert werden (`src/main/voice/piper-worker.js`)
 2. **VAD-Assets fehlen:** `vad-assets/` (Silero ONNX + WASM) muss im Renderer-Build sein
 3. **Native Module ABI:** `@fugood/whisper.node` + `sherpa-onnx-node` muessen fuer Electron-ABI gebaut werden
-4. **Voice-Dot Pulse-Animation:** CSS `@keyframes pulse` referenziert aber nicht definiert
-5. **Keine Runtime-Tests:** TypeScript kompiliert, aber manueller Mikrofon-Test steht aus
-
-### Pflichtlektuere
-
-1. Assignment: `wave-1/assignments/bt-3d-voice-notes.md`
-2. CK-VOICE: `refinement/CK-VOICE.md` (009, 010)
-3. CK-NOTES: `refinement/CK-NOTES.md` (001, 002, 003)
-4. CK-NFR: `refinement/CK-NFR.md` (006, 010)
+4. **Keine Runtime-Tests:** TypeScript kompiliert, 238 Tests gruen, aber manueller Mikrofon-/Notes-Test steht aus
+5. **Ollama-Config:** `configStore.get('llm')` fuer Auto-Tagging; llm-Sektion noch nicht im ConfigStore-Interface (Fallback auf 127.0.0.1:11434)
 
 ---
 

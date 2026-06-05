@@ -29,6 +29,14 @@ import {
   NANOCLAW_STATUS_CHANGED,
   NANOCLAW_CONNECT,
   NANOCLAW_DISCONNECT,
+  GRAPH_SEARCH,
+  GRAPH_READ,
+  GRAPH_WRITE,
+  GRAPH_QUERY,
+  GRAPH_LINK,
+  GRAPH_DELETE,
+  GRAPH_EXPAND,
+  GRAPH_MAINTAIN,
   VOICE_AVAILABLE,
   VOICE_START_SESSION,
   VOICE_STOP_SESSION,
@@ -71,6 +79,13 @@ import { TagClassRepo } from './notes/tag-repository'
 import { TagIndex } from './notes/tag-index'
 import { NoteWatcher } from './notes/note-watcher'
 import { patchEnvPath } from './util/exec-util'
+import { openGraphDb } from './graph/db'
+import { GraphMcpServer } from './graph/mcp-server'
+import { graphSearch, graphGetNode, graphExpand } from './graph/search'
+import { graphQuery } from './graph/query'
+import { graphMaintain } from './graph/maintain'
+import { GraphWriter } from './graph/writer'
+import type Database from 'better-sqlite3'
 
 // ---------------------------------------------------------------------------
 // Patch PATH early — macOS GUI apps have minimal PATH
@@ -88,6 +103,11 @@ let voiceManager: VoiceManager | null = null
 // The bridge only connects as a client to an already-running NanoClaw socket.
 const nanoClawBridge = new NanoClawBridge()
 const _nanoClawAdapter = new NanoClawChannelAdapter(nanoClawBridge)
+
+// Knowledge Graph (CK-GRAPH-037) — initialized lazily in background services
+let graphDb: Database.Database | null = null
+let graphMcpServer: GraphMcpServer | null = null
+let graphWriter: GraphWriter | null = null
 
 // Notes system (CK-NOTES-001..003) — initialized lazily in background services
 let noteManager: NoteManager | null = null
@@ -220,6 +240,20 @@ async function initializeBackgroundServices(win: BrowserWindow): Promise<void> {
     console.log('[main] Voice pipeline disabled by config')
   }
 
+  // Knowledge Graph — init with graceful degradation (CK-GRAPH-037, CK-NFR-010)
+  try {
+    const graphDbPath = join(app.getPath('userData'), 'graph.db')
+    graphDb = openGraphDb({ path: graphDbPath })
+    graphWriter = new GraphWriter(graphDb)
+    graphMcpServer = new GraphMcpServer(graphDb)
+    console.log('[main] Knowledge Graph initialized:', graphDbPath)
+  } catch (err) {
+    console.warn('[main] Knowledge Graph init failed (graceful degradation):', err)
+    graphDb = null
+    graphWriter = null
+    graphMcpServer = null
+  }
+
   // Notes system — init with graceful degradation (CK-NOTES-001..003)
   try {
     const notesDir = join(app.getPath('userData'), 'notes')
@@ -323,6 +357,80 @@ function registerIpcHandlers(): void {
   ipcMain.handle(NANOCLAW_DISCONNECT, async () => {
     nanoClawBridge.disconnect()
     return { ok: true, error: null }
+  })
+
+  // Knowledge Graph handlers (CK-GRAPH-037)
+  ipcMain.handle(GRAPH_SEARCH, async (_event, params: { query: string; limit?: number; kind?: string }) => {
+    if (!graphDb) return { hits: [], error: 'Graph not initialized' }
+    try {
+      return graphSearch(graphDb, params)
+    } catch (err) {
+      return { hits: [], error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(GRAPH_READ, async (_event, uid: string) => {
+    if (!graphDb) return null
+    try {
+      return graphGetNode(graphDb, uid)
+    } catch {
+      return null
+    }
+  })
+
+  ipcMain.handle(GRAPH_EXPAND, async (_event, params: { uid: string; depth?: number; edge_type?: string; direction?: string }) => {
+    if (!graphDb) return { center: null, neighbors: [], edges: [] }
+    try {
+      return graphExpand(graphDb, params)
+    } catch (err) {
+      return { center: null, neighbors: [], edges: [], error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(GRAPH_QUERY, async (_event, params: { template: string; params?: Record<string, unknown> }) => {
+    if (!graphDb) return { rows: [], error: 'Graph not initialized' }
+    try {
+      return graphQuery(graphDb, params)
+    } catch (err) {
+      return { rows: [], error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(GRAPH_WRITE, async (_event, input: { kind: string; title: string; [key: string]: unknown }) => {
+    if (!graphWriter) return { uid: null, error: 'Graph not initialized' }
+    try {
+      return graphWriter.upsertNode(input as Parameters<GraphWriter['upsertNode']>[0])
+    } catch (err) {
+      return { uid: null, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(GRAPH_LINK, async (_event, input: { src: string; dst: string; type?: string; source?: string; props?: Record<string, unknown> }) => {
+    if (!graphWriter) return { ok: false, error: 'Graph not initialized' }
+    try {
+      return graphWriter.linkEdge(input as Parameters<GraphWriter['linkEdge']>[0])
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(GRAPH_MAINTAIN, async (_event, params: { operation: string }) => {
+    if (!graphDb) return { error: 'Graph not initialized' }
+    try {
+      return graphMaintain(graphDb, params as Parameters<typeof graphMaintain>[1])
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(GRAPH_DELETE, async (_event, uid: string) => {
+    if (!graphDb) return { ok: false, error: 'Graph not initialized' }
+    try {
+      graphDb.prepare('DELETE FROM node WHERE uid = ?').run(uid)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
   })
 
   // Config handlers (ConfigStore — CK-INF-008)
@@ -491,5 +599,17 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
+  }
+})
+
+// Graceful shutdown — close graph DB to flush WAL (CK-GRAPH-028)
+app.on('before-quit', () => {
+  try {
+    graphDb?.close()
+    graphDb = null
+    graphWriter = null
+    graphMcpServer = null
+  } catch (err) {
+    console.warn('[main] Graph DB close error:', err)
   }
 })
