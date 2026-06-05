@@ -58,3 +58,11 @@ export {
   getIndexVersion, VaultConflictError,
   type ParsedVaultFile, type InferredEdge, type IndexResult
 } from './vault'
+export {
+  chunkText, indexNodeEmbeddings,
+  upsertSummaryNode, getSummaryNodes,
+  traceHerkunft, findBrokenChains,
+  NoopEmbeddingProvider,
+  type EmbeddingProvider, type MaintenanceHelper,
+  type Chunk, type ChunkOptions, type SummaryScope, type TraceStep
+} from './chunking'
