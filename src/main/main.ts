@@ -601,6 +601,11 @@ app.on('window-all-closed', () => {
   }
 })
 
+// P2-SEC: Prevent silent crashes from unhandled promise rejections
+process.on('unhandledRejection', (reason: unknown) => {
+  console.error('[main] Unhandled rejection:', reason)
+})
+
 // Graceful shutdown — close graph DB to flush WAL (CK-GRAPH-028)
 app.on('before-quit', () => {
   try {

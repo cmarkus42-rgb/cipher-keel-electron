@@ -333,7 +333,8 @@ function executeReverseTrace(
     throw new Error(`Invalid edge_type: ${edgeType}`)
   }
 
-  const typeFilter = edgeType ? `AND e.type = '${edgeType}'` : ''
+  // P2-SEC: edge_type uses ? placeholder instead of string interpolation
+  const typeFilter = edgeType ? 'AND e.type = ?' : ''
 
   const sql = `
     WITH RECURSIVE trace(uid, kind, title, depth, edge_type, via_uid) AS (
@@ -353,7 +354,12 @@ function executeReverseTrace(
     ORDER BY depth
   `
 
-  const rows = db.prepare(sql).all(uid, maxDepth) as Record<string, unknown>[]
+  // Build args: uid, [edge_type if filtered], maxDepth
+  const sqlArgs: unknown[] = [uid]
+  if (edgeType) sqlArgs.push(edgeType)
+  sqlArgs.push(maxDepth)
+
+  const rows = db.prepare(sql).all(...sqlArgs) as Record<string, unknown>[]
   return { template: 'reverse_trace', rows, count: rows.length }
 }
 

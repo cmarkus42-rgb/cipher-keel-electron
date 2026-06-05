@@ -28,6 +28,93 @@ import type { MaintainParams } from './maintain'
 import type { UpsertNodeInput, LinkEdgeInput } from './writer'
 
 // ---------------------------------------------------------------------------
+// Runtime validation (P2-SEC: replaces double-casts)
+// ---------------------------------------------------------------------------
+
+export function assertString(val: unknown, name: string): string {
+  if (typeof val !== 'string' || val.trim() === '') {
+    throw new Error(`Expected non-empty string for '${name}', got ${typeof val}`)
+  }
+  return val
+}
+
+export function assertOptionalString(val: unknown, name: string): string | undefined {
+  if (val === undefined || val === null) return undefined
+  if (typeof val !== 'string') {
+    throw new Error(`Expected string for '${name}', got ${typeof val}`)
+  }
+  return val
+}
+
+export function assertOptionalNumber(val: unknown, name: string): number | undefined {
+  if (val === undefined || val === null) return undefined
+  if (typeof val !== 'number' || !Number.isFinite(val)) {
+    throw new Error(`Expected number for '${name}', got ${typeof val}`)
+  }
+  return val
+}
+
+export function assertOptionalObject(val: unknown, name: string): Record<string, unknown> | undefined {
+  if (val === undefined || val === null) return undefined
+  if (typeof val !== 'object' || Array.isArray(val)) {
+    throw new Error(`Expected object for '${name}', got ${typeof val}`)
+  }
+  return val as Record<string, unknown>
+}
+
+export function validateSearchParams(args: Record<string, unknown>): SearchParams {
+  return {
+    query: assertString(args.query, 'query'),
+    limit: assertOptionalNumber(args.limit, 'limit'),
+    kind: assertOptionalString(args.kind, 'kind') as SearchParams['kind'],
+  }
+}
+
+export function validateExpandParams(args: Record<string, unknown>): ExpandParams {
+  return {
+    uid: assertString(args.uid, 'uid'),
+    depth: assertOptionalNumber(args.depth, 'depth'),
+    edge_type: assertOptionalString(args.edge_type, 'edge_type') as ExpandParams['edge_type'],
+    direction: assertOptionalString(args.direction, 'direction') as ExpandParams['direction'],
+  }
+}
+
+export function validateQueryParams(args: Record<string, unknown>): QueryParams {
+  return {
+    template: assertString(args.template, 'template'),
+    params: assertOptionalObject(args.params, 'params'),
+  }
+}
+
+export function validateUpsertNodeInput(args: Record<string, unknown>): UpsertNodeInput {
+  return {
+    kind: assertString(args.kind, 'kind'),
+    title: assertString(args.title, 'title'),
+    path: assertOptionalString(args.path, 'path'),
+    status: assertOptionalString(args.status, 'status'),
+    body: assertOptionalString(args.body, 'body'),
+    content_hash: assertOptionalString(args.content_hash, 'content_hash'),
+    frontmatter: assertOptionalObject(args.frontmatter, 'frontmatter'),
+  }
+}
+
+export function validateLinkEdgeInput(args: Record<string, unknown>): LinkEdgeInput {
+  return {
+    src: assertString(args.src, 'src'),
+    dst: assertString(args.dst, 'dst'),
+    type: assertOptionalString(args.type, 'type'),
+    source: assertOptionalString(args.source, 'source'),
+    props: assertOptionalObject(args.props, 'props'),
+  }
+}
+
+export function validateMaintainParams(args: Record<string, unknown>): MaintainParams {
+  return {
+    operation: assertString(args.operation, 'operation'),
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tool definitions (CK-GRAPH-037)
 // ---------------------------------------------------------------------------
 
@@ -186,30 +273,29 @@ export class GraphMcpServer {
       let result: unknown
       switch (params.name) {
         case 'graph_search':
-          result = graphSearch(this.db, args as unknown as SearchParams)
+          result = graphSearch(this.db, validateSearchParams(args))
           break
         case 'graph_get_node': {
-          const uid = args.uid as string
-          if (!uid) return this.toolError(request.id, 'Missing required parameter: uid')
+          const uid = assertString(args.uid, 'uid')
           const node = graphGetNode(this.db, uid)
           if (!node) return this.toolError(request.id, `Node not found: ${uid}`)
           result = node
           break
         }
         case 'graph_expand':
-          result = graphExpand(this.db, args as unknown as ExpandParams)
+          result = graphExpand(this.db, validateExpandParams(args))
           break
         case 'graph_query':
-          result = graphQuery(this.db, args as unknown as QueryParams)
+          result = graphQuery(this.db, validateQueryParams(args))
           break
         case 'graph_upsert_node':
-          result = this.writer.upsertNode(args as unknown as UpsertNodeInput)
+          result = this.writer.upsertNode(validateUpsertNodeInput(args))
           break
         case 'graph_link':
-          result = this.writer.linkEdge(args as unknown as LinkEdgeInput)
+          result = this.writer.linkEdge(validateLinkEdgeInput(args))
           break
         case 'graph_maintain':
-          result = graphMaintain(this.db, args as unknown as MaintainParams)
+          result = graphMaintain(this.db, validateMaintainParams(args))
           break
         default:
           return this.toolError(request.id, `Unknown tool: ${params.name}`)

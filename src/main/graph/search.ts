@@ -274,7 +274,8 @@ export function graphExpand(db: Database.Database, params: ExpandParams): Expand
   }
 
   // Build the recursive CTE based on direction and optional edge type filter
-  const typeFilter = params.edge_type ? `AND e.type = '${params.edge_type}'` : ''
+  // P2-SEC: edge_type uses ? placeholder instead of string interpolation
+  const typeFilter = params.edge_type ? 'AND e.type = ?' : ''
 
   let edgeJoin: string
   if (direction === 'outgoing') {
@@ -329,7 +330,12 @@ export function graphExpand(db: Database.Database, params: ExpandParams): Expand
     ORDER BY t.depth, n.title
   `
 
-  const rows = db.prepare(sql).all(params.uid, depth, params.uid) as {
+  // Build args: seed uid, [edge_type if filtered], depth, origin uid
+  const sqlArgs: unknown[] = [params.uid]
+  if (params.edge_type) sqlArgs.push(params.edge_type)
+  sqlArgs.push(depth, params.uid)
+
+  const rows = db.prepare(sql).all(...sqlArgs) as {
     uid: string; depth: number; edge_src: string; edge_dst: string;
     edge_type: EdgeType; edge_source: EdgeSource; kind: NodeKind; title: string;
   }[]
