@@ -1,5 +1,79 @@
 # HANDOFF — cipher-keel-electron
 
+## BT-1bc — MCP-Tools + Vault + Advanced Features (2026-06-05, abgeschlossen)
+
+Worker: BT-1bc (aufbauend auf BT-1a)
+Stand: 2026-06-05
+Status: **abgeschlossen**
+
+### Erledigte REQs
+
+| REQ-ID | Titel | Phase |
+|--------|-------|-------|
+| CK-GRAPH-018 | graph_search (FTS5 + vec, RRF Score-Fusion) | A |
+| CK-GRAPH-019 | graph_get_node (Vollknoten nachladen) | A |
+| CK-GRAPH-020 | graph_expand (Nachbarschafts-Expansion, CTE) | A |
+| CK-GRAPH-021 | graph_query (10 parametrisierte Templates) | A |
+| CK-GRAPH-022 | graph_upsert_node (Wrapper) | A |
+| CK-GRAPH-023 | graph_link (Wrapper) | A |
+| CK-GRAPH-024 | graph_maintain (hygiene/konsolidierung/verdichtung) | A |
+| CK-GRAPH-025 | Vault als Quelle — Frontmatter + Wikilinks | C |
+| CK-GRAPH-026 | Inferierte Kanten in Vault zurueckschreiben | C |
+| CK-GRAPH-027 | Summary-Knoten als Frontloading-Mechanismus | D |
+| CK-GRAPH-029 | Atomares Vault-Schreiben (Temp + rename) | C |
+| CK-GRAPH-030 | Inkrementeller Re-Index und voller Rebuild | C |
+| CK-GRAPH-031 | Chunking + Embedding-Provider-Interface | D |
+| CK-GRAPH-032 | Token-sparende Performance | A/D |
+| CK-GRAPH-034 | Loesch-Semantik bei Vault-Datei-Loeschung | C |
+| CK-GRAPH-035 | Herkunfts-Kette als traversierbare Graphstruktur | D |
+| CK-GRAPH-036 | Rekursive CTEs fuer mehrstufige Traversierung | A |
+| CK-GRAPH-037 | MCP-Server (7 Tools, JSON-RPC 2.0) | B |
+| CK-GRAPH-040 | Traceability-Gates als informative Graph-Abfragen | D |
+| CK-GRAPH-042 | Score-Fusion Volltext und Vektor (RRF) | A |
+| CK-GRAPH-048 | Wartungs-Helper-Instanz-Schnittstelle (Interface) | D |
+| CK-GRAPH-049 | Sandboxed lesender Query-Fallback mit Logging | A |
+| CK-NFR-011 | Token-sparende Architektur (<2000 Tokens/10 Treffer) | A |
+
+### Nicht im Scope (aufgeschoben)
+
+- CK-GRAPH-033 — Reifizierte Kanten (soll, aufgeschoben)
+
+### Neue Dateien
+
+```
+src/main/graph/
+  search.ts         — graph_search, graph_get_node, graph_expand
+  query.ts          — graph_query (10 Templates), graphSandboxedQuery
+  maintain.ts       — graph_maintain (hygiene/konsolidierung/verdichtung)
+  mcp-server.ts     — MCP-Server (JSON-RPC 2.0, 7 Tools)
+  vault.ts          — Vault-Parser, atomares Schreiben, Re-Index, Loesch-Semantik
+  chunking.ts       — Chunking, EmbeddingProvider, Summary-Knoten, Herkunfts-Kette
+
+tests/graph/
+  phase-f-mcp-tools.test.ts   — MCP-Tool-Funktionen (40 Tests)
+  phase-g-mcp-server.test.ts  — MCP-Server JSON-RPC (16 Tests)
+  phase-h-vault.test.ts       — Vault-Integration (28 Tests)
+  phase-i-advanced.test.ts    — Advanced Features (24 Tests)
+```
+
+206 Tests gesamt (98 BT-1a + 108 BT-1bc), alle gruen. Keine neuen Dependencies.
+
+### Architektur-Entscheidungen
+
+- **Score-Fusion:** RRF mit k=60 (Cormack 2009). Degradiert graceful bei nur einem Signal.
+- **Query-Templates:** 10 Templates inkl. herkunfts_kette, gate_coverage, reverse_trace.
+- **Embedding-Provider:** Pluggable Interface. NoopEmbeddingProvider fuer Tests.
+- **Vault-Parser:** Einfacher YAML-Parser (flat KV + Arrays). Wikilink-Regex.
+
+### Bekannte Issues (BT-1bc)
+
+1. **Embedding-Modell noch nicht gewaehlt** — NoopEmbeddingProvider liefert Null-Vektoren.
+2. **Verdichtung deklarativ** — graph_maintain verdichtung identifiziert Kandidaten, erzeugt keinen Summary-Text (braucht Helper-Instanz, CK-GRAPH-048).
+3. **Vault-Parser vereinfacht** — Kein voller YAML-Parser. Reicht fuer Vault-Frontmatter.
+4. **Reifizierte Kanten aufgeschoben** — edge.props JSON-Feld nutzbar fuer leichtgewichtige Reifikation.
+
+---
+
 ## BT-3d — Voice-Pipeline Phase A (2026-06-05, Phase A abgeschlossen, B+C offen)
 
 Worker: BT-3d | Stand: 2026-06-05 | Context-Abbruch bei ~75%
