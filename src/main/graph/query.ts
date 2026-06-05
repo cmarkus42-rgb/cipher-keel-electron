@@ -40,7 +40,10 @@ export const QUERY_TEMPLATES = [
   'steuer_ueberblick',
   'vault_index',
   'trigger_history',
-  'trigger_for_phase'
+  'trigger_for_phase',
+  'se_hierarchy',
+  'handoff_audit',
+  'quereinstieg_entscheidungen'
 ] as const
 
 export type QueryTemplate = (typeof QUERY_TEMPLATES)[number]
@@ -135,6 +138,12 @@ export function graphQuery(db: Database.Database, params: QueryParams): QueryRes
       return executeTriggerHistory(db)
     case 'trigger_for_phase':
       return executeTriggerForPhase(db, p)
+    case 'se_hierarchy':
+      return executeSEHierarchy(db, p)
+    case 'handoff_audit':
+      return executeHandoffAudit(db)
+    case 'quereinstieg_entscheidungen':
+      return executeQuereinstiegEntscheidungen(db)
   }
 }
 
@@ -864,6 +873,106 @@ function executeTriggerForPhase(
 
   const rows = db.prepare(sql).all(phaseUid) as Record<string, unknown>[]
   return { template: 'trigger_for_phase', rows, count: rows.length }
+}
+
+/**
+ * se_hierarchy: Traverse teilprojekt_von edges from a Haupt-SE node (Phase 3c).
+ *
+ * Recursively finds all sub-SE sessions that are connected via incoming
+ * teilprojekt_von edges (sub --teilprojekt_von--> parent).
+ * Returns uid, title, frontmatter, depth, parent_uid for each node.
+ *
+ * Parameters:
+ *   haupt_se_uid — UID of the root SE session (Haupt-SE)
+ */
+function executeSEHierarchy(
+  db: Database.Database,
+  p: Record<string, unknown>
+): QueryResult {
+  const haupt_se_uid = p.haupt_se_uid as string
+  if (!haupt_se_uid) throw new Error("Template 'se_hierarchy' requires parameter 'haupt_se_uid'")
+
+  const sql = `
+    WITH RECURSIVE hierarchy(uid, title, frontmatter, depth, parent_uid) AS (
+      SELECT uid, title, frontmatter, 0, NULL
+      FROM node WHERE uid = ?
+
+      UNION ALL
+
+      SELECT n.uid, n.title, n.frontmatter, h.depth + 1, h.uid
+      FROM hierarchy h
+      JOIN edge e ON e.dst = h.uid AND e.type = 'teilprojekt_von'
+      JOIN node n ON n.uid = e.src
+      WHERE h.depth < 10
+    )
+    SELECT uid, title, frontmatter, depth, parent_uid
+    FROM hierarchy
+    ORDER BY depth, uid
+  `
+
+  const rows = db.prepare(sql).all(haupt_se_uid) as Record<string, unknown>[]
+  return { template: 'se_hierarchy', rows, count: rows.length }
+}
+
+/**
+ * handoff_audit: For every naechste_phase transition, check whether a trigger
+ * node with a 'triggert' edge to the destination phase exists (Phase 3c).
+ *
+ * Returns one row per phase transition with:
+ *   from_phase_uid, from_phase_name, to_phase_uid, to_phase_name,
+ *   has_trigger (1/0)
+ * Ordered by from_phase position.
+ */
+function executeHandoffAudit(db: Database.Database): QueryResult {
+  const sql = `
+    SELECT
+      src_phase.uid as from_phase_uid,
+      json_extract(src_phase.frontmatter, '$.name') as from_phase_name,
+      dst_phase.uid as to_phase_uid,
+      json_extract(dst_phase.frontmatter, '$.name') as to_phase_name,
+      CASE WHEN EXISTS (
+        SELECT 1 FROM node t
+        JOIN edge et ON et.src = t.uid AND et.type = 'triggert' AND et.dst = dst_phase.uid
+        WHERE t.kind = 'trigger'
+      ) THEN 1 ELSE 0 END as has_trigger
+    FROM edge e
+    JOIN node src_phase ON src_phase.uid = e.src AND src_phase.kind = 'phase'
+    JOIN node dst_phase ON dst_phase.uid = e.dst AND dst_phase.kind = 'phase'
+    WHERE e.type = 'naechste_phase'
+    ORDER BY CAST(json_extract(src_phase.frontmatter, '$.position') AS INTEGER)
+  `
+
+  const rows = db.prepare(sql).all() as Record<string, unknown>[]
+  return { template: 'handoff_audit', rows, count: rows.length }
+}
+
+/**
+ * quereinstieg_entscheidungen: All entscheidung nodes that are phase-scoped
+ * via traegt_phase edge (Phase 3c — lateral/cross-entry decisions).
+ *
+ * Returns uid, title, status, frontmatter, phase_uid, phase_name.
+ * Ordered by phase position then entscheidung creation time.
+ */
+function executeQuereinstiegEntscheidungen(db: Database.Database): QueryResult {
+  const sql = `
+    SELECT
+      n.uid,
+      n.title,
+      n.status,
+      n.frontmatter,
+      p.uid as phase_uid,
+      json_extract(p.frontmatter, '$.name') as phase_name,
+      CAST(json_extract(p.frontmatter, '$.position') AS INTEGER) as phase_position,
+      n.erstellt
+    FROM node n
+    JOIN edge e ON e.src = n.uid AND e.type = 'traegt_phase'
+    JOIN node p ON p.uid = e.dst AND p.kind = 'phase'
+    WHERE n.kind = 'entscheidung'
+    ORDER BY phase_position, n.erstellt
+  `
+
+  const rows = db.prepare(sql).all() as Record<string, unknown>[]
+  return { template: 'quereinstieg_entscheidungen', rows, count: rows.length }
 }
 
 // ---------------------------------------------------------------------------
