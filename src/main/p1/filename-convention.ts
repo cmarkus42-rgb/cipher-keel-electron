@@ -4,17 +4,9 @@
  *            with optional _<version> suffix for testing-fixing loops.
  */
 
-export const DOKUMENT_TYPEN = [
-  'anforderungen',
-  'spec',
-  'architektur-paket',
-  'build-paket',
-  'test-findings',
-  'fix-report',
-  'audit-summary',
-] as const
-
-export type DokumentTyp = (typeof DOKUMENT_TYPEN)[number]
+// Canonical source: src/main/graph/node-types.ts
+export { DOKUMENT_TYPEN, type DokumentTyp } from '../graph/node-types'
+import { DOKUMENT_TYPEN, type DokumentTyp } from '../graph/node-types'
 
 /**
  * Generates a filename following the P1 naming convention.

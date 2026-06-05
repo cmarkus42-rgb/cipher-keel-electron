@@ -35,6 +35,7 @@ import { NoteTagging } from './notes/note-tagging'
 import { TagClassRepo } from './notes/tag-repository'
 import { TagIndex } from './notes/tag-index'
 import { NoteWatcher } from './notes/note-watcher'
+import { KanbanStore } from './kanban/kanban-store'
 import type { TmuxManager } from './tmux/tmux-manager'
 import type { StatusLineMonitor } from './monitoring/statusline-monitor'
 import type { NanoClawBridge } from './nanoclaw'
@@ -57,6 +58,7 @@ export interface AppServices {
   tagClassRepo: TagClassRepo | null
   tagIndex: TagIndex | null
   noteWatcher: NoteWatcher | null
+  kanbanStore: KanbanStore | null
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +98,44 @@ export function createMainWindow(services: AppServices): BrowserWindow {
     win.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+
+  return win
+}
+
+/**
+ * Creates the Project Window — primary entry point (CK-UI-001, CK-UI-002).
+ * Opens on app start. Grid/Mux window opens on demand via window:open-grid IPC.
+ * No background service init — project IPC handlers need no heavy setup.
+ */
+export function createProjectWindow(_services: AppServices): BrowserWindow {
+  const win = new BrowserWindow({
+    width: 900,
+    height: 620,
+    minWidth: 600,
+    minHeight: 400,
+    show: false,
+    backgroundColor: '#0d0d0d',
+    titleBarStyle: 'hiddenInset',
+    webPreferences: {
+      // Security baseline — NON-NEGOTIABLE (CK-NFR-004, CK-INF-022)
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: join(__dirname, '../preload/index.js'),
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+    },
+  })
+
+  win.once('ready-to-show', () => {
+    win.show()
+  })
+
+  if (process.env.ELECTRON_RENDERER_URL) {
+    win.loadURL(`${process.env.ELECTRON_RENDERER_URL}/windows/project-window.html`)
+  } else {
+    win.loadFile(join(__dirname, '../renderer/windows/project-window.html'))
   }
 
   return win
@@ -185,12 +225,14 @@ async function initializeBackgroundServices(
     services.graphDb = openGraphDb({ path: graphDbPath })
     services.graphWriter = new GraphWriter(services.graphDb)
     services.graphMcpServer = new GraphMcpServer(services.graphDb)
+    services.kanbanStore = new KanbanStore(services.graphDb)
     console.log('[window-manager] Knowledge Graph initialized:', graphDbPath)
   } catch (err) {
     console.warn('[window-manager] Knowledge Graph init failed (graceful degradation):', err)
     services.graphDb = null
     services.graphWriter = null
     services.graphMcpServer = null
+    services.kanbanStore = null
   }
 
   // Notes system (CK-NOTES-001..003)

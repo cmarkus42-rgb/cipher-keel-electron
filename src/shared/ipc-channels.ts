@@ -108,6 +108,21 @@ export const PROJECT_SWITCH = 'project:switch' as const
 export const PROJECT_GET_CURRENT = 'project:get-current' as const
 
 // ---------------------------------------------------------------------------
+// Kanban channels (CK-UI-009, CK-UI-010, CK-UI-027, CK-UI-034)
+// ---------------------------------------------------------------------------
+export const KANBAN_LIST = 'kanban:list' as const
+export const KANBAN_CREATE = 'kanban:create' as const
+export const KANBAN_UPDATE = 'kanban:update' as const
+export const KANBAN_DELETE = 'kanban:delete' as const
+export const KANBAN_HYGIENE = 'kanban:hygiene' as const
+export const KANBAN_CHANGED = 'kanban:changed' as const
+
+// ---------------------------------------------------------------------------
+// Window management channels (Drei-Fenster-Modell, CK-UI-002)
+// ---------------------------------------------------------------------------
+export const WINDOW_OPEN_GRID = 'window:open-grid' as const
+
+// ---------------------------------------------------------------------------
 // App lifecycle channels
 // ---------------------------------------------------------------------------
 export const APP_READY = 'app:ready' as const
@@ -134,6 +149,7 @@ export type MainToRendererChannel =
   | typeof VOICE_ACTIVE_SESSION
   | typeof NOTES_CHANGED
   | typeof NOTES_VALIDATION_WARNING
+  | typeof KANBAN_CHANGED
   | typeof APP_READY
 
 export type RendererToMainChannel =
@@ -185,4 +201,10 @@ export type RendererToMainChannel =
   | typeof NOTES_AUTO_TAG
   | typeof NOTES_TAG_INDEX
   | typeof NOTES_SAVE_RAW
+  | typeof KANBAN_LIST
+  | typeof KANBAN_CREATE
+  | typeof KANBAN_UPDATE
+  | typeof KANBAN_DELETE
+  | typeof KANBAN_HYGIENE
+  | typeof WINDOW_OPEN_GRID
   | typeof APP_BEFORE_QUIT

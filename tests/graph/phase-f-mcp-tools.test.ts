@@ -62,7 +62,15 @@ function buildTestGraph(db: Database.Database) {
 
   const repo = w.upsertNode({
     kind: 'github_repo', title: 'cipher-keel-electron',
-    path: null, frontmatter: { url: 'https://github.com/cipher/keel' }
+    path: null, frontmatter: {
+      url: 'https://github.com/cipher/keel',
+      owner: 'cipher',
+      name: 'keel',
+      repo_id: '123456',
+      default_branch: 'main',
+      visibility: 'private',
+      linked_at: '2026-06-05T00:00:00Z'
+    }
   })
 
   // Edges: herkunfts-kette

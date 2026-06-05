@@ -145,7 +145,15 @@ describe('All 8 node types can be created', () => {
   it('github_repo', () => {
     const r = writer.upsertNode({
       kind: 'github_repo', title: 'cipher/keel',
-      frontmatter: { url: 'https://github.com/cipher/keel', owner: 'cipher', name: 'keel' }
+      frontmatter: {
+        url: 'https://github.com/cipher/keel',
+        owner: 'cipher',
+        name: 'keel',
+        repo_id: '123456',
+        default_branch: 'main',
+        visibility: 'private',
+        linked_at: '2026-06-05T00:00:00Z'
+      }
     })
     expect(r.created).toBe(true)
   })

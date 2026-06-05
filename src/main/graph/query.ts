@@ -26,7 +26,9 @@ export const QUERY_TEMPLATES = [
   'nodes_by_status',
   'orphaned_nodes',
   'gate_coverage',
-  'reverse_trace'
+  'reverse_trace',
+  'phase_chain',
+  'phase_input_resolve'
 ] as const
 
 export type QueryTemplate = (typeof QUERY_TEMPLATES)[number]
@@ -93,6 +95,10 @@ export function graphQuery(db: Database.Database, params: QueryParams): QueryRes
       return executeGateCoverage(db, p)
     case 'reverse_trace':
       return executeReverseTrace(db, p)
+    case 'phase_chain':
+      return executePhaseChain(db)
+    case 'phase_input_resolve':
+      return executePhaseInputResolve(db, p)
   }
 }
 
@@ -240,7 +246,7 @@ function executeNodesByKind(
   const limit = (p.limit as number) ?? 100
 
   const sql = `
-    SELECT uid, kind, title, status, path, erstellt
+    SELECT uid, kind, title, status, path, frontmatter, erstellt
     FROM node WHERE kind = ?
     ORDER BY erstellt DESC
     LIMIT ?
@@ -361,6 +367,59 @@ function executeReverseTrace(
 
   const rows = db.prepare(sql).all(...sqlArgs) as Record<string, unknown>[]
   return { template: 'reverse_trace', rows, count: rows.length }
+}
+
+/**
+ * phase_chain: All phase nodes in canonical position order (CK-PROC-001).
+ * Returns the 8-phase chain sorted by the position field in frontmatter JSON.
+ */
+function executePhaseChain(db: Database.Database): QueryResult {
+  const sql = `
+    SELECT uid, kind, title, status, frontmatter, erstellt
+    FROM node
+    WHERE kind = 'phase'
+    ORDER BY CAST(json_extract(frontmatter, '$.position') AS INTEGER)
+  `
+
+  const rows = db.prepare(sql).all() as Record<string, unknown>[]
+  return { template: 'phase_chain', rows, count: rows.length }
+}
+
+/**
+ * phase_input_resolve: Resolve phaseninput for a named phase via graph query (CK-PROC-003).
+ *
+ * Finds the phasenoutput artefakte of the immediately preceding phase by traversing
+ * naechste_phase edges backwards. Returns empty for the first phase (no predecessor).
+ *
+ * Parameters:
+ *   phase_name — name of the phase whose input should be resolved (e.g. 'architecture')
+ */
+function executePhaseInputResolve(
+  db: Database.Database,
+  p: Record<string, unknown>
+): QueryResult {
+  const phaseName = p.phase_name as string
+  if (!phaseName) throw new Error("Template 'phase_input_resolve' requires parameter 'phase_name'")
+
+  // Resolve phasenoutput artefakte of the direct predecessor phase:
+  // 1. Find current phase by name
+  // 2. Find predecessor via incoming naechste_phase edge
+  // 3. Return artefakte linked to predecessor via traegt_phase where phasenoutput = true
+  const sql = `
+    SELECT DISTINCT n.uid, n.title, n.path, n.kind, n.status, n.frontmatter
+    FROM node n
+    JOIN edge e_bind ON e_bind.src = n.uid AND e_bind.type = 'traegt_phase'
+    JOIN node prev_phase ON prev_phase.uid = e_bind.dst AND prev_phase.kind = 'phase'
+    JOIN edge e_next ON e_next.src = prev_phase.uid AND e_next.type = 'naechste_phase'
+    JOIN node curr_phase ON curr_phase.uid = e_next.dst
+      AND curr_phase.kind = 'phase'
+      AND json_extract(curr_phase.frontmatter, '$.name') = ?
+    WHERE json_extract(n.frontmatter, '$.phasenoutput') = 1
+    ORDER BY n.erstellt
+  `
+
+  const rows = db.prepare(sql).all(phaseName) as Record<string, unknown>[]
+  return { template: 'phase_input_resolve', rows, count: rows.length }
 }
 
 // ---------------------------------------------------------------------------

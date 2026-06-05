@@ -6,7 +6,7 @@
  * CK-INF-009
  */
 
-import { ipcMain } from 'electron'
+import { ipcMain, BrowserWindow } from 'electron'
 import {
   SESSION_LIST,
   SESSION_CREATE,
@@ -54,6 +54,13 @@ import {
   PROJECT_CREATE,
   PROJECT_SWITCH,
   PROJECT_GET_CURRENT,
+  WINDOW_OPEN_GRID,
+  KANBAN_LIST,
+  KANBAN_CREATE,
+  KANBAN_UPDATE,
+  KANBAN_DELETE,
+  KANBAN_HYGIENE,
+  KANBAN_CHANGED,
 } from '../shared/ipc-channels'
 import { configStore } from './config/config-store'
 import type { CipherKeelConfig } from './config/config-store'
@@ -62,7 +69,12 @@ import { graphQuery } from './graph/query'
 import { graphMaintain } from './graph/maintain'
 import type { GraphWriter } from './graph/writer'
 import { ProjectManager } from './project/project-manager'
+import type { CreateKanbanItemInput, UpdateKanbanItemInput } from '../shared/kanban-types'
+import { createMainWindow } from './window-manager'
 import type { AppServices } from './window-manager'
+
+// Tracks the active grid window for focus-or-create logic (CK-UI-002)
+let activeGridWindow: BrowserWindow | null = null
 
 export function registerIpcHandlers(services: AppServices): void {
   // Project manager — wired to configStore for persistence (CK-INF-020)
@@ -412,5 +424,81 @@ export function registerIpcHandlers(services: AppServices): void {
 
   ipcMain.handle(PROJECT_GET_CURRENT, async () => {
     return projectManager.getCurrentProject()
+  })
+
+  // ---------------------------------------------------------------------------
+  // Kanban handlers (CK-UI-009, CK-UI-010, CK-UI-027, CK-UI-034)
+  // ---------------------------------------------------------------------------
+
+  ipcMain.handle(KANBAN_LIST, async () => {
+    if (!services.kanbanStore) return []
+    return services.kanbanStore.listItems()
+  })
+
+  ipcMain.handle(KANBAN_CREATE, async (_event, input: CreateKanbanItemInput) => {
+    if (!services.kanbanStore) return { item: null, error: 'Kanban not initialized' }
+    try {
+      const item = services.kanbanStore.createItem(input)
+      // Notify all windows of board change
+      BrowserWindow.getAllWindows().forEach(w => w.webContents.send(KANBAN_CHANGED))
+      return { item, error: null }
+    } catch (err) {
+      return { item: null, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(KANBAN_UPDATE, async (_event, input: UpdateKanbanItemInput) => {
+    if (!services.kanbanStore) return { ok: false, error: 'Kanban not initialized' }
+    try {
+      const ok = services.kanbanStore.updateItem(input)
+      if (ok) BrowserWindow.getAllWindows().forEach(w => w.webContents.send(KANBAN_CHANGED))
+      return { ok, error: null }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(KANBAN_DELETE, async (_event, id: string) => {
+    if (!services.kanbanStore) return { ok: false, error: 'Kanban not initialized' }
+    try {
+      const ok = services.kanbanStore.deleteItem(id)
+      if (ok) BrowserWindow.getAllWindows().forEach(w => w.webContents.send(KANBAN_CHANGED))
+      return { ok, error: null }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(KANBAN_HYGIENE, async (_event, existingPaths: string[]) => {
+    if (!services.kanbanStore) return { orphans: [], error: 'Kanban not initialized' }
+    try {
+      const orphans = services.kanbanStore.checkOrphanedItems(new Set(existingPaths))
+      return { orphans, error: null }
+    } catch (err) {
+      return { orphans: [], error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // Window management — Drei-Fenster-Modell (CK-UI-002)
+  // ---------------------------------------------------------------------------
+
+  ipcMain.handle(WINDOW_OPEN_GRID, (_event, projectId?: string) => {
+    if (projectId) {
+      try {
+        projectManager.switchProject(projectId)
+      } catch (err) {
+        console.warn('[ipc] window:open-grid — switchProject failed:', err)
+      }
+    }
+    if (!activeGridWindow || activeGridWindow.isDestroyed()) {
+      activeGridWindow = createMainWindow(services)
+      activeGridWindow.on('closed', () => {
+        activeGridWindow = null
+      })
+    } else {
+      activeGridWindow.focus()
+    }
+    return { ok: true }
   })
 }

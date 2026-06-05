@@ -42,7 +42,8 @@ export default defineConfig({
       outDir: 'dist/renderer',
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'src/renderer/index.html')
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          'project-window': resolve(__dirname, 'src/renderer/windows/project-window.html')
         }
       }
     }

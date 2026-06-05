@@ -1,9 +1,10 @@
 /**
- * node-types.ts — TypeScript definitions for all 8 Knowledge Graph node types.
+ * node-types.ts — TypeScript definitions for all 9 Knowledge Graph node types.
  *
  * CK-GRAPH-003: anforderung  CK-GRAPH-004: entscheidung  CK-GRAPH-005: artefakt
  * CK-GRAPH-006: test         CK-GRAPH-007: note          CK-GRAPH-008: phase_subsystem
  * CK-GRAPH-009: anlass       CK-GRAPH-010: github_repo
+ * CK-PROC-001:  phase        (M4 eight-phase chain)
  * CK-GRAPH-011: Core attributes for all (uid, kind, path, title, status, etc.)
  * CK-GRAPH-041: Extensible attribute schema per node type (JSON frontmatter column).
  */
@@ -14,6 +15,13 @@
 
 export const NODE_STATUSES = ['aktiv', 'abgeloest', 'verworfen'] as const
 export type NodeStatus = (typeof NODE_STATUSES)[number]
+
+// ---------------------------------------------------------------------------
+// Phase status (CK-PROC-001) — separate from node-level lifecycle status
+// ---------------------------------------------------------------------------
+
+export const PHASE_STATUSES = ['ausstehend', 'aktiv', 'abgeschlossen', 'trivial-skip'] as const
+export type PhaseStatus = (typeof PHASE_STATUSES)[number]
 
 // ---------------------------------------------------------------------------
 // Node kind enum
@@ -27,7 +35,9 @@ export const NODE_KINDS = [
   'note',
   'phase_subsystem',
   'anlass',
-  'github_repo'
+  'github_repo',
+  'phase',
+  'uebergabedokument'
 ] as const
 
 export type NodeKind = (typeof NODE_KINDS)[number]
@@ -71,6 +81,8 @@ export interface EntscheidungAttrs {
 export interface ArtefaktAttrs {
   artefakt_pfad?: string
   sprache_art?: string
+  /** Marks this artefakt as the phasenoutput of the phase it is linked to (CK-PROC-002) */
+  phasenoutput?: boolean
 }
 
 /** CK-GRAPH-006 */
@@ -99,12 +111,43 @@ export interface AnlassAttrs {
 /** CK-GRAPH-010 */
 export interface GithubRepoAttrs {
   url: string
-  owner?: string
-  name?: string
-  repo_id?: string
-  default_branch?: string
-  visibility?: string
-  linked_at?: string
+  owner: string
+  name: string
+  repo_id: string
+  default_branch: string
+  visibility: string
+  linked_at: string
+}
+
+/** CK-PROC-001 — M4 phase node (one per project, 8 total) */
+export interface PhaseAttrs {
+  /** Phase identifier, e.g. 'ideation', 'requirements', … 'release-management' */
+  name: string
+  /** Canonical position in the chain (1–8) */
+  position: number
+  /** Phase-level progress status, distinct from node lifecycle status */
+  phase_status: PhaseStatus
+}
+
+// ---------------------------------------------------------------------------
+// Uebergabedokument types (CK-P1-001)
+// ---------------------------------------------------------------------------
+
+export const DOKUMENT_TYPEN = [
+  'anforderungen',
+  'spec',
+  'architektur-paket',
+  'build-paket',
+  'test-findings',
+  'fix-report',
+  'audit-summary'
+] as const
+
+export type DokumentTyp = (typeof DOKUMENT_TYPEN)[number]
+
+/** CK-P1-001 — handoff document node with 7 valid dokumentTyp values */
+export interface UebergabedokumentAttrs {
+  dokumentTyp: DokumentTyp
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +163,8 @@ export interface NodeAttrMap {
   phase_subsystem: PhaseSubsystemAttrs
   anlass: AnlassAttrs
   github_repo: GithubRepoAttrs
+  phase: PhaseAttrs
+  uebergabedokument: UebergabedokumentAttrs
 }
 
 // ---------------------------------------------------------------------------
@@ -135,19 +180,23 @@ export const REQUIRED_FRONTMATTER_FIELDS: Record<NodeKind, string[]> = {
   note: [],
   phase_subsystem: [],
   anlass: [],
-  github_repo: ['url']
+  github_repo: ['url', 'owner', 'name', 'repo_id', 'default_branch', 'visibility', 'linked_at'],
+  phase: ['name', 'position'],
+  uebergabedokument: ['dokumentTyp']
 }
 
 /** Allowed frontmatter fields per kind (for strict validation). */
 export const ALLOWED_FRONTMATTER_FIELDS: Record<NodeKind, string[]> = {
   anforderung: ['quelle', 'prioritaet'],
   entscheidung: ['begruendung', 'alternativen'],
-  artefakt: ['artefakt_pfad', 'sprache_art'],
+  artefakt: ['artefakt_pfad', 'sprache_art', 'phasenoutput'],
   test: ['testart', 'ergebnis'],
   note: ['notetyp'],
   phase_subsystem: ['ebene'],
   anlass: ['session', 'zeitpunkt', 'handoff_referenz'],
-  github_repo: ['url', 'owner', 'name', 'repo_id', 'default_branch', 'visibility', 'linked_at']
+  github_repo: ['url', 'owner', 'name', 'repo_id', 'default_branch', 'visibility', 'linked_at'],
+  phase: ['name', 'position', 'phase_status'],
+  uebergabedokument: ['dokumentTyp']
 }
 
 // ---------------------------------------------------------------------------
@@ -160,4 +209,8 @@ export function isValidKind(kind: string): kind is NodeKind {
 
 export function isValidStatus(status: string): status is NodeStatus {
   return (NODE_STATUSES as readonly string[]).includes(status)
+}
+
+export function isValidDokumentTyp(typ: string): typ is DokumentTyp {
+  return (DOKUMENT_TYPEN as readonly string[]).includes(typ)
 }

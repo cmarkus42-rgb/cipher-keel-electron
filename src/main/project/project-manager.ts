@@ -14,6 +14,7 @@
 
 import type { ProjectRecord } from '../config/config-store'
 
+// Canonical type lives in src/shared/project-types.ts; ProjectRecord is structurally identical.
 export type Project = ProjectRecord
 
 interface StoredProjects {

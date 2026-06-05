@@ -19,7 +19,7 @@ import { TmuxManager } from './tmux/tmux-manager'
 import { StatusLineMonitor } from './monitoring/statusline-monitor'
 import { NanoClawBridge, NanoClawChannelAdapter } from './nanoclaw'
 import { patchEnvPath } from './util/exec-util'
-import { createMainWindow } from './window-manager'
+import { createProjectWindow } from './window-manager'
 import type { AppServices } from './window-manager'
 import { registerIpcHandlers } from './ipc-handlers'
 
@@ -44,6 +44,7 @@ const services: AppServices = {
   tagClassRepo: null,
   tagIndex: null,
   noteWatcher: null,
+  kanbanStore: null,
 }
 
 // NanoClawChannelAdapter wraps the bridge — held as module-level ref to prevent GC
@@ -55,12 +56,12 @@ const _nanoClawAdapter = new NanoClawChannelAdapter(services.nanoClawBridge)
 
 app.whenReady().then(() => {
   registerIpcHandlers(services)
-  createMainWindow(services)
+  createProjectWindow(services)
 
   // macOS: re-create window when dock icon is clicked and no windows are open
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow(services)
+      createProjectWindow(services)
     }
   })
 })

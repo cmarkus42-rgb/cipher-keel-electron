@@ -13,6 +13,8 @@ import { deterministicUlid, naturalKey as deriveNaturalKey } from './uid'
 import {
   isValidKind,
   isValidStatus,
+  isValidDokumentTyp,
+  DOKUMENT_TYPEN,
   REQUIRED_FRONTMATTER_FIELDS,
   type NodeKind,
   type NodeStatus
@@ -153,6 +155,17 @@ export class GraphWriter {
       throw new SchemaError(`Missing required frontmatter fields for '${kind}': ${missing.join(', ')}`)
     }
 
+    // Validate dokumentTyp value for uebergabedokument (CK-P1-001)
+    if (kind === 'uebergabedokument') {
+      const dokumentTyp = fm.dokumentTyp as string | undefined
+      if (!dokumentTyp || !isValidDokumentTyp(dokumentTyp)) {
+        throw new SchemaError(
+          `Invalid dokumentTyp '${dokumentTyp}' for kind 'uebergabedokument'. ` +
+          `Valid values: ${DOKUMENT_TYPEN.join(', ')}`
+        )
+      }
+    }
+
     // --- Natural key + deterministic uid (CK-GRAPH-012, CK-GRAPH-044) ---
     const nk = deriveNaturalKey(kind, {
       path: input.path,
@@ -232,7 +245,7 @@ export class GraphWriter {
     let edgeType: EdgeType
     if (input.type) {
       if (!isValidEdgeType(input.type)) {
-        throw new SchemaError(`Unknown edge type '${input.type}'. Valid: ${['verweist_auf', 'verfeinert', 'begruendet', 'setzt_um', 'verifiziert', 'erzeugt_von', 'abgeloest_durch'].join(', ')}`)
+        throw new SchemaError(`Unknown edge type '${input.type}'. Valid: ${['verweist_auf', 'verfeinert', 'begruendet', 'setzt_um', 'verifiziert', 'erzeugt_von', 'abgeloest_durch', 'phaseninput_fuer', 'behebt', 'referenziert', 'prueft'].join(', ')}`)
       }
       edgeType = input.type as EdgeType
       const validationErr = validateEdgeForPair(edgeType, srcKind, dstKind)
