@@ -79,6 +79,23 @@ export const VOICE_PIN_STATUS = 'voice:pin-status' as const
 export const VOICE_ACTIVE_SESSION = 'voice:active-session' as const
 
 // ---------------------------------------------------------------------------
+// Notes channels (CK-NOTES-001..003)
+// ---------------------------------------------------------------------------
+export const NOTES_LIST = 'notes:list' as const
+export const NOTES_CREATE = 'notes:create' as const
+export const NOTES_READ = 'notes:read' as const
+export const NOTES_SAVE = 'notes:save' as const
+export const NOTES_DELETE = 'notes:delete' as const
+export const NOTES_TRASH = 'notes:trash' as const
+export const NOTES_TRASH_MANY = 'notes:trash-many' as const
+export const NOTES_RESTORE_MANY = 'notes:restore-many' as const
+export const NOTES_SEARCH = 'notes:search' as const
+export const NOTES_TAGS = 'notes:tags' as const
+export const NOTES_AUTO_TAG = 'notes:auto-tag' as const
+export const NOTES_TAG_INDEX = 'notes:tag-index' as const
+export const NOTES_CHANGED = 'notes:changed' as const
+
+// ---------------------------------------------------------------------------
 // App lifecycle channels
 // ---------------------------------------------------------------------------
 export const APP_READY = 'app:ready' as const
@@ -104,6 +121,7 @@ export type MainToRendererChannel =
   | typeof VOICE_ERROR
   | typeof VOICE_PIN_STATUS
   | typeof VOICE_ACTIVE_SESSION
+  | typeof NOTES_CHANGED
   | typeof APP_READY
 
 export type RendererToMainChannel =
@@ -135,4 +153,16 @@ export type RendererToMainChannel =
   | typeof VOICE_VAD_MISFIRE
   | typeof VOICE_BARGE_IN
   | typeof VOICE_PIN_SESSION
+  | typeof NOTES_LIST
+  | typeof NOTES_CREATE
+  | typeof NOTES_READ
+  | typeof NOTES_SAVE
+  | typeof NOTES_DELETE
+  | typeof NOTES_TRASH
+  | typeof NOTES_TRASH_MANY
+  | typeof NOTES_RESTORE_MANY
+  | typeof NOTES_SEARCH
+  | typeof NOTES_TAGS
+  | typeof NOTES_AUTO_TAG
+  | typeof NOTES_TAG_INDEX
   | typeof APP_BEFORE_QUIT

@@ -114,9 +114,46 @@ const voiceApi = {
   },
 }
 
-contextBridge.exposeInMainWorld('cipherKeel', { ...api, voice: voiceApi })
+// ---------------------------------------------------------------------------
+// Notes API — typed wrappers for notes IPC (CK-NOTES-001..003)
+// ---------------------------------------------------------------------------
+const notesApi = {
+  list: (filterTags?: string[]) =>
+    ipcRenderer.invoke('notes:list' as RendererToMainChannel, filterTags),
+  create: (title: string, body: string, tags?: string[]) =>
+    ipcRenderer.invoke('notes:create' as RendererToMainChannel, title, body, tags),
+  read: (id: string) =>
+    ipcRenderer.invoke('notes:read' as RendererToMainChannel, id),
+  save: (id: string, body: string, tags?: string[]) =>
+    ipcRenderer.invoke('notes:save' as RendererToMainChannel, id, body, tags),
+  delete: (id: string) =>
+    ipcRenderer.invoke('notes:delete' as RendererToMainChannel, id),
+  trash: (id: string) =>
+    ipcRenderer.invoke('notes:trash' as RendererToMainChannel, id),
+  trashMany: (ids: string[]) =>
+    ipcRenderer.invoke('notes:trash-many' as RendererToMainChannel, ids),
+  restoreMany: (ids: string[]) =>
+    ipcRenderer.invoke('notes:restore-many' as RendererToMainChannel, ids),
+  search: (query: string, tags?: string[]) =>
+    ipcRenderer.invoke('notes:search' as RendererToMainChannel, query, tags),
+  tags: () =>
+    ipcRenderer.invoke('notes:tags' as RendererToMainChannel),
+  autoTag: (content: string) =>
+    ipcRenderer.invoke('notes:auto-tag' as RendererToMainChannel, content),
+  tagIndex: () =>
+    ipcRenderer.invoke('notes:tag-index' as RendererToMainChannel),
+
+  // Event listeners (Main → Renderer)
+  onChanged: (cb: () => void) => {
+    const listener = () => cb()
+    ipcRenderer.on('notes:changed' as MainToRendererChannel, listener)
+    return () => { ipcRenderer.removeListener('notes:changed' as MainToRendererChannel, listener) }
+  },
+}
+
+contextBridge.exposeInMainWorld('cipherKeel', { ...api, voice: voiceApi, notes: notesApi })
 
 // ---------------------------------------------------------------------------
 // Type declaration for the renderer (window.cipherKeel)
 // ---------------------------------------------------------------------------
-export type CipherKeelApi = typeof api & { voice: typeof voiceApi }
+export type CipherKeelApi = typeof api & { voice: typeof voiceApi; notes: typeof notesApi }

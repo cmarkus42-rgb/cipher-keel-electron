@@ -45,6 +45,19 @@ import {
   VOICE_ERROR,
   VOICE_PIN_STATUS,
   VOICE_ACTIVE_SESSION,
+  NOTES_LIST,
+  NOTES_CREATE,
+  NOTES_READ,
+  NOTES_SAVE,
+  NOTES_DELETE,
+  NOTES_TRASH,
+  NOTES_TRASH_MANY,
+  NOTES_RESTORE_MANY,
+  NOTES_SEARCH,
+  NOTES_TAGS,
+  NOTES_AUTO_TAG,
+  NOTES_TAG_INDEX,
+  NOTES_CHANGED,
 } from '../shared/ipc-channels'
 import { TmuxManager } from './tmux/tmux-manager'
 import { StatusLineMonitor } from './monitoring/statusline-monitor'
@@ -52,6 +65,11 @@ import { NanoClawBridge, NanoClawChannelAdapter } from './nanoclaw'
 import { configStore } from './config/config-store'
 import type { CipherKeelConfig } from './config/config-store'
 import { VoiceManager } from './voice/voice-manager'
+import { NoteManager } from './notes/note-manager'
+import { NoteTagging } from './notes/note-tagging'
+import { TagClassRepo } from './notes/tag-repository'
+import { TagIndex } from './notes/tag-index'
+import { NoteWatcher } from './notes/note-watcher'
 import { patchEnvPath } from './util/exec-util'
 
 // ---------------------------------------------------------------------------
@@ -70,6 +88,13 @@ let voiceManager: VoiceManager | null = null
 // The bridge only connects as a client to an already-running NanoClaw socket.
 const nanoClawBridge = new NanoClawBridge()
 const _nanoClawAdapter = new NanoClawChannelAdapter(nanoClawBridge)
+
+// Notes system (CK-NOTES-001..003) — initialized lazily in background services
+let noteManager: NoteManager | null = null
+let noteTagging: NoteTagging | null = null
+let tagClassRepo: TagClassRepo | null = null
+let tagIndex: TagIndex | null = null
+let noteWatcher: NoteWatcher | null = null
 
 // ---------------------------------------------------------------------------
 // Window creation
@@ -193,6 +218,29 @@ async function initializeBackgroundServices(win: BrowserWindow): Promise<void> {
     }
   } else {
     console.log('[main] Voice pipeline disabled by config')
+  }
+
+  // Notes system — init with graceful degradation (CK-NOTES-001..003)
+  try {
+    const notesDir = join(app.getPath('userData'), 'notes')
+    noteManager = new NoteManager(notesDir)
+    noteTagging = new NoteTagging(notesDir)
+    tagClassRepo = new TagClassRepo(notesDir)
+    tagIndex = new TagIndex(notesDir, tagClassRepo)
+    noteTagging.setTagClassRepo(tagClassRepo)
+    tagIndex.rebuild()
+    noteTagging.recountTags()
+
+    // File watcher for external changes
+    noteWatcher = new NoteWatcher(notesDir, (_noteId) => {
+      tagIndex?.rebuild()
+      noteTagging?.recountTags()
+      win.webContents.send(NOTES_CHANGED)
+    })
+    noteWatcher.start()
+    console.log('[main] Notes system initialized')
+  } catch (err) {
+    console.warn('[main] Notes system init failed (graceful degradation):', err)
   }
 
   // Notify renderer that the app is ready
@@ -341,6 +389,85 @@ function registerIpcHandlers(): void {
 
   ipcMain.on(VOICE_PIN_SESSION, (_event, sessionId: string) => {
     voiceManager?.togglePin(sessionId)
+  })
+
+  // Notes handlers (CK-NOTES-001..003)
+  ipcMain.handle(NOTES_LIST, async (_event, filterTags?: string[]) => {
+    if (!noteManager) return []
+    return noteManager.list(filterTags)
+  })
+
+  ipcMain.handle(NOTES_CREATE, async (_event, title: string, body: string, tags?: string[]) => {
+    if (!noteManager) return { id: null, error: 'Notes not initialized' }
+    const info = await noteManager.create(title, body, tags)
+    if (tags?.length) {
+      noteTagging?.updateRepository(tags)
+      tagIndex?.rebuild()
+    }
+    return info
+  })
+
+  ipcMain.handle(NOTES_READ, async (_event, id: string) => {
+    if (!noteManager) return null
+    return noteManager.read(id)
+  })
+
+  ipcMain.handle(NOTES_SAVE, async (_event, id: string, body: string, tags?: string[]) => {
+    if (!noteManager) return { id: null, error: 'Notes not initialized' }
+    const info = await noteManager.save(id, body, tags)
+    if (tags?.length) {
+      noteTagging?.updateRepository(tags)
+      tagIndex?.updateNote(id, tags)
+    }
+    return info
+  })
+
+  ipcMain.handle(NOTES_DELETE, async (_event, id: string) => {
+    if (!noteManager) return { ok: false }
+    const ok = await noteManager.delete(id)
+    if (ok) tagIndex?.removeNote(id)
+    return { ok }
+  })
+
+  ipcMain.handle(NOTES_TRASH, async (_event, id: string) => {
+    if (!noteManager) return { ok: false }
+    const ok = await noteManager.trash(id)
+    if (ok) tagIndex?.removeNote(id)
+    return { ok }
+  })
+
+  ipcMain.handle(NOTES_TRASH_MANY, async (_event, ids: string[]) => {
+    if (!noteManager) return { trashed: [] }
+    const trashed = await noteManager.trashMany(ids)
+    for (const id of trashed) tagIndex?.removeNote(id)
+    return { trashed }
+  })
+
+  ipcMain.handle(NOTES_RESTORE_MANY, async (_event, ids: string[]) => {
+    if (!noteManager) return { restored: [] }
+    const restored = await noteManager.restoreMany(ids)
+    tagIndex?.rebuild()
+    return { restored }
+  })
+
+  ipcMain.handle(NOTES_SEARCH, async (_event, query: string, tags?: string[]) => {
+    if (!noteManager) return []
+    return noteManager.search(query, { tags })
+  })
+
+  ipcMain.handle(NOTES_TAGS, async () => {
+    if (!noteTagging) return { tags: {} }
+    return noteTagging.getTagRepository()
+  })
+
+  ipcMain.handle(NOTES_AUTO_TAG, async (_event, content: string) => {
+    if (!noteTagging) return null
+    return noteTagging.autoTag(content)
+  })
+
+  ipcMain.handle(NOTES_TAG_INDEX, async () => {
+    if (!tagIndex) return { tagToNoteIds: {}, classValueCounts: {}, totalNotes: 0, builtAt: '' }
+    return tagIndex.getIndex()
   })
 }
 

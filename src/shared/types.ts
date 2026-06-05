@@ -80,3 +80,53 @@ export interface GridState {
   config: GridConfig
   slots: GridSlot[]
 }
+
+// --- Notes -------------------------------------------------------------------
+
+export type HandoffStatus = 'pending' | 'consumed'
+
+export interface NoteInfo {
+  id: string
+  title: string
+  tags: string[]
+  scope: string
+  relativePath: string
+  preview?: string
+  noteType?: string
+  createdAt: string
+  modifiedAt: string
+  fromSession?: string
+  toEntity?: string
+  handoffStatus?: HandoffStatus
+}
+
+export interface NoteContent {
+  info: NoteInfo
+  body: string
+}
+
+export interface TagEntry {
+  count: number
+  description: string
+}
+
+export interface TagRepository {
+  tags: Record<string, TagEntry>
+}
+
+export interface TagClass {
+  values: string[]
+  color?: string
+}
+
+export interface TagClassRepository {
+  classes: Record<string, TagClass>
+  synonyms?: Record<string, string>
+}
+
+export interface TagIndexData {
+  tagToNoteIds: Record<string, string[]>
+  classValueCounts: Record<string, Record<string, number>>
+  totalNotes: number
+  builtAt: string
+}
