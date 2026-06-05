@@ -31,7 +31,10 @@ import {
   saveKeepWorkingState,
   loadKeepWorkingState,
   hasKeepWorkingState,
+  saveSessionLayout,
+  restoreSessionLayout,
   type KeepWorkingState,
+  type SessionLayout,
 } from '../src/main/session/keep-working'
 
 import { getItemBoardPhases } from '../src/renderer/components/ItemBoard'
@@ -344,5 +347,41 @@ describe('CK-UI-011 — Item-Board: edge cases for getItemBoardPhases', () => {
     const phases = getItemBoardPhases(1)
     const displayNames = phases.map(p => p.displayName)
     expect(new Set(displayNames).size).toBe(8)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// SessionLayout — save + restore
+// ---------------------------------------------------------------------------
+
+describe('SessionLayout — saveSessionLayout / restoreSessionLayout', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'ck-sl-'))
+  })
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('roundtrip: saved layout is restored with identical values', () => {
+    const layout: SessionLayout = {
+      sessions: [
+        { sessionId: 'ses-1', tmuxSession: 'keel:0', gridPosition: { col: 0, row: 0 }, entityId: 'proj-abc' },
+        { sessionId: 'ses-2', tmuxSession: 'keel:1', gridPosition: { col: 1, row: 0 }, entityId: null },
+      ],
+      grid: { cols: 2, rows: 1 },
+      savedAt: '2026-06-05T10:00:00.000Z',
+    }
+
+    saveSessionLayout(layout, dir)
+    const restored = restoreSessionLayout(dir)
+
+    expect(restored).toEqual(layout)
+  })
+
+  it('returns null when session-layout.json does not exist', () => {
+    expect(restoreSessionLayout(dir)).toBeNull()
   })
 })

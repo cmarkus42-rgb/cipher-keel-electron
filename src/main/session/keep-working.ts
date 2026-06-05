@@ -13,6 +13,7 @@ import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 
 const FILENAME = 'keep-working.json'
+const LAYOUT_FILENAME = 'session-layout.json'
 
 export interface KeepWorkingState {
   /** ID of the active project */
@@ -53,4 +54,41 @@ export function loadKeepWorkingState(dir: string): KeepWorkingState | null {
  */
 export function hasKeepWorkingState(dir: string): boolean {
   return existsSync(join(dir, FILENAME))
+}
+
+// ---------------------------------------------------------------------------
+// Session layout persistence
+// ---------------------------------------------------------------------------
+
+export interface SessionLayout {
+  sessions: Array<{
+    sessionId: string
+    tmuxSession: string
+    gridPosition: { col: number; row: number }
+    entityId: string | null
+  }>
+  grid: { cols: number; rows: number }
+  savedAt: string
+}
+
+/**
+ * Persists the session layout to <dir>/session-layout.json.
+ */
+export function saveSessionLayout(layout: SessionLayout, dir: string): void {
+  writeFileSync(join(dir, LAYOUT_FILENAME), JSON.stringify(layout, null, 2), 'utf-8')
+}
+
+/**
+ * Loads the session layout from <dir>/session-layout.json.
+ * Returns null if the file does not exist or cannot be parsed.
+ */
+export function restoreSessionLayout(dir: string): SessionLayout | null {
+  const path = join(dir, LAYOUT_FILENAME)
+  if (!existsSync(path)) return null
+  try {
+    const raw = readFileSync(path, 'utf-8')
+    return JSON.parse(raw) as SessionLayout
+  } catch {
+    return null
+  }
 }
