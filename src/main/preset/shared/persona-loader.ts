@@ -43,8 +43,15 @@ const DEFAULT_PERSONAS_DIR = path.join(__dirname, 'personas')
 export function loadPersona(vorgabe: string, personasDir?: string): string | null {
   if (!vorgabe) return null
 
+  // F-001: Reject path traversal attempts (../, /, absolute paths)
+  if (vorgabe.includes('/') || vorgabe.includes('\\') || vorgabe.includes('..')) return null
+
   const dir = personasDir ?? DEFAULT_PERSONAS_DIR
   const filePath = path.join(dir, `${vorgabe}.md`)
+
+  // Double-check resolved path stays within dir
+  const resolved = path.resolve(filePath)
+  if (!resolved.startsWith(path.resolve(dir))) return null
 
   try {
     return fs.readFileSync(filePath, 'utf-8')
