@@ -48,3 +48,7 @@ export {
   type KonsolidierungResult, type KonsolidierungAction,
   type VerdichtungResult, type VerdichtungAction
 } from './maintain'
+export {
+  GraphMcpServer, startStdioServer, TOOL_DEFINITIONS,
+  type McpToolDef, type JsonRpcRequest, type JsonRpcResponse
+} from './mcp-server'
