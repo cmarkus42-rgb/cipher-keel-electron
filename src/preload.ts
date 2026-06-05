@@ -151,9 +151,31 @@ const notesApi = {
   },
 }
 
-contextBridge.exposeInMainWorld('cipherKeel', { ...api, voice: voiceApi, notes: notesApi })
+// ---------------------------------------------------------------------------
+// Graph API — typed wrappers for knowledge graph IPC (CK-GRAPH-037)
+// ---------------------------------------------------------------------------
+const graphApi = {
+  search: (params: { query: string; limit?: number; kind?: string }) =>
+    ipcRenderer.invoke('graph:search' as RendererToMainChannel, params),
+  getNode: (uid: string) =>
+    ipcRenderer.invoke('graph:read' as RendererToMainChannel, uid),
+  expand: (params: { uid: string; depth?: number; edge_type?: string; direction?: string }) =>
+    ipcRenderer.invoke('graph:expand' as RendererToMainChannel, params),
+  query: (params: { template: string; params?: Record<string, unknown> }) =>
+    ipcRenderer.invoke('graph:query' as RendererToMainChannel, params),
+  upsertNode: (input: { kind: string; title: string; [key: string]: unknown }) =>
+    ipcRenderer.invoke('graph:write' as RendererToMainChannel, input),
+  link: (input: { src: string; dst: string; type?: string; source?: string; props?: Record<string, unknown> }) =>
+    ipcRenderer.invoke('graph:link' as RendererToMainChannel, input),
+  maintain: (params: { operation: string }) =>
+    ipcRenderer.invoke('graph:maintain' as RendererToMainChannel, params),
+  deleteNode: (uid: string) =>
+    ipcRenderer.invoke('graph:delete' as RendererToMainChannel, uid),
+}
+
+contextBridge.exposeInMainWorld('cipherKeel', { ...api, voice: voiceApi, notes: notesApi, graph: graphApi })
 
 // ---------------------------------------------------------------------------
 // Type declaration for the renderer (window.cipherKeel)
 // ---------------------------------------------------------------------------
-export type CipherKeelApi = typeof api & { voice: typeof voiceApi; notes: typeof notesApi }
+export type CipherKeelApi = typeof api & { voice: typeof voiceApi; notes: typeof notesApi; graph: typeof graphApi }
