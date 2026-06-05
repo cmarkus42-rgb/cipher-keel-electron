@@ -33,7 +33,12 @@ export const QUERY_TEMPLATES = [
   'gate_befunde_fuer_phase',
   'gate_befunde_aggregiert',
   'phase_skip_status',
-  'handoff_completeness'
+  'handoff_completeness',
+  'subsystem_list',
+  'subsystem_dependencies',
+  'quereinstieg_eignung',
+  'steuer_ueberblick',
+  'vault_index'
 ] as const
 
 export type QueryTemplate = (typeof QUERY_TEMPLATES)[number]
@@ -114,6 +119,16 @@ export function graphQuery(db: Database.Database, params: QueryParams): QueryRes
       return executePhaseSkipStatus(db)
     case 'handoff_completeness':
       return executeHandoffCompleteness(db, p)
+    case 'subsystem_list':
+      return executeSubsystemList(db)
+    case 'subsystem_dependencies':
+      return executeSubsystemDependencies(db)
+    case 'quereinstieg_eignung':
+      return executeQuereinstiegEignung(db, p)
+    case 'steuer_ueberblick':
+      return executeSteuerUeberblick(db)
+    case 'vault_index':
+      return executeVaultIndex(db)
   }
 }
 
@@ -609,6 +624,199 @@ function executeHandoffCompleteness(
 
   const rows = db.prepare(sql).all(phaseName) as Record<string, unknown>[]
   return { template: 'handoff_completeness', rows, count: rows.length }
+}
+
+/**
+ * subsystem_list: All phase_subsystem nodes with scope/status/blocked_grund
+ * from frontmatter and outgoing dependency count via haengt_ab_von.
+ */
+function executeSubsystemList(db: Database.Database): QueryResult {
+  const sql = `
+    SELECT
+      s.uid,
+      s.title,
+      s.status,
+      json_extract(s.frontmatter, '$.scope') as scope,
+      json_extract(s.frontmatter, '$.status') as sub_status,
+      json_extract(s.frontmatter, '$.blocked_grund') as blocked_grund,
+      (SELECT COUNT(*) FROM edge e WHERE e.src = s.uid AND e.type = 'haengt_ab_von') as dep_count
+    FROM node s
+    WHERE s.kind = 'phase_subsystem'
+    ORDER BY s.title
+  `
+
+  const rows = db.prepare(sql).all() as Record<string, unknown>[]
+  return { template: 'subsystem_list', rows, count: rows.length }
+}
+
+/**
+ * subsystem_dependencies: Topological ordering via haengt_ab_von CTE.
+ * Roots = phase_subsystem nodes with no incoming haengt_ab_von edges.
+ * BFS from roots following outgoing haengt_ab_von edges; topo_order = MIN depth.
+ * Uses path-string cycle detection for safety.
+ */
+function executeSubsystemDependencies(db: Database.Database): QueryResult {
+  const sql = `
+    WITH RECURSIVE
+      roots(uid) AS (
+        SELECT uid FROM node
+        WHERE kind = 'phase_subsystem'
+          AND NOT EXISTS (
+            SELECT 1 FROM edge e WHERE e.dst = uid AND e.type = 'haengt_ab_von'
+          )
+      ),
+      topo(uid, title, depth, path_str) AS (
+        SELECT n.uid, n.title, 0, n.uid
+        FROM node n
+        JOIN roots r ON r.uid = n.uid
+
+        UNION ALL
+
+        SELECT n.uid, n.title, t.depth + 1, t.path_str || ',' || n.uid
+        FROM topo t
+        JOIN edge e ON e.src = t.uid AND e.type = 'haengt_ab_von'
+        JOIN node n ON n.uid = e.dst
+        WHERE t.depth < 20
+          AND (',' || t.path_str || ',') NOT LIKE '%,' || n.uid || ',%'
+      )
+    SELECT uid, title, MIN(depth) as topo_order
+    FROM topo
+    GROUP BY uid
+    ORDER BY MIN(depth), uid
+  `
+
+  const rows = db.prepare(sql).all() as Record<string, unknown>[]
+  return { template: 'subsystem_dependencies', rows, count: rows.length }
+}
+
+/**
+ * quereinstieg_eignung: Checks whether the necessary inputs for phase X exist
+ * in the graph for a given subsystem.
+ *
+ * Inputs = phasenoutput artefakte of the predecessor phase (via naechste_phase).
+ * Returns one summary row per subsystem with input_count and eignung flag.
+ * Returns 0 rows when target phase has no predecessor.
+ *
+ * Parameters:
+ *   target_phase  — name of the phase to enter (e.g. 'architecture')
+ *   subsystem_uid — UID of the phase_subsystem node
+ */
+function executeQuereinstiegEignung(
+  db: Database.Database,
+  p: Record<string, unknown>
+): QueryResult {
+  const targetPhase = p.target_phase as string
+  const subsystemUid = p.subsystem_uid as string
+  if (!targetPhase) throw new Error("Template 'quereinstieg_eignung' requires parameter 'target_phase'")
+  if (!subsystemUid) throw new Error("Template 'quereinstieg_eignung' requires parameter 'subsystem_uid'")
+
+  const sql = `
+    WITH
+      target AS (
+        SELECT uid FROM node
+        WHERE kind = 'phase' AND json_extract(frontmatter, '$.name') = ?
+      ),
+      predecessor AS (
+        SELECT e.src as uid
+        FROM edge e
+        JOIN target t ON e.dst = t.uid
+        WHERE e.type = 'naechste_phase'
+      ),
+      inputs AS (
+        SELECT a.uid as artefakt_uid
+        FROM node a
+        JOIN edge e ON e.src = a.uid AND e.type = 'traegt_phase'
+        JOIN predecessor p ON p.uid = e.dst
+        WHERE a.kind = 'artefakt' AND json_extract(a.frontmatter, '$.phasenoutput') = 1
+      )
+    SELECT
+      s.uid as subsystem_uid,
+      s.title as subsystem_title,
+      json_extract(s.frontmatter, '$.scope') as scope,
+      json_extract(s.frontmatter, '$.status') as sub_status,
+      json_extract(s.frontmatter, '$.blocked_grund') as blocked_grund,
+      (SELECT uid FROM target) as target_phase_uid,
+      (SELECT uid FROM predecessor) as predecessor_uid,
+      COUNT(DISTINCT i.artefakt_uid) as input_count,
+      CASE WHEN COUNT(DISTINCT i.artefakt_uid) > 0 THEN 1 ELSE 0 END as eignung
+    FROM node s
+    LEFT JOIN inputs i ON 1=1
+    WHERE s.uid = ?
+      AND (SELECT COUNT(*) FROM predecessor) > 0
+    GROUP BY s.uid
+  `
+
+  const rows = db.prepare(sql).all(targetPhase, subsystemUid) as Record<string, unknown>[]
+  return { template: 'quereinstieg_eignung', rows, count: rows.length }
+}
+
+/**
+ * steuer_ueberblick: Aggregated overview across all Stränge.
+ * One row per (phase_subsystem, phase) pair joined via traegt_phase.
+ * Each row includes the most recent gate_befund for the phase via gate_fuer
+ * (ROW_NUMBER window function, same pattern as gate_befunde_aggregiert).
+ */
+function executeSteuerUeberblick(db: Database.Database): QueryResult {
+  const sql = `
+    SELECT
+      s.uid as subsystem_uid,
+      s.title as subsystem_title,
+      json_extract(s.frontmatter, '$.scope') as scope,
+      json_extract(s.frontmatter, '$.status') as sub_status,
+      json_extract(s.frontmatter, '$.blocked_grund') as blocked_grund,
+      p.uid as phase_uid,
+      json_extract(p.frontmatter, '$.name') as phase_name,
+      CAST(json_extract(p.frontmatter, '$.position') AS INTEGER) as phase_position,
+      g.uid as befund_uid,
+      g.frontmatter as befund_frontmatter,
+      g.erstellt as befund_erstellt
+    FROM node s
+    JOIN edge e_tp ON e_tp.src = s.uid AND e_tp.type = 'traegt_phase'
+    JOIN node p ON p.uid = e_tp.dst AND p.kind = 'phase'
+    LEFT JOIN (
+      SELECT g2.uid, g2.frontmatter, g2.erstellt, e2.dst as phase_uid,
+             ROW_NUMBER() OVER (PARTITION BY e2.dst ORDER BY g2.erstellt DESC, g2.uid DESC) as rn
+      FROM node g2
+      JOIN edge e2 ON e2.src = g2.uid AND e2.type = 'gate_fuer'
+      WHERE g2.kind = 'gate_befund'
+    ) g ON g.phase_uid = p.uid AND g.rn = 1
+    WHERE s.kind = 'phase_subsystem'
+    ORDER BY phase_position, s.uid
+  `
+
+  const rows = db.prepare(sql).all() as Record<string, unknown>[]
+  return { template: 'steuer_ueberblick', rows, count: rows.length }
+}
+
+/**
+ * vault_index: All note and uebergabedokument nodes with their type discriminator.
+ * Returns notetyp for notes, dokumentTyp for uebergabedokumente.
+ */
+function executeVaultIndex(db: Database.Database): QueryResult {
+  const sql = `
+    SELECT
+      uid,
+      kind,
+      title,
+      path,
+      status,
+      frontmatter,
+      CASE WHEN kind = 'note'
+        THEN json_extract(frontmatter, '$.notetyp')
+        ELSE NULL
+      END as notetyp,
+      CASE WHEN kind = 'uebergabedokument'
+        THEN json_extract(frontmatter, '$.dokumentTyp')
+        ELSE NULL
+      END as dokumentTyp,
+      erstellt
+    FROM node
+    WHERE kind IN ('note', 'uebergabedokument')
+    ORDER BY kind, erstellt DESC
+  `
+
+  const rows = db.prepare(sql).all() as Record<string, unknown>[]
+  return { template: 'vault_index', rows, count: rows.length }
 }
 
 // ---------------------------------------------------------------------------
