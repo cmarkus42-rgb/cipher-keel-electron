@@ -38,7 +38,9 @@ export const QUERY_TEMPLATES = [
   'subsystem_dependencies',
   'quereinstieg_eignung',
   'steuer_ueberblick',
-  'vault_index'
+  'vault_index',
+  'trigger_history',
+  'trigger_for_phase'
 ] as const
 
 export type QueryTemplate = (typeof QUERY_TEMPLATES)[number]
@@ -129,6 +131,10 @@ export function graphQuery(db: Database.Database, params: QueryParams): QueryRes
       return executeSteuerUeberblick(db)
     case 'vault_index':
       return executeVaultIndex(db)
+    case 'trigger_history':
+      return executeTriggerHistory(db)
+    case 'trigger_for_phase':
+      return executeTriggerForPhase(db, p)
   }
 }
 
@@ -816,6 +822,48 @@ function executeVaultIndex(db: Database.Database): QueryResult {
 
   const rows = db.prepare(sql).all() as Record<string, unknown>[]
   return { template: 'vault_index', rows, count: rows.length }
+}
+
+/**
+ * trigger_history: All trigger nodes in chronological order (oldest first).
+ * Phase 3c — CK-3C-003.
+ */
+function executeTriggerHistory(db: Database.Database): QueryResult {
+  const sql = `
+    SELECT uid, title, frontmatter, status, erstellt
+    FROM node
+    WHERE kind = 'trigger'
+    ORDER BY erstellt ASC
+  `
+
+  const rows = db.prepare(sql).all() as Record<string, unknown>[]
+  return { template: 'trigger_history', rows, count: rows.length }
+}
+
+/**
+ * trigger_for_phase: All trigger nodes pointing to a specific phase via triggert edge.
+ * Phase 3c — CK-3C-003.
+ *
+ * Parameters:
+ *   phase_uid — UID of the target phase node
+ */
+function executeTriggerForPhase(
+  db: Database.Database,
+  p: Record<string, unknown>
+): QueryResult {
+  const phaseUid = p.phase_uid as string
+  if (!phaseUid) throw new Error("Template 'trigger_for_phase' requires parameter 'phase_uid'")
+
+  const sql = `
+    SELECT t.uid, t.title, t.frontmatter, t.status, t.erstellt
+    FROM node t
+    JOIN edge e ON e.src = t.uid AND e.type = 'triggert' AND e.dst = ?
+    WHERE t.kind = 'trigger'
+    ORDER BY t.erstellt ASC
+  `
+
+  const rows = db.prepare(sql).all(phaseUid) as Record<string, unknown>[]
+  return { template: 'trigger_for_phase', rows, count: rows.length }
 }
 
 // ---------------------------------------------------------------------------
