@@ -1,5 +1,81 @@
 # HANDOFF — cipher-keel-electron
 
+## BT-3d — Voice-Pipeline Phase A (2026-06-05, Phase A abgeschlossen, B+C offen)
+
+Worker: BT-3d | Stand: 2026-06-05 | Context-Abbruch bei ~75%
+
+### Erledigt: Phase A — Voice-Pipeline (Commit `ccc1fa6`)
+
+**17 neue/geaenderte Dateien, 1874 LOC**
+
+| Datei | Beschreibung | REQ |
+|-------|-------------|-----|
+| `src/main/voice/voice-manager.ts` | Orchestrator (STT + TTS + Router + State) | alle |
+| `src/main/voice/voice-state.ts` | State-Machine (7 Zustaende) | CK-VOICE-001 |
+| `src/main/voice/stt-engine.ts` | Whisper.cpp + Halluzinations-Filter | CK-VOICE-002 |
+| `src/main/voice/stt-router.ts` | Local-only STT-Routing | CK-VOICE-002 |
+| `src/main/voice/tts-engine.ts` | Abstract TTSEngine | CK-VOICE-003 |
+| `src/main/voice/tts-piper.ts` | Piper via sherpa-onnx-node Worker | CK-VOICE-003 |
+| `src/main/voice/tts-macos.ts` | macOS `say` Fallback | CK-VOICE-003 |
+| `src/main/voice/voice-input-router.ts` | Voice-Commands + Grid-Nav + Scroll | CK-VOICE-004 |
+| `src/main/voice/audio-utils.ts` | pcmToWav, concatenateWavs | — |
+| `src/renderer/voice/vad-loader.ts` | Silero VAD (lokale Assets) | CK-VOICE-001 |
+| `src/renderer/voice/barge-in-monitor.ts` | Amplitude-Barge-In | — |
+| `src/renderer/hooks/useVoiceSession.ts` | React-Hook (Preact→React portiert) | — |
+| `src/shared/ipc-channels.ts` | +17 Voice-Channels | CK-INF-009 |
+| `src/preload.ts` | voice API exponiert | CK-NFR-004 |
+| `src/main/main.ts` | Voice-IPC-Handler + deferred init | — |
+| `src/main/config/config-store.ts` | +voice.enabled, +voice.piperVoice | CK-VOICE-009 |
+| `src/renderer/components/SessionCell.tsx` | Voice-Dot im PaneHeader | CK-VOICE-008 |
+
+Erfuellte REQs: CK-VOICE-001, 002, 003, 004, 008 + CK-NFR-006
+
+### Offen: Phase B — Voice-Config + Degradation
+
+- **CK-VOICE-009** (z.T. erledigt): `voice.enabled` Config existiert, main.ts prueft es. **Noch fehlend:** Voice-Dot "disabled" im Renderer, kein Mikrofon-Permission-Dialog
+- **CK-VOICE-010** (z.T. erledigt): VoiceManager hat try/catch. **Noch fehlend:** getUserMedia rejection handling im Hook, Voice-Dot "unavailable"
+
+Geschaetzter Restaufwand Phase B: ~30 Minuten
+
+### Offen: Phase C — Notes-System
+
+Komplett offen. Quellcode zum Portieren:
+
+| Quelle (cipher-mux-electron) | Ziel | REQ |
+|------|------|-----|
+| `src/main/notes/note-manager.ts` | `src/main/notes/note-manager.ts` | CK-NOTES-001 |
+| `src/main/notes/note-tagging.ts` | `src/main/notes/note-tagging.ts` | CK-NOTES-002 |
+| `src/main/notes/tag-repository.ts` | `src/main/notes/tag-repository.ts` | CK-NOTES-002 |
+| `src/main/notes/tag-index.ts` | `src/main/notes/tag-index.ts` | CK-NOTES-002 |
+| `src/main/notes/note-watcher.ts` | `src/main/notes/note-watcher.ts` | — |
+| `src/renderer/hooks/useNotes.ts` | `src/renderer/hooks/useNotes.ts` | — |
+| (neu) | `src/renderer/components/NotesCell.tsx` | CK-NOTES-003 |
+
+**Portierungs-Checkliste:**
+1. Notes-IPC-Channels in `ipc-channels.ts` (analog zu Voice: ~12 Channels)
+2. Notes-API in `preload.ts` (analog zu `voiceApi`)
+3. Notes-IPC-Handler in `main.ts`
+4. `preact/hooks` → `react`, `cipherMux` → `cipherKeel`
+5. CodeMirror 6: `@codemirror/lang-markdown` etc. in package.json
+6. ConfigStore: Ollama host/port falls Auto-Tagging Config gebraucht wird
+
+### Bekannte Issues
+
+1. **piper-worker.js fehlt:** Muss aus cipher-mux-electron portiert werden (`src/main/voice/piper-worker.js`)
+2. **VAD-Assets fehlen:** `vad-assets/` (Silero ONNX + WASM) muss im Renderer-Build sein
+3. **Native Module ABI:** `@fugood/whisper.node` + `sherpa-onnx-node` muessen fuer Electron-ABI gebaut werden
+4. **Voice-Dot Pulse-Animation:** CSS `@keyframes pulse` referenziert aber nicht definiert
+5. **Keine Runtime-Tests:** TypeScript kompiliert, aber manueller Mikrofon-Test steht aus
+
+### Pflichtlektuere
+
+1. Assignment: `wave-1/assignments/bt-3d-voice-notes.md`
+2. CK-VOICE: `refinement/CK-VOICE.md` (009, 010)
+3. CK-NOTES: `refinement/CK-NOTES.md` (001, 002, 003)
+4. CK-NFR: `refinement/CK-NFR.md` (006, 010)
+
+---
+
 ## BT-2b — NanoClawBridge + NanoClawChannelAdapter (2026-06-05, abgeschlossen)
 
 cipher-keel-seitige NanoClaw-Integration: Bridge (Unix-Domain-Socket-Client,
