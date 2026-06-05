@@ -108,6 +108,26 @@ export const PROJECT_SWITCH = 'project:switch' as const
 export const PROJECT_GET_CURRENT = 'project:get-current' as const
 
 // ---------------------------------------------------------------------------
+// GitHub channels (Phase 3b — GH-001..GH-005, GH-014, GH-015)
+// ---------------------------------------------------------------------------
+export const GITHUB_CHECK_AUTH = 'github:check-auth' as const
+export const GITHUB_GET_TOKEN = 'github:get-token' as const
+export const GITHUB_TRIGGER_LOGIN = 'github:trigger-login' as const
+export const GITHUB_CREATE_REPO = 'github:create-repo' as const
+export const GITHUB_LINK_REPO = 'github:link-repo' as const
+export const GITHUB_LIST_REPOS = 'github:list-repos' as const
+export const GITHUB_STORE_PAT = 'github:store-pat' as const
+export const GITHUB_SWITCH_REPO = 'github:switch-repo' as const
+
+// ---------------------------------------------------------------------------
+// Kickoff wizard channels (Phase 3b — CK-UI-020, CK-PROC-001)
+// ---------------------------------------------------------------------------
+export const GRAPH_INIT_PROJECT = 'graph:init-project' as const
+export const GIT_HAS_REPO = 'git:has-repo' as const
+export const DIALOG_OPEN_DIR = 'dialog:open-directory' as const
+export const PROJECT_KICKOFF = 'project:kickoff' as const
+
+// ---------------------------------------------------------------------------
 // Kanban channels (CK-UI-009, CK-UI-010, CK-UI-027, CK-UI-034)
 // ---------------------------------------------------------------------------
 export const KANBAN_LIST = 'kanban:list' as const
@@ -214,3 +234,15 @@ export type RendererToMainChannel =
   | typeof P1_NORMALIZE
   | typeof WINDOW_OPEN_GRID
   | typeof APP_BEFORE_QUIT
+  | typeof GITHUB_CHECK_AUTH
+  | typeof GITHUB_GET_TOKEN
+  | typeof GITHUB_TRIGGER_LOGIN
+  | typeof GITHUB_CREATE_REPO
+  | typeof GITHUB_LINK_REPO
+  | typeof GITHUB_LIST_REPOS
+  | typeof GITHUB_STORE_PAT
+  | typeof GITHUB_SWITCH_REPO
+  | typeof GRAPH_INIT_PROJECT
+  | typeof GIT_HAS_REPO
+  | typeof DIALOG_OPEN_DIR
+  | typeof PROJECT_KICKOFF

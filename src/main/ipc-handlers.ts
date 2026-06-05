@@ -6,7 +6,20 @@
  * CK-INF-009
  */
 
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, dialog } from 'electron'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { execFileAsync } from './util/exec-util'
+import {
+  checkAuthStatus,
+  getToken,
+  triggerLogin,
+  createRepo,
+  linkRepo,
+  listUserRepos,
+  storePat,
+  switchRepo,
+} from './github'
 import {
   SESSION_LIST,
   SESSION_CREATE,
@@ -62,6 +75,18 @@ import {
   KANBAN_HYGIENE,
   KANBAN_CHANGED,
   P1_NORMALIZE,
+  GITHUB_CHECK_AUTH,
+  GITHUB_GET_TOKEN,
+  GITHUB_TRIGGER_LOGIN,
+  GITHUB_CREATE_REPO,
+  GITHUB_LINK_REPO,
+  GITHUB_LIST_REPOS,
+  GITHUB_STORE_PAT,
+  GITHUB_SWITCH_REPO,
+  GRAPH_INIT_PROJECT,
+  GIT_HAS_REPO,
+  DIALOG_OPEN_DIR,
+  PROJECT_KICKOFF,
 } from '../shared/ipc-channels'
 import { configStore } from './config/config-store'
 import type { CipherKeelConfig } from './config/config-store'
@@ -514,5 +539,196 @@ export function registerIpcHandlers(services: AppServices): void {
       activeGridWindow.focus()
     }
     return { ok: true }
+  })
+
+  // ---------------------------------------------------------------------------
+  // GitHub handlers (Phase 3b — GH-001..GH-005, GH-014, GH-015)
+  // ---------------------------------------------------------------------------
+
+  ipcMain.handle(GITHUB_CHECK_AUTH, async () => {
+    try {
+      return await checkAuthStatus()
+    } catch (err) {
+      return { ghInstalled: false, authenticated: false, username: null, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(GITHUB_GET_TOKEN, async () => {
+    try {
+      return { token: await getToken(), error: null }
+    } catch (err) {
+      return { token: null, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(GITHUB_TRIGGER_LOGIN, async () => {
+    try {
+      await triggerLogin()
+      return { ok: true, error: null }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(GITHUB_CREATE_REPO, async (
+    _event,
+    name: string,
+    desc: string,
+    visibility: 'public' | 'private',
+    projectDir: string,
+  ) => {
+    return createRepo(name, desc, visibility, projectDir)
+  })
+
+  ipcMain.handle(GITHUB_LINK_REPO, async (_event, ownerRepo: string, projectDir: string) => {
+    return linkRepo(ownerRepo, projectDir)
+  })
+
+  ipcMain.handle(GITHUB_LIST_REPOS, async (_event, token?: string, page?: number) => {
+    try {
+      const repos = await listUserRepos(token, page)
+      return { repos, error: null }
+    } catch (err) {
+      return { repos: [], error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(GITHUB_STORE_PAT, async (_event, token: string) => {
+    try {
+      await storePat(token)
+      return { ok: true, error: null }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(GITHUB_SWITCH_REPO, async (_event, ownerRepo: string, projectDir: string) => {
+    return switchRepo(ownerRepo, projectDir)
+  })
+
+  // ---------------------------------------------------------------------------
+  // Kickoff wizard handlers (Phase 3b — CK-UI-020, CK-PROC-001)
+  // ---------------------------------------------------------------------------
+
+  const PHASE_DEFS = [
+    { name: 'ideation', position: 1 },
+    { name: 'requirements', position: 2 },
+    { name: 'architecture', position: 3 },
+    { name: 'development', position: 4 },
+    { name: 'testing', position: 5 },
+    { name: 'fixing', position: 6 },
+    { name: 'audit', position: 7 },
+    { name: 'release-management', position: 8 },
+  ] as const
+
+  ipcMain.handle(GRAPH_INIT_PROJECT, async (_event, projectDir: string) => {
+    if (!services.graphWriter) return { ok: false, error: 'Graph not initialized' }
+    try {
+      const uids: string[] = []
+      for (const p of PHASE_DEFS) {
+        const { uid } = services.graphWriter.upsertNode({
+          kind: 'phase',
+          title: p.name,
+          path: join(projectDir, '.cipher-keel', 'phases', p.name),
+          frontmatter: { name: p.name, position: p.position, phase_status: 'ausstehend' },
+        })
+        uids.push(uid)
+      }
+      for (let i = 0; i < uids.length - 1; i++) {
+        services.graphWriter.linkEdge({
+          src: uids[i],
+          dst: uids[i + 1],
+          type: 'naechste_phase',
+          source: 'inferred',
+        })
+      }
+      return { ok: true, phaseUids: uids }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(GIT_HAS_REPO, async (_event, dir: string) => {
+    return { hasRepo: existsSync(join(dir, '.git')) }
+  })
+
+  ipcMain.handle(DIALOG_OPEN_DIR, async (_event, opts?: { title?: string }) => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: opts?.title ?? 'Select Directory',
+      properties: ['openDirectory'],
+    })
+    if (canceled || filePaths.length === 0) return { canceled: true, path: null }
+    return { canceled: false, path: filePaths[0] }
+  })
+
+  ipcMain.handle(PROJECT_KICKOFF, async (_event, payload: {
+    name: string
+    rootPath: string
+    initGit?: boolean
+    github?: {
+      action: 'create' | 'link' | 'skip'
+      name?: string
+      desc?: string
+      visibility?: 'public' | 'private'
+      ownerRepo?: string
+    }
+  }) => {
+    try {
+      // 1. Create project record
+      const project = projectManager.createProject(payload.name, payload.rootPath)
+
+      // 2. Optional: git init
+      if (payload.initGit) {
+        try {
+          await execFileAsync('git', ['init', payload.rootPath])
+        } catch (err) {
+          console.warn('[ipc] project:kickoff — git init failed:', err)
+        }
+      }
+
+      // 3. Initialize graph (8 phases + chain)
+      let phaseUids: string[] = []
+      if (services.graphWriter) {
+        const uids: string[] = []
+        for (const p of PHASE_DEFS) {
+          const { uid } = services.graphWriter.upsertNode({
+            kind: 'phase',
+            title: p.name,
+            path: join(payload.rootPath, '.cipher-keel', 'phases', p.name),
+            frontmatter: { name: p.name, position: p.position, phase_status: 'ausstehend' },
+          })
+          uids.push(uid)
+        }
+        for (let i = 0; i < uids.length - 1; i++) {
+          services.graphWriter.linkEdge({
+            src: uids[i],
+            dst: uids[i + 1],
+            type: 'naechste_phase',
+            source: 'inferred',
+          })
+        }
+        phaseUids = uids
+      }
+
+      // 4. Optional: GitHub
+      let githubResult = null
+      const gh = payload.github
+      if (gh && gh.action !== 'skip') {
+        if (gh.action === 'create') {
+          githubResult = await createRepo(
+            gh.name ?? payload.name,
+            gh.desc ?? '',
+            gh.visibility ?? 'private',
+            payload.rootPath,
+          )
+        } else if (gh.action === 'link' && gh.ownerRepo) {
+          githubResult = await linkRepo(gh.ownerRepo, payload.rootPath)
+        }
+      }
+
+      return { ok: true, project, phaseUids, githubResult }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
   })
 }
