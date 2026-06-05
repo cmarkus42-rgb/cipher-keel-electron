@@ -98,11 +98,19 @@ export interface NoteInfo {
   fromSession?: string
   toEntity?: string
   handoffStatus?: HandoffStatus
+  /** Frontmatter: dokument-typ (Übergabedokumente only) */
+  dokumentTyp?: string
+  /** Frontmatter: phasenuebergang, e.g. "requirements -> architecture" */
+  phasenuebergang?: string
+  /** Frontmatter: status for Übergabedokumente */
+  uebergabeStatus?: 'entwurf' | 'freigegeben' | 'abgeloest'
 }
 
 export interface NoteContent {
   info: NoteInfo
   body: string
+  /** Full file content including YAML frontmatter — always populated. */
+  rawContent: string
 }
 
 export interface TagEntry {
