@@ -38,7 +38,8 @@ export const NODE_KINDS = [
   'github_repo',
   'phase',
   'uebergabedokument',
-  'gate_befund'
+  'gate_befund',
+  'trigger'
 ] as const
 
 export type NodeKind = (typeof NODE_KINDS)[number]
@@ -166,6 +167,18 @@ export interface UebergabedokumentAttrs {
   dokumentTyp: DokumentTyp
 }
 
+/** Phase 3c — SE trigger node (coordination hub for SE handoffs) */
+export interface TriggerAttrs {
+  entitaets_id: string
+  phasen_ziel: string
+  subsystem: string
+  input_quelle: string
+  erwarteter_output: string
+  /** Niveau level: 'A' | 'B' | 'C' */
+  niveau: string
+  gate_befund_id: string | null
+}
+
 /** CK-PROC-005 — gate assessment node per phase (PROC-007: two independent signals) */
 export interface GateBefundAttrs {
   /** UID of the phase this gate assessment belongs to */
@@ -196,6 +209,7 @@ export interface NodeAttrMap {
   phase: PhaseAttrs
   uebergabedokument: UebergabedokumentAttrs
   gate_befund: GateBefundAttrs
+  trigger: TriggerAttrs
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +228,8 @@ export const REQUIRED_FRONTMATTER_FIELDS: Record<NodeKind, string[]> = {
   github_repo: ['url', 'owner', 'name', 'repo_id', 'default_branch', 'visibility', 'linked_at'],
   phase: ['name', 'position'],
   uebergabedokument: ['dokumentTyp'],
-  gate_befund: ['phase_uid', 'strukturell', 'gate_typ']
+  gate_befund: ['phase_uid', 'strukturell', 'gate_typ'],
+  trigger: ['entitaets_id', 'phasen_ziel', 'niveau']
 }
 
 /** Allowed frontmatter fields per kind (for strict validation). */
@@ -229,7 +244,8 @@ export const ALLOWED_FRONTMATTER_FIELDS: Record<NodeKind, string[]> = {
   github_repo: ['url', 'owner', 'name', 'repo_id', 'default_branch', 'visibility', 'linked_at'],
   phase: ['name', 'position', 'phase_status', 'skip_profil'],
   uebergabedokument: ['dokumentTyp'],
-  gate_befund: ['phase_uid', 'strukturell', 'plausibilitaet', 'gewichtung', 'gate_typ']
+  gate_befund: ['phase_uid', 'strukturell', 'plausibilitaet', 'gewichtung', 'gate_typ'],
+  trigger: ['entitaets_id', 'phasen_ziel', 'subsystem', 'input_quelle', 'erwarteter_output', 'niveau', 'gate_befund_id']
 }
 
 // ---------------------------------------------------------------------------

@@ -34,7 +34,11 @@ export const EDGE_TYPES = [
   'prueft',             // audit-summary → fix-report (CK-P1-013)
   'gate_fuer',          // gate_befund → phase (CK-PROC-005)
   'subsystem_von',      // phase_subsystem → phase_subsystem (parent membership, CK-PROC-009)
-  'haengt_ab_von'       // phase_subsystem → phase_subsystem (dependency, CK-PROC-009)
+  'haengt_ab_von',      // phase_subsystem → phase_subsystem (dependency, CK-PROC-009)
+  'triggert',           // trigger → phase (SE handoff trigger, Phase 3c)
+  'teilprojekt_von',    // SE session → SE session (sub-project membership, Phase 3c)
+  'uebergibt_an',       // SE session → SE session (handoff direction, Phase 3c)
+  'sammelt_ein'         // SE session → SE session (aggregation, Phase 3c)
 ] as const
 
 export type EdgeType = (typeof EDGE_TYPES)[number]
@@ -89,7 +93,8 @@ const PAIR_DERIVATION: Partial<Record<PairKey, EdgeType>> = {
   'test->anforderung': 'verifiziert',
   'test->artefakt': 'verifiziert',
   'phase->phase': 'naechste_phase',
-  'gate_befund->phase': 'gate_fuer'
+  'gate_befund->phase': 'gate_fuer',
+  'trigger->phase': 'triggert'
 }
 
 /**
@@ -198,6 +203,18 @@ export function validateEdgeForPair(
     return dstKind === 'phase_subsystem'
       ? null
       : `Edge type 'haengt_ab_von' requires destination kind 'phase_subsystem', got '${dstKind}'`
+  }
+
+  // triggert requires dst = phase (Phase 3c)
+  if (type === 'triggert') {
+    return dstKind === 'phase'
+      ? null
+      : `Edge type 'triggert' requires destination kind 'phase', got '${dstKind}'`
+  }
+
+  // SE hierarchy edges are flexible — no strict pair enforcement (Phase 3c)
+  if (type === 'teilprojekt_von' || type === 'uebergibt_an' || type === 'sammelt_ein') {
+    return null
   }
 
   // P1 edge types valid between uebergabedokument nodes (CK-P1-013)

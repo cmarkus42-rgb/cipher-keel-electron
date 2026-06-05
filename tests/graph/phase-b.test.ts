@@ -15,12 +15,12 @@ import {
 } from '../../src/main/graph/node-types'
 
 describe('NODE_KINDS', () => {
-  it('contains all 11 types', () => {
-    expect(NODE_KINDS).toHaveLength(11)
+  it('contains all 12 types', () => {
+    expect(NODE_KINDS).toHaveLength(12)
     const expected: NodeKind[] = [
       'anforderung', 'entscheidung', 'artefakt', 'test',
       'note', 'phase_subsystem', 'anlass', 'github_repo', 'phase',
-      'uebergabedokument', 'gate_befund'
+      'uebergabedokument', 'gate_befund', 'trigger'
     ]
     for (const k of expected) {
       expect(NODE_KINDS).toContain(k)
@@ -35,7 +35,7 @@ describe('NODE_STATUSES (CK-GRAPH-016)', () => {
 })
 
 describe('isValidKind', () => {
-  it('accepts all 11 types', () => {
+  it('accepts all 12 types', () => {
     for (const k of NODE_KINDS) {
       expect(isValidKind(k)).toBe(true)
     }
