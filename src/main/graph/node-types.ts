@@ -170,10 +170,10 @@ export interface UebergabedokumentAttrs {
 export interface GateBefundAttrs {
   /** UID of the phase this gate assessment belongs to */
   phase_uid: string
-  /** Structural coverage signal: 'gruen' | 'gelb' | 'rot' */
-  strukturell: string
-  /** Plausibility signal: 'gruen' | 'gelb' | 'rot' | null (null = not yet executed) */
-  plausibilitaet: string | null
+  /** Structural coverage signal: 'gruen' | 'teilweise' | 'rot' */
+  strukturell: 'gruen' | 'teilweise' | 'rot'
+  /** Plausibility signal: 'traegt' | 'fraglich' | null (null = not yet executed) */
+  plausibilitaet: 'traegt' | 'fraglich' | null
   /** Weighting annotation (free text) */
   gewichtung: string
   /** Gate type, e.g. 'coverage' */
