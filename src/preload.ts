@@ -126,6 +126,8 @@ const notesApi = {
     ipcRenderer.invoke('notes:read' as RendererToMainChannel, id),
   save: (id: string, body: string, tags?: string[]) =>
     ipcRenderer.invoke('notes:save' as RendererToMainChannel, id, body, tags),
+  saveRaw: (id: string, rawContent: string) =>
+    ipcRenderer.invoke('notes:save-raw' as RendererToMainChannel, id, rawContent),
   delete: (id: string) =>
     ipcRenderer.invoke('notes:delete' as RendererToMainChannel, id),
   trash: (id: string) =>
@@ -148,6 +150,11 @@ const notesApi = {
     const listener = () => cb()
     ipcRenderer.on('notes:changed' as MainToRendererChannel, listener)
     return () => { ipcRenderer.removeListener('notes:changed' as MainToRendererChannel, listener) }
+  },
+  onValidationWarning: (cb: (warnings: string[]) => void) => {
+    const listener = (_e: IpcRendererEvent, warnings: string[]) => cb(warnings)
+    ipcRenderer.on('notes:validation-warning' as MainToRendererChannel, listener)
+    return () => { ipcRenderer.removeListener('notes:validation-warning' as MainToRendererChannel, listener) }
   },
 }
 

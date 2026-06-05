@@ -51,6 +51,10 @@ export function useNotes() {
     return api().notes.save(id, body, tags) as Promise<NoteInfo>
   }, [])
 
+  const saveNoteRaw = useCallback(async (id: string, rawContent: string): Promise<NoteInfo> => {
+    return api().notes.saveRaw(id, rawContent) as Promise<NoteInfo>
+  }, [])
+
   const deleteNote = useCallback(async (id: string) => {
     return api().notes.delete(id) as Promise<{ ok: boolean }>
   }, [])
@@ -86,6 +90,7 @@ export function useNotes() {
     createNote,
     readNote,
     saveNote,
+    saveNoteRaw,
     deleteNote,
     trashNote,
     trashMany,

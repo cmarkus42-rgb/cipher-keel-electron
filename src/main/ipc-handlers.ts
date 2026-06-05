@@ -48,6 +48,8 @@ import {
   NOTES_TAGS,
   NOTES_AUTO_TAG,
   NOTES_TAG_INDEX,
+  NOTES_SAVE_RAW,
+  NOTES_VALIDATION_WARNING,
   PROJECT_LIST,
   PROJECT_CREATE,
   PROJECT_SWITCH,
@@ -322,6 +324,15 @@ export function registerIpcHandlers(services: AppServices): void {
     if (tags?.length) {
       services.noteTagging?.updateRepository(tags)
       services.tagIndex?.updateNote(id, tags)
+    }
+    return info
+  })
+
+  ipcMain.handle(NOTES_SAVE_RAW, async (event, id: string, rawContent: string) => {
+    if (!services.noteManager) return { id: null, error: 'Notes not initialized' }
+    const { info, warnings } = await services.noteManager.saveRaw(id, rawContent)
+    if (warnings.length > 0) {
+      event.sender.send(NOTES_VALIDATION_WARNING, warnings)
     }
     return info
   })

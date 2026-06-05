@@ -96,6 +96,8 @@ export const NOTES_TAGS = 'notes:tags' as const
 export const NOTES_AUTO_TAG = 'notes:auto-tag' as const
 export const NOTES_TAG_INDEX = 'notes:tag-index' as const
 export const NOTES_CHANGED = 'notes:changed' as const
+export const NOTES_SAVE_RAW = 'notes:save-raw' as const
+export const NOTES_VALIDATION_WARNING = 'notes:validation-warning' as const
 
 // ---------------------------------------------------------------------------
 // Project channels (CK-INF-020)
@@ -131,6 +133,7 @@ export type MainToRendererChannel =
   | typeof VOICE_PIN_STATUS
   | typeof VOICE_ACTIVE_SESSION
   | typeof NOTES_CHANGED
+  | typeof NOTES_VALIDATION_WARNING
   | typeof APP_READY
 
 export type RendererToMainChannel =
@@ -181,4 +184,5 @@ export type RendererToMainChannel =
   | typeof NOTES_TAGS
   | typeof NOTES_AUTO_TAG
   | typeof NOTES_TAG_INDEX
+  | typeof NOTES_SAVE_RAW
   | typeof APP_BEFORE_QUIT
