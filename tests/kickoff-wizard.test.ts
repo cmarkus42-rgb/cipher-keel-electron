@@ -85,3 +85,17 @@ describe('validateStep2 — git init is optional (CK-UI-020)', () => {
     expect(validateStep2({ initGit: true } as WizardData)).toBe(true)
   })
 })
+
+describe('StepGitHub module (GH-011)', () => {
+  it('exports a StepGitHub component', async () => {
+    const mod = await import('../src/renderer/components/wizard/StepGitHub')
+    expect(typeof mod.StepGitHub).toBe('function')
+  })
+})
+
+describe('StepToolConfig module (CK-UI-020 step 5)', () => {
+  it('exports a StepToolConfig component', async () => {
+    const mod = await import('../src/renderer/components/wizard/StepToolConfig')
+    expect(typeof mod.StepToolConfig).toBe('function')
+  })
+})

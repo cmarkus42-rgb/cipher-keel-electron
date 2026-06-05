@@ -14,6 +14,8 @@ import { useState } from 'react'
 import { StepProjectName } from './wizard/StepProjectName'
 import { StepGitInit } from './wizard/StepGitInit'
 import { StepGraphInit } from './wizard/StepGraphInit'
+import { StepGitHub } from './wizard/StepGitHub'
+import { StepToolConfig } from './wizard/StepToolConfig'
 
 const api = () => (window as any).cipherKeel
 
@@ -149,16 +151,8 @@ export function KickoffWizard({ onComplete, onCancel }: KickoffWizardProps) {
         {step === 1 && <StepProjectName data={data} onChange={merge} />}
         {step === 2 && <StepGitInit data={data} onChange={merge} />}
         {step === 3 && <StepGraphInit data={data} />}
-        {step === 4 && (
-          <div style={styles.placeholder}>
-            <span style={styles.placeholderText}>GitHub (Step 4 — folgt in Task 6)</span>
-          </div>
-        )}
-        {step === 5 && (
-          <div style={styles.placeholder}>
-            <span style={styles.placeholderText}>Tools (Step 5 — folgt in Task 6)</span>
-          </div>
-        )}
+        {step === 4 && <StepGitHub data={data} onChange={merge} />}
+        {step === 5 && <StepToolConfig data={data} onChange={merge} />}
       </div>
 
       {error && <div style={styles.error}>{error}</div>}
@@ -250,16 +244,6 @@ const styles = {
     flex: 1,
     overflow: 'auto' as const,
     padding: '24px 16px',
-  },
-  placeholder: {
-    display: 'flex' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    height: 200,
-  },
-  placeholderText: {
-    color: '#444',
-    fontSize: 12,
   },
   error: {
     padding: '8px 16px',
