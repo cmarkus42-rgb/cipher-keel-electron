@@ -8,7 +8,7 @@
  */
 
 import { useCallback } from 'react'
-import { SessionCell } from './SessionCell'
+import { SessionCell, type VoiceDotState } from './SessionCell'
 import { LauncherCell } from './LauncherCell'
 
 interface SessionSlot {
@@ -23,11 +23,12 @@ interface SessionGridProps {
   cols: number
   rows: number
   slots: SessionSlot[]
+  voiceDot?: VoiceDotState
   onStartSession: (slotIndex: number) => void
   onCloseSession: (sessionId: string) => void
 }
 
-export function SessionGrid({ cols, rows, slots, onStartSession, onCloseSession }: SessionGridProps) {
+export function SessionGrid({ cols, rows, slots, voiceDot, onStartSession, onCloseSession }: SessionGridProps) {
   const handleClose = useCallback((sessionId: string) => {
     onCloseSession(sessionId)
   }, [onCloseSession])
@@ -58,6 +59,7 @@ export function SessionGrid({ cols, rows, slots, onStartSession, onCloseSession 
             sessionName={slot.sessionName ?? slot.sessionId}
             status={slot.status ?? 'active'}
             contextUsage={slot.contextUsage}
+            voiceDot={voiceDot}
             onClose={handleClose}
           />
         ) : (

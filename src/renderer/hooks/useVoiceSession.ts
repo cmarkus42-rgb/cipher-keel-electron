@@ -5,6 +5,7 @@
  * STT: VAD + Whisper → keystrokes to focused session.
  *
  * Ported from cipher-mux 0.9.x (CK-VOICE-001..008).
+ * Phase B: Voice-Config + Graceful Degradation (CK-VOICE-009, CK-VOICE-010).
  * Adapted from Preact to React 19.
  */
 
@@ -13,6 +14,7 @@ import type { MicVADInstance } from '../voice/vad-loader'
 import { BargeInMonitor } from '../voice/barge-in-monitor'
 
 export type VoiceMode = 'off' | 'stt'
+export type VoiceDotState = 'off' | 'listening' | 'processing' | 'unavailable' | 'disabled'
 
 const PTT_COMBO = { ctrlKey: true, shiftKey: true, code: 'Space' }
 
@@ -33,6 +35,10 @@ export function useVoiceSession(focusedSessionId: string | null) {
   const [pinned, setPinned] = useState(false)
   const [pinnedSessionId, setPinnedSessionId] = useState<string | null>(null)
   const [activeVoiceSessionId, setActiveVoiceSessionId] = useState<string | null>(null)
+  // CK-VOICE-009: voice disabled by config
+  const [disabled, setDisabled] = useState(false)
+  // CK-VOICE-010: mic unavailable (permission denied or no hardware)
+  const [micUnavailable, setMicUnavailable] = useState(false)
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const vadRef = useRef<MicVADInstance | null>(null)
@@ -73,9 +79,22 @@ export function useVoiceSession(focusedSessionId: string | null) {
   }, [])
 
   const initVAD = useCallback(async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, sampleRate: 16000 },
-    })
+    // CK-VOICE-010: Graceful degradation — catch mic permission denied / no hardware
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, sampleRate: 16000 },
+      })
+    } catch (micErr) {
+      const name = (micErr as DOMException).name
+      console.warn('[VoiceSession] getUserMedia failed:', name, (micErr as Error).message)
+      setMicUnavailable(true)
+      throw new Error(
+        name === 'NotAllowedError' ? 'Microphone permission denied'
+          : name === 'NotFoundError' ? 'No microphone found'
+          : `Microphone unavailable: ${(micErr as Error).message}`
+      )
+    }
     streamRef.current = stream
 
     const audioCtx = new AudioContext({ sampleRate: 16000 })
@@ -236,14 +255,39 @@ export function useVoiceSession(focusedSessionId: string | null) {
     api().voice.pinSession(sessionId)
   }, [])
 
+  // CK-VOICE-009: Check voice availability on mount — detect disabled config
+  // CK-VOICE-010: No mic permission dialog when voice is disabled
+  useEffect(() => {
+    api().voice.available().then((result: { available: boolean; reason?: string }) => {
+      if (!result.available && result.reason === 'Voice disabled in config') {
+        setDisabled(true)
+      }
+    }).catch(() => {
+      // Ignore — voice API not ready yet
+    })
+  }, [])
+
+  // CK-VOICE-008/009/010: Derived voice dot state for PaneHeader display
+  const voiceDotState: VoiceDotState = (() => {
+    if (disabled) return 'disabled'
+    if (micUnavailable) return 'unavailable'
+    if (!active) return 'off'
+    if (processing) return 'processing'
+    if (recording || voiceState === 'recording' || voiceState === 'user_speaking') return 'listening'
+    if (voiceState === 'ready' || voiceState === 'agent_speaking') return 'listening'
+    return 'off'
+  })()
+
   return {
     mode,
     active,
     recording,
     processing,
     voiceState,
+    voiceDotState,
     toast,
     error,
+    disabled,
     toggle,
     switchMode,
     pinned,

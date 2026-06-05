@@ -28,6 +28,15 @@ const VOICE_DOT_COLORS: Record<VoiceDotState, string> = {
   disabled: '#444',
 }
 
+// Inject @keyframes pulse once (CK-VOICE-008)
+const PULSE_STYLE_ID = 'ck-voice-pulse-keyframes'
+if (typeof document !== 'undefined' && !document.getElementById(PULSE_STYLE_ID)) {
+  const style = document.createElement('style')
+  style.id = PULSE_STYLE_ID
+  style.textContent = `@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }`
+  document.head.appendChild(style)
+}
+
 export function SessionCell({ sessionId, sessionName, status, contextUsage, voiceDot, onClose }: SessionCellProps) {
   const handleClose = useCallback(() => {
     onClose?.(sessionId)
@@ -67,7 +76,11 @@ export function SessionCell({ sessionId, sessionName, status, contextUsage, voic
         }} />
         {voiceDot && voiceDot !== 'off' && (
           <span
-            title={`Voice: ${voiceDot}`}
+            title={
+              voiceDot === 'disabled' ? 'Voice: deaktiviert'
+                : voiceDot === 'unavailable' ? 'Voice: nicht verfuegbar'
+                : `Voice: ${voiceDot}`
+            }
             style={{
               width: '6px',
               height: '6px',
@@ -75,6 +88,7 @@ export function SessionCell({ sessionId, sessionName, status, contextUsage, voic
               background: VOICE_DOT_COLORS[voiceDot],
               flexShrink: 0,
               animation: voiceDot === 'listening' ? 'pulse 1.5s ease-in-out infinite' : undefined,
+              opacity: voiceDot === 'disabled' || voiceDot === 'unavailable' ? 0.5 : 1,
             }}
           />
         )}

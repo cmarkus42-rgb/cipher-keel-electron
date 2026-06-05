@@ -9,9 +9,10 @@
  *   contextIsolation: true, nodeIntegration: false, sandbox: true
  */
 
-import { StrictMode, useState, useCallback, useEffect } from 'react'
+import { StrictMode, useState, useCallback, useEffect, useMemo } from 'react'
 import { createRoot } from 'react-dom/client'
 import { SessionGrid } from './components/SessionGrid'
+import { useVoiceSession } from './hooks/useVoiceSession'
 
 interface SessionSlot {
   type: 'session' | 'launcher'
@@ -26,6 +27,13 @@ const api = () => (window as any).cipherKeel
 function App() {
   const [slots, setSlots] = useState<SessionSlot[]>([])
   const [grid] = useState({ cols: 2, rows: 2 })
+  // Derive focused session ID from first active session slot
+  const focusedSessionId = useMemo(() => {
+    const active = slots.find(s => s.type === 'session' && s.status === 'active')
+    return active?.sessionId ?? null
+  }, [slots])
+  // CK-VOICE-009/010: Voice session with graceful degradation
+  const voice = useVoiceSession(focusedSessionId)
 
   const handleStartSession = useCallback(async (_slotIndex: number) => {
     const name = `session-${Date.now()}`
@@ -72,6 +80,7 @@ function App() {
       cols={grid.cols}
       rows={grid.rows}
       slots={slots}
+      voiceDot={voice.voiceDotState}
       onStartSession={handleStartSession}
       onCloseSession={handleCloseSession}
     />
