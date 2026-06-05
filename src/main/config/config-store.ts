@@ -37,6 +37,10 @@ export interface CipherKeelConfig {
     host: string
     apiKey: string
   }
+  voice: {
+    enabled: boolean
+    piperVoice: string
+  }
 }
 
 const defaults: CipherKeelConfig = {
@@ -61,6 +65,10 @@ const defaults: CipherKeelConfig = {
     port: 3100,
     host: '127.0.0.1',
     apiKey: '',
+  },
+  voice: {
+    enabled: true,
+    piperVoice: 'de_DE-cipher_adult-medium',
   },
 }
 

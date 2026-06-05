@@ -29,12 +29,29 @@ import {
   NANOCLAW_STATUS_CHANGED,
   NANOCLAW_CONNECT,
   NANOCLAW_DISCONNECT,
+  VOICE_AVAILABLE,
+  VOICE_START_SESSION,
+  VOICE_STOP_SESSION,
+  VOICE_SET_SESSION_TARGET,
+  VOICE_SET_ROUTING_MODE,
+  VOICE_VAD_SPEECH_START,
+  VOICE_VAD_SPEECH_END,
+  VOICE_VAD_MISFIRE,
+  VOICE_BARGE_IN,
+  VOICE_PIN_SESSION,
+  VOICE_STATE,
+  VOICE_TRANSCRIPTION,
+  VOICE_DISPATCHED,
+  VOICE_ERROR,
+  VOICE_PIN_STATUS,
+  VOICE_ACTIVE_SESSION,
 } from '../shared/ipc-channels'
 import { TmuxManager } from './tmux/tmux-manager'
 import { StatusLineMonitor } from './monitoring/statusline-monitor'
 import { NanoClawBridge, NanoClawChannelAdapter } from './nanoclaw'
 import { configStore } from './config/config-store'
 import type { CipherKeelConfig } from './config/config-store'
+import { VoiceManager } from './voice/voice-manager'
 import { patchEnvPath } from './util/exec-util'
 
 // ---------------------------------------------------------------------------
@@ -47,6 +64,8 @@ patchEnvPath()
 // ---------------------------------------------------------------------------
 const tmux = new TmuxManager()
 const statusMonitor = new StatusLineMonitor()
+// Voice pipeline — initialized lazily in background services (CK-VOICE-001..010)
+let voiceManager: VoiceManager | null = null
 // CK-S2-015: NanoClaw daemon runs independently — cipher-keel does NOT start/stop it.
 // The bridge only connects as a client to an already-running NanoClaw socket.
 const nanoClawBridge = new NanoClawBridge()
@@ -134,6 +153,46 @@ async function initializeBackgroundServices(win: BrowserWindow): Promise<void> {
     console.log('[main] NanoClaw bridge connected')
   } catch {
     console.warn('[main] NanoClaw not reachable — Schenkel 2 unavailable (will retry on manual connect)')
+  }
+
+  // Voice pipeline — init with graceful degradation (CK-VOICE-009, CK-VOICE-010)
+  const voiceEnabled = configStore.get('voice').enabled !== false
+  if (voiceEnabled) {
+    try {
+      voiceManager = new VoiceManager({
+        sendKeys: async (sessionId, data) => {
+          await tmux.sendKeys(sessionId, data)
+        },
+      })
+
+      // Forward voice events to renderer
+      voiceManager.on('stateChanged', (state: string) => {
+        win.webContents.send(VOICE_STATE, state)
+      })
+      voiceManager.on('transcription', (text: string) => {
+        win.webContents.send(VOICE_TRANSCRIPTION, text)
+      })
+      voiceManager.on('dispatched', (data: unknown) => {
+        win.webContents.send(VOICE_DISPATCHED, data)
+      })
+      voiceManager.on('error', (data: unknown) => {
+        win.webContents.send(VOICE_ERROR, data)
+      })
+      voiceManager.on('pinChanged', (data: unknown) => {
+        win.webContents.send(VOICE_PIN_STATUS, data)
+      })
+      voiceManager.on('activeSessionChanged', (id: string | null) => {
+        win.webContents.send(VOICE_ACTIVE_SESSION, { sessionId: id })
+      })
+
+      const result = await voiceManager.init()
+      console.log('[main] Voice pipeline initialized — STT:', result.stt, 'TTS:', result.tts)
+    } catch (err) {
+      console.warn('[main] Voice pipeline init failed (graceful degradation):', err)
+      voiceManager = null
+    }
+  } else {
+    console.log('[main] Voice pipeline disabled by config')
   }
 
   // Notify renderer that the app is ready
@@ -235,6 +294,53 @@ function registerIpcHandlers(): void {
       const msg = err instanceof Error ? err.message : String(err)
       return { ok: false, error: msg }
     }
+  })
+
+  // Voice handlers (CK-VOICE-001..010)
+  ipcMain.handle(VOICE_AVAILABLE, async () => {
+    if (!voiceManager) {
+      const voiceEnabled = configStore.get('voice').enabled !== false
+      return { available: false, reason: voiceEnabled ? 'Voice pipeline not initialized' : 'Voice disabled in config' }
+    }
+    return { available: voiceManager.isAvailable(), reason: voiceManager.isAvailable() ? null : 'STT model missing' }
+  })
+
+  ipcMain.handle(VOICE_START_SESSION, async () => {
+    if (!voiceManager) return { ok: false, error: 'Voice not available' }
+    return voiceManager.startSession()
+  })
+
+  ipcMain.handle(VOICE_STOP_SESSION, async () => {
+    voiceManager?.stopSession()
+    return { ok: true }
+  })
+
+  ipcMain.on(VOICE_SET_SESSION_TARGET, (_event, sessionId: string | null) => {
+    voiceManager?.setFocusedSession(sessionId)
+  })
+
+  ipcMain.on(VOICE_SET_ROUTING_MODE, (_event, mode: string) => {
+    // mode is 'session' or 'off' — handled via start/stop session
+  })
+
+  ipcMain.on(VOICE_VAD_SPEECH_START, () => {
+    voiceManager?.onVadSpeechStart()
+  })
+
+  ipcMain.on(VOICE_VAD_SPEECH_END, (_event, audio: number[]) => {
+    voiceManager?.onVadSpeechEnd(audio)
+  })
+
+  ipcMain.on(VOICE_VAD_MISFIRE, () => {
+    // VAD misfire — no action needed in main process
+  })
+
+  ipcMain.on(VOICE_BARGE_IN, () => {
+    voiceManager?.stopTTS()
+  })
+
+  ipcMain.on(VOICE_PIN_SESSION, (_event, sessionId: string) => {
+    voiceManager?.togglePin(sessionId)
   })
 }
 

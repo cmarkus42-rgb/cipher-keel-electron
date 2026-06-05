@@ -59,6 +59,26 @@ export const STATUSLINE_CTX_UPDATE = 'statusline:ctx-update' as const
 export const STATUSLINE_HOOK_DATA = 'statusline:hook-data' as const
 
 // ---------------------------------------------------------------------------
+// Voice channels (CK-VOICE-001..010)
+// ---------------------------------------------------------------------------
+export const VOICE_AVAILABLE = 'voice:available' as const
+export const VOICE_START_SESSION = 'voice:start-session' as const
+export const VOICE_STOP_SESSION = 'voice:stop-session' as const
+export const VOICE_SET_SESSION_TARGET = 'voice:set-session-target' as const
+export const VOICE_SET_ROUTING_MODE = 'voice:set-routing-mode' as const
+export const VOICE_VAD_SPEECH_START = 'voice:vad-speech-start' as const
+export const VOICE_VAD_SPEECH_END = 'voice:vad-speech-end' as const
+export const VOICE_VAD_MISFIRE = 'voice:vad-misfire' as const
+export const VOICE_BARGE_IN = 'voice:barge-in' as const
+export const VOICE_PIN_SESSION = 'voice:pin-session' as const
+export const VOICE_STATE = 'voice:state' as const
+export const VOICE_TRANSCRIPTION = 'voice:transcription' as const
+export const VOICE_DISPATCHED = 'voice:dispatched' as const
+export const VOICE_ERROR = 'voice:error' as const
+export const VOICE_PIN_STATUS = 'voice:pin-status' as const
+export const VOICE_ACTIVE_SESSION = 'voice:active-session' as const
+
+// ---------------------------------------------------------------------------
 // App lifecycle channels
 // ---------------------------------------------------------------------------
 export const APP_READY = 'app:ready' as const
@@ -78,6 +98,12 @@ export type MainToRendererChannel =
   | typeof CONFIG_CHANGED
   | typeof STATUSLINE_CTX_UPDATE
   | typeof STATUSLINE_HOOK_DATA
+  | typeof VOICE_STATE
+  | typeof VOICE_TRANSCRIPTION
+  | typeof VOICE_DISPATCHED
+  | typeof VOICE_ERROR
+  | typeof VOICE_PIN_STATUS
+  | typeof VOICE_ACTIVE_SESSION
   | typeof APP_READY
 
 export type RendererToMainChannel =
@@ -99,4 +125,14 @@ export type RendererToMainChannel =
   | typeof CONFIG_GET
   | typeof CONFIG_SET
   | typeof CONFIG_DELETE
+  | typeof VOICE_AVAILABLE
+  | typeof VOICE_START_SESSION
+  | typeof VOICE_STOP_SESSION
+  | typeof VOICE_SET_SESSION_TARGET
+  | typeof VOICE_SET_ROUTING_MODE
+  | typeof VOICE_VAD_SPEECH_START
+  | typeof VOICE_VAD_SPEECH_END
+  | typeof VOICE_VAD_MISFIRE
+  | typeof VOICE_BARGE_IN
+  | typeof VOICE_PIN_SESSION
   | typeof APP_BEFORE_QUIT

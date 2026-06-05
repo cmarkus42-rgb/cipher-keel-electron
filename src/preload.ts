@@ -59,9 +59,64 @@ const api = {
   }
 }
 
-contextBridge.exposeInMainWorld('cipherKeel', api)
+// ---------------------------------------------------------------------------
+// Voice API — typed wrappers for voice IPC (CK-VOICE-001..010)
+// ---------------------------------------------------------------------------
+const voiceApi = {
+  available: () => ipcRenderer.invoke('voice:available' as RendererToMainChannel),
+  startSession: () => ipcRenderer.invoke('voice:start-session' as RendererToMainChannel),
+  stopSession: () => ipcRenderer.invoke('voice:stop-session' as RendererToMainChannel),
+  setSessionTarget: (sessionId: string | null) =>
+    ipcRenderer.send('voice:set-session-target' as RendererToMainChannel, sessionId),
+  setRoutingMode: (mode: string) =>
+    ipcRenderer.send('voice:set-routing-mode' as RendererToMainChannel, mode),
+  vadSpeechStart: () =>
+    ipcRenderer.send('voice:vad-speech-start' as RendererToMainChannel),
+  vadSpeechEnd: (audio: number[]) =>
+    ipcRenderer.send('voice:vad-speech-end' as RendererToMainChannel, audio),
+  vadMisfire: () =>
+    ipcRenderer.send('voice:vad-misfire' as RendererToMainChannel),
+  bargeIn: () =>
+    ipcRenderer.send('voice:barge-in' as RendererToMainChannel),
+  pinSession: (sessionId: string) =>
+    ipcRenderer.send('voice:pin-session' as RendererToMainChannel, sessionId),
+
+  // Event listeners (Main → Renderer)
+  onState: (cb: (state: string) => void) => {
+    const listener = (_e: IpcRendererEvent, state: string) => cb(state)
+    ipcRenderer.on('voice:state' as MainToRendererChannel, listener)
+    return () => { ipcRenderer.removeListener('voice:state' as MainToRendererChannel, listener) }
+  },
+  onTranscription: (cb: (text: string) => void) => {
+    const listener = (_e: IpcRendererEvent, text: string) => cb(text)
+    ipcRenderer.on('voice:transcription' as MainToRendererChannel, listener)
+    return () => { ipcRenderer.removeListener('voice:transcription' as MainToRendererChannel, listener) }
+  },
+  onDispatched: (cb: (data: { sessionId: string; text: string }) => void) => {
+    const listener = (_e: IpcRendererEvent, data: { sessionId: string; text: string }) => cb(data)
+    ipcRenderer.on('voice:dispatched' as MainToRendererChannel, listener)
+    return () => { ipcRenderer.removeListener('voice:dispatched' as MainToRendererChannel, listener) }
+  },
+  onError: (cb: (msg: string) => void) => {
+    const listener = (_e: IpcRendererEvent, msg: string) => cb(msg)
+    ipcRenderer.on('voice:error' as MainToRendererChannel, listener)
+    return () => { ipcRenderer.removeListener('voice:error' as MainToRendererChannel, listener) }
+  },
+  onPinStatus: (cb: (data: { pinned: boolean; sessionId: string | null }) => void) => {
+    const listener = (_e: IpcRendererEvent, data: { pinned: boolean; sessionId: string | null }) => cb(data)
+    ipcRenderer.on('voice:pin-status' as MainToRendererChannel, listener)
+    return () => { ipcRenderer.removeListener('voice:pin-status' as MainToRendererChannel, listener) }
+  },
+  onActiveSession: (cb: (data: { sessionId: string | null }) => void) => {
+    const listener = (_e: IpcRendererEvent, data: { sessionId: string | null }) => cb(data)
+    ipcRenderer.on('voice:active-session' as MainToRendererChannel, listener)
+    return () => { ipcRenderer.removeListener('voice:active-session' as MainToRendererChannel, listener) }
+  },
+}
+
+contextBridge.exposeInMainWorld('cipherKeel', { ...api, voice: voiceApi })
 
 // ---------------------------------------------------------------------------
 // Type declaration for the renderer (window.cipherKeel)
 // ---------------------------------------------------------------------------
-export type CipherKeelApi = typeof api
+export type CipherKeelApi = typeof api & { voice: typeof voiceApi }

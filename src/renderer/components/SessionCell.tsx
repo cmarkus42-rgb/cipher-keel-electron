@@ -9,15 +9,26 @@
 import { useCallback } from 'react'
 import { TerminalPane } from './TerminalPane'
 
+export type VoiceDotState = 'off' | 'listening' | 'processing' | 'unavailable' | 'disabled'
+
 interface SessionCellProps {
   sessionId: string
   sessionName: string
   status: 'active' | 'closing' | 'stopped'
   contextUsage?: number
+  voiceDot?: VoiceDotState
   onClose?: (sessionId: string) => void
 }
 
-export function SessionCell({ sessionId, sessionName, status, contextUsage, onClose }: SessionCellProps) {
+const VOICE_DOT_COLORS: Record<VoiceDotState, string> = {
+  off: 'transparent',
+  listening: '#61afef',
+  processing: '#e5c07b',
+  unavailable: '#666',
+  disabled: '#444',
+}
+
+export function SessionCell({ sessionId, sessionName, status, contextUsage, voiceDot, onClose }: SessionCellProps) {
   const handleClose = useCallback(() => {
     onClose?.(sessionId)
   }, [sessionId, onClose])
@@ -54,6 +65,19 @@ export function SessionCell({ sessionId, sessionName, status, contextUsage, onCl
           background: statusColor,
           flexShrink: 0,
         }} />
+        {voiceDot && voiceDot !== 'off' && (
+          <span
+            title={`Voice: ${voiceDot}`}
+            style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              background: VOICE_DOT_COLORS[voiceDot],
+              flexShrink: 0,
+              animation: voiceDot === 'listening' ? 'pulse 1.5s ease-in-out infinite' : undefined,
+            }}
+          />
+        )}
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {sessionName}
         </span>
