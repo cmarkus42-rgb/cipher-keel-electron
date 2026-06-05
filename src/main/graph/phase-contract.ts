@@ -153,6 +153,46 @@ export function createPhaseContract(
 }
 
 // ---------------------------------------------------------------------------
+// toPhaseContracts — Workshop Contract Binding
+// ---------------------------------------------------------------------------
+
+/** Workshop entry phases that are trivially skipped (pre-development phases). */
+const WORKSHOP_SKIP_PHASES = ['ideation', 'requirements', 'architecture'] as const
+
+/**
+ * Build a PhaseContract array for all phase nodes in the graph, sorted by position.
+ *
+ * Marks workshop entry phases (ideation, requirements, architecture) with
+ * skip_profil { tiefe: 'trivial-skip' } via SQL UPDATE — these phases are not
+ * executed when the workflow enters at the development phase.
+ */
+export function toPhaseContracts(graphDb: Database.Database): PhaseContract[] {
+  const rows = graphDb.prepare(`
+    SELECT uid, json_extract(frontmatter, '$.name') as name
+    FROM node
+    WHERE kind = 'phase'
+    ORDER BY CAST(json_extract(frontmatter, '$.position') AS INTEGER)
+  `).all() as Array<{ uid: string; name: string }>
+
+  const updateStmt = graphDb.prepare(`
+    UPDATE node
+    SET frontmatter = json_set(frontmatter, '$.skip_profil', json(?))
+    WHERE uid = ?
+  `)
+
+  for (const row of rows) {
+    if ((WORKSHOP_SKIP_PHASES as readonly string[]).includes(row.name)) {
+      updateStmt.run(
+        JSON.stringify({ tiefe: 'trivial-skip', begruendung: 'workshop-entry', markiert_von: 'workshop' }),
+        row.uid
+      )
+    }
+  }
+
+  return rows.map(row => createPhaseContract(row.name, row.uid, null))
+}
+
+// ---------------------------------------------------------------------------
 // autoGateBefund (CK-PROC-005)
 // ---------------------------------------------------------------------------
 
