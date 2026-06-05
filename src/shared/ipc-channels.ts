@@ -98,6 +98,14 @@ export const NOTES_TAG_INDEX = 'notes:tag-index' as const
 export const NOTES_CHANGED = 'notes:changed' as const
 
 // ---------------------------------------------------------------------------
+// Project channels (CK-INF-020)
+// ---------------------------------------------------------------------------
+export const PROJECT_LIST = 'project:list' as const
+export const PROJECT_CREATE = 'project:create' as const
+export const PROJECT_SWITCH = 'project:switch' as const
+export const PROJECT_GET_CURRENT = 'project:get-current' as const
+
+// ---------------------------------------------------------------------------
 // App lifecycle channels
 // ---------------------------------------------------------------------------
 export const APP_READY = 'app:ready' as const
@@ -113,7 +121,6 @@ export type MainToRendererChannel =
   | typeof TERMINAL_SCROLL_MARKER
   | typeof NANOCLAW_MESSAGE_INBOUND
   | typeof NANOCLAW_STATUS_CHANGED
-  | typeof GRAPH_SEARCH
   | typeof CONFIG_CHANGED
   | typeof STATUSLINE_CTX_UPDATE
   | typeof STATUSLINE_HOOK_DATA
@@ -141,9 +148,14 @@ export type RendererToMainChannel =
   | typeof GRAPH_READ
   | typeof GRAPH_QUERY
   | typeof GRAPH_LINK
+  | typeof GRAPH_SEARCH
   | typeof GRAPH_DELETE
   | typeof GRAPH_EXPAND
   | typeof GRAPH_MAINTAIN
+  | typeof PROJECT_LIST
+  | typeof PROJECT_CREATE
+  | typeof PROJECT_SWITCH
+  | typeof PROJECT_GET_CURRENT
   | typeof CONFIG_GET
   | typeof CONFIG_SET
   | typeof CONFIG_DELETE
