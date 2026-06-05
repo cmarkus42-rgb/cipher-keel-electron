@@ -22,9 +22,13 @@ import {
   TERMINAL_DATA_OUTBOUND,
   TERMINAL_RESIZE,
   CONFIG_GET,
-  CONFIG_SET
+  CONFIG_SET,
+  STATUSLINE_CTX_UPDATE
 } from '../shared/ipc-channels'
 import { TmuxManager } from './tmux/tmux-manager'
+import { StatusLineMonitor } from './monitoring/statusline-monitor'
+import { configStore } from './config/config-store'
+import type { CipherKeelConfig } from './config/config-store'
 import { patchEnvPath } from './util/exec-util'
 
 // ---------------------------------------------------------------------------
@@ -36,6 +40,7 @@ patchEnvPath()
 // Singleton tmux manager
 // ---------------------------------------------------------------------------
 const tmux = new TmuxManager()
+const statusMonitor = new StatusLineMonitor()
 
 // ---------------------------------------------------------------------------
 // Window creation
@@ -97,6 +102,12 @@ async function initializeBackgroundServices(win: BrowserWindow): Promise<void> {
   // Forward tmux output to renderer
   tmux.on('output', (sessionId: string, data: string) => {
     win.webContents.send(SESSION_OUTPUT, sessionId, data)
+  })
+
+  // Start StatusLine monitor (CK-INF-007) — watches for CTX% JSON files
+  statusMonitor.start()
+  statusMonitor.on('usage-updated', (sessionId: string, usage: unknown) => {
+    win.webContents.send(STATUSLINE_CTX_UPDATE, sessionId, usage)
   })
 
   // Notify renderer that the app is ready
@@ -164,14 +175,22 @@ function registerIpcHandlers(): void {
   })
 
   // Config handlers (ConfigStore — CK-INF-008)
-  ipcMain.handle(CONFIG_GET, async (_event, _key: unknown) => {
-    // TODO BT-3c: ConfigStore.get()
-    return null
+  ipcMain.handle(CONFIG_GET, async (_event, key: string) => {
+    try {
+      return configStore.get(key as keyof CipherKeelConfig)
+    } catch {
+      return null
+    }
   })
 
-  ipcMain.handle(CONFIG_SET, async (_event, _key: unknown, _value: unknown) => {
-    // TODO BT-3c: ConfigStore.set()
-    return { ok: false, error: 'ConfigStore not yet initialized' }
+  ipcMain.handle(CONFIG_SET, async (_event, key: string, value: unknown) => {
+    try {
+      configStore.set(key as keyof CipherKeelConfig, value as CipherKeelConfig[keyof CipherKeelConfig])
+      return { ok: true, error: null }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return { ok: false, error: msg }
+    }
   })
 }
 
