@@ -1,4 +1,15 @@
-# HANDOFF — BT-1a Knowledge-Graph Foundation
+# HANDOFF — cipher-keel-electron
+
+## BT-2b — NanoClawBridge + NanoClawChannelAdapter (2026-06-05, abgeschlossen)
+
+cipher-keel-seitige NanoClaw-Integration: Bridge (Unix-Domain-Socket-Client,
+JSON-Lines, Reconnect 3x exponential Backoff), NanoClawChannelAdapter (AgentAdapter-
+Peer, Tier-2), IPC-Handler in main.ts. 32 neue Tests, 130 gesamt, alle gruen.
+Detaillierter Bericht: `wave-1/bt-2b-handoff.md`
+
+---
+
+## BT-1a — Knowledge-Graph Foundation (2026-06-05, abgeschlossen)
 
 Worker: BT-1a
 Stand: 2026-06-05
