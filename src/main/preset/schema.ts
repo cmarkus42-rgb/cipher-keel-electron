@@ -2,11 +2,13 @@
  * PresetRahmen — typed metadata block for preset configuration.
  *
  * All 11 fields from M2 v1.1 §8.1 are defined here.
- * validatePresetRahmen() checks required fields and enum values.
+ * validatePresetRahmen() checks required fields, enum values, and all 4 Anbindungen (ENT-025).
  * Unknown fields in the input are silently ignored.
- * Empty optional fields are treated as defaults, not errors.
+ * Empty optional fields are treated as defaults, not errors (except capabilityAnbindung).
  *
- * CK-ENT-004, CK-ENT-023
+ * generatePermissions() generates a settings.json fragment for Niveau A (ENT-021).
+ *
+ * CK-ENT-004, CK-ENT-023, CK-ENT-025, CK-ENT-021
  */
 
 import { CapabilityNiveau } from './niveau'
@@ -66,6 +68,16 @@ const VALID_ROLLEN_TYPEN = new Set<string>(Object.values(RollenTyp))
 const VALID_NIVEAUS = new Set<string>(Object.values(CapabilityNiveau))
 
 /**
+ * Known non-empty runtime values (maps to a registered adapter).
+ * Empty string is also valid (maps to default adapter).
+ * CK-ENT-010, CK-ENT-028, ENT-025
+ */
+const KNOWN_RUNTIMES = new Set<string>([
+  'claude-cli-tmux',
+  'nanoclaw-channel-route',
+])
+
+/**
  * Validate a preset rahmen object.
  *
  * Required fields: id, name, rollenTyp, capabilityNiveau
@@ -115,5 +127,104 @@ export function validatePresetRahmen(rahmen: unknown): ValidationResult {
     }
   }
 
+  // ENT-025: graphAnbindung must be set (not null/undefined)
+  const graphAnbindungValue = obj['graphAnbindung']
+  if (graphAnbindungValue === undefined || graphAnbindungValue === null) {
+    errors.push({
+      field: 'graphAnbindung',
+      message: "Required field 'graphAnbindung' must be a non-null object",
+    })
+  }
+
+  // ENT-025: capabilityAnbindung must be a non-empty array
+  const capabilityAnbindungValue = obj['capabilityAnbindung']
+  if (
+    !Array.isArray(capabilityAnbindungValue) ||
+    (capabilityAnbindungValue as unknown[]).length === 0
+  ) {
+    errors.push({
+      field: 'capabilityAnbindung',
+      message: "Required field 'capabilityAnbindung' must be a non-empty array",
+    })
+  }
+
+  // ENT-025: runtime must be empty (default) or a known adapter name
+  const runtimeValue = obj['runtime']
+  if (
+    runtimeValue !== undefined &&
+    runtimeValue !== null &&
+    runtimeValue !== '' &&
+    !KNOWN_RUNTIMES.has(String(runtimeValue))
+  ) {
+    errors.push({
+      field: 'runtime',
+      message:
+        `Unknown runtime '${runtimeValue}'. Known runtimes: ${[...KNOWN_RUNTIMES].join(', ')}`,
+    })
+  }
+
   return { valid: errors.length === 0, errors }
+}
+
+// ---------------------------------------------------------------------------
+// ENT-021: generatePermissions — settings.json fragment
+// ---------------------------------------------------------------------------
+
+/** A .claude/settings.json permissions fragment generated from a PresetRahmen. */
+export interface SettingsFragment {
+  permissions: {
+    allow: string[]
+    deny: string[]
+  }
+}
+
+/** Allowed tool patterns for Niveau A (full SE harness). */
+const NIVEAU_A_TOOLS: readonly string[] = [
+  'Read(*)',
+  'Write(*)',
+  'Edit(*)',
+  'Glob(*)',
+  'Grep(*)',
+  'Bash(*)',
+]
+
+/** Allowed tool patterns for Niveau B (no Bash). */
+const NIVEAU_B_TOOLS: readonly string[] = [
+  'Read(*)',
+  'Write(*)',
+  'Edit(*)',
+  'Glob(*)',
+  'Grep(*)',
+]
+
+/** Allowed tool patterns for Niveau C (read-only). */
+const NIVEAU_C_TOOLS: readonly string[] = [
+  'Read(*)',
+]
+
+/**
+ * Generate a .claude/settings.json permissions fragment for the given preset.
+ *
+ * Niveau A: full tool set (SE harness with Bash)
+ * Niveau B: read/write tools, no Bash
+ * Niveau C: read-only
+ *
+ * ENT-021
+ */
+export function generatePermissions(rahmen: PresetRahmen): SettingsFragment {
+  let allow: readonly string[]
+  switch (rahmen.capabilityNiveau) {
+    case CapabilityNiveau.A:
+      allow = NIVEAU_A_TOOLS
+      break
+    case CapabilityNiveau.B:
+      allow = NIVEAU_B_TOOLS
+      break
+    case CapabilityNiveau.C:
+      allow = NIVEAU_C_TOOLS
+      break
+    default:
+      allow = NIVEAU_C_TOOLS
+  }
+  return { permissions: { allow: [...allow], deny: [] } }
 }
