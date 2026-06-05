@@ -28,7 +28,12 @@ export const QUERY_TEMPLATES = [
   'gate_coverage',
   'reverse_trace',
   'phase_chain',
-  'phase_input_resolve'
+  'phase_input_resolve',
+  'gate_structural_coverage',
+  'gate_befunde_fuer_phase',
+  'gate_befunde_aggregiert',
+  'phase_skip_status',
+  'handoff_completeness'
 ] as const
 
 export type QueryTemplate = (typeof QUERY_TEMPLATES)[number]
@@ -99,6 +104,16 @@ export function graphQuery(db: Database.Database, params: QueryParams): QueryRes
       return executePhaseChain(db)
     case 'phase_input_resolve':
       return executePhaseInputResolve(db, p)
+    case 'gate_structural_coverage':
+      return executeGateStructuralCoverage(db, p)
+    case 'gate_befunde_fuer_phase':
+      return executeGateBefundeFuerPhase(db, p)
+    case 'gate_befunde_aggregiert':
+      return executeGateBefundeAggregiert(db)
+    case 'phase_skip_status':
+      return executePhaseSkipStatus(db)
+    case 'handoff_completeness':
+      return executeHandoffCompleteness(db, p)
   }
 }
 
@@ -420,6 +435,180 @@ function executePhaseInputResolve(
 
   const rows = db.prepare(sql).all(phaseName) as Record<string, unknown>[]
   return { template: 'phase_input_resolve', rows, count: rows.length }
+}
+
+/**
+ * gate_structural_coverage: Count typed edges for anforderungen in a phase.
+ * CK-PROC-005/008: structural coverage gate per phase.
+ *
+ * Parameters:
+ *   edge_type  — edge type to check coverage for (e.g. 'setzt_um', 'verifiziert')
+ *   phase_uid  — UID of the phase node
+ */
+function executeGateStructuralCoverage(
+  db: Database.Database,
+  p: Record<string, unknown>
+): QueryResult {
+  const edgeType = (p.edge_type as EdgeType) ?? 'setzt_um'
+  const phaseUid = p.phase_uid as string
+  if (!phaseUid) throw new Error("Template 'gate_structural_coverage' requires parameter 'phase_uid'")
+
+  if (!isValidEdgeType(edgeType)) {
+    throw new Error(`Invalid edge_type for gate_structural_coverage: ${edgeType}`)
+  }
+
+  const sql = `
+    SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN covered THEN 1 ELSE 0 END) as covered,
+      SUM(CASE WHEN NOT covered THEN 1 ELSE 0 END) as uncovered
+    FROM (
+      SELECT n.uid,
+        EXISTS (
+          SELECT 1 FROM edge e2 WHERE e2.dst = n.uid AND e2.type = ?
+        ) as covered
+      FROM node n
+      JOIN edge e ON e.src = n.uid AND e.type = 'traegt_phase' AND e.dst = ?
+      WHERE n.kind = 'anforderung' AND n.status = 'aktiv'
+    )
+  `
+
+  const rows = db.prepare(sql).all(edgeType, phaseUid) as Record<string, unknown>[]
+  return { template: 'gate_structural_coverage', rows, count: rows.length }
+}
+
+/**
+ * gate_befunde_fuer_phase: All gate_befund nodes for a phase via gate_fuer edge.
+ * CK-PROC-005: returns gate assessments linked to a specific phase.
+ *
+ * Parameters:
+ *   phase_uid — UID of the phase node
+ */
+function executeGateBefundeFuerPhase(
+  db: Database.Database,
+  p: Record<string, unknown>
+): QueryResult {
+  const phaseUid = p.phase_uid as string
+  if (!phaseUid) throw new Error("Template 'gate_befunde_fuer_phase' requires parameter 'phase_uid'")
+
+  const sql = `
+    SELECT g.uid, g.title, g.frontmatter, g.status, g.erstellt
+    FROM node g
+    JOIN edge e ON e.src = g.uid AND e.type = 'gate_fuer' AND e.dst = ?
+    WHERE g.kind = 'gate_befund'
+    ORDER BY g.erstellt DESC
+  `
+
+  const rows = db.prepare(sql).all(phaseUid) as Record<string, unknown>[]
+  return { template: 'gate_befunde_fuer_phase', rows, count: rows.length }
+}
+
+/**
+ * gate_befunde_aggregiert: All phases with their most recent gate_befund.
+ * CK-PROC-005: one row per phase; befund_uid is null when no assessment exists.
+ * Uses ROW_NUMBER() window function to pick the latest befund per phase.
+ */
+function executeGateBefundeAggregiert(db: Database.Database): QueryResult {
+  const sql = `
+    SELECT
+      p.uid as phase_uid,
+      json_extract(p.frontmatter, '$.name') as phase_name,
+      CAST(json_extract(p.frontmatter, '$.position') AS INTEGER) as position,
+      g.uid as befund_uid,
+      g.frontmatter as befund_frontmatter,
+      g.erstellt as befund_erstellt
+    FROM node p
+    LEFT JOIN (
+      SELECT g2.uid, g2.frontmatter, g2.erstellt, e2.dst as phase_uid,
+             ROW_NUMBER() OVER (PARTITION BY e2.dst ORDER BY g2.erstellt DESC, g2.uid DESC) as rn
+      FROM node g2
+      JOIN edge e2 ON e2.src = g2.uid AND e2.type = 'gate_fuer'
+      WHERE g2.kind = 'gate_befund'
+    ) g ON g.phase_uid = p.uid AND g.rn = 1
+    WHERE p.kind = 'phase'
+    ORDER BY CAST(json_extract(p.frontmatter, '$.position') AS INTEGER)
+  `
+
+  const rows = db.prepare(sql).all() as Record<string, unknown>[]
+  return { template: 'gate_befunde_aggregiert', rows, count: rows.length }
+}
+
+/**
+ * phase_skip_status: All phases that have a skip_profil set in their frontmatter.
+ * CK-PROC-004: returns skip profile data per phase.
+ */
+function executePhaseSkipStatus(db: Database.Database): QueryResult {
+  const sql = `
+    SELECT
+      uid,
+      title,
+      frontmatter,
+      json_extract(frontmatter, '$.name') as phase_name,
+      json_extract(frontmatter, '$.skip_profil') as skip_profil_raw
+    FROM node
+    WHERE kind = 'phase'
+      AND json_extract(frontmatter, '$.skip_profil') IS NOT NULL
+    ORDER BY CAST(json_extract(frontmatter, '$.position') AS INTEGER)
+  `
+
+  const rows = db.prepare(sql).all() as Record<string, unknown>[]
+  return { template: 'phase_skip_status', rows, count: rows.length }
+}
+
+/**
+ * handoff_completeness: Check whether the predecessor phase of a named phase is
+ * ready for handoff — i.e. has phasenoutput artefakte and anlass nodes.
+ * CK-PROC-011: handoff protocol completeness gate.
+ *
+ * Returns one row for the predecessor phase with:
+ *   predecessor_uid, predecessor_name, artefakt_count, anlass_count, is_complete
+ * Returns 0 rows for the first phase (no predecessor).
+ *
+ * Parameters:
+ *   phase_name — name of the receiving phase (e.g. 'architecture')
+ */
+function executeHandoffCompleteness(
+  db: Database.Database,
+  p: Record<string, unknown>
+): QueryResult {
+  const phaseName = p.phase_name as string
+  if (!phaseName) throw new Error("Template 'handoff_completeness' requires parameter 'phase_name'")
+
+  const sql = `
+    SELECT
+      prev.uid as predecessor_uid,
+      json_extract(prev.frontmatter, '$.name') as predecessor_name,
+      COUNT(DISTINCT CASE
+        WHEN bound.kind = 'artefakt'
+          AND json_extract(bound.frontmatter, '$.phasenoutput') = 1
+        THEN bound.uid
+      END) as artefakt_count,
+      COUNT(DISTINCT CASE
+        WHEN bound.kind = 'anlass' THEN bound.uid
+      END) as anlass_count,
+      CASE WHEN
+        COUNT(DISTINCT CASE
+          WHEN bound.kind = 'artefakt'
+            AND json_extract(bound.frontmatter, '$.phasenoutput') = 1
+          THEN bound.uid
+        END) > 0
+        AND COUNT(DISTINCT CASE
+          WHEN bound.kind = 'anlass' THEN bound.uid
+        END) > 0
+      THEN 1 ELSE 0 END as is_complete
+    FROM node curr
+    JOIN edge e_next ON e_next.src = prev.uid AND e_next.type = 'naechste_phase'
+      AND e_next.dst = curr.uid
+    JOIN node prev ON prev.uid = e_next.src AND prev.kind = 'phase'
+    LEFT JOIN edge e_bind ON e_bind.dst = prev.uid AND e_bind.type = 'traegt_phase'
+    LEFT JOIN node bound ON bound.uid = e_bind.src
+    WHERE curr.kind = 'phase'
+      AND json_extract(curr.frontmatter, '$.name') = ?
+    GROUP BY prev.uid
+  `
+
+  const rows = db.prepare(sql).all(phaseName) as Record<string, unknown>[]
+  return { template: 'handoff_completeness', rows, count: rows.length }
 }
 
 // ---------------------------------------------------------------------------
