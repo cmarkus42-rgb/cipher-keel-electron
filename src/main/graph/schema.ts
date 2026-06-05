@@ -65,7 +65,7 @@ export function applySchema(db: Database.Database, embeddingDim = DEFAULT_EMBEDD
   db.exec(
     `CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(` +
     `node_uid TEXT NOT NULL, ` +
-    `chunk_idx INTEGER NOT NULL, ` +
+    `chunk_idx TEXT NOT NULL, ` +
     `embedding float[${embeddingDim}]` +
     `)`
   )
