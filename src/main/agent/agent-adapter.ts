@@ -67,6 +67,12 @@ export interface SendOpts {
   newline?: boolean
 }
 
+/** Output event emitted by streamOutput(). CK-ENT-026 */
+export interface OutputEvent {
+  type: 'text' | 'error' | 'done'
+  content: string
+}
+
 export interface AgentAdapter {
   readonly id: string
   readonly displayName: string
@@ -97,6 +103,27 @@ export interface AgentAdapter {
   // --- prompt delivery ---
   /** Send a prompt into the agent's tmux pane. */
   sendPrompt(tmuxTarget: string, prompt: string, opts?: SendOpts): Promise<void>
+
+  // --- ENT-026: runtime interface ---
+  /**
+   * Check whether this adapter's runtime is reachable.
+   * Must return boolean synchronously without changing state or starting I/O.
+   * CK-ENT-026
+   */
+  isAvailable(): boolean
+
+  /**
+   * Send a command to the runtime and return the response as a string.
+   * Adapters that use a separate delivery mechanism (e.g. SessionManager)
+   * should throw a descriptive error here. CK-ENT-026
+   */
+  executeCommand(command: string): Promise<string>
+
+  /**
+   * Yield output events from the runtime for the given session.
+   * Adapters that capture output via other means (e.g. tmux) should throw. CK-ENT-026
+   */
+  streamOutput(sessionId: string): AsyncIterable<OutputEvent>
 
   // --- prompt fragments for workshop and launcher ---
   /** Agent-specific instructions injected into the workshop template. */

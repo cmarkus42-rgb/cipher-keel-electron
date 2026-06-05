@@ -16,6 +16,7 @@ import type {
   AdapterContext,
   ProjectInstructions,
   SendOpts,
+  OutputEvent,
 } from '../agent/agent-adapter'
 import type { AdapterFeature, AdapterCapabilities } from '../../shared/types'
 import type { NanoClawBridge } from './bridge'
@@ -128,12 +129,35 @@ Multi-model routing: different agent groups can use different providers.
 `
   }
 
-  // --- NanoClaw-specific helpers -------------------------------------------
+  // --- ENT-026: runtime interface -------------------------------------------
 
   /**
-   * Check if NanoClaw daemon is reachable (socket connected).
+   * Return true if the NanoClaw daemon socket is connected. CK-ENT-026
    */
   isAvailable(): boolean {
     return this.bridge.isConnected()
+  }
+
+  /**
+   * Send a command to NanoClaw via the bridge and acknowledge dispatch.
+   * Responses arrive asynchronously via bridge events; use streamOutput()
+   * to receive them. CK-ENT-026
+   */
+  async executeCommand(command: string): Promise<string> {
+    const sent = this.bridge.sendMessage(command)
+    if (!sent) {
+      throw new Error('[NanoClawChannelAdapter] executeCommand failed — bridge is not connected')
+    }
+    return `[dispatched] ${command}`
+  }
+
+  /**
+   * Yield output events from NanoClaw for a given session.
+   * NanoClaw delivers complete responses (no token-delta streaming). CK-ENT-026
+   * Phase 1 stub — full event wiring is Phase 2 work (CK-ENT-027).
+   */
+  async *streamOutput(_sessionId: string): AsyncGenerator<OutputEvent> {
+    // Phase 2: wire bridge 'message' events into this async generator.
+    yield { type: 'done', content: '' }
   }
 }

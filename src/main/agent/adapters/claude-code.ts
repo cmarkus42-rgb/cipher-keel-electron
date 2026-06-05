@@ -21,6 +21,7 @@ import type {
   AdapterContext,
   ProjectInstructions,
   SendOpts,
+  OutputEvent,
 } from '../agent-adapter'
 import type { AdapterFeature, AdapterCapabilities } from '../../../shared/types'
 import { runCommand } from '../../util/exec-util'
@@ -189,6 +190,45 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     // SessionManager handles the actual send — this method exists for adapters
     // that need custom prompt framing (e.g. JSON-RPC).
     throw new Error('sendPrompt should be called via SessionManager.sendKeys')
+  }
+
+  // --- ENT-026: runtime interface ---
+
+  /**
+   * Return true if the `claude` binary is reachable on PATH.
+   * Synchronous, no side effects. CK-ENT-026
+   */
+  isAvailable(): boolean {
+    const pathDirs = (process.env.PATH ?? '').split(':').filter(Boolean)
+    return pathDirs.some(dir => {
+      try {
+        return fs.statSync(path.join(dir, 'claude')).isFile()
+      } catch {
+        return false
+      }
+    })
+  }
+
+  /**
+   * ClaudeCodeAdapter delivers commands via tmux / SessionManager.
+   * Callers must use SessionManager.sendKeys instead. CK-ENT-026
+   */
+  async executeCommand(_command: string): Promise<string> {
+    throw new Error(
+      '[ClaudeCodeAdapter] executeCommand must be called via SessionManager — ' +
+      'tmux-based delivery is handled there, not on the adapter directly.'
+    )
+  }
+
+  /**
+   * ClaudeCodeAdapter captures output via tmux pane buffers.
+   * Callers must use the tmux output-batcher instead. CK-ENT-026
+   */
+  async *streamOutput(_sessionId: string): AsyncGenerator<OutputEvent> {
+    throw new Error(
+      '[ClaudeCodeAdapter] streamOutput must be called via the tmux output-batcher — ' +
+      'tmux-based output capture is handled there, not on the adapter directly.'
+    )
   }
 
   buildWorkshopPromptFragment(lang: 'de' | 'en'): string {
