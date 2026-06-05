@@ -70,8 +70,6 @@ app.whenReady().then(() => {
 
   win.webContents.on('did-finish-load', () => {
     console.log('[main] project window finished loading')
-    console.log('[main] loaded URL:', win.webContents.getURL())
-    console.log('[main] page title:', win.webContents.getTitle())
   })
 
   // macOS: re-create window when dock icon is clicked and no windows are open

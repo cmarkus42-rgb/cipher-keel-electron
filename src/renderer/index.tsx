@@ -12,6 +12,8 @@
 import { StrictMode, useState, useCallback, useEffect, useMemo } from 'react'
 import { createRoot } from 'react-dom/client'
 import { SessionGrid } from './components/SessionGrid'
+import { Sidebar, SidebarSession } from './components/Sidebar'
+import { StatusBar } from './components/StatusBar'
 import { useVoiceSession } from './hooks/useVoiceSession'
 
 interface SessionSlot {
@@ -75,15 +77,37 @@ function App() {
     return unsub
   }, [])
 
+  const sidebarSessions = useMemo<SidebarSession[]>(() =>
+    slots
+      .filter(s => s.type === 'session')
+      .map(s => ({
+        sessionId: s.sessionId!,
+        sessionName: s.sessionName!,
+        status: s.status!,
+      })),
+    [slots]
+  )
+
+  const sessionCount = sidebarSessions.length
+
   return (
-    <SessionGrid
-      cols={grid.cols}
-      rows={grid.rows}
-      slots={slots}
-      voiceDot={voice.voiceDotState}
-      onStartSession={handleStartSession}
-      onCloseSession={handleCloseSession}
-    />
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'row', flex: 1, overflow: 'hidden' }}>
+        <Sidebar
+          sessions={sidebarSessions}
+          activeSessionId={focusedSessionId ?? undefined}
+        />
+        <SessionGrid
+          cols={grid.cols}
+          rows={grid.rows}
+          slots={slots}
+          voiceDot={voice.voiceDotState}
+          onStartSession={handleStartSession}
+          onCloseSession={handleCloseSession}
+        />
+      </div>
+      <StatusBar sessionCount={sessionCount} activeProject={undefined} />
+    </div>
   )
 }
 
