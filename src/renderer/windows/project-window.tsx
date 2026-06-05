@@ -10,6 +10,7 @@
 import { StrictMode, useState, useEffect, useCallback } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ProjectList } from '../components/ProjectList'
+import { ProjectView } from '../components/ProjectView'
 import type { Project } from '../../shared/project-types'
 
 const api = () => (window as any).cipherKeel
@@ -21,6 +22,8 @@ function ProjectApp() {
   const [newName, setNewName] = useState('')
   const [newPath, setNewPath] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [view, setView] = useState<'list' | 'project'>('list')
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
 
   const loadProjects = useCallback(async () => {
     try {
@@ -40,9 +43,10 @@ function ProjectApp() {
   const handleProjectSelect = useCallback(async (projectId: string) => {
     try {
       await api().invoke('project:switch', projectId)
-      await api().invoke('window:open-grid', projectId)
+      setActiveProjectId(projectId)
+      setView('project')
     } catch (err) {
-      console.error('[project-window] open-grid failed:', err)
+      console.error('[project-window] project:switch failed:', err)
     }
   }, [])
 
@@ -85,10 +89,15 @@ function ProjectApp() {
   return (
     <div style={styles.root}>
       <div style={styles.header}>
+        {view === 'project' && (
+          <button style={styles.backBtn} onClick={() => setView('list')}>←</button>
+        )}
         <span style={styles.logo}>cipher keel</span>
         <span style={styles.subtitle}>Projekte</span>
       </div>
-      {creating ? (
+      {view === 'project' ? (
+        <ProjectView projectPath={projects.find(p => p.id === activeProjectId)?.rootPath} />
+      ) : creating ? (
         <div style={styles.createForm}>
           <input
             style={styles.input}
@@ -201,6 +210,16 @@ const styles = {
     fontSize: 13,
     padding: '6px 14px',
     cursor: 'pointer',
+  },
+  backBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#888',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 14,
+    cursor: 'pointer',
+    padding: '0 8px 0 0',
+    lineHeight: 1,
   },
 }
 
