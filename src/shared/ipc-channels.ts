@@ -118,6 +118,11 @@ export const KANBAN_HYGIENE = 'kanban:hygiene' as const
 export const KANBAN_CHANGED = 'kanban:changed' as const
 
 // ---------------------------------------------------------------------------
+// P1 Übergabedokument channels (CK-NOTES-012)
+// ---------------------------------------------------------------------------
+export const P1_NORMALIZE = 'p1:normalize' as const
+
+// ---------------------------------------------------------------------------
 // Window management channels (Drei-Fenster-Modell, CK-UI-002)
 // ---------------------------------------------------------------------------
 export const WINDOW_OPEN_GRID = 'window:open-grid' as const
@@ -206,5 +211,6 @@ export type RendererToMainChannel =
   | typeof KANBAN_UPDATE
   | typeof KANBAN_DELETE
   | typeof KANBAN_HYGIENE
+  | typeof P1_NORMALIZE
   | typeof WINDOW_OPEN_GRID
   | typeof APP_BEFORE_QUIT

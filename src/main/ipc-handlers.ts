@@ -61,6 +61,7 @@ import {
   KANBAN_DELETE,
   KANBAN_HYGIENE,
   KANBAN_CHANGED,
+  P1_NORMALIZE,
 } from '../shared/ipc-channels'
 import { configStore } from './config/config-store'
 import type { CipherKeelConfig } from './config/config-store'
@@ -72,6 +73,7 @@ import { ProjectManager } from './project/project-manager'
 import type { CreateKanbanItemInput, UpdateKanbanItemInput } from '../shared/kanban-types'
 import { createMainWindow } from './window-manager'
 import type { AppServices } from './window-manager'
+import { normalizeToP1Format } from './p1/normalizer'
 
 // Tracks the active grid window for focus-or-create logic (CK-UI-002)
 let activeGridWindow: BrowserWindow | null = null
@@ -476,6 +478,18 @@ export function registerIpcHandlers(services: AppServices): void {
       return { orphans, error: null }
     } catch (err) {
       return { orphans: [], error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // P1 Übergabedokument handlers (CK-NOTES-012)
+  // ---------------------------------------------------------------------------
+
+  ipcMain.handle(P1_NORMALIZE, async (_event, markdown: string, dokumentTyp: string) => {
+    try {
+      return normalizeToP1Format(markdown, dokumentTyp)
+    } catch (err) {
+      return { normalized: markdown, warnings: [err instanceof Error ? err.message : String(err)] }
     }
   })
 
