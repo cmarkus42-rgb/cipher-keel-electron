@@ -23,10 +23,16 @@ import {
   TERMINAL_RESIZE,
   CONFIG_GET,
   CONFIG_SET,
-  STATUSLINE_CTX_UPDATE
+  STATUSLINE_CTX_UPDATE,
+  NANOCLAW_MESSAGE_INBOUND,
+  NANOCLAW_MESSAGE_OUTBOUND,
+  NANOCLAW_STATUS_CHANGED,
+  NANOCLAW_CONNECT,
+  NANOCLAW_DISCONNECT,
 } from '../shared/ipc-channels'
 import { TmuxManager } from './tmux/tmux-manager'
 import { StatusLineMonitor } from './monitoring/statusline-monitor'
+import { NanoClawBridge, NanoClawChannelAdapter } from './nanoclaw'
 import { configStore } from './config/config-store'
 import type { CipherKeelConfig } from './config/config-store'
 import { patchEnvPath } from './util/exec-util'
@@ -41,6 +47,10 @@ patchEnvPath()
 // ---------------------------------------------------------------------------
 const tmux = new TmuxManager()
 const statusMonitor = new StatusLineMonitor()
+// CK-S2-015: NanoClaw daemon runs independently — cipher-keel does NOT start/stop it.
+// The bridge only connects as a client to an already-running NanoClaw socket.
+const nanoClawBridge = new NanoClawBridge()
+const _nanoClawAdapter = new NanoClawChannelAdapter(nanoClawBridge)
 
 // ---------------------------------------------------------------------------
 // Window creation
@@ -110,9 +120,23 @@ async function initializeBackgroundServices(win: BrowserWindow): Promise<void> {
     win.webContents.send(STATUSLINE_CTX_UPDATE, sessionId, usage)
   })
 
+  // NanoClaw bridge — connect as client to the cipher-keel channel socket.
+  // CK-S2-015: Does NOT start NanoClaw — only connects to existing daemon.
+  nanoClawBridge.on('message-inbound', (threadId: string | null, text: string) => {
+    win.webContents.send(NANOCLAW_MESSAGE_INBOUND, { threadId, text })
+  })
+  nanoClawBridge.on('status-changed', (status: string) => {
+    win.webContents.send(NANOCLAW_STATUS_CHANGED, { status })
+  })
+
+  try {
+    await nanoClawBridge.connect()
+    console.log('[main] NanoClaw bridge connected')
+  } catch {
+    console.warn('[main] NanoClaw not reachable — Schenkel 2 unavailable (will retry on manual connect)')
+  }
+
   // Notify renderer that the app is ready
-  // Heavy services (graph-db, NanoClaw, voice-pipeline) will be initialized
-  // here in subsequent BT milestones — kept async to meet CK-INF-025 <5s target.
   win.webContents.send(APP_READY, { timestamp: Date.now() })
 }
 
@@ -172,6 +196,26 @@ function registerIpcHandlers(): void {
     tmux.resizePane(sessionName, cols, rows).catch((err) => {
       console.error('[main] resizePane failed:', err)
     })
+  })
+
+  // NanoClaw handlers (CK-S2-012)
+  ipcMain.on(NANOCLAW_MESSAGE_OUTBOUND, (_event, payload: { threadId: string | null; text: string }) => {
+    nanoClawBridge.sendMessage(payload.text, payload.threadId)
+  })
+
+  ipcMain.handle(NANOCLAW_CONNECT, async () => {
+    try {
+      await nanoClawBridge.reconnect()
+      return { ok: true, error: null }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return { ok: false, error: msg }
+    }
+  })
+
+  ipcMain.handle(NANOCLAW_DISCONNECT, async () => {
+    nanoClawBridge.disconnect()
+    return { ok: true, error: null }
   })
 
   // Config handlers (ConfigStore — CK-INF-008)
