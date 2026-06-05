@@ -115,6 +115,13 @@ export class NoteManager {
     return matter.stringify('\n' + body, fm)
   }
 
+  private validateUebergabedokument(fm: Record<string, unknown>): string[] {
+    const required = ['dokument-typ', 'status', 'phasenuebergang', 'erstellt-am'] as const
+    return required
+      .filter(field => !fm[field])
+      .map(field => `Pflichtfeld '${field}' fehlt im Frontmatter`)
+  }
+
   // --- Public API ---
 
   async create(title: string, body: string, tags?: string[], noteType?: string): Promise<NoteInfo> {
@@ -230,6 +237,59 @@ export class NoteManager {
       createdAt: fm.created as string,
       modifiedAt: now,
     }
+  }
+
+  /**
+   * Saves raw file content (including YAML frontmatter) verbatim.
+   * Used by the editor when displaying Übergabedokumente in full.
+   * Returns NoteInfo derived from parsed frontmatter and any validation warnings.
+   * CK-NOTES-010, CK-NOTES-014
+   */
+  async saveRaw(id: string, rawContent: string): Promise<{ info: NoteInfo; warnings: string[] }> {
+    const filePath = this.filePath(id)
+    await fs.mkdir(this.notesDir, { recursive: true })
+    await fs.writeFile(filePath, rawContent, 'utf-8')
+
+    let parsed: matter.GrayMatterFile<string>
+    try {
+      parsed = matter(rawContent)
+    } catch {
+      const noteId = path.basename(filePath, '.md')
+      const info: NoteInfo = {
+        id: noteId,
+        title: 'Untitled',
+        tags: [],
+        scope: 'global',
+        relativePath: `${noteId}.md`,
+        createdAt: new Date().toISOString(),
+        modifiedAt: new Date().toISOString(),
+      }
+      return { info, warnings: ['Frontmatter konnte nicht geparst werden'] }
+    }
+
+    const fm = parsed.data as Record<string, unknown>
+    const body = parsed.content.trimStart()
+    const now = new Date().toISOString()
+
+    const info: NoteInfo = {
+      id,
+      title: (fm.title as string) ?? this.extractTitle(body),
+      tags: (fm.tags as string[]) ?? [],
+      scope: 'global',
+      relativePath: `${id}.md`,
+      ...(fm.type ? { noteType: fm.type as string } : {}),
+      createdAt: (fm.created as string) ?? now,
+      modifiedAt: (fm.modified as string) ?? now,
+      ...(fm['dokument-typ'] ? { dokumentTyp: fm['dokument-typ'] as string } : {}),
+      ...(fm['phasenuebergang'] ? { phasenuebergang: fm['phasenuebergang'] as string } : {}),
+      ...(fm['status'] ? { uebergabeStatus: fm['status'] as 'entwurf' | 'freigegeben' | 'abgeloest' } : {}),
+    }
+
+    const warnings = fm.type === 'uebergabedokument'
+      ? this.validateUebergabedokument(fm)
+      : []
+
+    return { info, warnings }
   }
 
   async search(query: string, opts?: { tags?: string[] }): Promise<NoteContent[]> {
