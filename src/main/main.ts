@@ -424,10 +424,9 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(GRAPH_DELETE, async (_event, uid: string) => {
-    if (!graphDb) return { ok: false, error: 'Graph not initialized' }
+    if (!graphWriter) return { ok: false, error: 'Graph not initialized' }
     try {
-      graphDb.prepare('DELETE FROM node WHERE uid = ?').run(uid)
-      return { ok: true }
+      return graphWriter.deleteNode(uid)
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }

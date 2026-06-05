@@ -38,6 +38,9 @@ export class NoteManager {
   }
 
   private filePath(id: string): string {
+    if (/[/\\]|\.\./.test(id)) {
+      throw new Error('Invalid note ID')
+    }
     return path.join(this.notesDir, `${id}.md`)
   }
 

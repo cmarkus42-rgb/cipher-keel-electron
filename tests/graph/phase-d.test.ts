@@ -232,6 +232,42 @@ describe('Entscheidung conflict detection (CK-GRAPH-014)', () => {
 })
 
 // -------------------------------------------------------------------
+// deleteNode
+// -------------------------------------------------------------------
+
+describe('deleteNode', () => {
+  it('deletes node, edges, and FTS entry', () => {
+    const anf = writer.upsertNode({ kind: 'anforderung', title: 'R1', path: '/r1.md' })
+    const art = writer.upsertNode({ kind: 'artefakt', title: 'A1', path: '/a1.ts' })
+    writer.linkEdge({ src: art.uid, dst: anf.uid })
+
+    const result = writer.deleteNode(anf.uid)
+    expect(result.deleted).toBe(true)
+
+    // Node is gone
+    const node = db.prepare('SELECT uid FROM node WHERE uid = ?').get(anf.uid)
+    expect(node).toBeUndefined()
+
+    // Edges referencing the deleted node are gone
+    const edges = db.prepare('SELECT id FROM edge WHERE src = ? OR dst = ?').all(anf.uid, anf.uid)
+    expect(edges).toHaveLength(0)
+
+    // FTS entry is gone
+    const fts = db.prepare(`SELECT uid FROM node_fts WHERE uid = ?`).all(anf.uid)
+    expect(fts).toHaveLength(0)
+
+    // The other node still exists
+    const other = db.prepare('SELECT uid FROM node WHERE uid = ?').get(art.uid)
+    expect(other).toBeDefined()
+  })
+
+  it('returns deleted: false for non-existent uid', () => {
+    const result = writer.deleteNode('NONEXISTENT')
+    expect(result.deleted).toBe(false)
+  })
+})
+
+// -------------------------------------------------------------------
 // FTS sync
 // -------------------------------------------------------------------
 

@@ -11,7 +11,7 @@
 
 import type Database from 'better-sqlite3'
 import type { NodeKind, NodeStatus } from './node-types'
-import type { EdgeType, EdgeSource } from './edge-types'
+import { isValidEdgeType, type EdgeType, type EdgeSource } from './edge-types'
 
 // ---------------------------------------------------------------------------
 // Result types — Progressive Disclosure (CK-GRAPH-018, CK-NFR-011)
@@ -267,6 +267,11 @@ export interface ExpandParams {
 export function graphExpand(db: Database.Database, params: ExpandParams): ExpandResult {
   const depth = Math.min(Math.max(params.depth ?? 1, 1), MAX_EXPAND_DEPTH)
   const direction = params.direction ?? 'both'
+
+  // Validate edge_type against allowlist to prevent SQL injection (F-ADV-001)
+  if (params.edge_type && !isValidEdgeType(params.edge_type)) {
+    throw new Error(`Invalid edge_type: ${params.edge_type}`)
+  }
 
   // Build the recursive CTE based on direction and optional edge type filter
   const typeFilter = params.edge_type ? `AND e.type = '${params.edge_type}'` : ''

@@ -273,6 +273,43 @@ export class GraphWriter {
     return result
   }
 
+  /**
+   * Delete a node and all related edges, FTS entries, and vec_chunks.
+   * All cleanup in a single transaction.
+   */
+  deleteNode(uid: string): { deleted: boolean } {
+    let result!: { deleted: boolean }
+    this.enqueue(() => {
+      const existing = this.db.prepare('SELECT uid FROM node WHERE uid = ?').get(uid) as { uid: string } | undefined
+      if (!existing) {
+        result = { deleted: false }
+        return
+      }
+
+      const tx = this.db.transaction(() => {
+        // Remove edges where this node is src or dst
+        this.db.prepare('DELETE FROM edge WHERE src = ? OR dst = ?').run(uid, uid)
+
+        // Remove FTS entry (virtual table — wrap in try/catch)
+        try {
+          this.db.prepare('DELETE FROM node_fts WHERE uid = ?').run(uid)
+        } catch { /* FTS table may not exist */ }
+
+        // Remove vec_chunks (virtual table — wrap in try/catch)
+        try {
+          this.db.prepare('DELETE FROM vec_chunks WHERE node_uid = ?').run(uid)
+        } catch { /* vec table may not exist */ }
+
+        // Remove the node itself
+        this.db.prepare('DELETE FROM node WHERE uid = ?').run(uid)
+      })
+      tx()
+
+      result = { deleted: true }
+    })
+    return result
+  }
+
   // ---------------------------------------------------------------------------
   // Conflict detection (CK-GRAPH-014)
   // ---------------------------------------------------------------------------

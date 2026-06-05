@@ -10,7 +10,7 @@
 
 import type Database from 'better-sqlite3'
 import type { NodeKind } from './node-types'
-import type { EdgeType } from './edge-types'
+import { isValidEdgeType, type EdgeType } from './edge-types'
 
 // ---------------------------------------------------------------------------
 // Template registry
@@ -327,6 +327,11 @@ function executeReverseTrace(
   if (!uid) throw new Error("Template 'reverse_trace' requires parameter 'uid'")
   const maxDepth = (p.max_depth as number) ?? 10
   const edgeType = p.edge_type as string | undefined
+
+  // Validate edge_type against allowlist to prevent SQL injection (F-ADV-002)
+  if (edgeType && !isValidEdgeType(edgeType)) {
+    throw new Error(`Invalid edge_type: ${edgeType}`)
+  }
 
   const typeFilter = edgeType ? `AND e.type = '${edgeType}'` : ''
 
