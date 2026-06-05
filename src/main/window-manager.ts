@@ -116,7 +116,6 @@ export function createProjectWindow(_services: AppServices): BrowserWindow {
     minHeight: 400,
     show: false,
     backgroundColor: '#0d0d0d',
-    titleBarStyle: 'hiddenInset',
     webPreferences: {
       // Security baseline — NON-NEGOTIABLE (CK-NFR-004, CK-INF-022)
       contextIsolation: true,

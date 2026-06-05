@@ -17,6 +17,10 @@ const api = () => (window as any).cipherKeel
 function ProjectApp() {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newPath, setNewPath] = useState('')
+  const [error, setError] = useState<string | null>(null)
 
   const loadProjects = useCallback(async () => {
     try {
@@ -42,26 +46,33 @@ function ProjectApp() {
     }
   }, [])
 
-  const handleCreateProject = useCallback(async () => {
-    // Minimal prompt-based create — full Kickoff-Wizard is CK-UI-020 (future)
-    const name = prompt('Projektname:')
-    if (!name?.trim()) return
-    const rootPath = prompt('Root-Ordner (absoluter Pfad):')
-    if (!rootPath?.trim()) return
+  const handleCreateProject = useCallback(() => {
+    setCreating(true)
+    setNewName('')
+    setNewPath('')
+    setError(null)
+  }, [])
+
+  const handleSubmitCreate = useCallback(async () => {
+    if (!newName.trim() || !newPath.trim()) {
+      setError('Name und Pfad sind Pflicht.')
+      return
+    }
     try {
-      const result = (await api().invoke('project:create', name.trim(), rootPath.trim())) as {
+      const result = (await api().invoke('project:create', newName.trim(), newPath.trim())) as {
         project: Project | null
         error: string | null
       }
       if (result.project) {
+        setCreating(false)
         await loadProjects()
       } else {
-        console.error('[project-window] project:create error:', result.error)
+        setError(result.error ?? 'Unbekannter Fehler')
       }
     } catch (err) {
-      console.error('[project-window] project:create failed:', err)
+      setError(err instanceof Error ? err.message : String(err))
     }
-  }, [loadProjects])
+  }, [newName, newPath, loadProjects])
 
   if (loading) {
     return (
@@ -77,11 +88,37 @@ function ProjectApp() {
         <span style={styles.logo}>cipher keel</span>
         <span style={styles.subtitle}>Projekte</span>
       </div>
-      <ProjectList
-        projects={projects}
-        onProjectSelect={handleProjectSelect}
-        onCreateProject={handleCreateProject}
-      />
+      {creating ? (
+        <div style={styles.createForm}>
+          <input
+            style={styles.input}
+            type="text"
+            placeholder="Projektname"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            autoFocus
+          />
+          <input
+            style={styles.input}
+            type="text"
+            placeholder="Root-Ordner (absoluter Pfad)"
+            value={newPath}
+            onChange={(e) => setNewPath(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSubmitCreate()}
+          />
+          {error && <span style={styles.error}>{error}</span>}
+          <div style={styles.formButtons}>
+            <button style={styles.cancelBtn} onClick={() => setCreating(false)}>Abbrechen</button>
+            <button style={styles.submitBtn} onClick={handleSubmitCreate}>Anlegen</button>
+          </div>
+        </div>
+      ) : (
+        <ProjectList
+          projects={projects}
+          onProjectSelect={handleProjectSelect}
+          onCreateProject={handleCreateProject}
+        />
+      )}
     </div>
   )
 }
@@ -118,6 +155,52 @@ const styles = {
     height: '100%',
     background: '#0d0d0d',
     fontFamily: "'JetBrains Mono', monospace",
+  },
+  createForm: {
+    display: 'flex' as const,
+    flexDirection: 'column' as const,
+    gap: 10,
+    padding: '24px 16px',
+  },
+  input: {
+    background: '#1a1a1a',
+    border: '1px solid #2a2a2a',
+    borderRadius: 4,
+    color: '#e0e0e0',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 13,
+    padding: '8px 10px',
+    outline: 'none',
+  },
+  error: {
+    color: '#e05050',
+    fontSize: 12,
+  },
+  formButtons: {
+    display: 'flex' as const,
+    gap: 8,
+    justifyContent: 'flex-end' as const,
+    marginTop: 4,
+  },
+  cancelBtn: {
+    background: '#1a1a1a',
+    border: '1px solid #2a2a2a',
+    borderRadius: 4,
+    color: '#888',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 13,
+    padding: '6px 14px',
+    cursor: 'pointer',
+  },
+  submitBtn: {
+    background: '#1e3a1e',
+    border: '1px solid #2a5a2a',
+    borderRadius: 4,
+    color: '#90d090',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 13,
+    padding: '6px 14px',
+    cursor: 'pointer',
   },
 }
 
