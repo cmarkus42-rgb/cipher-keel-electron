@@ -15,8 +15,8 @@ import {
 } from '../../src/main/graph/node-types'
 
 describe('NODE_KINDS', () => {
-  it('contains all 10 types', () => {
-    expect(NODE_KINDS).toHaveLength(10)
+  it('contains all 11 types', () => {
+    expect(NODE_KINDS).toHaveLength(11)
     const expected: NodeKind[] = [
       'anforderung', 'entscheidung', 'artefakt', 'test',
       'note', 'phase_subsystem', 'anlass', 'github_repo', 'phase',

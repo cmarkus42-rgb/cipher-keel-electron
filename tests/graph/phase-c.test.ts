@@ -15,8 +15,8 @@ import {
 import type { NodeKind } from '../../src/main/graph/node-types'
 
 describe('EDGE_TYPES (CK-GRAPH-015)', () => {
-  it('contains all 14 types', () => {
-    expect(EDGE_TYPES).toHaveLength(14)
+  it('contains all 17 types', () => {
+    expect(EDGE_TYPES).toHaveLength(17)
     const expected = [
       'verweist_auf', 'verfeinert', 'begruendet',
       'setzt_um', 'verifiziert', 'erzeugt_von', 'abgeloest_durch',

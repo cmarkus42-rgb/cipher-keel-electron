@@ -37,7 +37,8 @@ export const NODE_KINDS = [
   'anlass',
   'github_repo',
   'phase',
-  'uebergabedokument'
+  'uebergabedokument',
+  'gate_befund'
 ] as const
 
 export type NodeKind = (typeof NODE_KINDS)[number]
@@ -99,6 +100,12 @@ export interface NoteAttrs {
 /** CK-GRAPH-008 */
 export interface PhaseSubsystemAttrs {
   ebene?: string
+  /** Scope descriptor for this subsystem (e.g. 'backend', 'frontend') */
+  scope?: string
+  /** Current processing status of this subsystem */
+  status?: string
+  /** Reason this subsystem is blocked (if applicable) */
+  blocked_grund?: string
 }
 
 /** CK-GRAPH-009 */
@@ -127,6 +134,15 @@ export interface PhaseAttrs {
   position: number
   /** Phase-level progress status, distinct from node lifecycle status */
   phase_status: PhaseStatus
+  /** Optional skip profile — present when this phase is marked as skippable (PROC-004) */
+  skip_profil?: {
+    /** Skip depth: 'trivial' | 'partial' | 'full' */
+    tiefe: string
+    /** Human-readable justification for the skip */
+    begruendung: string
+    /** Who marked this phase for skip */
+    markiert_von: string
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +166,20 @@ export interface UebergabedokumentAttrs {
   dokumentTyp: DokumentTyp
 }
 
+/** CK-PROC-005 — gate assessment node per phase (PROC-007: two independent signals) */
+export interface GateBefundAttrs {
+  /** UID of the phase this gate assessment belongs to */
+  phase_uid: string
+  /** Structural coverage signal: 'gruen' | 'gelb' | 'rot' */
+  strukturell: string
+  /** Plausibility signal: 'gruen' | 'gelb' | 'rot' | null (null = not yet executed) */
+  plausibilitaet: string | null
+  /** Weighting annotation (free text) */
+  gewichtung: string
+  /** Gate type, e.g. 'coverage' */
+  gate_typ: string
+}
+
 // ---------------------------------------------------------------------------
 // Type-specific attribute map
 // ---------------------------------------------------------------------------
@@ -165,6 +195,7 @@ export interface NodeAttrMap {
   github_repo: GithubRepoAttrs
   phase: PhaseAttrs
   uebergabedokument: UebergabedokumentAttrs
+  gate_befund: GateBefundAttrs
 }
 
 // ---------------------------------------------------------------------------
@@ -182,7 +213,8 @@ export const REQUIRED_FRONTMATTER_FIELDS: Record<NodeKind, string[]> = {
   anlass: [],
   github_repo: ['url', 'owner', 'name', 'repo_id', 'default_branch', 'visibility', 'linked_at'],
   phase: ['name', 'position'],
-  uebergabedokument: ['dokumentTyp']
+  uebergabedokument: ['dokumentTyp'],
+  gate_befund: ['phase_uid', 'strukturell', 'gate_typ']
 }
 
 /** Allowed frontmatter fields per kind (for strict validation). */
@@ -192,11 +224,12 @@ export const ALLOWED_FRONTMATTER_FIELDS: Record<NodeKind, string[]> = {
   artefakt: ['artefakt_pfad', 'sprache_art', 'phasenoutput'],
   test: ['testart', 'ergebnis'],
   note: ['notetyp'],
-  phase_subsystem: ['ebene'],
+  phase_subsystem: ['ebene', 'scope', 'status', 'blocked_grund'],
   anlass: ['session', 'zeitpunkt', 'handoff_referenz'],
   github_repo: ['url', 'owner', 'name', 'repo_id', 'default_branch', 'visibility', 'linked_at'],
-  phase: ['name', 'position', 'phase_status'],
-  uebergabedokument: ['dokumentTyp']
+  phase: ['name', 'position', 'phase_status', 'skip_profil'],
+  uebergabedokument: ['dokumentTyp'],
+  gate_befund: ['phase_uid', 'strukturell', 'plausibilitaet', 'gewichtung', 'gate_typ']
 }
 
 // ---------------------------------------------------------------------------

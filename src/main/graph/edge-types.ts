@@ -31,7 +31,10 @@ export const EDGE_TYPES = [
   'phaseninput_fuer',   // uebergabedokument → uebergabedokument, forward handoff chain (CK-P1-013)
   'behebt',             // fix-report → test-findings (CK-P1-013)
   'referenziert',       // wiki-link resolution between uebergabedokumente (CK-P1-013)
-  'prueft'              // audit-summary → fix-report (CK-P1-013)
+  'prueft',             // audit-summary → fix-report (CK-P1-013)
+  'gate_fuer',          // gate_befund → phase (CK-PROC-005)
+  'subsystem_von',      // phase_subsystem → phase_subsystem (parent membership, CK-PROC-009)
+  'haengt_ab_von'       // phase_subsystem → phase_subsystem (dependency, CK-PROC-009)
 ] as const
 
 export type EdgeType = (typeof EDGE_TYPES)[number]
@@ -85,7 +88,8 @@ const PAIR_DERIVATION: Partial<Record<PairKey, EdgeType>> = {
   'artefakt->entscheidung': 'setzt_um',
   'test->anforderung': 'verifiziert',
   'test->artefakt': 'verifiziert',
-  'phase->phase': 'naechste_phase'
+  'phase->phase': 'naechste_phase',
+  'gate_befund->phase': 'gate_fuer'
 }
 
 /**
@@ -164,6 +168,36 @@ export function validateEdgeForPair(
     return dstKind === 'github_repo'
       ? null
       : `Edge type 'hat_github_repo' requires destination kind 'github_repo', got '${dstKind}'`
+  }
+
+  // gate_fuer requires src = gate_befund and dst = phase (CK-PROC-005)
+  if (type === 'gate_fuer') {
+    if (srcKind !== 'gate_befund') {
+      return `Edge type 'gate_fuer' requires source kind 'gate_befund', got '${srcKind}'`
+    }
+    return dstKind === 'phase'
+      ? null
+      : `Edge type 'gate_fuer' requires destination kind 'phase', got '${dstKind}'`
+  }
+
+  // subsystem_von: phase_subsystem → phase_subsystem (CK-PROC-009)
+  if (type === 'subsystem_von') {
+    if (srcKind !== 'phase_subsystem') {
+      return `Edge type 'subsystem_von' requires source kind 'phase_subsystem', got '${srcKind}'`
+    }
+    return dstKind === 'phase_subsystem'
+      ? null
+      : `Edge type 'subsystem_von' requires destination kind 'phase_subsystem', got '${dstKind}'`
+  }
+
+  // haengt_ab_von: phase_subsystem → phase_subsystem (CK-PROC-009)
+  if (type === 'haengt_ab_von') {
+    if (srcKind !== 'phase_subsystem') {
+      return `Edge type 'haengt_ab_von' requires source kind 'phase_subsystem', got '${srcKind}'`
+    }
+    return dstKind === 'phase_subsystem'
+      ? null
+      : `Edge type 'haengt_ab_von' requires destination kind 'phase_subsystem', got '${dstKind}'`
   }
 
   // P1 edge types valid between uebergabedokument nodes (CK-P1-013)
