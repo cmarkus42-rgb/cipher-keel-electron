@@ -38,11 +38,10 @@ export class GateCache {
   }
 
   /**
-   * Bump the version counter, invalidating all cached entries.
-   * Existing Map entries are left in place; they will be treated as misses
-   * on the next getOrQuery call and overwritten at that point.
+   * Bump the version counter and clear stale entries to prevent unbounded growth.
    */
   invalidate(): void {
     this.version++
+    this.cache.clear()
   }
 }

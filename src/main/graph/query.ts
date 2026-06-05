@@ -612,8 +612,7 @@ function executeHandoffCompleteness(
         END) > 0
       THEN 1 ELSE 0 END as is_complete
     FROM node curr
-    JOIN edge e_next ON e_next.src = prev.uid AND e_next.type = 'naechste_phase'
-      AND e_next.dst = curr.uid
+    JOIN edge e_next ON e_next.dst = curr.uid AND e_next.type = 'naechste_phase'
     JOIN node prev ON prev.uid = e_next.src AND prev.kind = 'phase'
     LEFT JOIN edge e_bind ON e_bind.dst = prev.uid AND e_bind.type = 'traegt_phase'
     LEFT JOIN node bound ON bound.uid = e_bind.src
@@ -851,7 +850,7 @@ export function graphSandboxedQuery(
   }
 
   // Block obvious write keywords even within CTEs
-  const writeKeywords = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'CREATE', 'REPLACE']
+  const writeKeywords = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'CREATE', 'REPLACE', 'ATTACH', 'DETACH', 'PRAGMA', 'VACUUM']
   for (const kw of writeKeywords) {
     if (normalized.includes(kw)) {
       throw new Error(

@@ -21,7 +21,8 @@ describe('EDGE_TYPES (CK-GRAPH-015)', () => {
       'verweist_auf', 'verfeinert', 'begruendet',
       'setzt_um', 'verifiziert', 'erzeugt_von', 'abgeloest_durch',
       'naechste_phase', 'traegt_phase', 'hat_github_repo',
-      'phaseninput_fuer', 'behebt', 'referenziert', 'prueft'
+      'phaseninput_fuer', 'behebt', 'referenziert', 'prueft',
+      'gate_fuer', 'subsystem_von', 'haengt_ab_von'
     ]
     for (const t of expected) {
       expect(EDGE_TYPES).toContain(t)

@@ -217,6 +217,14 @@ export async function autoGateBefund(
   phaseUid: string,
   gateTyp: string
 ): Promise<GateBefundAttrs> {
+  // 0. Verify phase node exists
+  const phaseExists = graphDb.prepare(
+    "SELECT 1 FROM node WHERE uid = ? AND kind = 'phase'"
+  ).get(phaseUid)
+  if (!phaseExists) {
+    throw new Error(`autoGateBefund: phase node '${phaseUid}' not found`)
+  }
+
   // 1. Run structural coverage query
   const coverageResult = graphQuery(graphDb, {
     template: 'gate_structural_coverage',
@@ -228,7 +236,7 @@ export async function autoGateBefund(
   const covered = Number(row.covered)
 
   // 2. Derive strukturell signal
-  let strukturell: string
+  let strukturell: 'gruen' | 'teilweise' | 'rot'
   if (total === 0 || covered === total) {
     strukturell = 'gruen'
   } else if (covered === 0) {
