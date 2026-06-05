@@ -29,3 +29,22 @@ export {
   type GraphBackend, type VectorBackend, type FtsBackend,
   type NodeStorageBackend, type VectorSearchResult, type FtsSearchResult
 } from './abstraction'
+export {
+  graphSearch, graphGetNode, graphExpand,
+  type SearchHit, type SearchParams,
+  type FullNode, type ExpandParams, type ExpandResult, type ExpandHit, type ExpandEdge
+} from './search'
+export {
+  graphQuery, graphSandboxedQuery,
+  QUERY_TEMPLATES, isValidTemplate,
+  type QueryTemplate, type QueryParams, type QueryResult,
+  type SandboxedQueryResult
+} from './query'
+export {
+  graphMaintain,
+  MAINTAIN_OPERATIONS, isValidOperation,
+  type MaintainOperation, type MaintainParams, type MaintainResult,
+  type HygieneResult, type HygieneFinding,
+  type KonsolidierungResult, type KonsolidierungAction,
+  type VerdichtungResult, type VerdichtungAction
+} from './maintain'
