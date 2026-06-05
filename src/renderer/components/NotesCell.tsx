@@ -2,7 +2,9 @@
  * NotesCell — Grid pane for notes editing with CodeMirror 6.
  *
  * CK-NOTES-003: NotesCell with CodeMirror 6 Markdown editor.
- * New component for cipher-keel (no direct 0.9.x port — simplified).
+ * CK-NOTES-005: Sidebar with Übergabedokument category (type-label, status-badge, phasenuebergang).
+ * CK-NOTES-010: Raw content editor for Übergabedokumente with YAML frontmatter highlighting.
+ * CK-NOTES-014: Validation warning display.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
@@ -20,13 +22,20 @@ interface NotesCellProps {
   onNoteSelect?: (id: string) => void
 }
 
+const statusColor = (status?: string): string => {
+  if (status === 'freigegeben') return '#98c379'
+  if (status === 'abgeloest') return '#666'
+  return '#e5c07b'  // entwurf (default / undefined)
+}
+
 export function NotesCell({ noteId, onNoteSelect }: NotesCellProps) {
-  const { notes, loading, createNote, readNote, saveNote, trashNote, searchNotes } = useNotes()
+  const { notes, loading, createNote, readNote, saveNote, saveNoteRaw, trashNote, searchNotes } = useNotes()
   const [activeNoteId, setActiveNoteId] = useState<string | null>(noteId ?? null)
   const [activeNote, setActiveNote] = useState<NoteContent | null>(null)
   const [dirty, setDirty] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<NoteInfo[] | null>(null)
+  const [validationWarnings, setValidationWarnings] = useState<string[]>([])
   const editorRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -43,6 +52,15 @@ export function NotesCell({ noteId, onNoteSelect }: NotesCellProps) {
     })
   }, [activeNoteId, readNote])
 
+  // Listen for validation warnings from main process
+  useEffect(() => {
+    const unsub = (window as any).cipherKeel.notes.onValidationWarning((warnings: string[]) => {
+      setValidationWarnings(warnings)
+      setTimeout(() => setValidationWarnings([]), 6000)
+    })
+    return unsub
+  }, [])
+
   // Initialize/update CodeMirror editor
   useEffect(() => {
     if (!editorRef.current || !activeNote) return
@@ -53,8 +71,13 @@ export function NotesCell({ noteId, onNoteSelect }: NotesCellProps) {
       viewRef.current = null
     }
 
+    // Use raw content (with frontmatter) for Übergabedokumente
+    const editorContent = activeNote.info.noteType === 'uebergabedokument'
+      ? activeNote.rawContent
+      : activeNote.body
+
     const state = EditorState.create({
-      doc: activeNote.body,
+      doc: editorContent,
       extensions: [
         lineNumbers(),
         highlightActiveLine(),
@@ -72,7 +95,11 @@ export function NotesCell({ noteId, onNoteSelect }: NotesCellProps) {
             saveTimerRef.current = setTimeout(() => {
               const text = update.state.doc.toString()
               if (activeNoteId) {
-                saveNote(activeNoteId, text).catch(err =>
+                const isRaw = activeNote.info.noteType === 'uebergabedokument'
+                const saveFn = isRaw
+                  ? () => saveNoteRaw(activeNoteId, text)
+                  : () => saveNote(activeNoteId, text)
+                saveFn().catch(err =>
                   console.error('[NotesCell] auto-save failed:', err)
                 )
                 setDirty(false)
@@ -98,7 +125,7 @@ export function NotesCell({ noteId, onNoteSelect }: NotesCellProps) {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
       view.destroy()
     }
-  }, [activeNote, activeNoteId, saveNote])
+  }, [activeNote, activeNoteId, saveNote, saveNoteRaw])
 
   const handleCreate = useCallback(async () => {
     const info = await createNote('', '# New Note\n\n')
@@ -132,6 +159,8 @@ export function NotesCell({ noteId, onNoteSelect }: NotesCellProps) {
   }, [searchNotes])
 
   const displayNotes = searchResults ?? notes
+  const regularNotes = displayNotes.filter(n => n.noteType !== 'uebergabedokument')
+  const uebergabeDocs = displayNotes.filter(n => n.noteType === 'uebergabedokument')
 
   return (
     <div style={{
@@ -204,7 +233,7 @@ export function NotesCell({ noteId, onNoteSelect }: NotesCellProps) {
             />
           </div>
 
-          {/* Note list */}
+          {/* Note list with Übergabedokument category */}
           <div style={{ flex: 1, overflowY: 'auto', fontSize: '11px' }}>
             {loading ? (
               <div style={{ padding: '8px', color: '#666' }}>Loading...</div>
@@ -213,49 +242,140 @@ export function NotesCell({ noteId, onNoteSelect }: NotesCellProps) {
                 {searchQuery ? 'No results' : 'No notes yet'}
               </div>
             ) : (
-              displayNotes.map(note => (
-                <div
-                  key={note.id}
-                  onClick={() => handleSelect(note.id)}
-                  style={{
-                    padding: '6px 8px',
-                    cursor: 'pointer',
-                    background: note.id === activeNoteId ? '#282c34' : 'transparent',
-                    borderLeft: note.id === activeNoteId ? '2px solid #61afef' : '2px solid transparent',
-                    color: '#ccc',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  <div style={{ fontWeight: note.id === activeNoteId ? 600 : 400 }}>
-                    {note.title}
-                  </div>
-                  {note.preview && (
-                    <div style={{ color: '#666', fontSize: '10px', marginTop: '2px' }}>
-                      {note.preview}
+              <>
+                {/* Übergabedokumente section (CK-NOTES-005) */}
+                {uebergabeDocs.length > 0 && (
+                  <>
+                    <div style={{
+                      padding: '4px 8px 2px',
+                      color: '#666',
+                      fontSize: '9px',
+                      fontWeight: 700,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                    }}>
+                      Übergabedokumente
                     </div>
-                  )}
-                  {note.tags.length > 0 && (
-                    <div style={{ display: 'flex', gap: '3px', marginTop: '3px', flexWrap: 'wrap' }}>
-                      {note.tags.slice(0, 3).map(tag => (
-                        <span
-                          key={tag}
-                          style={{
-                            background: '#333',
-                            color: '#888',
-                            padding: '0 4px',
-                            borderRadius: '2px',
-                            fontSize: '9px',
-                          }}
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))
+                    {uebergabeDocs.map(note => (
+                      <div
+                        key={note.id}
+                        onClick={() => handleSelect(note.id)}
+                        style={{
+                          padding: '5px 8px',
+                          cursor: 'pointer',
+                          background: note.id === activeNoteId ? '#282c34' : 'transparent',
+                          borderLeft: note.id === activeNoteId ? '2px solid #61afef' : '2px solid transparent',
+                          color: '#ccc',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{
+                            fontWeight: note.id === activeNoteId ? 600 : 400,
+                            fontSize: '11px',
+                            flex: 1,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}>
+                            {note.title}
+                          </span>
+                          {note.dokumentTyp && (
+                            <span style={{
+                              background: '#2c313a',
+                              color: '#abb2bf',
+                              padding: '0 3px',
+                              borderRadius: '2px',
+                              fontSize: '9px',
+                              flexShrink: 0,
+                            }}>
+                              {note.dokumentTyp}
+                            </span>
+                          )}
+                          {/* Status-Badge */}
+                          <span
+                            style={{
+                              width: '6px',
+                              height: '6px',
+                              borderRadius: '50%',
+                              background: statusColor(note.uebergabeStatus),
+                              flexShrink: 0,
+                            }}
+                            title={note.uebergabeStatus ?? 'entwurf'}
+                          />
+                        </div>
+                        {/* Phasen-Zuordnung */}
+                        {note.phasenuebergang && (
+                          <div style={{ color: '#666', fontSize: '9px', marginTop: '1px' }}>
+                            {note.phasenuebergang}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {/* Regular notes section */}
+                {regularNotes.length > 0 && (
+                  <>
+                    {uebergabeDocs.length > 0 && (
+                      <div style={{
+                        padding: '4px 8px 2px',
+                        color: '#666',
+                        fontSize: '9px',
+                        fontWeight: 700,
+                        letterSpacing: '0.08em',
+                        textTransform: 'uppercase',
+                      }}>
+                        Notizen
+                      </div>
+                    )}
+                    {regularNotes.map(note => (
+                      <div
+                        key={note.id}
+                        onClick={() => handleSelect(note.id)}
+                        style={{
+                          padding: '6px 8px',
+                          cursor: 'pointer',
+                          background: note.id === activeNoteId ? '#282c34' : 'transparent',
+                          borderLeft: note.id === activeNoteId ? '2px solid #61afef' : '2px solid transparent',
+                          color: '#ccc',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        <div style={{ fontWeight: note.id === activeNoteId ? 600 : 400 }}>
+                          {note.title}
+                        </div>
+                        {note.preview && (
+                          <div style={{ color: '#666', fontSize: '10px', marginTop: '2px' }}>
+                            {note.preview}
+                          </div>
+                        )}
+                        {note.tags.length > 0 && (
+                          <div style={{ display: 'flex', gap: '3px', marginTop: '3px', flexWrap: 'wrap' }}>
+                            {note.tags.slice(0, 3).map(tag => (
+                              <span
+                                key={tag}
+                                style={{
+                                  background: '#333',
+                                  color: '#888',
+                                  padding: '0 4px',
+                                  borderRadius: '2px',
+                                  fontSize: '9px',
+                                }}
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -303,6 +423,21 @@ export function NotesCell({ noteId, onNoteSelect }: NotesCellProps) {
                   Trash
                 </button>
               </div>
+              {/* Validation warnings (CK-NOTES-014) */}
+              {validationWarnings.length > 0 && (
+                <div style={{
+                  padding: '3px 8px',
+                  background: '#2c2400',
+                  borderBottom: '1px solid #4a3800',
+                  fontSize: '10px',
+                  color: '#e5c07b',
+                  flexShrink: 0,
+                }}>
+                  {validationWarnings.map((w, i) => (
+                    <div key={i}>{w}</div>
+                  ))}
+                </div>
+              )}
               {/* CodeMirror mount point */}
               <div ref={editorRef} style={{ flex: 1, minHeight: 0 }} />
             </>
