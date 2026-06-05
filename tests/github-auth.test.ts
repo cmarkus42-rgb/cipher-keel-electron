@@ -44,6 +44,14 @@ describe('getToken (GH-001, GH-002)', () => {
     const token = await getToken()
     expect(token).toBe('ghp_abc123')
   })
+  it('falls back to keychain PAT when gh auth token fails', async () => {
+    // First call (gh auth token) fails, second call (security find-generic-password) succeeds
+    mockExecFile
+      .mockRejectedValueOnce(new Error('no gh token'))
+      .mockResolvedValueOnce({ stdout: 'ghp_keychain789\n', stderr: '' })
+    const token = await getToken()
+    expect(token).toBe('ghp_keychain789')
+  })
   it('returns null when both gh and keychain fail', async () => {
     mockExecFile.mockRejectedValue(new Error('no token'))
     const token = await getToken()
