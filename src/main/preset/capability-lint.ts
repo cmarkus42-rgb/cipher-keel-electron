@@ -8,7 +8,7 @@
  * warnOversizedPackages: warns when a package exceeds the token budget for a niveau
  */
 
-import type { CapabilityPackage } from './capability-schema'
+import { estimateTokenCount, type CapabilityPackage } from './capability-schema'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,15 +32,13 @@ export interface PackageContent {
 // ---------------------------------------------------------------------------
 
 /**
- * Estimate the token count of a string using the whitespace-split × 1.3 heuristic.
+ * Estimate the token count of a string.
  *
- * Splits on any whitespace, counts non-empty tokens, multiplies by 1.3, and
- * rounds up. Returns 0 for empty / whitespace-only input.
+ * Delegates to estimateTokenCount from capability-schema (chars/4 heuristic)
+ * to avoid divergent heuristics across the codebase (M-6).
  */
 export function estimateTokens(content: string): number {
-  if (!content.trim()) return 0
-  const wordCount = content.trim().split(/\s+/).length
-  return Math.ceil(wordCount * 1.3)
+  return estimateTokenCount(content)
 }
 
 // ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@
  */
 
 import { RollenTyp, type PresetRahmen } from '../preset/schema'
+import { isValidKind, type NodeKind } from './node-types'
 
 // ---------------------------------------------------------------------------
 // AccessProfile
@@ -92,6 +93,14 @@ export function checkAccess(
   operation: 'read' | 'write',
   nodeKind: string
 ): AccessCheckResult {
+  // M-4: Reject unknown node kinds
+  if (!isValidKind(nodeKind)) {
+    return {
+      allowed: false,
+      reason: `Unknown node kind '${nodeKind}'`,
+    }
+  }
+
   const relevantScope = operation === 'read' ? profile.read : profile.write
 
   // wide read or full write — always allowed

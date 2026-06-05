@@ -75,6 +75,32 @@ describe('loadPersona — unknown persona', () => {
 })
 
 // ---------------------------------------------------------------------------
+// M-1: Path traversal adversarial tests
+// ---------------------------------------------------------------------------
+
+describe('loadPersona — path traversal prevention (F-001)', () => {
+  it('rejects ../ traversal', () => {
+    expect(loadPersona('../etc/passwd', tmpDir)).toBeNull()
+  })
+
+  it('rejects absolute path with /', () => {
+    expect(loadPersona('/etc/passwd', tmpDir)).toBeNull()
+  })
+
+  it('rejects backslash traversal', () => {
+    expect(loadPersona('..\\windows\\system32', tmpDir)).toBeNull()
+  })
+
+  it('rejects nested traversal', () => {
+    expect(loadPersona('foo/../../../etc/passwd', tmpDir)).toBeNull()
+  })
+
+  it('rejects path with embedded slash', () => {
+    expect(loadPersona('sub/cipher', tmpDir)).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
 // PERSONA_DEFAULTS constant
 // ---------------------------------------------------------------------------
 

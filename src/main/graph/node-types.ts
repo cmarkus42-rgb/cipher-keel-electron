@@ -174,8 +174,8 @@ export interface TriggerAttrs {
   subsystem: string
   input_quelle: string
   erwarteter_output: string
-  /** Niveau level: 'A' | 'B' | 'C' */
-  niveau: string
+  /** Niveau level */
+  niveau: 'A' | 'B' | 'C'
   gate_befund_id: string | null
 }
 
