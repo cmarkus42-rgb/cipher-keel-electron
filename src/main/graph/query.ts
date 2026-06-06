@@ -153,7 +153,7 @@ export function graphQuery(db: Database.Database, params: QueryParams): QueryRes
     case 'quereinstieg_entscheidungen':
       return executeQuereinstiegEntscheidungen(db)
     case 'adr_list':
-      return executeAdrList(db)
+      return executeAdrList(db, p)
     case 'adr_by_tiefe':
       return executeAdrByTiefe(db, p)
     case 'schnittstellen_vertraege':
@@ -165,7 +165,7 @@ export function graphQuery(db: Database.Database, params: QueryParams): QueryRes
     case 'coaching_historie':
       return executeCoachingHistorie(db, p)
     case 'architect_summary':
-      return executeArchitectSummary(db)
+      return executeArchitectSummary(db, p)
     case 'risk_reviews':
       return executeRiskReviews(db, p)
   }
@@ -1005,9 +1005,23 @@ function executeQuereinstiegEntscheidungen(db: Database.Database): QueryResult {
 
 /**
  * adr_list: All active ADR nodes ordered by version descending.
+ * Optional parameter project_uid: filter to ADRs linked to a specific subsystem via adr_fuer.
  */
-function executeAdrList(db: Database.Database): QueryResult {
-  const sql = `
+function executeAdrList(db: Database.Database, p: Record<string, unknown>): QueryResult {
+  const projectUid = p.project_uid as string | undefined
+  let sql: string
+  if (projectUid) {
+    sql = `
+      SELECT n.uid, n.title, n.frontmatter, n.erstellt
+      FROM node n
+      JOIN edge e ON e.src = n.uid AND e.type = 'adr_fuer' AND e.dst = ?
+      WHERE n.kind = 'adr' AND n.status = 'aktiv'
+      ORDER BY json_extract(n.frontmatter, '$.version') DESC
+    `
+    const rows = db.prepare(sql).all(projectUid) as Record<string, unknown>[]
+    return { template: 'adr_list', rows, count: rows.length }
+  }
+  sql = `
     SELECT uid, title, frontmatter, erstellt
     FROM node
     WHERE kind = 'adr' AND status = 'aktiv'
@@ -1209,9 +1223,29 @@ function executeCoachingHistorie(
 /**
  * architect_summary: Aggregated counts across all Architect-relevant node types.
  * Returns a single summary row.
+ * Optional parameter project_uid: filter adr_count and offene_fragen to a specific subsystem.
  */
-function executeArchitectSummary(db: Database.Database): QueryResult {
-  const sql = `
+function executeArchitectSummary(db: Database.Database, p: Record<string, unknown>): QueryResult {
+  const projectUid = p.project_uid as string | undefined
+  let sql: string
+  if (projectUid) {
+    sql = `
+      SELECT
+        (SELECT COUNT(*) FROM node WHERE kind = 'phase_subsystem' AND status = 'aktiv'
+          AND uid = ?) AS subsystem_count,
+        (SELECT COUNT(*) FROM node n
+          JOIN edge e ON e.src = n.uid AND e.type = 'adr_fuer' AND e.dst = ?
+          WHERE n.kind = 'adr' AND n.status = 'aktiv') AS adr_count,
+        (SELECT COUNT(*) FROM node WHERE kind = 'frage_knoten' AND status = 'aktiv'
+          AND json_extract(frontmatter, '$.status') = 'offen'
+          AND json_extract(frontmatter, '$.subsystem') = ?) AS offene_fragen,
+        (SELECT COUNT(*) FROM node WHERE kind = 'gate_befund' AND status = 'aktiv'
+          AND json_extract(frontmatter, '$.gate_typ') = 'drift') AS drift_findings
+    `
+    const rows = db.prepare(sql).all(projectUid, projectUid, projectUid) as Record<string, unknown>[]
+    return { template: 'architect_summary', rows, count: rows.length }
+  }
+  sql = `
     SELECT
       (SELECT COUNT(*) FROM node WHERE kind = 'phase_subsystem' AND status = 'aktiv') AS subsystem_count,
       (SELECT COUNT(*) FROM node WHERE kind = 'adr' AND status = 'aktiv') AS adr_count,
@@ -1220,7 +1254,6 @@ function executeArchitectSummary(db: Database.Database): QueryResult {
       (SELECT COUNT(*) FROM node WHERE kind = 'gate_befund' AND status = 'aktiv'
         AND json_extract(frontmatter, '$.gate_typ') = 'drift') AS drift_findings
   `
-
   const rows = db.prepare(sql).all() as Record<string, unknown>[]
   return { template: 'architect_summary', rows, count: rows.length }
 }
