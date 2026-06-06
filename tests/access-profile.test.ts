@@ -23,7 +23,7 @@ function makeRahmen(overrides: Partial<PresetRahmen>): PresetRahmen {
     rollenTyp: RollenTyp.PhasenEntitaet,
     phasenBindung: [],
     capabilityAnbindung: [],
-    graphAnbindung: { lesen: true, schreiben: true },
+    graphAnbindung: { lesen: false, schreiben: false },
     personaVorgabe: '',
     runtime: 'claude-cli-tmux',
     model: '',

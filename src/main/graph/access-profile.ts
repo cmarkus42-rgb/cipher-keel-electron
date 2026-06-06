@@ -58,21 +58,33 @@ const CONTROL_KINDS = new Set(['phase', 'trigger', 'gate_befund', 'github_repo']
  *   BeauftragteInstanz    → phase-scoped read / phase-scoped write
  */
 export function deriveProfile(rahmen: PresetRahmen): AccessProfile {
+  // QuerliegenSE is always wide/full — graphAnbindung override is irrelevant
+  if (rahmen.rollenTyp === RollenTyp.QuerliegenSE) {
+    return { read: 'wide', write: 'full' }
+  }
+
+  // Start with RollenTyp default
+  let profile: AccessProfile
   switch (rahmen.rollenTyp) {
-    case RollenTyp.QuerliegenSE:
-      return { read: 'wide', write: 'full' }
-
     case RollenTyp.QuerliegenCompanion:
-      return { read: 'wide', write: 'phase-scoped' }
-
+      profile = { read: 'wide', write: 'phase-scoped', phasenScope: [...rahmen.phasenBindung] }
+      break
     case RollenTyp.PhasenEntitaet:
     case RollenTyp.BeauftragteInstanz:
-      return {
-        read: 'phase-scoped',
-        write: 'phase-scoped',
-        phasenScope: [...rahmen.phasenBindung],
-      }
+    default:
+      profile = { read: 'phase-scoped', write: 'phase-scoped', phasenScope: [...rahmen.phasenBindung] }
+      break
   }
+
+  // DE-2: graphAnbindung override from PresetRahmen
+  if (rahmen.graphAnbindung.lesen) {
+    profile.read = 'wide'
+  }
+  if (rahmen.graphAnbindung.schreiben) {
+    profile.write = 'full'
+  }
+
+  return profile
 }
 
 // ---------------------------------------------------------------------------
