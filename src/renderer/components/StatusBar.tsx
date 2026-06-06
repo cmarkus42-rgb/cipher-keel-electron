@@ -6,6 +6,16 @@
  */
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+export const STATUS_COLORS: Record<string, string> = {
+  connected:    '#22c55e',
+  disconnected: '#ef4444',
+  connecting:   '#eab308',
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -63,11 +73,7 @@ export function StatusBar({ activeProject, sessionCount, nanoClawStatus }: Statu
 // ---------------------------------------------------------------------------
 
 function NanoClawIndicator({ status }: { status: NonNullable<StatusBarProps['nanoClawStatus']> }) {
-  const colors = {
-    connected:    '#98c379',
-    disconnected: '#e06c75',
-    connecting:   '#e5c07b',
-  }
+  const colors = STATUS_COLORS
   const labels = {
     connected:    'NC verbunden',
     disconnected: 'NC getrennt',
