@@ -92,3 +92,37 @@ export function restoreSessionLayout(dir: string): SessionLayout | null {
     return null
   }
 }
+
+// ---------------------------------------------------------------------------
+// Session snapshot persistence (CK-UI-032)
+// ---------------------------------------------------------------------------
+
+const SNAPSHOT_FILENAME = 'session-snapshot.json'
+
+export interface SessionSnapshot {
+  sessions: { presetId: string; name: string; gridPosition: number }[]
+  gridConfig: { cols: number; rows: number }
+  activeProject: string
+}
+
+/**
+ * Persists the session snapshot to <dir>/session-snapshot.json.
+ */
+export function saveSessionSnapshot(snapshot: SessionSnapshot, dir: string): void {
+  writeFileSync(join(dir, SNAPSHOT_FILENAME), JSON.stringify(snapshot, null, 2), 'utf-8')
+}
+
+/**
+ * Loads the session snapshot from <dir>/session-snapshot.json.
+ * Returns null if the file does not exist or cannot be parsed.
+ */
+export function loadSessionSnapshot(dir: string): SessionSnapshot | null {
+  const filePath = join(dir, SNAPSHOT_FILENAME)
+  if (!existsSync(filePath)) return null
+  try {
+    const content = readFileSync(filePath, 'utf-8')
+    return JSON.parse(content) as SessionSnapshot
+  } catch {
+    return null
+  }
+}
