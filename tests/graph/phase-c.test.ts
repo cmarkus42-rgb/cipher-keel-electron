@@ -15,15 +15,16 @@ import {
 import type { NodeKind } from '../../src/main/graph/node-types'
 
 describe('EDGE_TYPES (CK-GRAPH-015)', () => {
-  it('contains all 21 types', () => {
-    expect(EDGE_TYPES).toHaveLength(21)
+  it('contains all 24 types', () => {
+    expect(EDGE_TYPES).toHaveLength(24)
     const expected = [
       'verweist_auf', 'verfeinert', 'begruendet',
       'setzt_um', 'verifiziert', 'erzeugt_von', 'abgeloest_durch',
       'naechste_phase', 'traegt_phase', 'hat_github_repo',
       'phaseninput_fuer', 'behebt', 'referenziert', 'prueft',
       'gate_fuer', 'subsystem_von', 'haengt_ab_von',
-      'triggert', 'teilprojekt_von', 'uebergibt_an', 'sammelt_ein'
+      'triggert', 'teilprojekt_von', 'uebergibt_an', 'sammelt_ein',
+      'schnittstellen_vertrag_fuer', 'adr_fuer', 'beantwortet',
     ]
     for (const t of expected) {
       expect(EDGE_TYPES).toContain(t)

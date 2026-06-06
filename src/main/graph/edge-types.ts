@@ -38,7 +38,10 @@ export const EDGE_TYPES = [
   'triggert',           // trigger → phase (SE handoff trigger, Phase 3c)
   'teilprojekt_von',    // SE session → SE session (sub-project membership, Phase 3c)
   'uebergibt_an',       // SE session → SE session (handoff direction, Phase 3c)
-  'sammelt_ein'         // SE session → SE session (aggregation, Phase 3c)
+  'sammelt_ein',        // SE session → SE session (aggregation, Phase 3c)
+  'schnittstellen_vertrag_fuer', // schnittstellen_vertrag → phase_subsystem (Phase 4a)
+  'adr_fuer',           // adr → phase_subsystem (Phase 4a)
+  'beantwortet',        // antwort_knoten → frage_knoten (Phase 4a coaching)
 ] as const
 
 export type EdgeType = (typeof EDGE_TYPES)[number]
@@ -94,7 +97,10 @@ const PAIR_DERIVATION: Partial<Record<PairKey, EdgeType>> = {
   'test->artefakt': 'verifiziert',
   'phase->phase': 'naechste_phase',
   'gate_befund->phase': 'gate_fuer',
-  'trigger->phase': 'triggert'
+  'trigger->phase': 'triggert',
+  'schnittstellen_vertrag->phase_subsystem': 'schnittstellen_vertrag_fuer',
+  'adr->phase_subsystem': 'adr_fuer',
+  'antwort_knoten->frage_knoten': 'beantwortet',
 }
 
 /**
@@ -215,6 +221,36 @@ export function validateEdgeForPair(
   // SE hierarchy edges are flexible — no strict pair enforcement (Phase 3c)
   if (type === 'teilprojekt_von' || type === 'uebergibt_an' || type === 'sammelt_ein') {
     return null
+  }
+
+  // schnittstellen_vertrag_fuer: schnittstellen_vertrag → phase_subsystem (Phase 4a)
+  if (type === 'schnittstellen_vertrag_fuer') {
+    if (srcKind !== 'schnittstellen_vertrag') {
+      return `Edge type 'schnittstellen_vertrag_fuer' requires source kind 'schnittstellen_vertrag', got '${srcKind}'`
+    }
+    return dstKind === 'phase_subsystem'
+      ? null
+      : `Edge type 'schnittstellen_vertrag_fuer' requires destination kind 'phase_subsystem', got '${dstKind}'`
+  }
+
+  // adr_fuer: adr → phase_subsystem (Phase 4a)
+  if (type === 'adr_fuer') {
+    if (srcKind !== 'adr') {
+      return `Edge type 'adr_fuer' requires source kind 'adr', got '${srcKind}'`
+    }
+    return dstKind === 'phase_subsystem'
+      ? null
+      : `Edge type 'adr_fuer' requires destination kind 'phase_subsystem', got '${dstKind}'`
+  }
+
+  // beantwortet: antwort_knoten → frage_knoten (Phase 4a coaching)
+  if (type === 'beantwortet') {
+    if (srcKind !== 'antwort_knoten') {
+      return `Edge type 'beantwortet' requires source kind 'antwort_knoten', got '${srcKind}'`
+    }
+    return dstKind === 'frage_knoten'
+      ? null
+      : `Edge type 'beantwortet' requires destination kind 'frage_knoten', got '${dstKind}'`
   }
 
   // P1 edge types valid between uebergabedokument nodes (CK-P1-013)
