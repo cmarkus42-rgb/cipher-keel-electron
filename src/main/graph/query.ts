@@ -52,6 +52,7 @@ export const QUERY_TEMPLATES = [
   'coaching_historie',
   'architect_summary',
   'risk_reviews',
+  'subsystem_cycle_status',
 ] as const
 
 export type QueryTemplate = (typeof QUERY_TEMPLATES)[number]
@@ -168,6 +169,8 @@ export function graphQuery(db: Database.Database, params: QueryParams): QueryRes
       return executeArchitectSummary(db, p)
     case 'risk_reviews':
       return executeRiskReviews(db, p)
+    case 'subsystem_cycle_status':
+      return executeSubsystemCycleStatus(db, p)
   }
 }
 
@@ -1278,6 +1281,37 @@ function executeRiskReviews(
 
   const rows = db.prepare(sql).all() as Record<string, unknown>[]
   return { template: 'risk_reviews', rows, count: rows.length }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 query implementations
+// ---------------------------------------------------------------------------
+
+/**
+ * subsystem_cycle_status: All cycle phase nodes for a subsystem, ordered by position.
+ * Cycle phases store their subsystem UID in frontmatter.cycle_subsystem.
+ * CK-PROC-016
+ *
+ * Parameters:
+ *   subsystem_uid — UID of the phase_subsystem this cycle belongs to
+ */
+function executeSubsystemCycleStatus(
+  db: Database.Database,
+  p: Record<string, unknown>
+): QueryResult {
+  const subsystemUid = p.subsystem_uid as string
+  if (!subsystemUid) throw new Error("Template 'subsystem_cycle_status' requires parameter 'subsystem_uid'")
+
+  const sql = `
+    SELECT uid, title, frontmatter, status
+    FROM node
+    WHERE kind = 'phase'
+      AND json_extract(frontmatter, '$.cycle_subsystem') = ?
+    ORDER BY CAST(json_extract(frontmatter, '$.position') AS INTEGER) ASC
+  `
+
+  const rows = db.prepare(sql).all(subsystemUid) as Record<string, unknown>[]
+  return { template: 'subsystem_cycle_status', rows, count: rows.length }
 }
 
 // ---------------------------------------------------------------------------
