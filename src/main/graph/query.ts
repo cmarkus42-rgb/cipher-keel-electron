@@ -43,7 +43,15 @@ export const QUERY_TEMPLATES = [
   'trigger_for_phase',
   'se_hierarchy',
   'handoff_audit',
-  'quereinstieg_entscheidungen'
+  'quereinstieg_entscheidungen',
+  'adr_list',
+  'adr_by_tiefe',
+  'schnittstellen_vertraege',
+  'anforderungspakete',
+  'offene_fragen',
+  'coaching_historie',
+  'architect_summary',
+  'risk_reviews',
 ] as const
 
 export type QueryTemplate = (typeof QUERY_TEMPLATES)[number]
@@ -144,6 +152,22 @@ export function graphQuery(db: Database.Database, params: QueryParams): QueryRes
       return executeHandoffAudit(db)
     case 'quereinstieg_entscheidungen':
       return executeQuereinstiegEntscheidungen(db)
+    case 'adr_list':
+      return executeAdrList(db)
+    case 'adr_by_tiefe':
+      return executeAdrByTiefe(db, p)
+    case 'schnittstellen_vertraege':
+      return executeSchnittstellenVertraege(db, p)
+    case 'anforderungspakete':
+      return executeAnforderungspakete(db, p)
+    case 'offene_fragen':
+      return executeOffeneFragen(db, p)
+    case 'coaching_historie':
+      return executeCoachingHistorie(db, p)
+    case 'architect_summary':
+      return executeArchitectSummary(db)
+    case 'risk_reviews':
+      return executeRiskReviews(db, p)
   }
 }
 
@@ -973,6 +997,254 @@ function executeQuereinstiegEntscheidungen(db: Database.Database): QueryResult {
 
   const rows = db.prepare(sql).all() as Record<string, unknown>[]
   return { template: 'quereinstieg_entscheidungen', rows, count: rows.length }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4a query implementations
+// ---------------------------------------------------------------------------
+
+/**
+ * adr_list: All active ADR nodes ordered by version descending.
+ */
+function executeAdrList(db: Database.Database): QueryResult {
+  const sql = `
+    SELECT uid, title, frontmatter, erstellt
+    FROM node
+    WHERE kind = 'adr' AND status = 'aktiv'
+    ORDER BY json_extract(frontmatter, '$.version') DESC
+  `
+  const rows = db.prepare(sql).all() as Record<string, unknown>[]
+  return { template: 'adr_list', rows, count: rows.length }
+}
+
+/**
+ * adr_by_tiefe: Return a specific ADR's content at the requested depth level.
+ *
+ * Parameters:
+ *   adr_uid — UID of the ADR node
+ *   tiefe   — 'summary' | 'context' | 'full'
+ */
+function executeAdrByTiefe(
+  db: Database.Database,
+  p: Record<string, unknown>
+): QueryResult {
+  const adrUid = p.adr_uid as string
+  if (!adrUid) throw new Error("Template 'adr_by_tiefe' requires parameter 'adr_uid'")
+  const tiefe = (p.tiefe as string) ?? 'summary'
+
+  let sql: string
+  if (tiefe === 'summary') {
+    sql = `
+      SELECT uid, title,
+        json_extract(frontmatter, '$.tiefen.summary') AS tiefe_summary,
+        json_extract(frontmatter, '$.consequences') AS consequences
+      FROM node WHERE uid = ? AND kind = 'adr'
+    `
+  } else if (tiefe === 'context') {
+    sql = `
+      SELECT uid, title,
+        json_extract(frontmatter, '$.context') AS context,
+        json_extract(frontmatter, '$.decision') AS decision,
+        json_extract(frontmatter, '$.consequences') AS consequences
+      FROM node WHERE uid = ? AND kind = 'adr'
+    `
+  } else {
+    // full
+    sql = `
+      SELECT uid, title, frontmatter, erstellt
+      FROM node WHERE uid = ? AND kind = 'adr'
+    `
+  }
+
+  const rows = db.prepare(sql).all(adrUid) as Record<string, unknown>[]
+  return { template: 'adr_by_tiefe', rows, count: rows.length }
+}
+
+/**
+ * schnittstellen_vertraege: All active interface contracts, optionally filtered by subsystem.
+ *
+ * Parameters (optional):
+ *   subsystem_uid — UID of the phase_subsystem to filter by (via schnittstellen_vertrag_fuer edge)
+ */
+function executeSchnittstellenVertraege(
+  db: Database.Database,
+  p: Record<string, unknown>
+): QueryResult {
+  const subsystemUid = p.subsystem_uid as string | undefined
+
+  let sql: string
+  let args: unknown[]
+  if (subsystemUid) {
+    sql = `
+      SELECT n.uid, n.title, n.frontmatter, n.erstellt
+      FROM node n
+      JOIN edge e ON e.src = n.uid AND e.type = 'schnittstellen_vertrag_fuer' AND e.dst = ?
+      WHERE n.kind = 'schnittstellen_vertrag' AND n.status = 'aktiv'
+      ORDER BY n.erstellt DESC
+    `
+    args = [subsystemUid]
+  } else {
+    sql = `
+      SELECT uid, title, frontmatter, erstellt
+      FROM node
+      WHERE kind = 'schnittstellen_vertrag' AND status = 'aktiv'
+      ORDER BY erstellt DESC
+    `
+    args = []
+  }
+
+  const rows = db.prepare(sql).all(...args) as Record<string, unknown>[]
+  return { template: 'schnittstellen_vertraege', rows, count: rows.length }
+}
+
+/**
+ * anforderungspakete: All active requirement packages, optionally filtered by subsystem.
+ *
+ * Parameters (optional):
+ *   subsystem_uid — UID of the subsystem (matched via frontmatter $.subsystem)
+ */
+function executeAnforderungspakete(
+  db: Database.Database,
+  p: Record<string, unknown>
+): QueryResult {
+  const subsystemUid = p.subsystem_uid as string | undefined
+
+  let sql: string
+  let args: unknown[]
+  if (subsystemUid) {
+    sql = `
+      SELECT uid, title, frontmatter
+      FROM node
+      WHERE kind = 'anforderungspaket' AND status = 'aktiv'
+        AND json_extract(frontmatter, '$.subsystem') = ?
+      ORDER BY erstellt DESC
+    `
+    args = [subsystemUid]
+  } else {
+    sql = `
+      SELECT uid, title, frontmatter
+      FROM node
+      WHERE kind = 'anforderungspaket' AND status = 'aktiv'
+      ORDER BY erstellt DESC
+    `
+    args = []
+  }
+
+  const rows = db.prepare(sql).all(...args) as Record<string, unknown>[]
+  return { template: 'anforderungspakete', rows, count: rows.length }
+}
+
+/**
+ * offene_fragen: All open coaching questions, optionally filtered by subsystem.
+ *
+ * Parameters (optional):
+ *   subsystem — UID of the subsystem (matched via frontmatter $.subsystem)
+ */
+function executeOffeneFragen(
+  db: Database.Database,
+  p: Record<string, unknown>
+): QueryResult {
+  const subsystem = p.subsystem as string | undefined
+
+  let sql: string
+  let args: unknown[]
+  if (subsystem) {
+    sql = `
+      SELECT uid, title, frontmatter, erstellt
+      FROM node
+      WHERE kind = 'frage_knoten' AND status = 'aktiv'
+        AND json_extract(frontmatter, '$.status') = 'offen'
+        AND json_extract(frontmatter, '$.subsystem') = ?
+      ORDER BY erstellt ASC
+    `
+    args = [subsystem]
+  } else {
+    sql = `
+      SELECT uid, title, frontmatter, erstellt
+      FROM node
+      WHERE kind = 'frage_knoten' AND status = 'aktiv'
+        AND json_extract(frontmatter, '$.status') = 'offen'
+      ORDER BY erstellt ASC
+    `
+    args = []
+  }
+
+  const rows = db.prepare(sql).all(...args) as Record<string, unknown>[]
+  return { template: 'offene_fragen', rows, count: rows.length }
+}
+
+/**
+ * coaching_historie: Q+A pairs for a subsystem chronologically.
+ *
+ * Parameters:
+ *   subsystem — UID of the subsystem (matched via frage_knoten frontmatter $.subsystem)
+ */
+function executeCoachingHistorie(
+  db: Database.Database,
+  p: Record<string, unknown>
+): QueryResult {
+  const subsystem = p.subsystem as string
+  if (!subsystem) throw new Error("Template 'coaching_historie' requires parameter 'subsystem'")
+
+  const sql = `
+    SELECT
+      f.uid AS frage_uid,
+      f.title AS frage_title,
+      json_extract(f.frontmatter, '$.frage') AS frage,
+      a.uid AS antwort_uid,
+      json_extract(a.frontmatter, '$.antwort') AS antwort,
+      f.erstellt
+    FROM node f
+    LEFT JOIN edge e ON e.dst = f.uid AND e.type = 'beantwortet'
+    LEFT JOIN node a ON a.uid = e.src
+    WHERE f.kind = 'frage_knoten'
+      AND json_extract(f.frontmatter, '$.subsystem') = ?
+    ORDER BY f.erstellt ASC
+  `
+
+  const rows = db.prepare(sql).all(subsystem) as Record<string, unknown>[]
+  return { template: 'coaching_historie', rows, count: rows.length }
+}
+
+/**
+ * architect_summary: Aggregated counts across all Architect-relevant node types.
+ * Returns a single summary row.
+ */
+function executeArchitectSummary(db: Database.Database): QueryResult {
+  const sql = `
+    SELECT
+      (SELECT COUNT(*) FROM node WHERE kind = 'phase_subsystem' AND status = 'aktiv') AS subsystem_count,
+      (SELECT COUNT(*) FROM node WHERE kind = 'adr' AND status = 'aktiv') AS adr_count,
+      (SELECT COUNT(*) FROM node WHERE kind = 'frage_knoten' AND status = 'aktiv'
+        AND json_extract(frontmatter, '$.status') = 'offen') AS offene_fragen,
+      (SELECT COUNT(*) FROM node WHERE kind = 'gate_befund' AND status = 'aktiv'
+        AND json_extract(frontmatter, '$.gate_typ') = 'drift') AS drift_findings
+  `
+
+  const rows = db.prepare(sql).all() as Record<string, unknown>[]
+  return { template: 'architect_summary', rows, count: rows.length }
+}
+
+/**
+ * risk_reviews: All gate_befund nodes with gate_typ 'risk-review', newest first.
+ *
+ * Parameters (optional):
+ *   welle — (reserved for future filtering by wave, not currently enforced)
+ */
+function executeRiskReviews(
+  db: Database.Database,
+  _p: Record<string, unknown>
+): QueryResult {
+  const sql = `
+    SELECT uid, title, frontmatter, erstellt
+    FROM node
+    WHERE kind = 'gate_befund' AND status = 'aktiv'
+      AND json_extract(frontmatter, '$.gate_typ') = 'risk-review'
+    ORDER BY erstellt DESC
+  `
+
+  const rows = db.prepare(sql).all() as Record<string, unknown>[]
+  return { template: 'risk_reviews', rows, count: rows.length }
 }
 
 // ---------------------------------------------------------------------------
