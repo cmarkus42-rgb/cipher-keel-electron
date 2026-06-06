@@ -50,6 +50,8 @@ export interface PresetRahmen {
   capabilityNiveau: CapabilityNiveau
   /** Specific harness this preset is bound to (empty = any) */
   harnessBindung: string
+  /** Whether this preset acts as an orchestrator (spawns/controls other presets). DE-5 */
+  orchestrierung?: boolean
 }
 
 export interface ValidationError {
@@ -160,6 +162,15 @@ export function validatePresetRahmen(rahmen: unknown): ValidationResult {
       field: 'runtime',
       message:
         `Unknown runtime '${runtimeValue}'. Known runtimes: ${[...KNOWN_RUNTIMES].join(', ')}`,
+    })
+  }
+
+  // Validate orchestrierung — must be boolean if present
+  const orchestrierungValue = obj['orchestrierung']
+  if (orchestrierungValue !== undefined && orchestrierungValue !== null && typeof orchestrierungValue !== 'boolean') {
+    errors.push({
+      field: 'orchestrierung',
+      message: `orchestrierung must be a boolean, got '${typeof orchestrierungValue}'`,
     })
   }
 

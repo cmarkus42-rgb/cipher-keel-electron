@@ -124,6 +124,7 @@ export function createWorkshopRahmen(niveau: CapabilityNiveau): PresetRahmen {
     model: '',        // 'standard' → leer = Harness-Default (Sonnet-Klasse)
     capabilityNiveau: niveau,
     harnessBindung: '',
+    orchestrierung: true,
   }
 }
 

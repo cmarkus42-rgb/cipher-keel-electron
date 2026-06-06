@@ -51,6 +51,7 @@ export const CF_RAHMEN: PresetRahmen = {
   model: '',  // standard = empty = Sonnet-class
   capabilityNiveau: CapabilityNiveau.A,
   harnessBindung: '',
+  orchestrierung: true,
 }
 
 export function createCfRahmen(niveau: CapabilityNiveau): PresetRahmen {
@@ -72,6 +73,7 @@ export function createCfRahmen(niveau: CapabilityNiveau): PresetRahmen {
     model: '',
     capabilityNiveau: niveau,
     harnessBindung: '',
+    orchestrierung: true,
   }
 }
 
