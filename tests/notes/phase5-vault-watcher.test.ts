@@ -20,10 +20,12 @@ describe('Vault Watcher (CK-NOTES-009)', () => {
     const watcher = new VaultWatcher(tmpDir, (e) => events.push(e))
     watcher.start()
 
+    // Give watcher time to initialize before writing (macOS FSEvents race)
+    await new Promise(r => setTimeout(r, 200))
     fs.writeFileSync(path.join(tmpDir, 'test.md'), '# Test')
 
     // Wait for debounce + fs.watch delay
-    await new Promise(r => setTimeout(r, 1000))
+    await new Promise(r => setTimeout(r, 2000))
     watcher.stop()
 
     expect(events.some(e => e.type === 'created' || e.type === 'changed')).toBe(true)
@@ -34,9 +36,10 @@ describe('Vault Watcher (CK-NOTES-009)', () => {
     const watcher = new VaultWatcher(tmpDir, (e) => events.push(e))
     watcher.start()
 
+    await new Promise(r => setTimeout(r, 200))
     fs.writeFileSync(path.join(tmpDir, 'test.txt'), 'not markdown')
 
-    await new Promise(r => setTimeout(r, 1000))
+    await new Promise(r => setTimeout(r, 2000))
     watcher.stop()
 
     expect(events).toHaveLength(0)

@@ -4,6 +4,9 @@
  * CK-PROC-015
  */
 
+import type Database from 'better-sqlite3'
+import { GraphWriter } from '../../graph/writer'
+
 export type ItemTyp = 'BUG' | 'MFR' | 'NRF'
 
 export interface FixingItem {
@@ -22,18 +25,33 @@ export function classifyItem(item: FixingItem): ItemTyp {
   return item.typ
 }
 
-export function dispatchFixingItem(item: FixingItem): DispatchResult {
+export function dispatchFixingItem(item: FixingItem, graphDb?: Database.Database): DispatchResult {
   const typ = classifyItem(item)
-  if (typ === 'BUG') {
-    return {
-      itemId: item.id,
-      targetPreset: 'debugger',
-      reasoning: `BUG item dispatched to debugger preset for systematic debugging`,
-    }
+  const result: DispatchResult = typ === 'BUG'
+    ? {
+        itemId: item.id,
+        targetPreset: 'debugger',
+        reasoning: `BUG item dispatched to debugger preset for systematic debugging`,
+      }
+    : {
+        itemId: item.id,
+        targetPreset: 'development-worker',
+        reasoning: `${typ} item dispatched to development worker for implementation`,
+      }
+
+  if (graphDb) {
+    const writer = new GraphWriter(graphDb)
+    writer.upsertNode({
+      kind: 'note',
+      title: `routing-decision:${item.id}`,
+      body: result.reasoning,
+      frontmatter: {
+        notetyp: 'routing-decision',
+        itemId: item.id,
+        targetPreset: result.targetPreset,
+      },
+    })
   }
-  return {
-    itemId: item.id,
-    targetPreset: 'development-worker',
-    reasoning: `${typ} item dispatched to development worker for implementation`,
-  }
+
+  return result
 }

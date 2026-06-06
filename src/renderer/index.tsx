@@ -106,7 +106,7 @@ function App() {
           onCloseSession={handleCloseSession}
         />
       </div>
-      <StatusBar sessionCount={sessionCount} activeProject={undefined} />
+      <StatusBar sessionCount={sessionCount} activeProject="" />
     </div>
   )
 }

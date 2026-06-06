@@ -19,7 +19,7 @@ export function generateVaultIndex(db: Database.Database, vaultPath: string): vo
     '',
   ]
 
-  const docs = result.rows.filter((r: any) => r.kind === 'uebergabedokument')
+  const docs = result.rows.filter((r: Record<string, unknown>) => r.kind === 'uebergabedokument')
 
   if (docs.length > 0) {
     lines.push('## Dokumente', '')

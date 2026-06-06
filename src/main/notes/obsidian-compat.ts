@@ -8,7 +8,7 @@ import path from 'node:path'
 import matter from 'gray-matter'
 
 export interface ObsidianIssue {
-  type: 'invalid-frontmatter' | 'invalid-dirname' | 'obsidian-conflict'
+  type: 'invalid-frontmatter' | 'invalid-dirname' | 'obsidian-conflict' | 'invalid-wikilink'
   file: string
   message: string
 }
@@ -43,6 +43,24 @@ export function validateObsidianCompat(vaultPath: string): ObsidianCompatResult 
           message: 'Invalid YAML frontmatter — Obsidian will show a parse error',
         })
       }
+    }
+
+    // Check wiki-link syntax
+    const relFile = path.relative(vaultPath, file)
+    const openCount = (content.match(/\[\[/g) ?? []).length
+    const closeCount = (content.match(/\]\]/g) ?? []).length
+    if (openCount !== closeCount) {
+      issues.push({
+        type: 'invalid-wikilink',
+        file: relFile,
+        message: 'Unmatched [[ or ]] — Obsidian will fail to resolve the link',
+      })
+    } else if (/\[\[\s*\]\]/.test(content)) {
+      issues.push({
+        type: 'invalid-wikilink',
+        file: relFile,
+        message: 'Empty wiki-link [[]] — link has no target',
+      })
     }
 
     // Check directory names for invalid characters
