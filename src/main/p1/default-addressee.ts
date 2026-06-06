@@ -26,7 +26,9 @@ const DEFAULT_ADDRESSEE_MAP: Record<DokumentTyp, string> = {
   'build-paket':       'testing',
   'test-findings':     'fixing',
   'fix-report':        'audit',
-  'audit-summary':     'release-management'
+  'audit-summary':     'release-management',
+  'rueckweg-befund':   'systems-engineer',
+  'architect-handoff': 'cyber-factory',
 }
 
 // ---------------------------------------------------------------------------

@@ -215,7 +215,7 @@ describe('validateFrontmatter — Quereinstieg (CK-P1-011)', () => {
 // ============================================================
 
 describe('DOKUMENT_TYPEN', () => {
-  it('contains all 7 document types', () => {
+  it('contains all 9 document types', () => {
     expect(DOKUMENT_TYPEN).toContain('anforderungen')
     expect(DOKUMENT_TYPEN).toContain('spec')
     expect(DOKUMENT_TYPEN).toContain('architektur-paket')
@@ -223,7 +223,9 @@ describe('DOKUMENT_TYPEN', () => {
     expect(DOKUMENT_TYPEN).toContain('test-findings')
     expect(DOKUMENT_TYPEN).toContain('fix-report')
     expect(DOKUMENT_TYPEN).toContain('audit-summary')
-    expect(DOKUMENT_TYPEN).toHaveLength(7)
+    expect(DOKUMENT_TYPEN).toContain('rueckweg-befund')
+    expect(DOKUMENT_TYPEN).toContain('architect-handoff')
+    expect(DOKUMENT_TYPEN).toHaveLength(9)
   })
 })
 

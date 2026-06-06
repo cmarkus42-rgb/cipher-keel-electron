@@ -39,7 +39,9 @@ const DOKUMENT_SEKTIONEN: Record<DokumentTyp, string[]> = {
   'build-paket':       ['Kontext', 'Code-Referenzen', 'Implementierungsdetails'],
   'test-findings':     ['Kontext', 'Test-Ergebnisse', 'Befunde'],
   'fix-report':        ['Kontext', 'Bearbeitete Befunde', 'Aenderungen'],
-  'audit-summary':     ['Kontext', 'Audit-Befunde', 'Freigabe-Empfehlung']
+  'audit-summary':     ['Kontext', 'Audit-Befunde', 'Freigabe-Empfehlung'],
+  'rueckweg-befund':   ['Kontext', 'Bruchpunkt', 'Bau-Implikation'],
+  'architect-handoff': ['Kontext', 'Entscheidungen', 'Auftraege'],
 }
 
 // Typen, die eine Gate-Befund-Sektion tragen (alle ausser anforderungen)

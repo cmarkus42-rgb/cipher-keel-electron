@@ -162,7 +162,9 @@ export const DOKUMENT_TYPEN = [
   'build-paket',
   'test-findings',
   'fix-report',
-  'audit-summary'
+  'audit-summary',
+  'rueckweg-befund',
+  'architect-handoff',
 ] as const
 
 export type DokumentTyp = (typeof DOKUMENT_TYPEN)[number]

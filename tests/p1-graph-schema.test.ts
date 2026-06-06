@@ -48,11 +48,12 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('DOKUMENT_TYPEN (CK-P1-001)', () => {
-  it('contains exactly 7 valid values', () => {
-    expect(DOKUMENT_TYPEN).toHaveLength(7)
+  it('contains exactly 9 valid values', () => {
+    expect(DOKUMENT_TYPEN).toHaveLength(9)
     const expected: DokumentTyp[] = [
       'anforderungen', 'spec', 'architektur-paket',
-      'build-paket', 'test-findings', 'fix-report', 'audit-summary'
+      'build-paket', 'test-findings', 'fix-report', 'audit-summary',
+      'rueckweg-befund', 'architect-handoff',
     ]
     for (const typ of expected) {
       expect(DOKUMENT_TYPEN).toContain(typ)
