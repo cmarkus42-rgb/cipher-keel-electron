@@ -39,7 +39,12 @@ export const NODE_KINDS = [
   'phase',
   'uebergabedokument',
   'gate_befund',
-  'trigger'
+  'trigger',
+  'adr',
+  'schnittstellen_vertrag',
+  'anforderungspaket',
+  'frage_knoten',
+  'antwort_knoten',
 ] as const
 
 export type NodeKind = (typeof NODE_KINDS)[number]
@@ -193,6 +198,52 @@ export interface GateBefundAttrs {
   gate_typ: string
 }
 
+/** CK-P3A-003: Architecture Decision Record */
+export interface AdrAttrs {
+  title: string
+  context: string
+  options: string
+  decision: string
+  consequences: string
+  tiefen: { summary: string; context: string; alternatives: string; consequences: string }
+  version: number
+}
+
+/** CK-P3A-002: Interface contract between subsystems */
+export interface SchnittstellenVertragAttrs {
+  subsystem_a: string
+  subsystem_b: string
+  input_schema: string
+  output_schema: string
+  fehlerverhalten: string
+  template_version: string
+}
+
+/** CK-P3A-004: Granular worker input per subsystem */
+export interface AnforderungspaketAttrs {
+  subsystem: string
+  req_ids: string[]
+  code_anker: string[]
+  akzeptanzkriterium: string
+  testcase_verweis: string
+  niveau_c_extrakt?: string
+}
+
+/** CK-P3A-005: Coaching question from CF worker */
+export interface FrageKnotenAttrs {
+  subsystem: string
+  frage: string
+  worker_id: string
+  status: 'offen' | 'beantwortet'
+}
+
+/** CK-P3A-005: Coaching answer from Architect */
+export interface AntwortKnotenAttrs {
+  frage_uid: string
+  antwort: string
+  architect_session: string
+}
+
 // ---------------------------------------------------------------------------
 // Type-specific attribute map
 // ---------------------------------------------------------------------------
@@ -210,6 +261,11 @@ export interface NodeAttrMap {
   uebergabedokument: UebergabedokumentAttrs
   gate_befund: GateBefundAttrs
   trigger: TriggerAttrs
+  adr: AdrAttrs
+  schnittstellen_vertrag: SchnittstellenVertragAttrs
+  anforderungspaket: AnforderungspaketAttrs
+  frage_knoten: FrageKnotenAttrs
+  antwort_knoten: AntwortKnotenAttrs
 }
 
 // ---------------------------------------------------------------------------
@@ -229,7 +285,12 @@ export const REQUIRED_FRONTMATTER_FIELDS: Record<NodeKind, string[]> = {
   phase: ['name', 'position'],
   uebergabedokument: ['dokumentTyp'],
   gate_befund: ['phase_uid', 'strukturell', 'gate_typ'],
-  trigger: ['entitaets_id', 'phasen_ziel', 'niveau']
+  trigger: ['entitaets_id', 'phasen_ziel', 'niveau'],
+  adr: ['title', 'context', 'options', 'decision', 'consequences', 'tiefen', 'version'],
+  schnittstellen_vertrag: ['subsystem_a', 'subsystem_b', 'input_schema', 'output_schema', 'fehlerverhalten', 'template_version'],
+  anforderungspaket: ['subsystem', 'req_ids', 'code_anker', 'akzeptanzkriterium', 'testcase_verweis'],
+  frage_knoten: ['subsystem', 'frage', 'worker_id', 'status'],
+  antwort_knoten: ['frage_uid', 'antwort', 'architect_session'],
 }
 
 /** Allowed frontmatter fields per kind (for strict validation). */
@@ -244,8 +305,13 @@ export const ALLOWED_FRONTMATTER_FIELDS: Record<NodeKind, string[]> = {
   github_repo: ['url', 'owner', 'name', 'repo_id', 'default_branch', 'visibility', 'linked_at'],
   phase: ['name', 'position', 'phase_status', 'skip_profil'],
   uebergabedokument: ['dokumentTyp'],
-  gate_befund: ['phase_uid', 'strukturell', 'plausibilitaet', 'gewichtung', 'gate_typ'],
-  trigger: ['entitaets_id', 'phasen_ziel', 'subsystem', 'input_quelle', 'erwarteter_output', 'niveau', 'gate_befund_id']
+  gate_befund: ['phase_uid', 'strukturell', 'plausibilitaet', 'gewichtung', 'gate_typ', 'risiko', 'wahrscheinlichkeit', 'impact', 'massnahme', 'befund_statement'],
+  trigger: ['entitaets_id', 'phasen_ziel', 'subsystem', 'input_quelle', 'erwarteter_output', 'niveau', 'gate_befund_id'],
+  adr: ['title', 'context', 'options', 'decision', 'consequences', 'tiefen', 'version'],
+  schnittstellen_vertrag: ['subsystem_a', 'subsystem_b', 'input_schema', 'output_schema', 'fehlerverhalten', 'template_version'],
+  anforderungspaket: ['subsystem', 'req_ids', 'code_anker', 'akzeptanzkriterium', 'testcase_verweis', 'niveau_c_extrakt'],
+  frage_knoten: ['subsystem', 'frage', 'worker_id', 'status'],
+  antwort_knoten: ['frage_uid', 'antwort', 'architect_session'],
 }
 
 // ---------------------------------------------------------------------------

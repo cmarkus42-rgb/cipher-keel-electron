@@ -15,12 +15,13 @@ import {
 } from '../../src/main/graph/node-types'
 
 describe('NODE_KINDS', () => {
-  it('contains all 12 types', () => {
-    expect(NODE_KINDS).toHaveLength(12)
+  it('contains all 17 types', () => {
+    expect(NODE_KINDS).toHaveLength(17)
     const expected: NodeKind[] = [
       'anforderung', 'entscheidung', 'artefakt', 'test',
       'note', 'phase_subsystem', 'anlass', 'github_repo', 'phase',
-      'uebergabedokument', 'gate_befund', 'trigger'
+      'uebergabedokument', 'gate_befund', 'trigger',
+      'adr', 'schnittstellen_vertrag', 'anforderungspaket', 'frage_knoten', 'antwort_knoten',
     ]
     for (const k of expected) {
       expect(NODE_KINDS).toContain(k)
