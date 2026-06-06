@@ -143,6 +143,20 @@ describe('GraphWriter — Phase 4a NodeKinds', () => {
     expect(edge.created).toBe(true)
   })
 
+  it('rejects frage_knoten with invalid frontmatter status', () => {
+    expect(() => writer.upsertNode({
+      kind: 'frage_knoten',
+      title: 'Bad status question',
+      path: '/coaching/q-bad.md',
+      frontmatter: {
+        subsystem: 'uid-auth',
+        frage: 'Is this valid?',
+        worker_id: 'worker-a1',
+        status: 'ungueltig',
+      },
+    })).toThrow(SchemaError)
+  })
+
   it('links antwort to frage with beantwortet edge', () => {
     const frage = writer.upsertNode({
       kind: 'frage_knoten',

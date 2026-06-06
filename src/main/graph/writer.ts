@@ -15,6 +15,8 @@ import {
   isValidStatus,
   isValidDokumentTyp,
   DOKUMENT_TYPEN,
+  isValidFrageKnotenStatus,
+  FRAGE_KNOTEN_STATUSES,
   REQUIRED_FRONTMATTER_FIELDS,
   type NodeKind,
   type NodeStatus
@@ -162,6 +164,17 @@ export class GraphWriter {
         throw new SchemaError(
           `Invalid dokumentTyp '${dokumentTyp}' for kind 'uebergabedokument'. ` +
           `Valid values: ${DOKUMENT_TYPEN.join(', ')}`
+        )
+      }
+    }
+
+    // Validate frage_knoten.status in frontmatter (offen | beantwortet)
+    if (kind === 'frage_knoten') {
+      const fkStatus = fm.status as string | undefined
+      if (!fkStatus || !isValidFrageKnotenStatus(fkStatus)) {
+        throw new SchemaError(
+          `Invalid frage_knoten status '${fkStatus}' in frontmatter. ` +
+          `Valid values: ${FRAGE_KNOTEN_STATUSES.join(', ')}`
         )
       }
     }

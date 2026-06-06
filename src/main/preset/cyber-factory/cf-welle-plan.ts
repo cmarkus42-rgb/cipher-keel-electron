@@ -30,6 +30,8 @@ export interface WellePlan {
 }
 
 export function buildWellePlan(db: Database.Database, maxWorkers: number): WellePlan {
+  if (maxWorkers < 1) maxWorkers = 1
+
   // 1. Get all subsystems
   const subsResult = graphQuery(db, { template: 'subsystem_list' })
   if (subsResult.count === 0) return { wellen: [] }

@@ -331,3 +331,10 @@ export function isValidStatus(status: string): status is NodeStatus {
 export function isValidDokumentTyp(typ: string): typ is DokumentTyp {
   return (DOKUMENT_TYPEN as readonly string[]).includes(typ)
 }
+
+export const FRAGE_KNOTEN_STATUSES = ['offen', 'beantwortet'] as const
+export type FrageKnotenStatus = (typeof FRAGE_KNOTEN_STATUSES)[number]
+
+export function isValidFrageKnotenStatus(status: string): status is FrageKnotenStatus {
+  return (FRAGE_KNOTEN_STATUSES as readonly string[]).includes(status)
+}

@@ -62,6 +62,7 @@ describe('CF Niveau differentiation (CK-P3CF-008, CK-P3CF-010)', () => {
     const rahmen = createCfRahmen(CapabilityNiveau.C)
     expect(rahmen.capabilityAnbindung).toHaveLength(1)
     expect(rahmen.capabilityAnbindung[0]).toBe('cf-core-identity')
+    expect(rahmen.name).toBe('Development-Worker-Modus')
   })
 
   it('Niveau A max 5 workers', () => {

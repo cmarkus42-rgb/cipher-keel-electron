@@ -78,4 +78,13 @@ describe('CF Welle Plan (CK-P3CF-002)', () => {
     const plan = buildWellePlan(db, 5)
     expect(plan.wellen).toHaveLength(0)
   })
+
+  it('treats maxWorkers <= 0 as 1 (guard against infinite loop)', () => {
+    const a = createSubsystem('Auth', '/sub/auth')
+    createPackage(a.uid, 'Auth Pkg', '/pkg/auth')
+
+    const plan = buildWellePlan(db, 0)
+    expect(plan.wellen).toHaveLength(1)
+    expect(plan.wellen[0].slots).toHaveLength(1)
+  })
 })
