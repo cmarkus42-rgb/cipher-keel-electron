@@ -37,6 +37,26 @@ export const WORKSHOP_SUMMARY_CONFIG: RollingSummaryConfig = {
   summaryFields: ['erledigte_items', 'items_in_arbeit', 'eskaliert_items', 'offene_fragen'],
 }
 
+/** Extended config for CF with wave-based auto-activation. */
+export interface CfSummaryConfig extends RollingSummaryConfig {
+  autoActivateAfterWelle: number
+}
+
+/** Architect summary config — mandatory, tracks ADRs, contracts, coaching, drift. */
+export const ARCHITECT_SUMMARY_CONFIG: RollingSummaryConfig = {
+  pflicht: true,
+  updateTriggers: ['coaching-antwort', 'drift-befund', 'adr-update', 'welle-abschluss'],
+  summaryFields: ['subsystem_status', 'aktive_adrs', 'offene_coaching', 'drift_findings'],
+}
+
+/** CF summary config — optional until wave 3, tracks project-level state. */
+export const CF_SUMMARY_CONFIG: CfSummaryConfig = {
+  pflicht: false,
+  autoActivateAfterWelle: 3,
+  updateTriggers: ['welle-abschluss', 'risk-review', 'worker-rotation'],
+  summaryFields: ['wellen_abgeschlossen', 'aktive_worker', 'blockierte_subsysteme', 'offene_fragen'],
+}
+
 // ---------------------------------------------------------------------------
 // Data types
 // ---------------------------------------------------------------------------
