@@ -118,3 +118,41 @@ export function warnOversizedPackages(
 
   return results
 }
+
+// ---------------------------------------------------------------------------
+// checkArchitectBoundary / checkCfBoundary
+// ---------------------------------------------------------------------------
+
+const CODE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.rs', '.go', '.java', '.c', '.cpp', '.h'])
+
+/**
+ * Check if an Architect session wrote productive code files.
+ * Returns warnings (not errors) for each code file. CK-P3A-013
+ */
+export function checkArchitectBoundary(writtenFiles: string[]): LintResult[] {
+  return writtenFiles
+    .filter(f => {
+      const ext = f.slice(f.lastIndexOf('.'))
+      return CODE_EXTENSIONS.has(ext)
+    })
+    .map(f => ({
+      packageName: 'architect-boundary',
+      severity: 'warning' as const,
+      message: `Architect hat produktiver Code geschrieben: ${f}. Pseudocode und Signaturen erlaubt, produktiver Code verboten.`,
+    }))
+}
+
+/**
+ * Check if a CF session modified architecture-owned node kinds.
+ * Returns warnings for each violation. CK-P3CF-011
+ */
+export function checkCfBoundary(writtenNodeKinds: string[]): LintResult[] {
+  const FORBIDDEN = new Set(['schnittstellen_vertrag', 'adr'])
+  return writtenNodeKinds
+    .filter(k => FORBIDDEN.has(k))
+    .map(k => ({
+      packageName: 'cf-boundary',
+      severity: 'warning' as const,
+      message: `CF hat ${k}-Knoten geschrieben/geändert. Architektur-Artefakte sind Architect-Territorium.`,
+    }))
+}
