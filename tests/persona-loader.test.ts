@@ -125,8 +125,12 @@ describe('PERSONA_DEFAULTS constant', () => {
     expect(PERSONA_DEFAULTS['testing-assistant']).toBe('cipher')
   })
 
-  it('contains exactly 5 entries', () => {
-    expect(Object.keys(PERSONA_DEFAULTS)).toHaveLength(5)
+  it('maps cyber-factory to cipher', () => {
+    expect(PERSONA_DEFAULTS['cyber-factory']).toBe('cipher')
+  })
+
+  it('contains exactly 6 entries', () => {
+    expect(Object.keys(PERSONA_DEFAULTS)).toHaveLength(6)
   })
 })
 
