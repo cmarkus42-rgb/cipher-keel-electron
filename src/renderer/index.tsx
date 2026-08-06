@@ -15,6 +15,7 @@ import { SessionGrid } from './components/SessionGrid'
 import { Sidebar, SidebarSession } from './components/Sidebar'
 import { StatusBar } from './components/StatusBar'
 import { useVoiceSession } from './hooks/useVoiceSession'
+import type { ServiceStatusMap } from '../shared/service-status'
 
 interface SessionSlot {
   type: 'session' | 'launcher'
@@ -24,11 +25,18 @@ interface SessionSlot {
   contextUsage?: number
 }
 
+// IPC channel constants (inlined to avoid circular imports in renderer)
+const SERVICES_STATUS = 'services:status'
+const SERVICES_STATUS_CHANGED = 'services:status-changed'
+const APP_READY = 'app:ready'
+
 const api = () => (window as any).cipherKeel
 
 function App() {
   const [slots, setSlots] = useState<SessionSlot[]>([])
   const [grid] = useState({ cols: 2, rows: 2 })
+  // CK-NFR-010: subsystem degradation status for the StatusBar
+  const [serviceStatus, setServiceStatus] = useState<ServiceStatusMap | null>(null)
   // Derive focused session ID from first active session slot
   const focusedSessionId = useMemo(() => {
     const active = slots.find(s => s.type === 'session' && s.status === 'active')
@@ -77,6 +85,30 @@ function App() {
     return unsub
   }, [])
 
+  // CK-NFR-010: fetch subsystem status once, then re-fetch once main-process
+  // init finishes and whenever the status changes. The first fetch on mount
+  // can legitimately land before service-lifecycle's setImmediate-deferred
+  // init runs, so app:ready is the signal that the snapshot is trustworthy.
+  const fetchServiceStatus = useCallback(async () => {
+    if (!api()) return
+    const result = await api().invoke(SERVICES_STATUS) as ServiceStatusMap | undefined
+    setServiceStatus(result ?? null)
+  }, [])
+
+  useEffect(() => {
+    fetchServiceStatus()
+  }, [fetchServiceStatus])
+
+  useEffect(() => {
+    if (!api()) return
+    const unsubReady = api().on(APP_READY, () => { fetchServiceStatus() })
+    const unsubChanged = api().on(SERVICES_STATUS_CHANGED, () => { fetchServiceStatus() })
+    return () => {
+      unsubReady()
+      unsubChanged()
+    }
+  }, [fetchServiceStatus])
+
   const sidebarSessions = useMemo<SidebarSession[]>(() =>
     slots
       .filter(s => s.type === 'session')
@@ -106,7 +138,7 @@ function App() {
           onCloseSession={handleCloseSession}
         />
       </div>
-      <StatusBar sessionCount={sessionCount} activeProject="" />
+      <StatusBar sessionCount={sessionCount} activeProject="" serviceStatus={serviceStatus} />
     </div>
   )
 }
