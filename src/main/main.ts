@@ -2,16 +2,18 @@
  * cipher-keel-electron — Electron Main Process entry point.
  *
  * Startup, service instantiation, and app-lifecycle events only.
- * Window creation and IPC registration are delegated to:
- *   window-manager.ts  — BrowserWindow lifecycle + background init
- *   ipc-handlers.ts    — all IPC handler registrations
+ * Window creation, IPC registration and background service init are delegated to:
+ *   window-manager.ts    — BrowserWindow lifecycle
+ *   ipc-handlers.ts      — all IPC handler registrations
+ *   service-lifecycle.ts — window-independent background service init (Befund 1)
  *
  * Security baseline (CK-NFR-004, CK-INF-022) — NON-NEGOTIABLE:
  *   contextIsolation: true, nodeIntegration: false, sandbox: true
  *   (enforced in window-manager.ts BrowserWindow webPreferences)
  *
  * Startup performance (CK-INF-025, CK-NFR-008):
- *   Heavy initializations run AFTER window is shown.
+ *   Service init is deferred one tick so the project window paints first, but runs
+ *   from app.whenReady() regardless of whether any window opens the grid.
  */
 
 import { app, BrowserWindow } from 'electron'
@@ -22,6 +24,9 @@ import { patchEnvPath } from './util/exec-util'
 import { createProjectWindow } from './window-manager'
 import type { AppServices } from './window-manager'
 import { registerIpcHandlers } from './ipc-handlers'
+import { registerWindow } from './event-bus'
+import { initializeServices } from './service-lifecycle'
+import { configStore } from './config/config-store'
 
 // ---------------------------------------------------------------------------
 // Patch PATH early — macOS GUI apps have minimal PATH
@@ -58,7 +63,18 @@ app.whenReady().then(() => {
   console.log('[main] app ready — registering handlers + creating project window')
   registerIpcHandlers(services)
   const win = createProjectWindow(services)
+  registerWindow(win)
   console.log('[main] project window created, id:', win.id)
+
+  // Deferred so the window paints first — startup budget stays under 5s
+  // (CK-INF-025, CK-NFR-008). Measured for real in Phase 9.
+  setImmediate(() => {
+    void initializeServices(services, {
+      userDataPath: app.getPath('userData'),
+      appPath: app.getAppPath(),
+      voiceEnabled: configStore.get('voice').enabled !== false,
+    })
+  })
 
   win.on('closed', () => {
     console.log('[main] project window closed')
@@ -75,7 +91,7 @@ app.whenReady().then(() => {
   // macOS: re-create window when dock icon is clicked and no windows are open
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createProjectWindow(services)
+      registerWindow(createProjectWindow(services))
     }
   })
 })

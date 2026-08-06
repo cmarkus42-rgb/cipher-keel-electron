@@ -98,6 +98,7 @@ import { ProjectManager } from './project/project-manager'
 import type { CreateKanbanItemInput, UpdateKanbanItemInput } from '../shared/kanban-types'
 import { createMainWindow } from './window-manager'
 import type { AppServices } from './window-manager'
+import { registerWindow } from './event-bus'
 import { normalizeToP1Format } from './p1/normalizer'
 
 // Tracks the active grid window for focus-or-create logic (CK-UI-002)
@@ -532,6 +533,7 @@ export function registerIpcHandlers(services: AppServices): void {
     }
     if (!activeGridWindow || activeGridWindow.isDestroyed()) {
       activeGridWindow = createMainWindow(services)
+      registerWindow(activeGridWindow)
       activeGridWindow.on('closed', () => {
         activeGridWindow = null
       })
