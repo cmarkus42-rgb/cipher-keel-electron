@@ -10,6 +10,7 @@ import {
   SUBSYSTEM_UNAVAILABLE,
   subsystemError,
   isSubsystemError,
+  errorMessage,
   type ServiceStatusMap,
 } from '../src/shared/service-status'
 
@@ -49,6 +50,32 @@ describe('isSubsystemError', () => {
 
   it('rejects an object with a different code', () => {
     expect(isSubsystemError({ code: 'SOMETHING_ELSE', subsystem: 'graph', message: 'x' })).toBe(false)
+  })
+})
+
+describe('errorMessage', () => {
+  it('passes a plain string through unchanged', () => {
+    expect(errorMessage('Kickoff fehlgeschlagen')).toBe('Kickoff fehlgeschlagen')
+  })
+
+  it('extracts .message from a SubsystemError', () => {
+    expect(errorMessage(subsystemError('graph', 'Graph not initialized'))).toBe('Graph not initialized')
+  })
+
+  it('extracts .message from a KICKOFF_FAILED-shaped object', () => {
+    expect(errorMessage({ code: 'KICKOFF_FAILED', subsystem: null, message: 'boom' })).toBe('boom')
+  })
+
+  it('falls back to a sensible default for null', () => {
+    expect(errorMessage(null)).toBe('Unbekannter Fehler')
+  })
+
+  it('falls back to a sensible default for undefined', () => {
+    expect(errorMessage(undefined)).toBe('Unbekannter Fehler')
+  })
+
+  it('falls back to a sensible default for a bare object without .message', () => {
+    expect(errorMessage({ foo: 'bar' })).toBe('Unbekannter Fehler')
   })
 })
 

@@ -53,3 +53,27 @@ export function isSubsystemError(value: unknown): value is SubsystemError {
     (value as { code?: unknown }).code === SUBSYSTEM_UNAVAILABLE
   )
 }
+
+// ---------------------------------------------------------------------------
+// Display normalizer — the boundary where a typed error becomes renderable text
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalizes an IPC error value to a displayable string.
+ *
+ * IPC error results may be a plain string (legacy handlers) or a typed error
+ * object such as SubsystemError or the kickoff module's KICKOFF_FAILED shape —
+ * both carry a string `.message`. Never returns undefined and never lets an
+ * object reach a JSX child unstringified.
+ */
+export function errorMessage(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (
+    value !== null &&
+    typeof value === 'object' &&
+    typeof (value as { message?: unknown }).message === 'string'
+  ) {
+    return (value as { message: string }).message
+  }
+  return 'Unbekannter Fehler'
+}

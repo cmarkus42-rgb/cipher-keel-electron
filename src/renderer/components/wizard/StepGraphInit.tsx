@@ -6,6 +6,7 @@
  */
 import { useState, useEffect, useRef } from 'react'
 import { type WizardData } from '../KickoffWizard'
+import { errorMessage } from '../../../shared/service-status'
 
 const api = () => (window as any).cipherKeel
 
@@ -39,12 +40,12 @@ export function StepGraphInit({ data }: StepGraphInitProps) {
     setStatus('running')
     api()
       .invoke('graph:init-project', data.rootPath)
-      .then((result: { ok: boolean; phaseUids?: string[]; error?: string }) => {
+      .then((result: { ok: boolean; phaseUids?: string[]; error?: unknown }) => {
         if (result.ok) {
           setPhaseUids(result.phaseUids ?? [])
           setStatus('done')
         } else {
-          setErrorMsg(result.error ?? 'Unbekannter Fehler')
+          setErrorMsg(errorMessage(result.error))
           setStatus('error')
         }
       })

@@ -16,6 +16,7 @@ import { StepGitInit } from './wizard/StepGitInit'
 import { StepGraphInit } from './wizard/StepGraphInit'
 import { StepGitHub } from './wizard/StepGitHub'
 import { StepToolConfig } from './wizard/StepToolConfig'
+import { errorMessage } from '../../shared/service-status'
 
 const api = () => (window as any).cipherKeel
 
@@ -121,7 +122,7 @@ export function KickoffWizard({ onComplete, onCancel }: KickoffWizardProps) {
             : undefined,
       })
       if (result?.ok === false) {
-        setError(result.error ?? 'Kickoff fehlgeschlagen')
+        setError(errorMessage(result.error ?? 'Kickoff fehlgeschlagen'))
       } else {
         onComplete()
       }

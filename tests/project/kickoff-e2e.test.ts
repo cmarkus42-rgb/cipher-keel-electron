@@ -57,9 +57,10 @@ describe('initProjectPhases', () => {
     ).all() as Array<{ src: string; dst: string }>
 
     expect(edges).toHaveLength(7)
-    expect(edges[0].src).toBe(phaseUids[0])
-    expect(edges[0].dst).toBe(phaseUids[1])
-    expect(edges[6].dst).toBe(phaseUids[7])
+    for (let i = 0; i < 7; i++) {
+      expect(edges[i].src).toBe(phaseUids[i])
+      expect(edges[i].dst).toBe(phaseUids[i + 1])
+    }
   })
 
   it('is idempotent — a second run does not duplicate phase nodes', () => {
@@ -163,6 +164,29 @@ describe('runKickoff — the graph is unavailable (Befund 2)', () => {
     })
 
     expect(result.project!.name).toBe('Probe')
+    expect(result.phaseUids).toEqual([])
+  })
+})
+
+describe('runKickoff — an unexpected error is thrown', () => {
+  it('reports ok:false with a KICKOFF_FAILED error instead of throwing', async () => {
+    const d = {
+      writer,
+      createProject: vi.fn(() => {
+        throw new Error('disk full')
+      }),
+      gitInit: vi.fn().mockResolvedValue(undefined),
+      createRepo: vi.fn(),
+      linkRepo: vi.fn(),
+    }
+
+    const result = await runKickoff(d, {
+      name: 'Probe', rootPath: dir, initGit: false, github: { action: 'skip' },
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toEqual({ code: 'KICKOFF_FAILED', subsystem: null, message: 'disk full' })
+    expect(result.project).toBeNull()
     expect(result.phaseUids).toEqual([])
   })
 })
