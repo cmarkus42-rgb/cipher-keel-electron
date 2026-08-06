@@ -9,12 +9,13 @@
  *   contextIsolation: true, nodeIntegration: false, sandbox: true
  */
 
-import { StrictMode, useState, useCallback, useEffect, useMemo } from 'react'
+import { StrictMode, useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { createRoot } from 'react-dom/client'
 import { SessionGrid } from './components/SessionGrid'
 import { Sidebar, SidebarSession } from './components/Sidebar'
 import { StatusBar } from './components/StatusBar'
 import { useVoiceSession } from './hooks/useVoiceSession'
+import { shouldApplyStatusResult } from './service-status-fetch'
 import type { ServiceStatusMap } from '../shared/service-status'
 
 interface SessionSlot {
@@ -89,10 +90,28 @@ function App() {
   // init finishes and whenever the status changes. The first fetch on mount
   // can legitimately land before service-lifecycle's setImmediate-deferred
   // init runs, so app:ready is the signal that the snapshot is trustworthy.
+  //
+  // getServiceStatus() is a synchronous read today, so responses happen to
+  // resolve in dispatch order — but nothing guarantees that once it becomes
+  // a real async probe. requestSeqRef/appliedSeqRef + shouldApplyStatusResult
+  // enforce "only the newest response wins" explicitly rather than relying
+  // on that timing accident.
+  const requestSeqRef = useRef(0)
+  const appliedSeqRef = useRef(0)
+
   const fetchServiceStatus = useCallback(async () => {
     if (!api()) return
-    const result = await api().invoke(SERVICES_STATUS) as ServiceStatusMap | undefined
-    setServiceStatus(result ?? null)
+    const mySeq = ++requestSeqRef.current
+    try {
+      const result = await api().invoke(SERVICES_STATUS) as ServiceStatusMap | undefined
+      if (shouldApplyStatusResult(appliedSeqRef.current, mySeq)) {
+        appliedSeqRef.current = mySeq
+        setServiceStatus(result ?? null)
+      }
+    } catch (err) {
+      // Fail safe: keep the last known serviceStatus rather than clobbering it.
+      console.error('[renderer] services:status fetch failed:', err)
+    }
   }, [])
 
   useEffect(() => {
