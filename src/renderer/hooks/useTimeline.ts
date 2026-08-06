@@ -80,6 +80,10 @@ export function useTimeline(projectPath?: string): TimelineState {
 
       // Fetch phase chain (CK-PROC-001)
       const phaseResult = await api().graph.query({ template: 'phase_chain' })
+      if (phaseResult?.error) {
+        setState(prev => ({ ...prev, loading: false, error: String(phaseResult.error) }))
+        return
+      }
       const phases = parsePhases(phaseResult?.rows ?? [])
 
       // Fetch artifact nodes (uebergabedokument + artefakt + note + entscheidung)
