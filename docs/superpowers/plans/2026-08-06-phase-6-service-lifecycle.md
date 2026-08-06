@@ -69,7 +69,7 @@ Gelten fuer jede Task ohne Ausnahme:
   `src/shared/ipc-channels.ts` deklariert und in die passende Union aufgenommen — sonst sind sie
   im Renderer nicht erreichbar.
 - **TDD**: Test zuerst, Test rot sehen, minimale Implementierung, Test gruen, committen.
-- **Keine Regression**: `npm test` (Ausgangsstand **1390** Tests, 93 Dateien) und
+- **Keine Regression**: `npm test` (Ausgangsstand **1390** Tests, 93 Dateien; Sollstand nach Task 8: **1463**) und
   `npm run typecheck` muessen nach jedem Commit gruen sein.
 - **Graceful Degradation** (CK-NFR-010): Ein fehlendes Subsystem darf die App nie hart abstuerzen
   lassen — aber es muss **sichtbar** degradieren.
@@ -435,7 +435,7 @@ export function isSubsystemError(value: unknown): value is SubsystemError {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/service-status.test.ts`
-Expected: PASS (9 Tests).
+Expected: PASS (8 Tests).
 
 - [ ] **Step 5: Commit**
 
@@ -683,7 +683,7 @@ Expected: PASS (9 Tests).
 - [ ] **Step 5: Run the whole suite and typecheck**
 
 Run: `npm test && npm run typecheck`
-Expected: 1403 Tests gruen (1394 + 9), Typecheck sauber.
+Expected: 1411 Tests gruen (1402 + 9), Typecheck sauber.
 
 - [ ] **Step 6: Commit**
 
@@ -1159,7 +1159,7 @@ function initNotes(services: AppServices, ctx: ServiceInitContext): void {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/service-lifecycle.test.ts`
-Expected: PASS (12 Tests).
+Expected: PASS (11 Tests).
 
 - [ ] **Step 5: Strip the old init out of window-manager.ts**
 
@@ -1252,7 +1252,7 @@ Erzeugung anpassen:
 - [ ] **Step 8: Verify the suite and typecheck**
 
 Run: `npm test && npm run typecheck`
-Expected: 1415 Tests gruen (1403 + 12), Typecheck sauber. Der Typecheck ist hier der eigentliche
+Expected: 1422 Tests gruen (1411 + 11), Typecheck sauber. Der Typecheck ist hier der eigentliche
 Waechter: er faellt, wenn in Step 5 ein Import stehen blieb oder eine Referenz uebersehen wurde.
 
 - [ ] **Step 9: Verify in the running app**
@@ -1486,7 +1486,7 @@ Und `error` im Rueckgabeobjekt mitgeben:
 - [ ] **Step 8: Verify suite and typecheck**
 
 Run: `npm test && npm run typecheck`
-Expected: 1419 Tests gruen (1415 + 4), Typecheck sauber.
+Expected: 1426 Tests gruen (1422 + 4), Typecheck sauber.
 
 - [ ] **Step 9: Commit**
 
@@ -1694,7 +1694,7 @@ Der `error`-State existiert bereits in `useTimeline` und wird nur nie gesetzt.
 - [ ] **Step 6: Verify suite and typecheck**
 
 Run: `npm test && npm run typecheck`
-Expected: 1425 Tests gruen (1419 + 6), Typecheck sauber.
+Expected: 1432 Tests gruen (1426 + 6), Typecheck sauber.
 
 - [ ] **Step 7: Verify in the running app**
 
@@ -2134,7 +2134,7 @@ Der `KickoffPayload`-Typ kommt aus dem `import type` in Schritt 1.
 - [ ] **Step 6: Verify suite and typecheck**
 
 Run: `npm test && npm run typecheck`
-Expected: 1437 Tests gruen (1425 + 12), Typecheck sauber.
+Expected: 1444 Tests gruen (1432 + 12), Typecheck sauber.
 
 - [ ] **Step 7: Verify the whole path in the running app**
 
@@ -2380,7 +2380,7 @@ export function writeSessionNode(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/session/session-context.test.ts`
-Expected: PASS (11 Tests).
+Expected: PASS (10 Tests).
 
 - [ ] **Step 5: Bind session creation to the project in ipc-handlers**
 
@@ -2470,7 +2470,7 @@ statt aus `Date.now()`:
 - [ ] **Step 7: Verify suite and typecheck**
 
 Run: `npm test && npm run typecheck`
-Expected: 1448 Tests gruen (1437 + 11), Typecheck sauber.
+Expected: 1454 Tests gruen (1444 + 10), Typecheck sauber.
 
 - [ ] **Step 8: Commit**
 
@@ -2751,7 +2751,7 @@ Und die Zeile `const entityId = opts.entityId ?? 'workshop'` ersetzen:
 - [ ] **Step 8: Verify suite and typecheck**
 
 Run: `npm test && npm run typecheck`
-Expected: 1457 Tests gruen (1448 + 9), Typecheck sauber.
+Expected: 1463 Tests gruen (1454 + 9), Typecheck sauber.
 
 - [ ] **Step 9: Verify in the running app — the Phase 6 acceptance run**
 
@@ -2798,7 +2798,7 @@ git commit -m "feat(launcher): offer the four 0.1 presets when starting a sessio
 | Timeline und Kanban zeigen echte Daten, unterscheidbar von „Subsystem nicht bereit" | Task 4, 5 |
 | Grid-Fenster oeffnen, Session mit Preset starten: tmux-Session im Projektverzeichnis, Session-Knoten im Graph | Task 7, 8 (Task 8 Step 9) |
 | Ein Event erreicht beide Fenster | Task 2, 3 (Task 8 Step 9, Punkt 6) |
-| Alle bisherigen Tests bleiben gruen; neue Integrationstests fuer 6a, 6c, 6d | Jede Task, Schlussstand 1457 |
+| Alle bisherigen Tests bleiben gruen; neue Integrationstests fuer 6a, 6c, 6d | Jede Task, Schlussstand 1463 |
 
 ## Risiken
 
