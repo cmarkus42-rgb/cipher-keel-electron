@@ -102,7 +102,12 @@ export function initializeServices(
   ctx: ServiceInitContext,
 ): Promise<ServiceStatusMap> {
   if (!initPromise) {
-    initPromise = runInit(services, ctx)
+    // A rejected run must not permanently poison the latch — clear it so a later
+    // call can retry. The successful path is unaffected: initPromise stays set.
+    initPromise = runInit(services, ctx).catch((err) => {
+      initPromise = null
+      throw err
+    })
   }
   return initPromise
 }
@@ -140,7 +145,13 @@ function initStatusMonitor(services: AppServices): void {
   services.statusMonitor.on('usage-updated', (sessionId: string, usage: unknown) => {
     broadcast(STATUSLINE_CTX_UPDATE, sessionId, usage)
   })
-  services.statusMonitor.start()
+  try {
+    services.statusMonitor.start()
+  } catch (err) {
+    // No tracked SubsystemId for the status-line monitor (not in SUBSYSTEM_IDS) — just
+    // log and continue so a filesystem error here can't block the rest of runInit.
+    console.warn('[service-lifecycle] StatusLine monitor start failed:', err)
+  }
 }
 
 async function initNanoClaw(services: AppServices): Promise<void> {

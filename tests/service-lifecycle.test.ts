@@ -160,6 +160,48 @@ describe('initializeServices — degradation is reported, never thrown', () => {
     expect(status.voice.state).toBe('disabled')
     expect(status.voice.reason).toContain('config')
   })
+
+  it('does not block graph/notes init when statusMonitor.start() throws', async () => {
+    const services = makeServices({
+      statusMonitor: {
+        start: vi.fn(() => {
+          throw new Error('EACCES: permission denied')
+        }),
+        on: vi.fn(),
+      },
+    } as unknown as Partial<AppServices>)
+
+    const status = await initializeServices(services, makeContext())
+
+    expect(status.graph.state).toBe('ready')
+    expect(status.notes.state).toBe('ready')
+    expect(services.graphDb).not.toBeNull()
+    expect(services.noteManager).not.toBeNull()
+  })
+})
+
+describe('initializeServices — retry after a rejected run', () => {
+  it('lets a later call succeed after a run that threw', async () => {
+    const services = makeServices({
+      tmux: {
+        connect: vi.fn().mockResolvedValue(undefined),
+        on: vi
+          .fn()
+          .mockImplementationOnce(() => {
+            throw new Error('boom')
+          })
+          .mockImplementation(() => {}),
+        sendKeys: vi.fn().mockResolvedValue(undefined),
+      },
+    } as unknown as Partial<AppServices>)
+
+    await expect(initializeServices(services, makeContext())).rejects.toThrow('boom')
+
+    const status = await initializeServices(services, makeContext())
+
+    expect(status.graph.state).toBe('ready')
+    expect(services.graphDb).not.toBeNull()
+  })
 })
 
 describe('getServiceStatus', () => {
