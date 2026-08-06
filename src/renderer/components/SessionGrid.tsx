@@ -24,7 +24,7 @@ interface SessionGridProps {
   rows: number
   slots: SessionSlot[]
   voiceDot?: VoiceDotState
-  onStartSession: (slotIndex: number) => void
+  onStartSession: (slotIndex: number, entityId: string) => void
   onCloseSession: (sessionId: string) => void
 }
 

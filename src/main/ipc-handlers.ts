@@ -92,6 +92,7 @@ import {
 import { getServiceStatus } from './service-lifecycle'
 import { buildSessionContext, writeSessionNode } from './session/session-context'
 import { subsystemError } from '../shared/service-status'
+import { isKnownPresetId, defaultPresetId } from '../shared/preset-catalog'
 import { initProjectPhases, runKickoff } from './project/kickoff'
 import type { KickoffPayload } from './project/kickoff'
 import { configStore } from './config/config-store'
@@ -136,7 +137,9 @@ export function registerIpcHandlers(services: AppServices): void {
   }) => {
     try {
       const project = projectManager.getCurrentProject()
-      const entityId = opts.entityId ?? 'workshop'
+      const entityId = opts.entityId && isKnownPresetId(opts.entityId)
+        ? opts.entityId
+        : defaultPresetId()
 
       // Derive name and cwd from the active project unless the caller pinned them.
       let name = opts.name
