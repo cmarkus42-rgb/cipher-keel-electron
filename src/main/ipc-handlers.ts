@@ -90,6 +90,7 @@ import {
   SERVICES_STATUS,
 } from '../shared/ipc-channels'
 import { getServiceStatus } from './service-lifecycle'
+import { buildSessionContext, writeSessionNode } from './session/session-context'
 import { subsystemError } from '../shared/service-status'
 import { initProjectPhases, runKickoff } from './project/kickoff'
 import type { KickoffPayload } from './project/kickoff'
@@ -125,7 +126,8 @@ export function registerIpcHandlers(services: AppServices): void {
   })
 
   ipcMain.handle(SESSION_CREATE, async (_event, opts: {
-    name: string
+    name?: string
+    entityId?: string
     cwd?: string
     command?: string
     env?: Record<string, string>
@@ -133,15 +135,41 @@ export function registerIpcHandlers(services: AppServices): void {
     height?: number
   }) => {
     try {
+      const project = projectManager.getCurrentProject()
+      const entityId = opts.entityId ?? 'workshop'
+
+      // Derive name and cwd from the active project unless the caller pinned them.
+      let name = opts.name
+      let cwd = opts.cwd
+      let ctx = null
+      if (project) {
+        const seed = Math.random().toString(36).slice(2, 6)
+        ctx = buildSessionContext(project, entityId, seed)
+        name = name ?? ctx.name
+        cwd = cwd ?? ctx.cwd
+      }
+      if (!name) {
+        return { id: null, name: null, error: 'No session name and no active project' }
+      }
+
       if (!services.tmux.isConnected()) {
         await services.tmux.connect()
       }
-      const sessionId = await services.tmux.createSession(opts.name, opts)
-      services.tmux.watchSession(opts.name, opts.name)
-      return { id: sessionId, error: null }
+      const sessionId = await services.tmux.createSession(name, { ...opts, cwd })
+      services.tmux.watchSession(name, name)
+
+      if (ctx && services.graphWriter) {
+        try {
+          writeSessionNode(services.graphWriter, { ...ctx, name })
+        } catch (err) {
+          console.warn('[ipc] session node write failed:', err)
+        }
+      }
+
+      return { id: sessionId, name, error: null }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      return { id: null, error: msg }
+      return { id: null, name: null, error: msg }
     }
   })
 

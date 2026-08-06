@@ -46,13 +46,16 @@ function App() {
   // CK-VOICE-009/010: Voice session with graceful degradation
   const voice = useVoiceSession(focusedSessionId)
 
-  const handleStartSession = useCallback(async (_slotIndex: number) => {
-    const name = `session-${Date.now()}`
-    const result = await api().invoke('session:create', { name })
-    if (result?.id) {
+  const handleStartSession = useCallback(async (_slotIndex: number, entityId = 'workshop') => {
+    const result = await api().invoke('session:create', { entityId }) as {
+      id: string | null
+      name: string | null
+      error: string | null
+    }
+    if (result?.id && result.name) {
       setSlots((prev) => [
         ...prev,
-        { type: 'session', sessionId: name, sessionName: name, status: 'active' }
+        { type: 'session', sessionId: result.name!, sessionName: result.name!, status: 'active' }
       ])
     } else {
       console.error('[renderer] session create failed:', result?.error)

@@ -5,6 +5,7 @@
  * CK-GRAPH-006: test         CK-GRAPH-007: note          CK-GRAPH-008: phase_subsystem
  * CK-GRAPH-009: anlass       CK-GRAPH-010: github_repo
  * CK-PROC-001:  phase        (M4 eight-phase chain)
+ * CK-INF-020:   session      (tmux session bound to a project — Phase 6 Task 7)
  * CK-GRAPH-011: Core attributes for all (uid, kind, path, title, status, etc.)
  * CK-GRAPH-041: Extensible attribute schema per node type (JSON frontmatter column).
  */
@@ -45,6 +46,7 @@ export const NODE_KINDS = [
   'anforderungspaket',
   'frage_knoten',
   'antwort_knoten',
+  'session',
 ] as const
 
 export type NodeKind = (typeof NODE_KINDS)[number]
@@ -293,6 +295,7 @@ export const REQUIRED_FRONTMATTER_FIELDS: Record<NodeKind, string[]> = {
   anforderungspaket: ['subsystem', 'req_ids', 'code_anker', 'akzeptanzkriterium', 'testcase_verweis'],
   frage_knoten: ['subsystem', 'frage', 'worker_id', 'status'],
   antwort_knoten: ['frage_uid', 'antwort', 'architect_session'],
+  session: [],
 }
 
 /** Allowed frontmatter fields per kind (for strict validation). */
@@ -314,6 +317,7 @@ export const ALLOWED_FRONTMATTER_FIELDS: Record<NodeKind, string[]> = {
   anforderungspaket: ['subsystem', 'req_ids', 'code_anker', 'akzeptanzkriterium', 'testcase_verweis', 'niveau_c_extrakt'],
   frage_knoten: ['subsystem', 'frage', 'worker_id', 'status'],
   antwort_knoten: ['frage_uid', 'antwort', 'architect_session'],
+  session: ['project_id', 'entity', 'cwd'],
 }
 
 // ---------------------------------------------------------------------------
