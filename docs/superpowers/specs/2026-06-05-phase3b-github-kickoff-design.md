@@ -1,6 +1,7 @@
 # Phase 3b Design Spec: GitHub Integration + Kickoff Wizard
 
 Stand: 2026-06-05
+
 Sub-Projekt: 3b von 3 (Phase 3 Zerlegung)
 Scope: 11 REQs (CK-UI-020 + GH-001..006, GH-011, GH-013..015)
 
