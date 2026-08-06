@@ -2,7 +2,7 @@
 
 **Datum:** 2026-06-06
 **Quellen:** `refinement/CK-PROC.md` (4 REQs), `refinement/CK-GH.md` (2 REQs), `refinement/CK-P3A.md` (1 REQ), `refinement/CK-NOTES.md` (3 REQs), `refinement/CK-UI.md` (3 REQs), Phase-4-Audit-Findings (2 Fixes)
-**Projekt:** `/Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron/`
+**Projekt:** `<repo-root>/`
 **Vorgaenger:** Phase 4 (Commit `11575e2`, 1329 Tests, 247 REQs)
 
 ---

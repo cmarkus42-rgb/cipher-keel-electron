@@ -8,7 +8,7 @@ const base: WorkerAssignmentOptions = {
   taskText: 'Implement injectSection function',
   modul: 'CK-INF-012',
   abschlussKriterium: 'npm test passes with all inject-section tests green',
-  projektPfad: '/Users/Shared/projects/cipher-keel-electron',
+  projektPfad: '/tmp/projects/cipher-keel-electron',
   relevanteeDateien: [
     'src/main/session/inject-section.ts',
     'tests/inject-section.test.ts',

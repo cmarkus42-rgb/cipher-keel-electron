@@ -268,7 +268,7 @@ describe('AdapterRegistry.getForRuntime (CK-ENT-010, CK-ENT-028)', () => {
 - [ ] **Step 2: Run test to verify it fails (imports don't exist yet)**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npm test -- --reporter=verbose tests/preset-schema.test.ts 2>&1 | head -40
+cd <repo-root> && npm test -- --reporter=verbose tests/preset-schema.test.ts 2>&1 | head -40
 ```
 
 Expected: FAIL with "Cannot find module" errors.
@@ -341,7 +341,7 @@ export interface Session {
 - [ ] **Step 2: Run the test subset that covers types**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npm test -- tests/preset-schema.test.ts 2>&1 | grep -E "(PASS|FAIL|Cannot find|Entity|Preset|Session)" | head -20
+cd <repo-root> && npm test -- tests/preset-schema.test.ts 2>&1 | grep -E "(PASS|FAIL|Cannot find|Entity|Preset|Session)" | head -20
 ```
 
 Expected: Still fails (schema not implemented yet), but no "Cannot find module" for types.
@@ -398,7 +398,7 @@ export function getNiveauConfig(niveau: CapabilityNiveau): NiveauConfig {
 - [ ] **Step 2: Run niveau tests**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npm test -- tests/preset-schema.test.ts 2>&1 | grep -E "(CapabilityNiveau|PASS|FAIL)" | head -20
+cd <repo-root> && npm test -- tests/preset-schema.test.ts 2>&1 | grep -E "(CapabilityNiveau|PASS|FAIL)" | head -20
 ```
 
 Expected: CapabilityNiveau describe block passes, schema blocks still fail.
@@ -533,7 +533,7 @@ export function validatePresetRahmen(rahmen: unknown): ValidationResult {
 - [ ] **Step 2: Run schema tests**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npm test -- tests/preset-schema.test.ts 2>&1 | grep -E "(validatePresetRahmen|RollenTyp|PASS|FAIL)" | head -30
+cd <repo-root> && npm test -- tests/preset-schema.test.ts 2>&1 | grep -E "(validatePresetRahmen|RollenTyp|PASS|FAIL)" | head -30
 ```
 
 Expected: Schema describe blocks pass; registry tests still fail.
@@ -660,7 +660,7 @@ New string:
 - [ ] **Step 2: Run the full preset-schema test suite**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npm test -- tests/preset-schema.test.ts 2>&1 | tail -30
+cd <repo-root> && npm test -- tests/preset-schema.test.ts 2>&1 | tail -30
 ```
 
 Expected: All tests PASS.
@@ -689,7 +689,7 @@ export type { PresetRahmen, GraphAnbindung, ValidationError, ValidationResult } 
 - [ ] **Step 2: Verify barrel compiles**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx tsc --noEmit 2>&1 | head -20
+cd <repo-root> && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: No errors (or only pre-existing unrelated errors).
@@ -703,7 +703,7 @@ Expected: No errors (or only pre-existing unrelated errors).
 - [ ] **Step 1: Run all tests**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npm test 2>&1 | tail -30
+cd <repo-root> && npm test 2>&1 | tail -30
 ```
 
 Expected: All previously passing tests still pass; new preset-schema tests all pass.
@@ -711,7 +711,7 @@ Expected: All previously passing tests still pass; new preset-schema tests all p
 - [ ] **Step 2: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && git add \
+cd <repo-root> && git add \
   src/main/preset/types.ts \
   src/main/preset/niveau.ts \
   src/main/preset/schema.ts \

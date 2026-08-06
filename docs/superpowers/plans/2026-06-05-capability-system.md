@@ -93,7 +93,7 @@ describe('estimateTokenCount', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npm test -- --reporter=verbose tests/capability-system.test.ts 2>&1 | head -30
+cd <repo-root> && npm test -- --reporter=verbose tests/capability-system.test.ts 2>&1 | head -30
 ```
 Expected: FAIL — "Cannot find module"
 
@@ -198,14 +198,14 @@ export function validateCapabilityPackage(pkg: unknown): ValidationResult {
 - [ ] **Step 4: Run test to verify it passes**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npm test -- tests/capability-system.test.ts 2>&1 | tail -20
+cd <repo-root> && npm test -- tests/capability-system.test.ts 2>&1 | tail -20
 ```
 Expected: PASS (schema validation tests)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && git add src/main/preset/capability-schema.ts tests/capability-system.test.ts && git commit -m "feat(preset): CK-ENT-007 capability-schema — LoaderType, CapabilityPackage, validateCapabilityPackage"
+cd <repo-root> && git add src/main/preset/capability-schema.ts tests/capability-system.test.ts && git commit -m "feat(preset): CK-ENT-007 capability-schema — LoaderType, CapabilityPackage, validateCapabilityPackage"
 ```
 
 ---
@@ -288,7 +288,7 @@ describe('loadCapabilityContent', () => {
 - [ ] **Step 2: Run tests to verify new tests fail**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npm test -- tests/capability-system.test.ts 2>&1 | tail -20
+cd <repo-root> && npm test -- tests/capability-system.test.ts 2>&1 | tail -20
 ```
 Expected: FAIL — "Cannot find module '../src/main/preset/capability-loader'"
 
@@ -341,14 +341,14 @@ export async function loadCapabilityContent(pkg: CapabilityPackage): Promise<str
 - [ ] **Step 4: Run tests to verify they pass**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npm test -- tests/capability-system.test.ts 2>&1 | tail -20
+cd <repo-root> && npm test -- tests/capability-system.test.ts 2>&1 | tail -20
 ```
 Expected: PASS (schema + loader tests)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && git add src/main/preset/capability-loader.ts tests/capability-system.test.ts && git commit -m "feat(preset): CK-ENT-006/007 capability-loader — dispatch by LoaderType"
+cd <repo-root> && git add src/main/preset/capability-loader.ts tests/capability-system.test.ts && git commit -m "feat(preset): CK-ENT-006/007 capability-loader — dispatch by LoaderType"
 ```
 
 ---
@@ -480,7 +480,7 @@ describe('CapabilityTree — cycle detection', () => {
 - [ ] **Step 2: Run tests to verify new tests fail**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npm test -- tests/capability-system.test.ts 2>&1 | tail -20
+cd <repo-root> && npm test -- tests/capability-system.test.ts 2>&1 | tail -20
 ```
 Expected: FAIL — "Cannot find module '../src/main/preset/capability-tree'"
 
@@ -564,14 +564,14 @@ export class CapabilityTree {
 - [ ] **Step 4: Run all tests to verify they pass**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npm test -- tests/capability-system.test.ts 2>&1 | tail -30
+cd <repo-root> && npm test -- tests/capability-system.test.ts 2>&1 | tail -30
 ```
 Expected: All tests PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && git add src/main/preset/capability-tree.ts tests/capability-system.test.ts && git commit -m "feat(preset): CK-ENT-006/017 capability-tree — lazy-loading, dependency resolution, cycle detection"
+cd <repo-root> && git add src/main/preset/capability-tree.ts tests/capability-system.test.ts && git commit -m "feat(preset): CK-ENT-006/017 capability-tree — lazy-loading, dependency resolution, cycle detection"
 ```
 
 ---
@@ -583,7 +583,7 @@ cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && gi
 - [ ] **Step 1: Run full test suite**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npm test 2>&1 | tail -30
+cd <repo-root> && npm test 2>&1 | tail -30
 ```
 Expected: All tests pass (existing + new capability-system tests)
 

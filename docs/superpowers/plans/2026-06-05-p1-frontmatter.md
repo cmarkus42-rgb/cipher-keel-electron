@@ -85,7 +85,7 @@ describe('validateStatusTransition (CK-P1-014) — all 6 non-identity combinatio
 - [ ] **Step 2: Run tests — expect FAIL (module not found)**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npx vitest run tests/p1-frontmatter.test.ts
 ```
 

@@ -56,7 +56,7 @@ export type RendererToMainChannel =
 - [ ] **Step 2: Verify TypeScript compiles**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npx tsc --noEmit 2>&1 | head -20
 ```
 
@@ -158,7 +158,7 @@ describe('Projekt-Auswahl triggert Navigations-Event', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npm test -- tests/project-window.test.ts 2>&1 | tail -20
 ```
 

@@ -286,7 +286,7 @@ describe('frontmatter validation on saveRaw', () => {
 - [ ] **Step 2: Run tests to confirm all fail**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npm test -- tests/notes-extensions.test.ts 2>&1 | head -30
 ```
 
@@ -1119,7 +1119,7 @@ git commit -m "feat(ui): NotesCell sidebar Ubergabedokument-Kategorie + raw edit
 - [ ] **Step 1: Install @codemirror/lang-yaml**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npm install @codemirror/lang-yaml
 ```
 
@@ -1161,7 +1161,7 @@ git commit -m "feat(ui): YAML frontmatter syntax highlighting in NotesCell (CK-N
 - [ ] **Step 1: Run full test suite**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npm test 2>&1 | tail -20
 ```
 

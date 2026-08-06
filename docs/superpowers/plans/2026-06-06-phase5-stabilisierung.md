@@ -91,7 +91,7 @@ describe('Phase 5 Query Fixes — project_uid filtering', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/graph/phase5-query-fixes.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/graph/phase5-query-fixes.test.ts`
 Expected: FAIL — project_uid param ignored
 
 - [ ] **Step 3: Implement project_uid filtering**
@@ -128,13 +128,13 @@ Similarly modify `executeArchitectSummary` to accept `project_uid` and add WHERE
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/graph/phase5-query-fixes.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/graph/phase5-query-fixes.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Run full suite + commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npx vitest run && git add src/main/graph/query.ts tests/graph/phase5-query-fixes.test.ts && git commit -m "fix(graph): wire project_uid param in adr_list and architect_summary queries (Phase-4-Audit F-001)"
 ```
 
@@ -202,7 +202,7 @@ describe('orchestrierung field (DE-5)', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/phase5-orchestrierung.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/phase5-orchestrierung.test.ts`
 Expected: FAIL
 
 - [ ] **Step 3: Implement orchestrierung field**
@@ -226,7 +226,7 @@ In `cf-preset.ts`: add `orchestrierung: true` to `CF_RAHMEN` and `createCfRahmen
 - [ ] **Step 4: Run test to verify it passes + full suite + commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npx vitest run && git add src/main/preset/schema.ts src/main/preset/workshop/workshop-preset.ts src/main/preset/cyber-factory/cf-preset.ts tests/phase5-orchestrierung.test.ts && git commit -m "feat(preset): add orchestrierung as formal PresetRahmen field (DE-5, Phase-4-Audit F-002)"
 ```
 
@@ -307,7 +307,7 @@ describe('Release Phase (CK-PROC-017)', () => {
 The phase_chain query and phase node kind already exist. This task verifies the 8-phase chain works correctly with release as position 8. If tests pass immediately, this is a verification commit. If anything is missing, fix it.
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npx vitest run tests/phase5-release-phase.test.ts && git add tests/phase5-release-phase.test.ts && git commit -m "test(proc): verify release phase as position 8 in phase chain (CK-PROC-017)"
 ```
 
@@ -359,7 +359,7 @@ describe('Workshop Fixing Dispatch (CK-PROC-015)', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/workshop/workshop-fixing.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/workshop/workshop-fixing.test.ts`
 
 - [ ] **Step 3: Implement workshop-fixing-dispatch.ts**
 
@@ -409,7 +409,7 @@ export function dispatchFixingItem(item: FixingItem): DispatchResult {
 - [ ] **Step 4: Run test + full suite + commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npx vitest run && git add src/main/preset/workshop/workshop-fixing-dispatch.ts tests/preset/workshop/workshop-fixing.test.ts && git commit -m "feat(preset): Workshop fixing dispatch BUG→debugger, MFR/NRF→dev-worker (CK-PROC-015)"
 ```
 
@@ -584,7 +584,7 @@ ORDER BY json_extract(p.frontmatter, '$.position') ASC
 - [ ] **Step 4: Run test + full suite + commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npx vitest run && git add src/main/graph/subsystem-cycle.ts src/main/graph/query.ts tests/graph/phase5-subsystem-cycle.test.ts && git commit -m "feat(graph): subsystem cycle Dev→Testing→Fixing→Audit with query (CK-PROC-016)"
 ```
 
@@ -703,7 +703,7 @@ export async function inferPlausibility(
 - [ ] **Step 4: Run test + full suite + commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npx vitest run && git add src/main/graph/plausibility-inference.ts tests/graph/phase5-plausibility.test.ts && git commit -m "feat(graph): plausibility inference via NanoClaw bridge (CK-PROC-006)"
 ```
 
@@ -787,7 +787,7 @@ export function generateMcpEntry(options: McpConfigOptions): McpServerEntry {
 - [ ] **Step 4: Run test + full suite + commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npx vitest run && git add src/main/github/github-mcp-config.ts tests/github/phase5-mcp-config.test.ts && git commit -m "feat(github): MCP server config generator with toolset param (CK-GH-009)"
 ```
 
@@ -871,7 +871,7 @@ export function buildContainerEnv(projectPath: string, githubToken?: string): Co
 - [ ] **Step 4: Run test + full suite + commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npx vitest run && git add src/main/nanoclaw/container-env.ts tests/nanoclaw/phase5-github-env.test.ts && git commit -m "feat(nanoclaw): container env with GITHUB_TOKEN + volume mount (CK-GH-010)"
 ```
 
@@ -1038,7 +1038,7 @@ export function scaffoldProject(config: ScaffoldConfig): ScaffoldResult {
 - [ ] **Step 4: Run test + full suite + commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npx vitest run && git add src/main/skills/scaffolding.ts tests/skills/scaffolding.test.ts && git commit -m "feat(skills): standalone scaffolding skill for Architect/SE (CK-P3A-010)"
 ```
 
@@ -1190,7 +1190,7 @@ export function generateVaultIndex(db: Database.Database, vaultPath: string): vo
 - [ ] **Step 4: Run test + full suite + commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npx vitest run && git add src/main/notes/vault-index.ts tests/notes/phase5-vault-index.test.ts && git commit -m "feat(notes): Vault-Index with wiki-links to Uebergabedokumente (CK-NOTES-008)"
 ```
 
@@ -1326,7 +1326,7 @@ export class VaultWatcher {
 - [ ] **Step 4: Run test + full suite + commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npx vitest run && git add src/main/notes/vault-watcher.ts tests/notes/phase5-vault-watcher.test.ts && git commit -m "feat(notes): Vault watcher for external changes with debounce (CK-NOTES-009)"
 ```
 
@@ -1479,7 +1479,7 @@ function collectMarkdownFiles(dir: string): string[] {
 - [ ] **Step 4: Run test + full suite + commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npx vitest run && git add src/main/notes/obsidian-compat.ts tests/notes/phase5-obsidian-compat.test.ts && git commit -m "feat(notes): Obsidian vault compatibility validator (CK-NOTES-013)"
 ```
 
@@ -1530,7 +1530,7 @@ The existing StatusBar already has `sessionCount` and `nanoClawStatus` props. Ve
 - [ ] **Step 3: Run test + full suite + commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npx vitest run && git add src/renderer/components/StatusBar.tsx tests/renderer/phase5-statusbar.test.ts && git commit -m "feat(ui): StatusBar live session count + NanoClaw status colors (CK-UI-030)"
 ```
 
@@ -1633,7 +1633,7 @@ export function loadSessionSnapshot(configDir: string): SessionSnapshot | null {
 - [ ] **Step 4: Run test + full suite + commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npx vitest run && git add src/main/session/keep-working.ts tests/session/phase5-persistence.test.ts && git commit -m "feat(session): save/load session snapshot for keep-working restore (CK-UI-032)"
 ```
 
@@ -1775,7 +1775,7 @@ export function syncKanbanToGraph(
 - [ ] **Step 4: Run test + full suite + commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 npx vitest run && git add src/main/kanban/kanban-graph-sync.ts tests/kanban/phase5-vault-sync.test.ts && git commit -m "feat(kanban): one-directional Kanban→Graph sync (CK-UI-034)"
 ```
 

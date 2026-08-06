@@ -44,7 +44,7 @@ export function StepProjectName({ data, onChange }: StepProjectNameProps) {
         <input
           style={{ ...styles.input, flex: 1 }}
           type="text"
-          placeholder="/Users/cipher/projects/mein-projekt"
+          placeholder="/Users/<name>/projects/mein-projekt"
           value={data.rootPath}
           onChange={(e) => onChange({ rootPath: e.target.value })}
         />

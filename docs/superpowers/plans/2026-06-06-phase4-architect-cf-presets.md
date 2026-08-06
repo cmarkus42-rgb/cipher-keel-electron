@@ -121,7 +121,7 @@ describe('Phase 4a NodeKinds', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/graph/phase4a-node-types.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/graph/phase4a-node-types.test.ts`
 Expected: FAIL — new kinds not in NODE_KINDS
 
 - [ ] **Step 3: Implement new NodeKinds and frontmatter types**
@@ -202,18 +202,18 @@ antwort_knoten: ['frage_uid', 'antwort', 'architect_session'],
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/graph/phase4a-node-types.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/graph/phase4a-node-types.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Run full test suite to check no regressions**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run`
+Run: `cd <repo-root> && npx vitest run`
 Expected: All existing tests PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add src/main/graph/node-types.ts tests/graph/phase4a-node-types.test.ts
 git commit -m "feat(graph): add 5 NodeKinds for Architect/CF presets (CK-P3A-002..005, CK-P3CF-009)"
 ```
@@ -292,7 +292,7 @@ describe('Phase 4a EdgeKinds', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/graph/phase4a-edge-types.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/graph/phase4a-edge-types.test.ts`
 Expected: FAIL
 
 - [ ] **Step 3: Implement new EdgeKinds**
@@ -312,18 +312,18 @@ In `src/main/graph/edge-types.ts`:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/graph/phase4a-edge-types.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/graph/phase4a-edge-types.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Run full test suite**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run`
+Run: `cd <repo-root> && npx vitest run`
 Expected: All PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add src/main/graph/edge-types.ts tests/graph/phase4a-edge-types.test.ts
 git commit -m "feat(graph): add 3 EdgeKinds for interface contracts, ADRs, coaching (CK-P3A-002..005)"
 ```
@@ -507,7 +507,7 @@ describe('GraphWriter — Phase 4a NodeKinds', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/graph/phase4a-writer.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/graph/phase4a-writer.test.ts`
 Expected: FAIL (new kinds not recognized by writer)
 
 - [ ] **Step 3: Verify writer needs no code changes**
@@ -516,13 +516,13 @@ The writer's `upsertNode` validates frontmatter via `REQUIRED_FRONTMATTER_FIELDS
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/graph/phase4a-writer.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/graph/phase4a-writer.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add tests/graph/phase4a-writer.test.ts
 git commit -m "test(graph): writer validation for Phase 4a NodeKinds and EdgeKinds"
 ```
@@ -698,7 +698,7 @@ describe('Phase 4a Query Templates', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/graph/phase4a-queries.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/graph/phase4a-queries.test.ts`
 Expected: FAIL — unknown template names
 
 - [ ] **Step 3: Implement 8 query templates**
@@ -729,18 +729,18 @@ In `src/main/graph/query.ts`:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/graph/phase4a-queries.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/graph/phase4a-queries.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Run full test suite**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run`
+Run: `cd <repo-root> && npx vitest run`
 Expected: All PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add src/main/graph/query.ts tests/graph/phase4a-queries.test.ts
 git commit -m "feat(graph): add 8 query templates for Architect/CF workflows (adr, contracts, coaching, risk)"
 ```
@@ -830,7 +830,7 @@ describe('deriveProfile — graphAnbindung override (DE-2)', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/graph/phase4a-access-profile.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/graph/phase4a-access-profile.test.ts`
 Expected: FAIL — PhasenEntitaet currently always returns phase-scoped
 
 - [ ] **Step 3: Implement override logic**
@@ -871,18 +871,18 @@ Note: QuerliegenSE returns early — it's already wide/full, override is irrelev
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/graph/phase4a-access-profile.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/graph/phase4a-access-profile.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Run full test suite (check existing access-profile tests still pass)**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run`
+Run: `cd <repo-root> && npx vitest run`
 Expected: All PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add src/main/graph/access-profile.ts tests/graph/phase4a-access-profile.test.ts
 git commit -m "feat(graph): deriveProfile graphAnbindung override from PresetRahmen (DE-2)"
 ```
@@ -947,7 +947,7 @@ describe('Phase 4a Rolling Summary Configs', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/phase4a-rolling-summary.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/phase4a-rolling-summary.test.ts`
 Expected: FAIL — exports not found
 
 - [ ] **Step 3: Implement configs**
@@ -975,18 +975,18 @@ export const CF_SUMMARY_CONFIG: CfSummaryConfig = {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/phase4a-rolling-summary.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/phase4a-rolling-summary.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Run full test suite**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run`
+Run: `cd <repo-root> && npx vitest run`
 Expected: All PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add src/main/preset/shared/rolling-summary.ts tests/phase4a-rolling-summary.test.ts
 git commit -m "feat(preset): add ARCHITECT_SUMMARY_CONFIG and CF_SUMMARY_CONFIG (CK-P3A-008, CK-P3CF-012)"
 ```
@@ -1104,7 +1104,7 @@ describe('Architect Niveau differentiation (CK-P3A-012, CK-P3A-014)', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/architect/architect-preset.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/architect/architect-preset.test.ts`
 Expected: FAIL — module not found
 
 - [ ] **Step 3: Implement architect-preset.ts**
@@ -1203,13 +1203,13 @@ export function getArchitectMaxSubsystems(niveau: CapabilityNiveau): number | nu
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/architect/architect-preset.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/architect/architect-preset.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add src/main/preset/architect/architect-preset.ts tests/preset/architect/architect-preset.test.ts
 git commit -m "feat(preset): Architect preset registration with niveau differentiation (CK-P3A-001, 012, 014)"
 ```
@@ -1294,7 +1294,7 @@ describe('Architect Capabilities (CK-P3A-012)', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/architect/architect-capabilities.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/architect/architect-capabilities.test.ts`
 Expected: FAIL
 
 - [ ] **Step 3: Implement architect-capabilities.ts**
@@ -1413,13 +1413,13 @@ export function getArchitectCapabilities(niveau: CapabilityNiveau): CapabilityPa
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/architect/architect-capabilities.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/architect/architect-capabilities.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add src/main/preset/architect/architect-capabilities.ts tests/preset/architect/architect-capabilities.test.ts
 git commit -m "feat(preset): Architect capability packages with niveau differentiation (CK-P3A-011, CK-P3A-012)"
 ```
@@ -1471,7 +1471,7 @@ describe('Architect Boundary Check (CK-P3A-013)', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/architect/architect-boundary.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/architect/architect-boundary.test.ts`
 Expected: FAIL
 
 - [ ] **Step 3: Implement boundary check functions**
@@ -1516,18 +1516,18 @@ export function checkCfBoundary(writtenNodeKinds: string[]): LintResult[] {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/architect/architect-boundary.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/architect/architect-boundary.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Run full test suite**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run`
+Run: `cd <repo-root> && npx vitest run`
 Expected: All PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add src/main/preset/capability-lint.ts tests/preset/architect/architect-boundary.test.ts
 git commit -m "feat(preset): boundary check for Architect and CF presets (CK-P3A-013, CK-P3CF-011)"
 ```
@@ -1589,7 +1589,7 @@ describe('Architect Body (CK-P3A-001, CK-P3A-013)', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/architect/architect-body.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/architect/architect-body.test.ts`
 Expected: FAIL — file not found
 
 - [ ] **Step 3: Create architect-body.md**
@@ -1641,13 +1641,13 @@ Du bleibst ueber alle Bau-Wellen im Loop (extended-Betrieb). Du bist nicht fire-
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/architect/architect-body.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/architect/architect-body.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add src/main/preset/architect/architect-body.md tests/preset/architect/architect-body.test.ts
 git commit -m "feat(preset): Architect body with negative boundaries and niveau hints (CK-P3A-001, 009, 013)"
 ```
@@ -1754,7 +1754,7 @@ describe('CF Niveau differentiation (CK-P3CF-008, CK-P3CF-010)', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/cyber-factory/cf-preset.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/cyber-factory/cf-preset.test.ts`
 Expected: FAIL
 
 - [ ] **Step 3: Implement cf-preset.ts**
@@ -1847,13 +1847,13 @@ export function getCfMaxWorkers(niveau: CapabilityNiveau): number {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/cyber-factory/cf-preset.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/cyber-factory/cf-preset.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add src/main/preset/cyber-factory/cf-preset.ts tests/preset/cyber-factory/cf-preset.test.ts
 git commit -m "feat(preset): CF preset registration with niveau differentiation (CK-P3CF-001, 008, 010)"
 ```
@@ -1929,7 +1929,7 @@ describe('CF Capabilities (CK-P3CF-010)', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/cyber-factory/cf-capabilities.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/cyber-factory/cf-capabilities.test.ts`
 Expected: FAIL
 
 - [ ] **Step 3: Implement cf-capabilities.ts**
@@ -1938,13 +1938,13 @@ Follow the same pattern as `architect-capabilities.ts`. Define all 8 packages wi
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/cyber-factory/cf-capabilities.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/cyber-factory/cf-capabilities.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add src/main/preset/cyber-factory/cf-capabilities.ts tests/preset/cyber-factory/cf-capabilities.test.ts
 git commit -m "feat(preset): CF capability packages with niveau differentiation (CK-P3CF-007, CK-P3CF-010)"
 ```
@@ -2045,7 +2045,7 @@ describe('CF Welle Plan (CK-P3CF-002)', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/cyber-factory/cf-welle-plan.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/cyber-factory/cf-welle-plan.test.ts`
 Expected: FAIL
 
 - [ ] **Step 3: Implement cf-welle-plan.ts**
@@ -2173,13 +2173,13 @@ export function buildWellePlan(db: Database.Database, maxWorkers: number): Welle
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/cyber-factory/cf-welle-plan.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/cyber-factory/cf-welle-plan.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add src/main/preset/cyber-factory/cf-welle-plan.ts tests/preset/cyber-factory/cf-welle-plan.test.ts
 git commit -m "feat(preset): CF wave plan with topological sort and worker capacity (CK-P3CF-002)"
 ```
@@ -2231,7 +2231,7 @@ describe('CF Model Routing (CK-P3CF-004)', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/cyber-factory/cf-model-routing.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/cyber-factory/cf-model-routing.test.ts`
 Expected: FAIL
 
 - [ ] **Step 3: Implement cf-model-routing.ts**
@@ -2262,13 +2262,13 @@ export function routeModel(komplexitaet: string, niveau: CapabilityNiveau): Mode
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/cyber-factory/cf-model-routing.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/cyber-factory/cf-model-routing.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add src/main/preset/cyber-factory/cf-model-routing.ts tests/preset/cyber-factory/cf-model-routing.test.ts
 git commit -m "feat(preset): CF model routing light/standard/heavy per complexity (CK-P3CF-004)"
 ```
@@ -2340,7 +2340,7 @@ describe('CF Risk Review (CK-P3CF-005)', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/cyber-factory/cf-risk-review.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/cyber-factory/cf-risk-review.test.ts`
 Expected: FAIL
 
 - [ ] **Step 3: Implement cf-risk-review.ts**
@@ -2396,13 +2396,13 @@ export function createRiskReview(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/cyber-factory/cf-risk-review.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/cyber-factory/cf-risk-review.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add src/main/preset/cyber-factory/cf-risk-review.ts tests/preset/cyber-factory/cf-risk-review.test.ts
 git commit -m "feat(preset): CF risk review with token-limited befund statement (CK-P3CF-005)"
 ```
@@ -2480,7 +2480,7 @@ describe('CF Rueckweg Protocol (CK-P3CF-006)', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/cyber-factory/cf-rueckweg.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/cyber-factory/cf-rueckweg.test.ts`
 Expected: FAIL
 
 - [ ] **Step 3: Implement cf-rueckweg.ts**
@@ -2558,13 +2558,13 @@ In `src/main/graph/node-types.ts`, add `'rueckweg-befund'` to the `DOKUMENT_TYPE
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/cyber-factory/cf-rueckweg.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/cyber-factory/cf-rueckweg.test.ts`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add src/main/preset/cyber-factory/cf-rueckweg.ts src/main/graph/node-types.ts tests/preset/cyber-factory/cf-rueckweg.test.ts
 git commit -m "feat(preset): CF Rueckweg protocol with befund + SE uebergabedokument (CK-P3CF-006)"
 ```
@@ -2626,7 +2626,7 @@ describe('CF Body (CK-P3CF-001, CK-P3CF-011)', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/cyber-factory/cf-body.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/cyber-factory/cf-body.test.ts`
 Expected: FAIL — file not found
 
 - [ ] **Step 3: Create cf-body.md**
@@ -2677,13 +2677,13 @@ Die Zerlegung ist Input, nicht Hypothese. Du diskutierst sie nicht, du baust dar
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/cyber-factory/cf-body.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/cyber-factory/cf-body.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add src/main/preset/cyber-factory/cf-body.md tests/preset/cyber-factory/cf-body.test.ts
 git commit -m "feat(preset): CF body with negative boundaries and niveau hints (CK-P3CF-001, 008, 011)"
 ```
@@ -2748,7 +2748,7 @@ describe('CF Worker Orchestration — Schenkel-1 Protocol (CK-P3CF-003)', () => 
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/cyber-factory/cf-worker-orchestration.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/cyber-factory/cf-worker-orchestration.test.ts`
 Expected: FAIL
 
 - [ ] **Step 3: Implement cf-worker-orchestration.ts**
@@ -2803,13 +2803,13 @@ export interface WorkerStatus {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/cyber-factory/cf-worker-orchestration.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/cyber-factory/cf-worker-orchestration.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add src/main/preset/cyber-factory/cf-worker-orchestration.ts tests/preset/cyber-factory/cf-worker-orchestration.test.ts
 git commit -m "feat(preset): CF Schenkel-1 worker orchestration protocol constants (CK-P3CF-003)"
 ```
@@ -2860,7 +2860,7 @@ describe('CF Boundary Check (CK-P3CF-011)', () => {
 
 - [ ] **Step 2: Run test to verify it passes (already implemented in Task 9)**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/preset/cyber-factory/cf-boundary.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/preset/cyber-factory/cf-boundary.test.ts`
 Expected: PASS (checkCfBoundary was implemented in Task 9)
 
 - [ ] **Step 3: Update persona-defaults.json**
@@ -2869,13 +2869,13 @@ Read and modify `src/main/preset/shared/persona-defaults.json` to add `"cyber-fa
 
 - [ ] **Step 4: Run full test suite**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run`
+Run: `cd <repo-root> && npx vitest run`
 Expected: All PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add src/main/preset/shared/persona-defaults.json tests/preset/cyber-factory/cf-boundary.test.ts
 git commit -m "feat(preset): CF boundary checks + persona-defaults for cyber-factory"
 ```
@@ -3051,18 +3051,18 @@ describe('Phase 4 Integration', () => {
 
 - [ ] **Step 2: Run integration test**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run tests/phase4-integration.test.ts`
+Run: `cd <repo-root> && npx vitest run tests/phase4-integration.test.ts`
 Expected: PASS
 
 - [ ] **Step 3: Run FULL test suite**
 
-Run: `cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron && npx vitest run`
+Run: `cd <repo-root> && npx vitest run`
 Expected: All PASS (existing 1164 + ~150 new tests)
 
 - [ ] **Step 4: Commit**
 
 ```bash
-cd /Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron
+cd <repo-root>
 git add tests/phase4-integration.test.ts
 git commit -m "test: Phase 4 integration tests — full Architect-CF workflow + coaching loop"
 ```

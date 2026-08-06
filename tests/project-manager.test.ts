@@ -18,10 +18,10 @@ function makeManager() {
 describe('ProjectManager', () => {
   it('createProject returns a project with all required fields', () => {
     const pm = makeManager()
-    const proj = pm.createProject('MyProject', '/Users/cipher/projects/my-project')
+    const proj = pm.createProject('MyProject', '/tmp/projects/my-project')
     expect(proj.id).toBeTruthy()
     expect(proj.name).toBe('MyProject')
-    expect(proj.rootPath).toBe('/Users/cipher/projects/my-project')
+    expect(proj.rootPath).toBe('/tmp/projects/my-project')
     expect(proj.createdAt).toBeTruthy()
     expect(proj.workspaceIds).toEqual([])
   })

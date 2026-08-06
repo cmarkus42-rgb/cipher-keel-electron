@@ -2,7 +2,7 @@
 
 **Datum:** 2026-06-05
 **Quellen:** `refinement/CK-P3A.md` (14 REQs), `refinement/CK-P3CF.md` (12 REQs)
-**Projekt:** `/Users/Shared/Nextcloud/Claude/CIPHER-MUX/projects/cipher-keel-electron/`
+**Projekt:** `<repo-root>/`
 **Vorgaenger:** Phase 3 (Commit `08f8a03`, 1164 Tests, 222 REQs)
 
 ---
