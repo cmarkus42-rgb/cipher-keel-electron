@@ -16,6 +16,11 @@ export interface OpenDbOptions {
   path: string
   /** Embedding vector dimension. Default 384. */
   embeddingDim?: number
+  /**
+   * Explicit path to the better-sqlite3 native addon. Set under Electron, where the
+   * default lookup would find the Node-ABI build. Omit to use default resolution.
+   */
+  nativeBinding?: string
 }
 
 /**
@@ -29,7 +34,9 @@ export interface OpenDbOptions {
  *   5. Apply full schema (CK-GRAPH-038)
  */
 export function openGraphDb(opts: OpenDbOptions): Database.Database {
-  const db = new Database(opts.path)
+  const db = opts.nativeBinding
+    ? new Database(opts.path, { nativeBinding: opts.nativeBinding })
+    : new Database(opts.path)
 
   // CK-GRAPH-028: WAL mode — parallel reads don't block, single writer serializes.
   db.pragma('journal_mode = WAL')
