@@ -87,7 +87,10 @@ import {
   GIT_HAS_REPO,
   DIALOG_OPEN_DIR,
   PROJECT_KICKOFF,
+  SERVICES_STATUS,
 } from '../shared/ipc-channels'
+import { getServiceStatus } from './service-lifecycle'
+import { subsystemError } from '../shared/service-status'
 import { configStore } from './config/config-store'
 import type { CipherKeelConfig } from './config/config-store'
 import { graphSearch, graphGetNode, graphExpand } from './graph/search'
@@ -455,12 +458,27 @@ export function registerIpcHandlers(services: AppServices): void {
   })
 
   // ---------------------------------------------------------------------------
+  // Service status (CK-NFR-010 — degradation must be visible, Befund 2)
+  // ---------------------------------------------------------------------------
+
+  ipcMain.handle(SERVICES_STATUS, async () => {
+    return getServiceStatus()
+  })
+
+  // ---------------------------------------------------------------------------
   // Kanban handlers (CK-UI-009, CK-UI-010, CK-UI-027, CK-UI-034)
   // ---------------------------------------------------------------------------
 
   ipcMain.handle(KANBAN_LIST, async () => {
-    if (!services.kanbanStore) return []
-    return services.kanbanStore.listItems()
+    if (!services.kanbanStore) {
+      return { items: [], error: subsystemError('kanban', 'Kanban store not initialized') }
+    }
+    try {
+      return { items: services.kanbanStore.listItems(), error: null }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return { items: [], error: subsystemError('kanban', msg) }
+    }
   })
 
   ipcMain.handle(KANBAN_CREATE, async (_event, input: CreateKanbanItemInput) => {
