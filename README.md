@@ -278,6 +278,8 @@ Implementation plans, design specs and audit reports per phase live in `docs/sup
 
 - Not a commercial product — an open-source project built out of personal need
 - Not a replacement for the Claude Code CLI — an orchestration layer on top of it
+- Not a way to stretch or work around provider quotas — leg 1 runs the vendor's own CLI
+  under the vendor's own terms, and the NanoClaw path uses provider keys you bring yourself
 - Not a magic wand for vague ideas — being able to state a precise specification stays essential
 - Single-developer project; expect the pace and the gaps that come with that
 

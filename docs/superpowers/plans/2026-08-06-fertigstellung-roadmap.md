@@ -195,9 +195,12 @@ sinnlos.
 - `npm run dist` als Script ergaenzen (existiert derzeit nicht)
 - Native Module im gepackten Build verifizieren — `better-sqlite3` und `sqlite-vec`
   sind der wahrscheinlichste Bruchpunkt zwischen Dev und Paket
-- **Signierung entscheiden:** ohne Apple Developer ID braucht jeder Nutzer
-  `xattr -cr`. Mit Notarisierung entfaellt das, kostet aber ein Entwicklerkonto.
-  Das ist eine Maker-Entscheidung, keine technische — siehe Offene Entscheidungen
+- **Signierung: entschieden — unsigniert** (2026-08-06). `dist`-Script analog zu
+  cipher-mux: `CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg`.
+  Auf dem Bau-Rechner existiert keine Signing-Identity, und cipher-mux liefert
+  bewusst unsigniert aus — 0.1 bleibt konsistent. Konsequenz fuer die
+  Installationsanleitung: `xattr -cr /Applications/cipher\ keel.app` als
+  einmaliger Schritt, prominent im README, nicht in einer Fussnote
 - Erst-Start auf einem Rechner ohne Dev-Umgebung testen: kein Node, kein tmux.
   Fehlermeldung muss sagen, was fehlt und wie man es installiert
 - GitHub Release 0.1 mit Artefakt und Release Notes
@@ -272,22 +275,47 @@ Bewusst ausgeschlossen, damit der Plan endlich ist:
 
 ---
 
-## Offene Entscheidungen (Maker)
+## Der 0.1-Schnitt — was bewusst fehlt
 
-Diese Punkte blockieren keine sofortige Arbeit, muessen aber vor der jeweils
-genannten Phase entschieden sein:
+Wichtig fuer jeden, der den Entitaets-Stand bewertet: M5 kennt **elf Rollen**,
+implementiert sind **vier**. Das ist kein Rueckstand, sondern der ratifizierte
+Schnitt. M6 Abschnitt 3.1 (BG-1) legt fuer Release 0.1 genau fest: Systems Engineer,
+Architect, Cyber Factory, Workshop — exakt der gebaute Stand.
 
-1. **Code-Signierung** (vor Phase 8): Apple Developer ID beschaffen, oder DMG
-   unsigniert mit `xattr -cr`-Anleitung ausliefern? Beeinflusst die Einstiegshuerde
-   fuer jeden Nutzer.
-2. **Companion-Rolle** (vor einer Companion-Integration): eigene Entitaet mit Preset
-   oder Systemdienst? Offen seit 2026-05-28, dokumentiert in `06-offene-punkte.md`
-   Punkt 8. Beruehrt Phase 6f nur, falls der Companion in die Preset-Auswahl soll.
-3. **Release Manager** (vor 0.2): als Entitaet nicht ausdifferenziert
-   (`06-offene-punkte.md` Punkt 9). Fuer 0.1 kein Blocker.
-4. **Positionierung „kein Quota-Stretcher"** (vor Launch-Kommunikation): Befund 8
-   aus Brain-Note 21. Das Repo ist inzwischen public — die Frage ist damit faellig,
-   nicht mehr hypothetisch.
+Post-0.1 und damit **nicht** Teil dieser Roadmap: Ideation, Refinement, Testing
+Assistant, Audit, Release Manager, Companion, Debugger. Phase 6f bietet folglich
+vier Presets zur Auswahl an, nicht acht — das ist korrekt, nicht unvollstaendig.
+
+---
+
+## Entscheidungen
+
+### Getroffen (2026-08-06)
+
+1. **Code-Signierung: unsigniert.** DMG ohne Signatur, `xattr -cr`-Anleitung im
+   README, analog cipher-mux. Begruendung: keine Signing-Identity vorhanden,
+   Konsistenz mit dem Vorgaengerprojekt, kein Entwicklerkonto noetig. Revidierbar,
+   sobald 0.1 nennenswerte Verbreitung findet. → Phase 8
+2. **Positionierung „kein Quota-Stretcher": Satz in den Scope boundaries.**
+   Umgesetzt im README: Schenkel 1 nutzt die offizielle CLI unter den Bedingungen
+   des Anbieters, der NanoClaw-Pfad nutzt selbst mitgebrachte Provider-Keys.
+   Erledigt Befund 8 aus Brain-Note 21.
+
+### Nicht faellig (post-0.1 per BG-1)
+
+3. **Companion-Rolle.** Der Eintrag in `06-offene-punkte.md` Punkt 8 war ueberholt —
+   M5 v1.1 Abschnitt 6 differenziert die Rolle vollstaendig aus (interaktives Manual,
+   ausschliesslich lesend-darstellend, querliegend, vom Nutzer gerufen, Entitaet).
+   Punkt 8 wurde am 2026-08-06 im Konzept-Repo nachgezogen. Offen bleibt allein die
+   M2-Frage, welche Tools die lesend-darstellende Klasse abdecken — fuer 0.1 irrelevant.
+4. **Release Manager.** M5 Abschnitt 8.8 laesst die Detaillierung bewusst spaeterer
+   Arbeit. Kein 0.1-Blocker, kein Handlungsbedarf.
+
+### Weiterhin offen, aber ausserhalb des Scopes
+
+5. **OpenCode-Lizenz/ToS-Verifikation** (`06-offene-punkte.md`). Vor jedem
+   OpenCode-Adapter zu klaeren, per Verifikation statt Spekulation. Phase 10 waehlt
+   deshalb Codex oder Gemini, nicht OpenCode.
 
 ---
 
