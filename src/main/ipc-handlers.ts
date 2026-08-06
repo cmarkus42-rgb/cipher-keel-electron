@@ -93,7 +93,7 @@ import { getServiceStatus } from './service-lifecycle'
 import { buildSessionContext, writeSessionNode } from './session/session-context'
 import { subsystemError } from '../shared/service-status'
 import { isKnownPresetId, defaultPresetId } from '../shared/preset-catalog'
-import { initProjectPhases, runKickoff } from './project/kickoff'
+import { initProjectPhases, runKickoff, activateAfterKickoff } from './project/kickoff'
 import type { KickoffPayload } from './project/kickoff'
 import { configStore } from './config/config-store'
 import type { CipherKeelConfig } from './config/config-store'
@@ -689,7 +689,7 @@ export function registerIpcHandlers(services: AppServices): void {
   })
 
   ipcMain.handle(PROJECT_KICKOFF, async (_event, payload: KickoffPayload) => {
-    return runKickoff(
+    const result = await runKickoff(
       {
         writer: services.graphWriter,
         createProject: (name, rootPath) => projectManager.createProject(name, rootPath),
@@ -699,5 +699,7 @@ export function registerIpcHandlers(services: AppServices): void {
       },
       payload,
     )
+    activateAfterKickoff((id) => projectManager.switchProject(id), result)
+    return result
   })
 }

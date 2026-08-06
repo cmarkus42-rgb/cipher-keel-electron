@@ -151,3 +151,22 @@ export async function runKickoff(
     }
   }
 }
+
+/**
+ * Activates the freshly created project so the very next session:create finds it.
+ * A failure here must never break an otherwise successful kickoff — the project
+ * exists either way and the user can still select it from the list.
+ */
+export function activateAfterKickoff(
+  switchProject: (projectId: string) => void,
+  result: KickoffResult,
+): boolean {
+  if (!result.ok || !result.project) return false
+  try {
+    switchProject(result.project.id)
+    return true
+  } catch (err) {
+    console.warn('[kickoff] activating the new project failed:', err)
+    return false
+  }
+}
