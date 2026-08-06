@@ -2790,6 +2790,248 @@ git commit -m "feat(launcher): offer the four 0.1 presets when starting a sessio
 
 ---
 
+---
+
+## Task 9: Grid-Zugang und Projektaktivierung (6g — nachgetragen)
+
+**Warum nachgetragen:** Nach Task 8 hat der Controller verifiziert, dass **nichts** in
+`src/renderer/` oder `src/preload.ts` jemals `window:open-grid` aufruft — die einzige Fundstelle
+ist ein Kommentar in `project-window.tsx:5`. Es gibt auch kein App-Menu, keinen Accelerator und
+keinen `globalShortcut` in `src/main/`. Der Handler existiert und funktioniert, aber kein
+Nutzerpfad erreicht ihn: **das Grid-Fenster ist ueber die Oberflaeche unerreichbar.**
+
+Das Phasenziel nennt ausdruecklich „oeffnet das Grid, startet eine Session", und Abnahmekriterium 3
+verlangt genau das. Ohne diese Task ist es nur per IPC-Injektion erfuellbar — so hat der
+Task-8-Implementer es auch tun muessen. Die Luecke war ein Planungsfehler, kein Baufehler.
+
+Zweitens: `ProjectManager.createProject` setzt `activeId` nie (`project-manager.ts:38-49`), und
+`handleWizardComplete` laedt nur die Liste neu. Ein frisch angelegtes Projekt ist deshalb nicht
+aktiv — `session:create` scheitert danach mit „No session name and no active project", bis der
+Nutzer das Projekt in der Liste anklickt.
+
+**Files:**
+- Modify: `src/main/ipc-handlers.ts` (PROJECT_KICKOFF-Handler), `src/renderer/windows/project-window.tsx`
+- Test: `tests/project/kickoff-activation.test.ts`
+
+**Interfaces:**
+- Consumes: `runKickoff` (Task 6), `projectManager.switchProject` / `getCurrentProject`, Kanal `WINDOW_OPEN_GRID`.
+- Produces: `activateAfterKickoff(switchProject, result): boolean` als reine, testbare Funktion.
+
+**Designhinweis:** Die Aktivierung gehoert in den Main-Prozess, nicht in den Renderer — dann gilt
+sie fuer jeden Aufrufer von `project:kickoff`, nicht nur fuer den Wizard. `runKickoff` selbst
+bleibt unangetastet: es ist electron-frei und kennt keinen `ProjectManager`. Die Aktivierung
+haengt sich an den IPC-Handler.
+
+- [ ] **Step 1: Write the failing test**
+
+Datei `tests/project/kickoff-activation.test.ts`:
+
+```typescript
+/**
+ * tests/project/kickoff-activation.test.ts — ein frisch angelegtes Projekt wird aktiv.
+ *
+ * Vorher: createProject setzte activeId nie, also scheiterte session:create direkt
+ * nach dem Kickoff mit "No session name and no active project".
+ */
+import { describe, it, expect, vi } from 'vitest'
+import { activateAfterKickoff } from '../../src/main/project/kickoff'
+
+const project = {
+  id: 'proj-1', name: 'Probe', rootPath: '/tmp/probe',
+  createdAt: '2026-08-06T00:00:00.000Z', workspaceIds: [],
+}
+
+describe('activateAfterKickoff', () => {
+  it('activates the project of a successful kickoff', () => {
+    const switchProject = vi.fn()
+
+    const activated = activateAfterKickoff(switchProject, {
+      ok: true, project, phaseUids: [], githubResult: null, error: null,
+    })
+
+    expect(activated).toBe(true)
+    expect(switchProject).toHaveBeenCalledWith('proj-1')
+  })
+
+  it('does not activate when the kickoff failed', () => {
+    const switchProject = vi.fn()
+
+    const activated = activateAfterKickoff(switchProject, {
+      ok: false, project, phaseUids: [], githubResult: null,
+      error: { code: 'SUBSYSTEM_UNAVAILABLE', subsystem: 'graph', message: 'x' },
+    })
+
+    expect(activated).toBe(false)
+    expect(switchProject).not.toHaveBeenCalled()
+  })
+
+  it('does not activate when no project was created', () => {
+    const switchProject = vi.fn()
+
+    const activated = activateAfterKickoff(switchProject, {
+      ok: true, project: null, phaseUids: [], githubResult: null, error: null,
+    })
+
+    expect(activated).toBe(false)
+    expect(switchProject).not.toHaveBeenCalled()
+  })
+
+  it('does not let a switchProject failure break the kickoff', () => {
+    const switchProject = vi.fn(() => { throw new Error('gone') })
+
+    expect(() => activateAfterKickoff(switchProject, {
+      ok: true, project, phaseUids: [], githubResult: null, error: null,
+    })).not.toThrow()
+  })
+
+  it('reports false when activation threw', () => {
+    const switchProject = vi.fn(() => { throw new Error('gone') })
+
+    const activated = activateAfterKickoff(switchProject, {
+      ok: true, project, phaseUids: [], githubResult: null, error: null,
+    })
+
+    expect(activated).toBe(false)
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run tests/project/kickoff-activation.test.ts`
+Expected: FAIL — `activateAfterKickoff` wird nicht exportiert.
+
+- [ ] **Step 3: Write minimal implementation**
+
+In `src/main/project/kickoff.ts` ergaenzen (unterhalb von `runKickoff`):
+
+```typescript
+/**
+ * Activates the freshly created project so the very next session:create finds it.
+ * A failure here must never break an otherwise successful kickoff — the project
+ * exists either way and the user can still select it from the list.
+ */
+export function activateAfterKickoff(
+  switchProject: (projectId: string) => void,
+  result: KickoffResult,
+): boolean {
+  if (!result.ok || !result.project) return false
+  try {
+    switchProject(result.project.id)
+    return true
+  } catch (err) {
+    console.warn('[kickoff] activating the new project failed:', err)
+    return false
+  }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx vitest run tests/project/kickoff-activation.test.ts`
+Expected: PASS (5 Tests).
+
+- [ ] **Step 5: Wire activation into the kickoff handler**
+
+In `src/main/ipc-handlers.ts` den `PROJECT_KICKOFF`-Handler erweitern. Import ergaenzen
+(`activateAfterKickoff` zum bestehenden `./project/kickoff`-Import hinzufuegen) und den Handler
+auf das Ergebnis reagieren lassen:
+
+```typescript
+  ipcMain.handle(PROJECT_KICKOFF, async (_event, payload: KickoffPayload) => {
+    const result = await runKickoff(
+      {
+        writer: services.graphWriter,
+        createProject: (name, rootPath) => projectManager.createProject(name, rootPath),
+        gitInit: async (rootPath) => { await execFileAsync('git', ['init', rootPath]) },
+        createRepo,
+        linkRepo,
+      },
+      payload,
+    )
+    activateAfterKickoff((id) => projectManager.switchProject(id), result)
+    return result
+  })
+```
+
+- [ ] **Step 6: Add the grid affordance to the project window**
+
+In `src/renderer/windows/project-window.tsx`. Handler oberhalb des `if (loading)`-Blocks
+ergaenzen:
+
+```typescript
+  const handleOpenGrid = useCallback(async () => {
+    try {
+      await api().invoke('window:open-grid', activeProjectId ?? undefined)
+    } catch (err) {
+      console.error('[project-window] window:open-grid failed:', err)
+    }
+  }, [activeProjectId])
+```
+
+Im Header-JSX rechts einen Button ergaenzen. Der bestehende Header endet mit
+`<span style={styles.subtitle}>Projekte</span>`; direkt danach einfuegen:
+
+```tsx
+        {view === 'project' && (
+          <button
+            style={styles.gridBtn}
+            onClick={handleOpenGrid}
+            title="Grid-Fenster mit den Sessions dieses Projekts oeffnen"
+          >
+            Grid oeffnen
+          </button>
+        )}
+```
+
+Und in `styles` ergaenzen (Stil an `backBtn` anlehnen, das bereits existiert):
+
+```typescript
+  gridBtn: {
+    marginLeft: 'auto' as const,
+    padding: '4px 10px',
+    background: '#1a1a1a',
+    color: '#ddd',
+    border: '1px solid #333',
+    borderRadius: 3,
+    cursor: 'pointer' as const,
+    fontSize: 12,
+  },
+```
+
+`marginLeft: 'auto'` schiebt den Button in dem `display: flex`-Header nach rechts.
+
+- [ ] **Step 7: Verify suite and typecheck**
+
+Run: `npm test && npm run typecheck`
+Expected: 1481 Tests gruen (1476 + 5), Typecheck sauber.
+
+- [ ] **Step 8: Verify in the running app**
+
+Der Beweis, der vorher fehlte: ein Nutzerpfad ohne IPC-Injektion. Per CDP das Klicken simulieren
+statt `window:open-grid` direkt aufzurufen — ein `.click()` auf den Button geht durch dieselbe
+Handlerkette wie eine echte Maus:
+
+```bash
+npm run build
+pkill -f 'remote-debugging-port=9222'
+rm -rf /tmp/keel-verify-t9 /tmp/keel-kickoff-t9 && mkdir -p /tmp/keel-verify-t9 /tmp/keel-kickoff-t9
+./node_modules/.bin/electron . --remote-debugging-port=9222 --user-data-dir=/tmp/keel-verify-t9 > /tmp/keel-t9.log 2>&1 &
+```
+
+Dann: Kickoff auslösen, `project:get-current` pruefen (muss das neue Projekt liefern — vorher
+`null`), in die Projektansicht wechseln, den Button per `document.querySelector`-Textsuche
+anklicken, und pruefen dass ein zweites Fenster mit `renderer/index.html` existiert.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add src/main/project/kickoff.ts src/main/ipc-handlers.ts \
+        src/renderer/windows/project-window.tsx tests/project/kickoff-activation.test.ts
+git commit -m "feat(project): open the grid from the project window and activate new projects"
+```
+
+
 ## Abnahmekriterien Phase 6 (aus der Roadmap)
 
 | Kriterium | Abgedeckt durch |
@@ -2798,7 +3040,8 @@ git commit -m "feat(launcher): offer the four 0.1 presets when starting a sessio
 | Timeline und Kanban zeigen echte Daten, unterscheidbar von „Subsystem nicht bereit" | Task 4, 5 |
 | Grid-Fenster oeffnen, Session mit Preset starten: tmux-Session im Projektverzeichnis, Session-Knoten im Graph | Task 7, 8 (Task 8 Step 9) |
 | Ein Event erreicht beide Fenster | Task 2, 3 (Task 8 Step 9, Punkt 6) |
-| Alle bisherigen Tests bleiben gruen; neue Integrationstests fuer 6a, 6c, 6d | Jede Task, Schlussstand 1463 |
+| Alle bisherigen Tests bleiben gruen; neue Integrationstests fuer 6a, 6c, 6d | Jede Task, Schlussstand 1481 |
+| Grid-Fenster ist aus der UI erreichbar (ohne IPC-Injektion) | Task 9 |
 
 ## Risiken
 
