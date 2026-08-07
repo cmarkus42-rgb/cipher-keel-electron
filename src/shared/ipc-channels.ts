@@ -157,6 +157,14 @@ export const APP_BEFORE_QUIT = 'app:before-quit' as const
 // Service status channels (CK-NFR-010 — degradation must be visible)
 // ---------------------------------------------------------------------------
 export const SERVICES_STATUS = 'services:status' as const
+/**
+ * Broadcast by service-lifecycle.ts's setStatus whenever one subsystem's status
+ * actually changes (Befund 3 — this channel previously had no producer, so the
+ * StatusBar only ever showed the startup snapshot). Payload is a single
+ * SubsystemStatus (`{ id, state, reason }`, see src/shared/service-status.ts) —
+ * the one subsystem that changed, not the whole map. Listeners that want the
+ * full picture re-fetch via SERVICES_STATUS.
+ */
 export const SERVICES_STATUS_CHANGED = 'services:status-changed' as const
 
 // ---------------------------------------------------------------------------

@@ -25,7 +25,7 @@ import { createProjectWindow } from './window-manager'
 import type { AppServices } from './window-manager'
 import { registerIpcHandlers } from './ipc-handlers'
 import { registerWindow } from './event-bus'
-import { initializeServices } from './service-lifecycle'
+import { initializeServices, shutdownServices } from './service-lifecycle'
 import { configStore } from './config/config-store'
 
 // ---------------------------------------------------------------------------
@@ -106,14 +106,9 @@ process.on('unhandledRejection', (reason: unknown) => {
   console.error('[main] Unhandled rejection:', reason)
 })
 
-// Graceful shutdown — close graph DB to flush WAL (CK-GRAPH-028)
+// Graceful shutdown — tear down every background service (tmux, NanoClaw, voice,
+// note watcher, graph DB) so nothing is left connected or holding a file handle
+// (CK-GRAPH-028). See service-lifecycle.ts for the per-disposer failure isolation.
 app.on('before-quit', () => {
-  try {
-    services.graphDb?.close()
-    services.graphDb = null
-    services.graphWriter = null
-    services.graphMcpServer = null
-  } catch (err) {
-    console.warn('[main] Graph DB close error:', err)
-  }
+  shutdownServices(services)
 })

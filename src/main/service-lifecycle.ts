@@ -25,12 +25,14 @@ import {
   VOICE_ERROR,
   VOICE_PIN_STATUS,
   VOICE_ACTIVE_SESSION,
+  SERVICES_STATUS_CHANGED,
 } from '../shared/ipc-channels'
 import {
   SUBSYSTEM_IDS,
   type ServiceStatusMap,
   type SubsystemId,
   type ServiceState,
+  type SubsystemStatus,
 } from '../shared/service-status'
 import { broadcast } from './event-bus'
 import { openGraphDb } from './graph/db'
@@ -70,8 +72,19 @@ function freshStatus(): ServiceStatusMap {
 let status: ServiceStatusMap = freshStatus()
 let initPromise: Promise<ServiceStatusMap> | null = null
 
+/**
+ * Updates one subsystem's status and broadcasts the change to every live window
+ * (Befund 3 — services:status-changed had no producer, so the StatusBar was a
+ * startup snapshot). A no-op transition (same state + reason) is not broadcast,
+ * so runInit's sequence of setStatus calls does not fire a storm of identical
+ * messages during a normal startup.
+ */
 function setStatus(id: SubsystemId, state: ServiceState, reason: string | null): void {
-  status[id] = { id, state, reason }
+  const prev = status[id]
+  if (prev && prev.state === state && prev.reason === reason) return
+  const next: SubsystemStatus = { id, state, reason }
+  status[id] = next
+  broadcast(SERVICES_STATUS_CHANGED, next)
 }
 
 function reasonOf(err: unknown): string {
@@ -90,12 +103,84 @@ export function resetServiceLifecycle(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Shutdown
+// ---------------------------------------------------------------------------
+
+/**
+ * Tears down every background service started by initializeServices. Mirrors
+ * runInit: each disposer runs in its own try/catch so one failure (e.g. a socket
+ * that is already gone) cannot prevent the rest from running. Called from
+ * before-quit in main.ts.
+ *
+ * Resets the status map and the initPromise latch, so a later initializeServices
+ * call (there is none today outside app lifecycle, but tests rely on this) starts
+ * a clean run rather than replaying stale state.
+ */
+export function shutdownServices(services: AppServices): void {
+  try {
+    services.noteWatcher?.stop()
+  } catch (err) {
+    console.warn('[service-lifecycle] noteWatcher.stop() failed:', err)
+  }
+  services.noteWatcher = null
+
+  try {
+    services.statusMonitor.stop()
+  } catch (err) {
+    console.warn('[service-lifecycle] statusMonitor.stop() failed:', err)
+  }
+
+  try {
+    services.tmux.disconnect()
+  } catch (err) {
+    console.warn('[service-lifecycle] tmux.disconnect() failed:', err)
+  }
+
+  try {
+    services.nanoClawBridge.disconnect()
+  } catch (err) {
+    console.warn('[service-lifecycle] nanoClawBridge.disconnect() failed:', err)
+  }
+
+  try {
+    services.voiceManager?.stopSession()
+  } catch (err) {
+    console.warn('[service-lifecycle] voiceManager.stopSession() failed:', err)
+  }
+  services.voiceManager = null
+
+  // Graph DB close flushes WAL (CK-GRAPH-028). kanbanStore wraps the same
+  // connection, so it must be nulled alongside it — otherwise it would keep
+  // pointing at a closed database.
+  try {
+    services.graphDb?.close()
+  } catch (err) {
+    console.warn('[service-lifecycle] graphDb.close() failed:', err)
+  }
+  services.graphDb = null
+  services.graphWriter = null
+  services.graphMcpServer = null
+  services.kanbanStore = null
+
+  status = freshStatus()
+  initPromise = null
+}
+
+// ---------------------------------------------------------------------------
 // Initialization
 // ---------------------------------------------------------------------------
 
 /**
  * Initializes all background services. Idempotent: repeated (and concurrent) calls
  * share the first run and never re-initialize.
+ *
+ * Voice is started but NOT awaited (Befund 4): initVoice awaits a Whisper model
+ * load from disk and voice.enabled defaults to true, so awaiting it here would
+ * gate the two UI-critical subsystems (graph, notes) behind the least UI-critical
+ * one. Voice reports its own status via setStatus once it settles, which reaches
+ * every window through services:status-changed (Befund 3). The promise this
+ * function returns still resolves only once tmux, nanoclaw, graph and notes have
+ * settled — the ordering guarantee it promises for those subsystems holds.
  */
 export function initializeServices(
   services: AppServices,
@@ -119,7 +204,12 @@ async function runInit(
   await initTmux(services)
   initStatusMonitor(services)
   await initNanoClaw(services)
-  await initVoice(services, ctx)
+
+  // Fire-and-forget — see the doc comment on initializeServices. Errors are
+  // handled inside initVoice itself (setStatus + console.warn), so a rejection
+  // here can't escape as an unhandled rejection.
+  void initVoice(services, ctx)
+
   initGraph(services, ctx)
   initNotes(services, ctx)
 
