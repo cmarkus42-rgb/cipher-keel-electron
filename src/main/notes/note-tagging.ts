@@ -9,6 +9,7 @@ import * as http from 'node:http'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import matter from 'gray-matter'
+import { configStore } from '../config/config-store'
 import type { TagRepository, TagEntry } from '../../shared/types'
 import type { TagClassRepo } from './tag-repository'
 
@@ -16,12 +17,6 @@ const TIMEOUT_MS = 60_000
 
 function getLlmConfig() {
   try {
-    // Deliberate require(), not a top-level import: config-store.ts pulls in
-    // `electron` at module-evaluation time. Loading it lazily here means a
-    // failure to resolve `electron` (e.g. this module used outside the main
-    // process) degrades to the defaults below instead of crashing on import.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { configStore } = require('../config/config-store')
     const llm = configStore.get('llm')
     return {
       host: llm?.ollamaHost ?? '127.0.0.1',
