@@ -105,7 +105,7 @@ import { ProjectManager } from './project/project-manager'
 import type { CreateKanbanItemInput, UpdateKanbanItemInput } from '../shared/kanban-types'
 import { createMainWindow } from './window-manager'
 import type { AppServices } from './window-manager'
-import { registerWindow } from './event-bus'
+import { registerWindow, broadcast } from './event-bus'
 import { normalizeToP1Format } from './p1/normalizer'
 
 // Tracks the active grid window for focus-or-create logic (CK-UI-002)
@@ -518,8 +518,9 @@ export function registerIpcHandlers(services: AppServices): void {
     if (!services.kanbanStore) return { item: null, error: 'Kanban not initialized' }
     try {
       const item = services.kanbanStore.createItem(input)
-      // Notify all windows of board change
-      BrowserWindow.getAllWindows().forEach(w => w.webContents.send(KANBAN_CHANGED))
+      // Notify all windows of board change — via the event bus (M-1), not a
+      // direct BrowserWindow.getAllWindows() sweep.
+      broadcast(KANBAN_CHANGED)
       return { item, error: null }
     } catch (err) {
       return { item: null, error: err instanceof Error ? err.message : String(err) }
@@ -530,7 +531,7 @@ export function registerIpcHandlers(services: AppServices): void {
     if (!services.kanbanStore) return { ok: false, error: 'Kanban not initialized' }
     try {
       const ok = services.kanbanStore.updateItem(input)
-      if (ok) BrowserWindow.getAllWindows().forEach(w => w.webContents.send(KANBAN_CHANGED))
+      if (ok) broadcast(KANBAN_CHANGED)
       return { ok, error: null }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -541,7 +542,7 @@ export function registerIpcHandlers(services: AppServices): void {
     if (!services.kanbanStore) return { ok: false, error: 'Kanban not initialized' }
     try {
       const ok = services.kanbanStore.deleteItem(id)
-      if (ok) BrowserWindow.getAllWindows().forEach(w => w.webContents.send(KANBAN_CHANGED))
+      if (ok) broadcast(KANBAN_CHANGED)
       return { ok, error: null }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
