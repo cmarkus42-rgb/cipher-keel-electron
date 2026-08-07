@@ -146,13 +146,13 @@ App läuft weiter, niemand weiß warum.
 
 | Befund | Ort | Bewertung |
 |--------|-----|-----------|
-| macOS-Ampel überlappt die Sidebar-Tabs im Grid-Fenster | `window-manager.ts` (`titleBarStyle: 'hiddenInset'`), `Sidebar.tsx` (Tab-Zeile ohne Top-Inset) | Vorbestehend, kein Phase-6-Regress. Nebeneffekt: ohne `-webkit-app-region: drag`-Streifen lässt sich das Fenster kaum verschieben. Ein sauberer Fix löst beides. Fällt bei der ersten Fremdnutzung in Phase 8 sofort auf. |
+| ~~macOS-Ampel überlappt die Sidebar-Tabs~~ | `src/renderer/index.tsx` (`TitleBar`) | **Behoben** (`157b408`). 28px-Streifen mit 78px Freiraum links und `app-region: drag` — hält die Ampel frei und macht das Fenster wieder verschiebbar. In der laufenden App nachgemessen. |
 
 ### Technische Schulden
 
 | Befund | Ort | Bewertung |
 |--------|-----|-----------|
-| `NoteWatcher` lässt sein `fs.watch`-Handle offen, rennt gegen `rmSync` im Test-Teardown (ENOTEMPTY/ENOENT) | `src/main/notes/note-watcher.ts` | Vorbestehend, auf unverändertem Baseline-Stand reproduziert. Flaky-Risiko für die CI aus Phase 7. `shutdownServices` gibt dem jetzt einen echten Ansatzpunkt. |
+| Unhandled Rejection im Test-Teardown (`ENOENT … mkdir …/notes`) | **`src/main/notes/note-manager.ts`, Konstruktor** | **Ursache identifiziert (2026-08-07):** der Konstruktor feuert `void fs.mkdir(this.notesDir, { recursive: true })` — eine nicht abgewartete Promise. Wird das Temp-Verzeichnis vom `afterEach` entfernt, bevor sie läuft, rejectet sie unbehandelt. Vitest meldet `Errors 1 error`, **Exit-Code bleibt aber 0** (zweimal geprüft), also heute kein CI-Blocker — aber Rauschen, das eine Suite unglaubwürdig macht. Sauberer Fix: `mkdir` awaiten oder in eine `init()`-Methode ziehen, statt im Konstruktor zu feuern. Verwandt: `NoteWatcher` lässt sein `fs.watch`-Handle offen; `shutdownServices` gibt dem jetzt einen Ansatzpunkt. |
 | Später Voice-Status nach Shutdown | `service-lifecycle.ts` | `shutdownServices` setzt den Status synchron zurück, während ein fire-and-forget `initVoice` noch laufen kann; dessen Fortsetzung schreibt danach einen Voice-Status und sendet einen späten Broadcast. Harmlos (App beendet sich, `broadcast` verträgt tote Fenster), ungetestet. |
 | Projekt-Dedup vergleicht Pfade unnormalisiert | `project-manager.ts` | `p.rootPath === rootPath` ohne `path.resolve`. `/tmp/x` und `/tmp/x/` gelten als verschieden. Ändert außerdem still den Vertrag von `project:create` (liefert bei gleichem Pfad den bestehenden Datensatz statt einen neuen). Latent — kein aktueller Aufrufer betroffen. |
 | `getServiceStatus()` gibt das lebende Objekt zurück | `service-lifecycle.ts` | IPC serialisiert, der Renderer ist sicher; ein Main-Prozess-Aufrufer bekäme aber einen Griff auf internen Zustand. Flache Kopie zurückgeben. |
