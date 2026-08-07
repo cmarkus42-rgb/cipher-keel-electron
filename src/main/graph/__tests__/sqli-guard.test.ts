@@ -7,6 +7,7 @@ import Database from 'better-sqlite3'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { graphExpand } from '../search'
 import { graphQuery } from '../query'
+import type { EdgeType } from '../edge-types'
 
 function setupDb(): Database.Database {
   const db = new Database(':memory:')
@@ -68,13 +69,13 @@ describe('SQL injection guards', () => {
 
   it('graphExpand rejects malicious edge_type', () => {
     expect(() =>
-      graphExpand(db, { uid: 'n1', edge_type: "'; DROP TABLE node; --" as any })
+      graphExpand(db, { uid: 'n1', edge_type: "'; DROP TABLE node; --" as EdgeType })
     ).toThrow(/Invalid edge_type/)
   })
 
   it('graphExpand rejects unknown edge_type', () => {
     expect(() =>
-      graphExpand(db, { uid: 'n1', edge_type: 'not_a_real_type' as any })
+      graphExpand(db, { uid: 'n1', edge_type: 'not_a_real_type' as EdgeType })
     ).toThrow(/Invalid edge_type/)
   })
 

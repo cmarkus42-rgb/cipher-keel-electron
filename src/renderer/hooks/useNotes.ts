@@ -8,7 +8,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { NoteInfo, NoteContent, TagRepository, TagIndexData } from '../../shared/types'
 
-const api = () => (window as any).cipherKeel
+const api = () => window.cipherKeel
 
 export function useNotes() {
   const [notes, setNotes] = useState<NoteInfo[]>([])

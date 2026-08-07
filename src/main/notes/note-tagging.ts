@@ -8,6 +8,7 @@
 import * as http from 'node:http'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import matter from 'gray-matter'
 import type { TagRepository, TagEntry } from '../../shared/types'
 import type { TagClassRepo } from './tag-repository'
 
@@ -15,6 +16,11 @@ const TIMEOUT_MS = 60_000
 
 function getLlmConfig() {
   try {
+    // Deliberate require(), not a top-level import: config-store.ts pulls in
+    // `electron` at module-evaluation time. Loading it lazily here means a
+    // failure to resolve `electron` (e.g. this module used outside the main
+    // process) degrades to the defaults below instead of crashing on import.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { configStore } = require('../config/config-store')
     const llm = configStore.get('llm')
     return {
@@ -229,11 +235,10 @@ export class NoteTagging {
       return
     }
 
-    const gm = require('gray-matter')
     for (const file of files) {
       try {
         const raw = fs.readFileSync(path.join(this.notesDir, file), 'utf-8')
-        const parsed = gm(raw)
+        const parsed = matter(raw)
         const tags: string[] = parsed.data.tags ?? []
         for (const tag of tags) {
           const norm = tag.toLowerCase().trim()

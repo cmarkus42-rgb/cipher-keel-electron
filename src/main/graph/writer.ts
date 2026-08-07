@@ -18,16 +18,14 @@ import {
   isValidFrageKnotenStatus,
   FRAGE_KNOTEN_STATUSES,
   REQUIRED_FRONTMATTER_FIELDS,
-  type NodeKind,
-  type NodeStatus
+  type NodeKind
 } from './node-types'
 import {
   isValidEdgeType,
   isValidEdgeSource,
   deriveEdgeType,
   validateEdgeForPair,
-  type EdgeType,
-  type EdgeSource
+  type EdgeType
 } from './edge-types'
 
 // ---------------------------------------------------------------------------

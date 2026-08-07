@@ -14,7 +14,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { CanvasAddon } from '@xterm/addon-canvas'
 import '@xterm/xterm/css/xterm.css'
 
-const api = () => (window as any).cipherKeel
+const api = () => window.cipherKeel
 
 /** Minimum container dimension (px) to attempt fit. */
 const MIN_FIT_DIMENSION = 50

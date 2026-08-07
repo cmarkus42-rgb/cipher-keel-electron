@@ -32,7 +32,7 @@ const SERVICES_STATUS = 'services:status'
 const SERVICES_STATUS_CHANGED = 'services:status-changed'
 const APP_READY = 'app:ready'
 
-const api = () => (window as any).cipherKeel
+const api = () => window.cipherKeel
 
 function App() {
   const [slots, setSlots] = useState<SessionSlot[]>([])

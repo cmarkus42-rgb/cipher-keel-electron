@@ -13,7 +13,6 @@ import type {
   AgentAdapter,
   LaunchCommand,
   LaunchOpts,
-  AdapterContext,
   ProjectInstructions,
   SendOpts,
   OutputEvent,

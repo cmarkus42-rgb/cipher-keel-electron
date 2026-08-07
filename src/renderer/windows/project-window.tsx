@@ -14,7 +14,7 @@ import { ProjectView } from '../components/ProjectView'
 import { KickoffWizard } from '../components/KickoffWizard'
 import type { Project } from '../../shared/project-types'
 
-const api = () => (window as any).cipherKeel
+const api = () => window.cipherKeel
 
 function ProjectApp() {
   const [projects, setProjects] = useState<Project[]>([])

@@ -8,7 +8,7 @@
  * CK-GRAPH-012: Entity-Resolution runs over natural key, not LLM judgement.
  */
 
-import { createHash } from 'crypto'
+import { createHash, randomBytes } from 'crypto'
 
 // Crockford Base32 alphabet (uppercase, no I/L/O/U)
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
@@ -66,7 +66,7 @@ export function freshUlid(): string {
   const timePart = encodeCrockford(timeBuf, 48)
 
   // 80-bit random → 16 Crockford chars
-  const randBuf = require('crypto').randomBytes(10) as Buffer
+  const randBuf = randomBytes(10)
   const randPart = encodeCrockford(randBuf, 80)
 
   return timePart + randPart

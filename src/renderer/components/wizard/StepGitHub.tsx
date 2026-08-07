@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react'
 import { type WizardData } from '../KickoffWizard'
 
-const api = () => (window as any).cipherKeel
+const api = () => window.cipherKeel
 
 interface AuthStatus {
   ghInstalled: boolean

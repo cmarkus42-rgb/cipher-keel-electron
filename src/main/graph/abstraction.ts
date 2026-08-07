@@ -17,7 +17,7 @@
  *               See: konzepte/03-m1-knowledge-graph_v1.0.md Abschnitt 3.1.
  */
 
-import type { NodeCore, NodeKind, NodeStatus } from './node-types'
+import type { NodeKind, NodeStatus } from './node-types'
 import type { EdgeType, EdgeSource } from './edge-types'
 
 // ---------------------------------------------------------------------------

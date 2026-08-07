@@ -14,7 +14,7 @@
 // ---------------------------------------------------------------------------
 
 export { DOKUMENT_TYPEN, type DokumentTyp } from '../graph/node-types'
-import { DOKUMENT_TYPEN, type DokumentTyp } from '../graph/node-types'
+import { type DokumentTyp } from '../graph/node-types'
 
 export type Niveau = 'A' | 'B' | 'C'
 

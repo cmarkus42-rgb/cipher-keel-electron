@@ -18,7 +18,7 @@ import { StepGitHub } from './wizard/StepGitHub'
 import { StepToolConfig } from './wizard/StepToolConfig'
 import { errorMessage } from '../../shared/service-status'
 
-const api = () => (window as any).cipherKeel
+const api = () => window.cipherKeel
 
 // ---------------------------------------------------------------------------
 // WizardData — shared state passed through all steps

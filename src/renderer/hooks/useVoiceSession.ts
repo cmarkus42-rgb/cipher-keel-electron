@@ -23,7 +23,7 @@ interface Toast {
   type: 'transcription' | 'dispatched' | 'error'
 }
 
-const api = () => (window as any).cipherKeel
+const api = () => window.cipherKeel
 
 export function useVoiceSession(focusedSessionId: string | null) {
   const [mode, setMode] = useState<VoiceMode>('off')

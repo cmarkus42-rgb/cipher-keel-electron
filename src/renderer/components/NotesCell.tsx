@@ -54,7 +54,7 @@ export function NotesCell({ noteId, onNoteSelect }: NotesCellProps) {
 
   // Listen for validation warnings from main process
   useEffect(() => {
-    const unsub = (window as any).cipherKeel.notes.onValidationWarning((warnings: string[]) => {
+    const unsub = window.cipherKeel.notes.onValidationWarning((warnings: string[]) => {
       setValidationWarnings(warnings)
       setTimeout(() => setValidationWarnings([]), 6000)
     })

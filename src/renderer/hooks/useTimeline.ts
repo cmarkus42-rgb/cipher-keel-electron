@@ -10,7 +10,7 @@ import { deriveGates } from '../timeline-utils'
 import type { PhaseData, ArtifactData, GateData, TimelineState, PhaseUIStatus } from '../timeline-utils'
 import { errorMessage } from '../../shared/service-status'
 
-const api = () => (window as any).cipherKeel
+const api = () => window.cipherKeel
 
 interface RawPhaseRow {
   uid: string

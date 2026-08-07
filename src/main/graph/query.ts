@@ -9,7 +9,6 @@
  */
 
 import type Database from 'better-sqlite3'
-import type { NodeKind } from './node-types'
 import { isValidEdgeType, type EdgeType } from './edge-types'
 
 // ---------------------------------------------------------------------------

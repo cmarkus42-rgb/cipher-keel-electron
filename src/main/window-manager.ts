@@ -55,7 +55,7 @@ export interface AppServices {
  * Creates the main (grid/mux) BrowserWindow. Background services are no longer tied
  * to this window — they are initialized once from app.whenReady() via service-lifecycle.ts.
  */
-export function createMainWindow(services: AppServices): BrowserWindow {
+export function createMainWindow(_services: AppServices): BrowserWindow {
   const win = new BrowserWindow({
     width: 1440,
     height: 900,

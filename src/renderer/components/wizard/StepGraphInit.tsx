@@ -8,7 +8,7 @@ import { useState, useEffect, useRef } from 'react'
 import { type WizardData } from '../KickoffWizard'
 import { errorMessage } from '../../../shared/service-status'
 
-const api = () => (window as any).cipherKeel
+const api = () => window.cipherKeel
 
 const PHASE_NAMES = [
   'ideation',

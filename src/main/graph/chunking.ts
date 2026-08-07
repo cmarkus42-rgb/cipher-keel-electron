@@ -215,18 +215,20 @@ export function getSummaryNodes(
   scopeUid?: string
 ): { uid: string; title: string; scopeUid: string; body: string }[] {
   const baseQuery = `
-    SELECT uid, title, body, json_extract(frontmatter, '$.scope_uid') as scope_uid
+    SELECT uid, title, body, json_extract(frontmatter, '$.scope_uid') as scopeUid
     FROM node
     WHERE kind = 'note'
       AND json_extract(frontmatter, '$.notetyp') = 'summary'
       AND status = 'aktiv'
   `
 
+  type SummaryNodeRow = { uid: string; title: string; scopeUid: string; body: string }
+
   if (scopeUid) {
     return db.prepare(baseQuery + ` AND json_extract(frontmatter, '$.scope_uid') = ?`)
-      .all(scopeUid) as any[]
+      .all(scopeUid) as SummaryNodeRow[]
   }
-  return db.prepare(baseQuery).all() as any[]
+  return db.prepare(baseQuery).all() as SummaryNodeRow[]
 }
 
 // ---------------------------------------------------------------------------
