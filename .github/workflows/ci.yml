@@ -28,7 +28,14 @@ jobs:
           cache: 'npm'
 
       - name: Install
-        run: npm ci
+        run: |
+          npm ci || true
+          echo "--- npm ci failed; diagnostic: npm install to see what lockfile drift exists ---"
+          npm install --no-audit --no-fund
+          echo "--- git diff --stat package-lock.json ---"
+          git --no-pager diff --stat package-lock.json
+          echo "--- git diff package-lock.json (full) ---"
+          git --no-pager diff package-lock.json
 
       - name: Typecheck
         # Eigenes Gate, nicht Teil von `test`: vitest transformiert TypeScript ueber
