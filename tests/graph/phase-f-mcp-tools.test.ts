@@ -463,7 +463,7 @@ describe('graph_maintain (CK-GRAPH-024)', () => {
     w.linkEdge({ src: newD.uid, dst: old.uid, type: 'abgeloest_durch' })
 
     // old is still 'aktiv'
-    const before = db.prepare('SELECT status FROM node WHERE uid = ?').get(old.uid) as any
+    const before = db.prepare('SELECT status FROM node WHERE uid = ?').get(old.uid) as { status: string }
     expect(before.status).toBe('aktiv')
 
     const result = graphMaintain(db, { operation: 'konsolidierung' })
@@ -473,7 +473,7 @@ describe('graph_maintain (CK-GRAPH-024)', () => {
     }
 
     // After konsolidierung, old should be 'abgeloest'
-    const after = db.prepare('SELECT status FROM node WHERE uid = ?').get(old.uid) as any
+    const after = db.prepare('SELECT status FROM node WHERE uid = ?').get(old.uid) as { status: string }
     expect(after.status).toBe('abgeloest')
   })
 
@@ -551,7 +551,7 @@ describe('graphSandboxedQuery (CK-GRAPH-049)', () => {
 
   it('logs execution when logFn provided', () => {
     buildTestGraph(db)
-    const logs: any[] = []
+    const logs: { sql: string; timestamp: string; rows: number }[] = []
     graphSandboxedQuery(db, 'SELECT COUNT(*) as c FROM node', (entry) => logs.push(entry))
     expect(logs).toHaveLength(1)
     expect(logs[0]).toHaveProperty('sql')

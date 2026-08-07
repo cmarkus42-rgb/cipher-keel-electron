@@ -361,7 +361,7 @@ describe('Vault indexing (CK-GRAPH-030)', () => {
     expect(result.nodesIndexed).toBe(1)
 
     // Total should now be 4
-    const count = db.prepare('SELECT COUNT(*) as c FROM node').get() as any
+    const count = db.prepare('SELECT COUNT(*) as c FROM node').get() as { c: number }
     expect(count.c).toBe(4)
   })
 

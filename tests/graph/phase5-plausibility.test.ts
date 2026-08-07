@@ -17,7 +17,7 @@ describe('Plausibility Inference (CK-PROC-006)', () => {
   it('returns traegt for plausible implementation', async () => {
     const bridge = mockBridge('traegt')
     const result = await inferPlausibility(
-      bridge as any,
+      bridge,
       'User login must validate credentials against database',
       'Function queries users table with bcrypt compare',
     )
@@ -27,7 +27,7 @@ describe('Plausibility Inference (CK-PROC-006)', () => {
   it('returns fraglich for questionable implementation', async () => {
     const bridge = mockBridge('fraglich')
     const result = await inferPlausibility(
-      bridge as any,
+      bridge,
       'Must encrypt data at rest',
       'Stores passwords in plaintext',
     )
@@ -36,7 +36,7 @@ describe('Plausibility Inference (CK-PROC-006)', () => {
 
   it('returns null when bridge disconnected', async () => {
     const bridge = disconnectedBridge()
-    const result = await inferPlausibility(bridge as any, 'req', 'impl')
+    const result = await inferPlausibility(bridge, 'req', 'impl')
     expect(result).toBeNull()
   })
 

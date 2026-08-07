@@ -183,7 +183,7 @@ describe('Summary nodes (CK-GRAPH-027)', () => {
     })
 
     expect(uid).toBeTruthy()
-    const node = db.prepare('SELECT * FROM node WHERE uid = ?').get(uid) as any
+    const node = db.prepare('SELECT * FROM node WHERE uid = ?').get(uid) as { kind: string; frontmatter: string; body: string }
     expect(node.kind).toBe('note')
     expect(JSON.parse(node.frontmatter).notetyp).toBe('summary')
     expect(node.body).toContain('graph foundation')
@@ -208,7 +208,7 @@ describe('Summary nodes (CK-GRAPH-027)', () => {
     })
 
     expect(uid1).toBe(uid2) // Same natural key = same uid
-    const node = db.prepare('SELECT body FROM node WHERE uid = ?').get(uid2) as any
+    const node = db.prepare('SELECT body FROM node WHERE uid = ?').get(uid2) as { body: string }
     expect(node.body).toContain('Version 2')
   })
 
@@ -424,7 +424,7 @@ describe('Token-sparende Performance (CK-GRAPH-032)', () => {
     // Without summary: agent needs to load each child node
     const childCount = db.prepare(
       'SELECT COUNT(*) as cnt FROM edge WHERE dst = ?'
-    ).get(phase.uid) as any
+    ).get(phase.uid) as { cnt: number }
 
     // With summary: one summary load covers all children
     upsertSummaryNode(db, {
