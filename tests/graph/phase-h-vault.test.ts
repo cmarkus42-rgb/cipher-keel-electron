@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, unlinkSync, rmSync } from 'fs'
+import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, unlinkSync, rmSync, readdirSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import type Database from 'better-sqlite3'
@@ -170,7 +170,6 @@ describe('atomicVaultWrite (CK-GRAPH-029)', () => {
     const filePath = join(vaultRoot, 'clean.md')
     atomicVaultWrite(filePath, 'clean write')
 
-    const { readdirSync } = require('fs')
     const files = readdirSync(vaultRoot) as string[]
     const tmpFiles = files.filter((f: string) => f.includes('.tmp.'))
     expect(tmpFiles).toHaveLength(0)
