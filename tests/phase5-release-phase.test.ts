@@ -49,7 +49,7 @@ describe('Release Phase (CK-PROC-017)', () => {
   it('release phase has public-facing character in frontmatter', () => {
     seedPhaseChain()
     const result = graphQuery(db, { template: 'nodes_by_kind', params: { kind: 'phase' } })
-    const release = result.rows.find((r: any) => {
+    const release = result.rows.find((r: Record<string, unknown>) => {
       const fm = typeof r.frontmatter === 'string' ? JSON.parse(r.frontmatter) : r.frontmatter
       return fm.name === 'release'
     })

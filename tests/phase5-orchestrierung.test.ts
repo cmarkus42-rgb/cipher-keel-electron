@@ -33,14 +33,14 @@ describe('orchestrierung field (DE-5)', () => {
 
   it('Workshop Rahmen has orchestrierung: true', () => {
     const rahmen = createWorkshopRahmen(CapabilityNiveau.A)
-    expect((rahmen as any).orchestrierung).toBe(true)
+    expect(rahmen.orchestrierung).toBe(true)
   })
 
   it('CF Rahmen has orchestrierung: true', () => {
-    expect((CF_RAHMEN as any).orchestrierung).toBe(true)
+    expect(CF_RAHMEN.orchestrierung).toBe(true)
   })
 
   it('Architect Rahmen has no orchestrierung (undefined)', () => {
-    expect((ARCHITECT_RAHMEN as any).orchestrierung).toBeUndefined()
+    expect(ARCHITECT_RAHMEN.orchestrierung).toBeUndefined()
   })
 })

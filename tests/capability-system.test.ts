@@ -165,7 +165,7 @@ describe('loadCapabilityContent', () => {
   })
 
   it('skill-md: reads file at pfad', async () => {
-    vi.mocked(fs.readFile).mockResolvedValue('# My Skill\nDo things.' as any)
+    vi.mocked(fs.readFile).mockResolvedValue('# My Skill\nDo things.')
     const pkg: CapabilityPackage = {
       name: 'my-skill',
       beschreibung: 'Does things.',
@@ -193,7 +193,7 @@ describe('loadCapabilityContent', () => {
   })
 
   it('reference-material: reads file at pfad', async () => {
-    vi.mocked(fs.readFile).mockResolvedValue('Reference docs here.' as any)
+    vi.mocked(fs.readFile).mockResolvedValue('Reference docs here.')
     const pkg: CapabilityPackage = {
       name: 'ref-doc',
       beschreibung: 'Reference material.',
