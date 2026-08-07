@@ -3,8 +3,7 @@
 **Stand:** 2026-08-07
 **Merge:** `8561e8b` auf `main`. Phase 6 ist abgeschlossen und abgenommen.
 **Testsuite:** 1390 → **1511** (105 Dateien), Typecheck sauber, beides auf dem gemergten Stand nachgefahren.
-**Nicht gepusht:** `main` liegt 24 Commits vor `origin/main`. Das Repo ist public — der Push ist eine
-bewusste Veröffentlichungsentscheidung und wurde offengelassen.
+**Gepusht:** `4cbb182` auf `origin/main` (2026-08-07). Das Repo ist public.
 
 > **Zweck dieses Dokuments:** Die Roadmap `2026-08-06-fertigstellung-roadmap.md` bleibt gültig, aber
 > Phase 6 hat einige ihrer Annahmen widerlegt und neue Befunde erzeugt. Was hier steht, ist das, was
