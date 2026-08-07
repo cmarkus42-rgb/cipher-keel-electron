@@ -26,7 +26,7 @@ describe('Phase 4 Integration', () => {
     writer = new GraphWriter(db)
   })
 
-  afterEach(() => { db?.open && db.close() })
+  afterEach(() => { if (db?.open) db.close() })
 
   it('Architect gets read:wide write:full via graphAnbindung override', () => {
     const profile = deriveProfile(ARCHITECT_RAHMEN)

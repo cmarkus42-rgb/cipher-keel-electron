@@ -13,7 +13,7 @@ describe('Phase 5 Query Fixes — project_uid filtering', () => {
     writer = new GraphWriter(db)
   })
 
-  afterEach(() => { db?.open && db.close() })
+  afterEach(() => { if (db?.open) db.close() })
 
   function createProjectWithAdr(projectName: string) {
     const sub = writer.upsertNode({

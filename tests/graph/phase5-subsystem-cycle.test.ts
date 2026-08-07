@@ -19,7 +19,7 @@ describe('Subsystem Cycle (CK-PROC-016)', () => {
     writer = new GraphWriter(db)
   })
 
-  afterEach(() => { db?.open && db.close() })
+  afterEach(() => { if (db?.open) db.close() })
 
   it('CYCLE_PHASES has correct order', () => {
     expect(CYCLE_PHASES).toEqual(['development', 'testing', 'fixing', 'audit'])

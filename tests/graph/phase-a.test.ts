@@ -17,7 +17,7 @@ import { deterministicUlid, freshUlid, isValidUlid, naturalKey } from '../../src
 describe('openGraphDb', () => {
   let db: Database.Database
 
-  afterEach(() => { db?.open && db.close() })
+  afterEach(() => { if (db?.open) db.close() })
 
   it('creates all four tables (CK-GRAPH-038)', () => {
     db = openGraphDb({ path: ':memory:' })

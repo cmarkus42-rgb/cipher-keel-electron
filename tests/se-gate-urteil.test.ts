@@ -19,7 +19,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  db?.open && db.close()
+  if (db?.open) db.close()
 })
 
 function seedPhase(name: string, position: number) {

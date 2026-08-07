@@ -12,7 +12,7 @@ describe('GraphWriter — Phase 4a NodeKinds', () => {
     writer = new GraphWriter(db)
   })
 
-  afterEach(() => { db?.open && db.close() })
+  afterEach(() => { if (db?.open) db.close() })
 
   it('creates adr node with valid frontmatter', () => {
     const result = writer.upsertNode({

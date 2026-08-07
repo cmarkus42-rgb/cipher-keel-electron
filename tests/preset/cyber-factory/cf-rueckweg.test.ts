@@ -27,7 +27,7 @@ describe('CF Rueckweg Protocol (CK-P3CF-006)', () => {
     subsystemUid = sub.uid
   })
 
-  afterEach(() => { db?.open && db.close() })
+  afterEach(() => { if (db?.open) db.close() })
 
   it('creates gate_befund with gate_typ architektur-bruch', () => {
     const result = reportArchitekturBruch(writer, {

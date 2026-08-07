@@ -13,7 +13,7 @@ describe('Release Phase (CK-PROC-017)', () => {
     writer = new GraphWriter(db)
   })
 
-  afterEach(() => { db?.open && db.close() })
+  afterEach(() => { if (db?.open) db.close() })
 
   function seedPhaseChain() {
     const phases = [

@@ -166,7 +166,7 @@ describe('Integration: full lifecycle', () => {
   })
 
   afterEach(() => {
-    db?.open && db.close()
+    if (db?.open) db.close()
   })
 
   it('create nodes, link edges, read, verify', () => {

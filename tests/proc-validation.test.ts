@@ -34,7 +34,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  db?.open && db.close()
+  if (db?.open) db.close()
 })
 
 function makeDbWithPhases(): Array<{ name: string; position: number; uid: string }> {

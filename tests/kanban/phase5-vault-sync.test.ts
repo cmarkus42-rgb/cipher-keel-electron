@@ -14,7 +14,7 @@ describe('Kanban-Graph Sync (CK-UI-034)', () => {
     writer = new GraphWriter(db)
   })
 
-  afterEach(() => { db?.open && db.close() })
+  afterEach(() => { if (db?.open) db.close() })
 
   it('creates graph node for new kanban item', () => {
     const item: KanbanItem = {
