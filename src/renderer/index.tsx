@@ -16,7 +16,8 @@ import { Sidebar, SidebarSession } from './components/Sidebar'
 import { StatusBar } from './components/StatusBar'
 import { useVoiceSession } from './hooks/useVoiceSession'
 import { shouldApplyStatusResult } from './service-status-fetch'
-import type { ServiceStatusMap } from '../shared/service-status'
+import { errorMessage, type ServiceStatusMap } from '../shared/service-status'
+import { defaultPresetId } from '../shared/preset-catalog'
 
 interface SessionSlot {
   type: 'session' | 'launcher'
@@ -46,7 +47,10 @@ function App() {
   // CK-VOICE-009/010: Voice session with graceful degradation
   const voice = useVoiceSession(focusedSessionId)
 
-  const handleStartSession = useCallback(async (_slotIndex: number, entityId = 'workshop') => {
+  // F-6: returns an error message string on failure (null on success) instead of
+  // only console.error-ing it, so LauncherCell can show the user what happened
+  // rather than reverting silently from "..." back to "+".
+  const handleStartSession = useCallback(async (_slotIndex: number, entityId = defaultPresetId()): Promise<string | null> => {
     const result = await api().invoke('session:create', { entityId }) as {
       id: string | null
       name: string | null
@@ -57,9 +61,11 @@ function App() {
         ...prev,
         { type: 'session', sessionId: result.name!, sessionName: result.name!, status: 'active' }
       ])
-    } else {
-      console.error('[renderer] session create failed:', result?.error)
+      return null
     }
+    const message = errorMessage(result?.error ?? 'Session konnte nicht gestartet werden')
+    console.error('[renderer] session create failed:', result?.error)
+    return message
   }, [])
 
   const handleCloseSession = useCallback(async (sessionId: string) => {

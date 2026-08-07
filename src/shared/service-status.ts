@@ -67,13 +67,13 @@ export function isSubsystemError(value: unknown): value is SubsystemError {
  * object reach a JSX child unstringified.
  */
 export function errorMessage(value: unknown): string {
-  if (typeof value === 'string') return value
+  if (typeof value === 'string') return value || 'Unbekannter Fehler'
   if (
     value !== null &&
     typeof value === 'object' &&
     typeof (value as { message?: unknown }).message === 'string'
   ) {
-    return (value as { message: string }).message
+    return (value as { message: string }).message || 'Unbekannter Fehler'
   }
   return 'Unbekannter Fehler'
 }

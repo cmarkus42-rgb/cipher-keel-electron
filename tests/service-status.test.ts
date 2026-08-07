@@ -77,6 +77,16 @@ describe('errorMessage', () => {
   it('falls back to a sensible default for a bare object without .message', () => {
     expect(errorMessage({ foo: 'bar' })).toBe('Unbekannter Fehler')
   })
+
+  it('falls back to a sensible default for an empty .message (M-6)', () => {
+    // An empty string is falsy — without the fallback, KickoffWizard's
+    // `{error && <div>...}` check would silently swallow the error banner.
+    expect(errorMessage({ message: '' })).toBe('Unbekannter Fehler')
+  })
+
+  it('falls back to a sensible default for a bare empty string (M-6)', () => {
+    expect(errorMessage('')).toBe('Unbekannter Fehler')
+  })
 })
 
 describe('ServiceStatusMap', () => {

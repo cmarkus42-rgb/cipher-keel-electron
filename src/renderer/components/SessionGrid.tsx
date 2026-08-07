@@ -24,7 +24,8 @@ interface SessionGridProps {
   rows: number
   slots: SessionSlot[]
   voiceDot?: VoiceDotState
-  onStartSession: (slotIndex: number, entityId: string) => void
+  /** Resolves to an error message on failure, or null on success (F-6). */
+  onStartSession: (slotIndex: number, entityId: string) => Promise<string | null>
   onCloseSession: (sessionId: string) => void
 }
 

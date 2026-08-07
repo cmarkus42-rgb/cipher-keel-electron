@@ -12,24 +12,50 @@ import { PRESET_CATALOG } from '../../shared/preset-catalog'
 
 interface LauncherCellProps {
   slotIndex: number
-  onStart: (slotIndex: number, entityId: string) => void
+  /** Resolves to an error message on failure, or null on success (F-6). */
+  onStart: (slotIndex: number, entityId: string) => Promise<string | null>
 }
 
 export function LauncherCell({ slotIndex, onStart }: LauncherCellProps) {
   const [picking, setPicking] = useState(false)
   const [starting, setStarting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleOpen = useCallback(() => {
     if (starting) return
+    setError(null)
     setPicking(true)
   }, [starting])
 
   const handlePick = useCallback((entityId: string) => {
     setPicking(false)
     setStarting(true)
-    onStart(slotIndex, entityId)
-    setTimeout(() => setStarting(false), 5000)
+    setError(null)
+    void onStart(slotIndex, entityId).then((err) => {
+      setStarting(false)
+      setError(err)
+    })
   }, [slotIndex, onStart])
+
+  // F-6: a failed session:create must not dead-end at "..." forever — show why
+  // it failed and let the user retry, instead of silently reverting to "+".
+  if (error) {
+    return (
+      <div
+        onClick={handleOpen}
+        title={error}
+        style={{
+          display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center',
+          justifyContent: 'center', height: '100%', padding: '10px', textAlign: 'center',
+          border: '1px solid #3a2020', borderRadius: '4px', background: '#170a0a',
+          color: '#e0a0a0', fontSize: '11px', cursor: 'pointer',
+        }}
+      >
+        <span>⚠ {error}</span>
+        <span style={{ color: '#775050', fontSize: '10px' }}>Erneut versuchen</span>
+      </div>
+    )
+  }
 
   if (picking) {
     return (

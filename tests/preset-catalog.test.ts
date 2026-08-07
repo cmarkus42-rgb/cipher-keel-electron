@@ -5,7 +5,7 @@
  * M5 kennt elf — die uebrigen sieben sind post-0.1 und hier bewusst nicht enthalten.
  */
 import { describe, it, expect } from 'vitest'
-import { PRESET_CATALOG, isKnownPresetId } from '../src/shared/preset-catalog'
+import { PRESET_CATALOG, isKnownPresetId, defaultPresetId } from '../src/shared/preset-catalog'
 
 describe('PRESET_CATALOG', () => {
   it('offers exactly the four ratified 0.1 roles', () => {
@@ -38,6 +38,16 @@ describe('PRESET_CATALOG', () => {
     for (const id of postRelease) {
       expect(PRESET_CATALOG.some(p => p.id === id)).toBe(false)
     }
+  })
+})
+
+describe('defaultPresetId (M-4 — single source of truth for the renderer default)', () => {
+  it('returns the catalog entry marked isDefault', () => {
+    expect(defaultPresetId()).toBe('workshop')
+  })
+
+  it('is a known preset id', () => {
+    expect(isKnownPresetId(defaultPresetId())).toBe(true)
   })
 })
 
