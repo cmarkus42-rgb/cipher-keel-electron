@@ -152,6 +152,7 @@ function App() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <TitleBar />
       <div style={{ display: 'flex', flexDirection: 'row', flex: 1, overflow: 'hidden' }}>
         <Sidebar
           sessions={sidebarSessions}
@@ -167,6 +168,43 @@ function App() {
         />
       </div>
       <StatusBar sessionCount={sessionCount} activeProject="" serviceStatus={serviceStatus} />
+    </div>
+  )
+}
+
+/**
+ * TitleBar — schmaler Streifen oben im Grid-Fenster.
+ *
+ * Das Fenster laeuft mit titleBarStyle 'hiddenInset' (window-manager.ts), die
+ * macOS-Ampel liegt also *innerhalb* der Inhaltsflaeche oben links. Ohne diesen
+ * Streifen ueberlappt sie die erste Zeile des Inhalts — und weil ohne Titelleiste
+ * keine Drag-Flaeche uebrig bleibt, laesst sich das Fenster kaum verschieben.
+ *
+ * Der Streifen loest beides: er haelt die Ampel frei und ist als app-region 'drag'
+ * die Greifflaeche des Fensters. TITLEBAR_HEIGHT entspricht der macOS-Titelleiste,
+ * TRAFFIC_LIGHT_INSET dem Platz, den die drei Knoepfe links belegen.
+ */
+const TITLEBAR_HEIGHT = 28
+const TRAFFIC_LIGHT_INSET = 78
+
+function TitleBar() {
+  return (
+    <div
+      style={{
+        height: TITLEBAR_HEIGHT,
+        flexShrink: 0,
+        display: 'flex',
+        alignItems: 'center',
+        paddingLeft: TRAFFIC_LIGHT_INSET,
+        background: '#1a1a1a',
+        borderBottom: '1px solid #333',
+        fontSize: '11px',
+        color: '#666',
+        WebkitAppRegion: 'drag',
+        userSelect: 'none',
+      } as React.CSSProperties}
+    >
+      cipher keel
     </div>
   )
 }
