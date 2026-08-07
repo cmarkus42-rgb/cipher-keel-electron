@@ -224,21 +224,21 @@ describe('Integration: full lifecycle', () => {
     expect(e5.type).toBe('erzeugt_von')
 
     // 7. Verify: all nodes exist
-    const nodeCount = db.prepare('SELECT COUNT(*) as c FROM node').get() as any
+    const nodeCount = db.prepare('SELECT COUNT(*) as c FROM node').get() as { c: number }
     expect(nodeCount.c).toBe(5)
 
     // 8. Verify: all edges exist
-    const edgeCount = db.prepare('SELECT COUNT(*) as c FROM edge').get() as any
+    const edgeCount = db.prepare('SELECT COUNT(*) as c FROM edge').get() as { c: number }
     expect(edgeCount.c).toBe(5)
 
     // 9. Verify: FTS works
     const ftsResults = db.prepare(
       `SELECT uid FROM node_fts WHERE node_fts MATCH 'SQLite'`
-    ).all() as any[]
+    ).all() as { uid: string }[]
     expect(ftsResults.length).toBeGreaterThanOrEqual(1)
 
     // 10. Verify: read back a node
-    const readBack = db.prepare('SELECT * FROM node WHERE uid = ?').get(anf.uid) as any
+    const readBack = db.prepare('SELECT * FROM node WHERE uid = ?').get(anf.uid) as { title: string; kind: string; status: string }
     expect(readBack.title).toBe('Support 8 node types')
     expect(readBack.kind).toBe('anforderung')
     expect(readBack.status).toBe('aktiv')
@@ -248,13 +248,13 @@ describe('Integration: full lifecycle', () => {
       SELECT n.title, e.type FROM edge e
       JOIN node n ON n.uid = e.dst
       WHERE e.src = ? AND e.type = 'setzt_um'
-    `).all(art.uid) as any[]
+    `).all(art.uid) as { title: string; type: string }[]
     expect(chain).toHaveLength(2)
   })
 
   it('rebuild: delete DB, re-insert, same state', () => {
     const r1 = writer.upsertNode({ kind: 'note', title: 'Persistent', path: '/n.md', body: 'content' })
-    const before = db.prepare('SELECT uid, title FROM node WHERE uid = ?').get(r1.uid) as any
+    const before = db.prepare('SELECT uid, title FROM node WHERE uid = ?').get(r1.uid) as { uid: string; title: string }
 
     // "Rebuild": wipe index
     db.prepare('DELETE FROM node_fts').run()
@@ -265,7 +265,7 @@ describe('Integration: full lifecycle', () => {
     const r2 = writer.upsertNode({ kind: 'note', title: 'Persistent', path: '/n.md', body: 'content' })
     expect(r2.uid).toBe(r1.uid)
 
-    const after = db.prepare('SELECT uid, title FROM node WHERE uid = ?').get(r2.uid) as any
+    const after = db.prepare('SELECT uid, title FROM node WHERE uid = ?').get(r2.uid) as { uid: string; title: string }
     expect(after.title).toBe(before.title)
   })
 })
