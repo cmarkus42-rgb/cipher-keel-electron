@@ -19,7 +19,7 @@ export class NoteManager {
   constructor(notesDir: string) {
     this.notesDir = notesDir
     this.trashDir = path.join(notesDir, '.trash')
-    void fs.mkdir(this.notesDir, { recursive: true })
+    fsSync.mkdirSync(this.notesDir, { recursive: true })
     this.cleanTrash()
   }
 
