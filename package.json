@@ -59,6 +59,11 @@
     "sqlite-vec": "^0.1.9",
     "ulidx": "^2.4.1"
   },
+  "overrides": {
+    "@xterm/addon-canvas": {
+      "@xterm/xterm": "$@xterm/xterm"
+    }
+  },
   "build": {
     "appId": "dev.cipher.keel",
     "productName": "cipher keel",
