@@ -8,6 +8,7 @@ vi.mock('../src/main/util/exec-util', () => ({
 import { createRepo, linkRepo, listUserRepos, switchRepo } from '../src/main/github/repo'
 
 const abortError = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
+const ciSelftestUnusedVariable = 'deliberately unused, to prove the lint gate turns red'
 
 const apiRepoResponse = JSON.stringify({
   html_url: 'https://github.com/user/my-repo',
