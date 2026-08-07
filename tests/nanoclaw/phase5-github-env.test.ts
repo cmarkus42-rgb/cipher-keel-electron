@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildContainerEnv, type ContainerEnvConfig } from '../../src/main/nanoclaw/container-env'
+import { buildContainerEnv } from '../../src/main/nanoclaw/container-env'
 
 describe('NanoClaw Container Env (CK-GH-010)', () => {
   it('includes GITHUB_TOKEN when provided', () => {

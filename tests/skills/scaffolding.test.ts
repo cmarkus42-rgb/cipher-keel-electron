@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { scaffoldProject, type ScaffoldConfig } from '../../src/main/skills/scaffolding'
+import { scaffoldProject } from '../../src/main/skills/scaffolding'
 
 describe('Scaffolding Skill (CK-P3A-010)', () => {
   let tmpDir: string

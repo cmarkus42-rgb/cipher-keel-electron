@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, unlinkSync, existsSync, rmSync } from 'fs'
+import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, unlinkSync, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import type Database from 'better-sqlite3'
@@ -322,7 +322,7 @@ describe('Vault indexing (CK-GRAPH-030)', () => {
         refs: ['R001'] },
       'Decision body without wikilinks.'
     ))
-    const result = fullReindex(db, vaultRoot)
+    fullReindex(db, vaultRoot)
     const edges = db.prepare(
       "SELECT * FROM edge WHERE source = 'frontmatter'"
     ).all()

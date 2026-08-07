@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { generateMcpEntry, writeMcpConfig, type McpServerEntry } from '../../src/main/github/github-mcp-config'
+import { generateMcpEntry, writeMcpConfig } from '../../src/main/github/github-mcp-config'
 
 describe('GitHub MCP Config (CK-GH-009)', () => {
   it('generates entry with default toolset', () => {

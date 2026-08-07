@@ -107,11 +107,7 @@ describe('validateFrontmatter — Niveau A (CK-P1-002)', () => {
   })
 
   // One test per required field
-  const requiredFields = [
-    'dokument-typ', 'phase', 'phasenuebergang', 'stand', 'status',
-    'version', 'projekt', 'adressat', 'req-ids', 'graph-knoten-id',
-  ]
-  for (const field of requiredFields) {
+  for (const field of REQUIRED_FIELDS_NIVEAU_A) {
     it(`rejects frontmatter missing required field '${field}'`, () => {
       const fm = validFmA()
       delete fm[field]
@@ -165,6 +161,8 @@ describe('validateFrontmatter — Niveau C (CK-P1-003)', () => {
       'version': 'v1.0',
       'projekt': 'cipher-keel',
     }
+    // Guard against drift: this literal must cover exactly the real Niveau-C field set.
+    expect(Object.keys(fm).sort()).toEqual([...REQUIRED_FIELDS_NIVEAU_C].sort())
     expect(validateFrontmatter(fm, 'C').valid).toBe(true)
   })
 

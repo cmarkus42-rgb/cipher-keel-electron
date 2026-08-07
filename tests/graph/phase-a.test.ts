@@ -3,9 +3,8 @@
  * CK-GRAPH-001, 002, 028, 038, 043, 044
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import Database from 'better-sqlite3'
-import * as sqliteVec from 'sqlite-vec'
 import { applySchema } from '../../src/main/graph/schema'
 import { openGraphDb } from '../../src/main/graph/db'
 import { deterministicUlid, freshUlid, isValidUlid, naturalKey } from '../../src/main/graph/uid'

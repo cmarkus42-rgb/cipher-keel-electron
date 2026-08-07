@@ -6,7 +6,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import type Database from 'better-sqlite3'
 import { openGraphDb } from '../src/main/graph/db'
-import { GraphWriter } from '../src/main/graph/writer'
 import { graphQuery, QUERY_TEMPLATES } from '../src/main/graph/query'
 
 // ---------------------------------------------------------------------------
@@ -30,11 +29,9 @@ describe('QUERY_TEMPLATES registry', () => {
 // ---------------------------------------------------------------------------
 
 let db: Database.Database
-let writer: GraphWriter
 
 beforeEach(() => {
   db = openGraphDb({ path: ':memory:' })
-  writer = new GraphWriter(db)
 })
 
 afterEach(() => {

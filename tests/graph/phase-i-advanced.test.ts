@@ -111,13 +111,9 @@ describe('chunkText (CK-GRAPH-031)', () => {
   it('chunks have overlap', () => {
     const text = 'First paragraph content here.\n\nSecond paragraph content here.\n\nThird paragraph.'
     const chunks = chunkText(text, { maxChunkSize: 50, overlap: 10 })
-    if (chunks.length >= 2) {
-      // Check that consecutive chunks have overlapping content
-      const c0end = chunks[0].text.slice(-10)
-      const c1start = chunks[1].text.slice(0, 20)
-      // There should be some shared text
-      expect(c1start.length).toBeGreaterThan(0)
-    }
+    expect(chunks.length).toBeGreaterThanOrEqual(2)
+    // Consecutive chunks' offset ranges should overlap
+    expect(chunks[1].startOffset).toBeLessThan(chunks[0].endOffset)
   })
 })
 
@@ -308,6 +304,8 @@ describe('traceHerkunft (CK-GRAPH-035)', () => {
     expect(uids).toContain(subAnf.uid)
     // rootAnf should be reachable via subAnf's verfeinert edge
     expect(uids).toContain(rootAnf.uid)
+    // ent should be reachable via art's setzt_um edge
+    expect(uids).toContain(ent.uid)
   })
 
   it('includes erzeugt_von link to anlass', () => {
@@ -421,7 +419,7 @@ describe('Token-sparende Performance (CK-GRAPH-032)', () => {
   })
 
   it('summary nodes reduce required get_node calls', () => {
-    const { phase, art, tst } = buildHerkunftsKette(db)
+    const { phase } = buildHerkunftsKette(db)
 
     // Without summary: agent needs to load each child node
     const childCount = db.prepare(
@@ -450,7 +448,7 @@ describe('MaintenanceHelper interface (CK-GRAPH-048)', () => {
   it('interface is importable and type-checkable', async () => {
     // This is a compile-time check — if this test file compiles, the interface works.
     // The actual implementation is M2/M5 concern.
-    const { type } = await import('../../src/main/graph/chunking')
+    await import('../../src/main/graph/chunking')
     // Interface exists as a TypeScript construct — runtime check just confirms module loads
     expect(true).toBe(true)
   })

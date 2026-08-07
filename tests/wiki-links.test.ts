@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { parseWikiLinks, type WikiLink } from '../src/renderer/hooks/useWikiLinks'
+import { parseWikiLinks } from '../src/renderer/hooks/useWikiLinks'
 
 describe('parseWikiLinks', () => {
   describe('single link', () => {

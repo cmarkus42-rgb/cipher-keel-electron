@@ -6,7 +6,6 @@ import {
   createSubsystemCycle,
   advanceCyclePhase,
   CYCLE_PHASES,
-  type CycleStatus,
 } from '../../src/main/graph/subsystem-cycle'
 import type Database from 'better-sqlite3'
 

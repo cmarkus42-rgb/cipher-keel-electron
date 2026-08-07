@@ -8,7 +8,7 @@ import type Database from 'better-sqlite3'
 import { openGraphDb } from '../../src/main/graph/db'
 import { GraphWriter } from '../../src/main/graph/writer'
 import { GraphMcpServer, TOOL_DEFINITIONS } from '../../src/main/graph/mcp-server'
-import type { JsonRpcRequest, JsonRpcResponse } from '../../src/main/graph/mcp-server'
+import type { JsonRpcRequest } from '../../src/main/graph/mcp-server'
 
 function makeReq(method: string, params?: unknown, id: number = 1): JsonRpcRequest {
   return { jsonrpc: '2.0', id, method, params }
