@@ -24,7 +24,10 @@ describe('activateAfterKickoff', () => {
     expect(switchProject).toHaveBeenCalledWith('proj-1')
   })
 
-  it('does not activate when the kickoff failed', () => {
+  it('still activates a project created during a failed (degraded-graph) kickoff', () => {
+    // Befund 5: the graph being unavailable must not orphan the project record
+    // that createProject + git init already produced — the next session:create
+    // needs an active project regardless of whether the Phasenkette was written.
     const switchProject = vi.fn()
 
     const activated = activateAfterKickoff(switchProject, {
@@ -32,8 +35,8 @@ describe('activateAfterKickoff', () => {
       error: { code: 'SUBSYSTEM_UNAVAILABLE', subsystem: 'graph', message: 'x' },
     })
 
-    expect(activated).toBe(false)
-    expect(switchProject).not.toHaveBeenCalled()
+    expect(activated).toBe(true)
+    expect(switchProject).toHaveBeenCalledWith('proj-1')
   })
 
   it('does not activate when no project was created', () => {

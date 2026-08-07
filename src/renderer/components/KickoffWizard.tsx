@@ -73,6 +73,17 @@ export function validateStep2(_data: WizardData): boolean {
   return true
 }
 
+/**
+ * Whether a kickoff response left a project behind despite reporting ok:false
+ * (Befund 5 — e.g. the graph was degraded so the Phasenkette could not be
+ * written, but createProject + git init already ran). When true, the caller
+ * must still make that project visible/active — it must not stay orphaned
+ * until the user restarts the app.
+ */
+export function leftAProjectBehind(result: { ok: boolean; project: unknown } | null | undefined): boolean {
+  return result != null && result.ok === false && result.project != null
+}
+
 // ---------------------------------------------------------------------------
 // KickoffWizard component
 // ---------------------------------------------------------------------------
@@ -80,9 +91,17 @@ export function validateStep2(_data: WizardData): boolean {
 interface KickoffWizardProps {
   onComplete: () => void
   onCancel: () => void
+  /**
+   * Called when a kickoff reports ok:false but still created a project record
+   * (Befund 5 — e.g. the graph was degraded so the Phasenkette could not be
+   * written, but the project and its git repo exist). Lets the caller refresh
+   * its project list in the background without leaving the wizard or clearing
+   * the error shown to the user.
+   */
+  onProjectCreated?: () => void
 }
 
-export function KickoffWizard({ onComplete, onCancel }: KickoffWizardProps) {
+export function KickoffWizard({ onComplete, onCancel, onProjectCreated }: KickoffWizardProps) {
   const [step, setStep] = useState(1)
   const [data, setData] = useState<WizardData>(initialWizardData)
   const [finishing, setFinishing] = useState(false)
@@ -123,6 +142,12 @@ export function KickoffWizard({ onComplete, onCancel }: KickoffWizardProps) {
       })
       if (result?.ok === false) {
         setError(errorMessage(result.error ?? 'Kickoff fehlgeschlagen'))
+        // Befund 5: even a failed kickoff (e.g. degraded graph) can have created
+        // the project record — make it visible without leaving the wizard, so
+        // the error stays on screen instead of vanishing along with the view.
+        if (leftAProjectBehind(result)) {
+          onProjectCreated?.()
+        }
       } else {
         onComplete()
       }

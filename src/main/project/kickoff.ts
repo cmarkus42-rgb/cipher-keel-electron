@@ -154,6 +154,12 @@ export async function runKickoff(
 
 /**
  * Activates the freshly created project so the very next session:create finds it.
+ *
+ * Activates whenever a project record exists, even when the kickoff overall
+ * reports ok:false (Befund 5) — e.g. the graph was degraded so the Phasenkette
+ * could not be written, but the project itself and its git repo were created.
+ * Leaving that project un-activated regressed session:create to "No session name
+ * and no active project", the exact failure Task 9 fixed for the happy path.
  * A failure here must never break an otherwise successful kickoff — the project
  * exists either way and the user can still select it from the list.
  */
@@ -161,7 +167,7 @@ export function activateAfterKickoff(
   switchProject: (projectId: string) => void,
   result: KickoffResult,
 ): boolean {
-  if (!result.ok || !result.project) return false
+  if (!result.project) return false
   try {
     switchProject(result.project.id)
     return true

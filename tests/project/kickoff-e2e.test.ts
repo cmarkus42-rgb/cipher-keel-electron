@@ -11,7 +11,8 @@ import { join } from 'node:path'
 import type Database from 'better-sqlite3'
 import { openGraphDb } from '../../src/main/graph/db'
 import { GraphWriter } from '../../src/main/graph/writer'
-import { PHASE_DEFS, initProjectPhases, runKickoff } from '../../src/main/project/kickoff'
+import { PHASE_DEFS, initProjectPhases, runKickoff, activateAfterKickoff } from '../../src/main/project/kickoff'
+import { ProjectManager } from '../../src/main/project/project-manager'
 
 let dir: string
 let db: Database.Database
@@ -165,6 +166,42 @@ describe('runKickoff — the graph is unavailable (Befund 2)', () => {
 
     expect(result.project!.name).toBe('Probe')
     expect(result.phaseUids).toEqual([])
+  })
+
+  it('activates the project despite the degraded-graph failure (Befund 5)', async () => {
+    const result = await runKickoff(depsWithoutWriter(), {
+      name: 'Probe', rootPath: dir, initGit: false, github: { action: 'skip' },
+    })
+
+    const switchProject = vi.fn()
+    const activated = activateAfterKickoff(switchProject, result)
+
+    expect(activated).toBe(true)
+    expect(switchProject).toHaveBeenCalledWith('proj-1')
+  })
+
+  it('a retry against a real ProjectManager does not mint a duplicate project (Befund 5)', async () => {
+    let stored: { list: Array<{ id: string; name: string; rootPath: string; createdAt: string; workspaceIds: string[] }>; activeId: string | null } = { list: [], activeId: null }
+    const pm = new ProjectManager(
+      (data) => { stored = data },
+      () => stored,
+    )
+    const deps = {
+      writer: null,
+      createProject: (name: string, rootPath: string) => pm.createProject(name, rootPath),
+      gitInit: vi.fn().mockResolvedValue(undefined),
+      createRepo: vi.fn(),
+      linkRepo: vi.fn(),
+    }
+    const payload = { name: 'Probe', rootPath: dir, initGit: false, github: { action: 'skip' as const } }
+
+    const first = await runKickoff(deps, payload)
+    const second = await runKickoff(deps, payload)
+
+    expect(first.ok).toBe(false)
+    expect(second.ok).toBe(false)
+    expect(second.project!.id).toBe(first.project!.id)
+    expect(pm.listProjects()).toHaveLength(1)
   })
 })
 

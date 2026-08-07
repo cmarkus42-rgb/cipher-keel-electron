@@ -92,6 +92,36 @@ describe('ProjectManager', () => {
     expect(proj.workspaceIds).toEqual([])
   })
 
+  it('createProject is idempotent on rootPath — a retry does not duplicate (Befund 5)', () => {
+    const pm = makeManager()
+    const first = pm.createProject('Probe', '/tmp/probe')
+    const second = pm.createProject('Probe', '/tmp/probe')
+
+    expect(second.id).toBe(first.id)
+    expect(pm.listProjects()).toHaveLength(1)
+  })
+
+  it('createProject with a different rootPath is a distinct project', () => {
+    const pm = makeManager()
+    pm.createProject('Probe', '/tmp/probe-a')
+    pm.createProject('Probe', '/tmp/probe-b')
+
+    expect(pm.listProjects()).toHaveLength(2)
+  })
+
+  it('persist is not called again when createProject dedups on rootPath', () => {
+    let callCount = 0
+    const pm = new ProjectManager(
+      (_data) => { callCount++ },
+      () => ({ list: [], activeId: null }),
+    )
+    pm.createProject('Probe', '/tmp/probe')
+    callCount = 0
+    pm.createProject('Probe', '/tmp/probe')
+
+    expect(callCount).toBe(0)
+  })
+
   it('load callback is used on construction — state is restored', () => {
     const existing: StoredProjects = {
       list: [{
