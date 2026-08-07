@@ -87,6 +87,15 @@ function validFmA(overrides: Record<string, unknown> = {}): Record<string, unkno
 
 describe('validateFrontmatter — Niveau A (CK-P1-002)', () => {
   it('accepts a fully populated Niveau-A frontmatter', () => {
+    // Guard against drift: the per-field loop below is parameterized over
+    // REQUIRED_FIELDS_NIVEAU_A, so it cannot detect that constant itself shrinking or
+    // growing (a dropped field would just generate no test case for it, silently). This
+    // literal is an independent oracle, deliberately not derived from the constant.
+    expect([...REQUIRED_FIELDS_NIVEAU_A].sort()).toEqual([
+      'dokument-typ', 'phase', 'phasenuebergang', 'stand', 'status',
+      'version', 'projekt', 'adressat', 'req-ids', 'graph-knoten-id',
+    ].sort())
+
     const result = validateFrontmatter(validFmA(), 'A')
     expect(result.valid).toBe(true)
     expect(result.errors).toHaveLength(0)
