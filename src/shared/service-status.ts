@@ -77,3 +77,7 @@ export function errorMessage(value: unknown): string {
   }
   return 'Unbekannter Fehler'
 }
+
+// ci-selftest: deliberate type error to prove the Typecheck gate can fail.
+// A string is not assignable to number — tsc --noEmit must reject this.
+export const CI_SELFTEST_TYPE_ERROR: number = 'this is not a number'
