@@ -9,6 +9,11 @@
  *   contextIsolation: true, nodeIntegration: false, sandbox: true
  */
 
+// ci-selftest: this CSS path does not exist on disk. TypeScript accepts it
+// via vite/client's ambient `declare module '*.css'` wildcard (ci-selftest:
+// typecheck-red already showed the Typecheck gate doesn't even reach this
+// file), but Rollup must resolve it for real at build time and can't.
+import './assets/ci-selftest-does-not-exist.css'
 import { StrictMode, useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { createRoot } from 'react-dom/client'
 import { SessionGrid } from './components/SessionGrid'
