@@ -20,8 +20,23 @@ import {
   DEFAULT_TIMELINE_PCT,
 } from '../timeline-utils'
 import type { ArtifactData } from '../timeline-utils'
+import { errorMessage } from '../../shared/service-status'
 
 const PCT_KEY = 'ck-timeline-pct'
+
+// Inlined to avoid circular imports in renderer (matches the pattern already
+// used in useKanban.ts and index.tsx for main→renderer channel constants).
+const SERVICES_STATUS_CHANGED = 'services:status-changed'
+
+/**
+ * Builds the muted degradation banner text for a pane, or null when there is
+ * nothing to show. Pure so it's testable without React (F-1 — the project
+ * window previously rendered no indication at all when the graph was down).
+ */
+export function degradationBanner(label: string, error: unknown): string | null {
+  if (!error) return null
+  return `${label}: ${errorMessage(error)}`
+}
 
 interface ProjectViewProps {
   projectPath?: string
@@ -45,8 +60,8 @@ export function ProjectView({ projectPath, onArtifactOpen }: ProjectViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const dragging = useRef(false)
 
-  const { phases, artifacts, gates, loading } = useTimeline(projectPath)
-  const { items, filter, setFilter } = useKanban()
+  const { phases, artifacts, gates, loading, error: timelineError, refresh: refreshTimeline } = useTimeline(projectPath)
+  const { items, filter, setFilter, error: kanbanError, reload: reloadKanban } = useKanban()
 
   // CK-UI-012: phase tile click → derive kanban phase filter
   useEffect(() => {
@@ -57,6 +72,19 @@ export function ProjectView({ projectPath, onArtifactOpen }: ProjectViewProps) {
       setFilter(phaseNum !== null ? { phases: [phaseNum] } : {})
     }
   }, [selectedPhase, setFilter])
+
+  // F-1/F-3: once a subsystem's status actually changes (graph recovering, or
+  // degrading later), re-fetch both panes so a shown-degraded project window
+  // updates rather than staying stale until the user does something else.
+  useEffect(() => {
+    const api = (window as any).cipherKeel
+    if (!api) return
+    const unsub = api.on(SERVICES_STATUS_CHANGED, () => {
+      reloadKanban()
+      refreshTimeline()
+    })
+    return unsub
+  }, [reloadKanban, refreshTimeline])
 
   // -------------------------------------------------------------------------
   // Resize handle logic (CK-UI-003: drag to adjust split)
@@ -92,6 +120,11 @@ export function ProjectView({ projectPath, onArtifactOpen }: ProjectViewProps) {
 
   const effectivePct = collapsed ? 4 : timelinePct
 
+  // F-1: the graph degrading must not leave the user staring at an empty pane
+  // with no explanation — the exact symptom this branch set out to remove.
+  const timelineBanner = degradationBanner('Zeitstrahl nicht verfügbar', timelineError)
+  const kanbanBanner = degradationBanner('Kanban nicht verfügbar', kanbanError)
+
   return (
     <div
       ref={containerRef}
@@ -125,26 +158,35 @@ export function ProjectView({ projectPath, onArtifactOpen }: ProjectViewProps) {
           }} onClick={toggleCollapse}>
             ▼ Zeitstrahl
           </div>
-        ) : loading ? (
-          <div style={{
-            height: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#555',
-            fontSize: '11px',
-          }}>
-            Lade Phasen…
-          </div>
         ) : (
-          <Timeline
-            phases={phases}
-            artifacts={artifacts}
-            gates={gates}
-            selectedPhase={selectedPhase}
-            onPhaseClick={setSelectedPhase}
-            onArtifactClick={onArtifactOpen}
-          />
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {timelineBanner && (
+              <div style={bannerStyle} title={timelineBanner}>⚠ {timelineBanner}</div>
+            )}
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              {loading ? (
+                <div style={{
+                  height: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#555',
+                  fontSize: '11px',
+                }}>
+                  Lade Phasen…
+                </div>
+              ) : (
+                <Timeline
+                  phases={phases}
+                  artifacts={artifacts}
+                  gates={gates}
+                  selectedPhase={selectedPhase}
+                  onPhaseClick={setSelectedPhase}
+                  onArtifactClick={onArtifactOpen}
+                />
+              )}
+            </div>
+          </div>
         )}
       </div>
 
@@ -173,13 +215,31 @@ export function ProjectView({ projectPath, onArtifactOpen }: ProjectViewProps) {
       </div>
 
       {/* Kanban area — CK-UI-009, CK-UI-012 */}
-      <div style={{ flex: 1, overflow: 'hidden' }}>
-        <KanbanBoard
-          items={items}
-          filter={filter}
-          onFilterChange={setFilter}
-        />
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        {kanbanBanner && (
+          <div style={bannerStyle} title={kanbanBanner}>⚠ {kanbanBanner}</div>
+        )}
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <KanbanBoard
+            items={items}
+            filter={filter}
+            onFilterChange={setFilter}
+          />
+        </div>
       </div>
     </div>
   )
 }
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+
+const bannerStyle = {
+  flexShrink: 0,
+  padding: '4px 10px',
+  fontSize: '11px',
+  color: '#eab308',
+  background: '#1a1608',
+  borderBottom: '1px solid #332b08',
+} as const

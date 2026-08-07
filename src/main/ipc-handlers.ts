@@ -87,7 +87,14 @@ import {
   GIT_HAS_REPO,
   DIALOG_OPEN_DIR,
   PROJECT_KICKOFF,
+  SERVICES_STATUS,
 } from '../shared/ipc-channels'
+import { getServiceStatus } from './service-lifecycle'
+import { buildSessionContext, writeSessionNode } from './session/session-context'
+import { subsystemError } from '../shared/service-status'
+import { isKnownPresetId, defaultPresetId } from '../shared/preset-catalog'
+import { initProjectPhases, runKickoff, activateAfterKickoff } from './project/kickoff'
+import type { KickoffPayload } from './project/kickoff'
 import { configStore } from './config/config-store'
 import type { CipherKeelConfig } from './config/config-store'
 import { graphSearch, graphGetNode, graphExpand } from './graph/search'
@@ -98,6 +105,7 @@ import { ProjectManager } from './project/project-manager'
 import type { CreateKanbanItemInput, UpdateKanbanItemInput } from '../shared/kanban-types'
 import { createMainWindow } from './window-manager'
 import type { AppServices } from './window-manager'
+import { registerWindow, broadcast } from './event-bus'
 import { normalizeToP1Format } from './p1/normalizer'
 
 // Tracks the active grid window for focus-or-create logic (CK-UI-002)
@@ -119,7 +127,8 @@ export function registerIpcHandlers(services: AppServices): void {
   })
 
   ipcMain.handle(SESSION_CREATE, async (_event, opts: {
-    name: string
+    name?: string
+    entityId?: string
     cwd?: string
     command?: string
     env?: Record<string, string>
@@ -127,15 +136,43 @@ export function registerIpcHandlers(services: AppServices): void {
     height?: number
   }) => {
     try {
+      const project = projectManager.getCurrentProject()
+      const entityId = opts.entityId && isKnownPresetId(opts.entityId)
+        ? opts.entityId
+        : defaultPresetId()
+
+      // Derive name and cwd from the active project unless the caller pinned them.
+      let name = opts.name
+      let cwd = opts.cwd
+      let ctx = null
+      if (project) {
+        const seed = Math.random().toString(36).slice(2, 6)
+        ctx = buildSessionContext(project, entityId, seed)
+        name = name ?? ctx.name
+        cwd = cwd ?? ctx.cwd
+      }
+      if (!name) {
+        return { id: null, name: null, error: 'No session name and no active project' }
+      }
+
       if (!services.tmux.isConnected()) {
         await services.tmux.connect()
       }
-      const sessionId = await services.tmux.createSession(opts.name, opts)
-      services.tmux.watchSession(opts.name, opts.name)
-      return { id: sessionId, error: null }
+      const sessionId = await services.tmux.createSession(name, { ...opts, cwd })
+      services.tmux.watchSession(name, name)
+
+      if (ctx && services.graphWriter) {
+        try {
+          writeSessionNode(services.graphWriter, { ...ctx, name })
+        } catch (err) {
+          console.warn('[ipc] session node write failed:', err)
+        }
+      }
+
+      return { id: sessionId, name, error: null }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      return { id: null, error: msg }
+      return { id: null, name: null, error: msg }
     }
   })
 
@@ -454,20 +491,36 @@ export function registerIpcHandlers(services: AppServices): void {
   })
 
   // ---------------------------------------------------------------------------
+  // Service status (CK-NFR-010 — degradation must be visible, Befund 2)
+  // ---------------------------------------------------------------------------
+
+  ipcMain.handle(SERVICES_STATUS, async () => {
+    return getServiceStatus()
+  })
+
+  // ---------------------------------------------------------------------------
   // Kanban handlers (CK-UI-009, CK-UI-010, CK-UI-027, CK-UI-034)
   // ---------------------------------------------------------------------------
 
   ipcMain.handle(KANBAN_LIST, async () => {
-    if (!services.kanbanStore) return []
-    return services.kanbanStore.listItems()
+    if (!services.kanbanStore) {
+      return { items: [], error: subsystemError('kanban', 'Kanban store not initialized') }
+    }
+    try {
+      return { items: services.kanbanStore.listItems(), error: null }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return { items: [], error: subsystemError('kanban', msg) }
+    }
   })
 
   ipcMain.handle(KANBAN_CREATE, async (_event, input: CreateKanbanItemInput) => {
     if (!services.kanbanStore) return { item: null, error: 'Kanban not initialized' }
     try {
       const item = services.kanbanStore.createItem(input)
-      // Notify all windows of board change
-      BrowserWindow.getAllWindows().forEach(w => w.webContents.send(KANBAN_CHANGED))
+      // Notify all windows of board change — via the event bus (M-1), not a
+      // direct BrowserWindow.getAllWindows() sweep.
+      broadcast(KANBAN_CHANGED)
       return { item, error: null }
     } catch (err) {
       return { item: null, error: err instanceof Error ? err.message : String(err) }
@@ -478,7 +531,7 @@ export function registerIpcHandlers(services: AppServices): void {
     if (!services.kanbanStore) return { ok: false, error: 'Kanban not initialized' }
     try {
       const ok = services.kanbanStore.updateItem(input)
-      if (ok) BrowserWindow.getAllWindows().forEach(w => w.webContents.send(KANBAN_CHANGED))
+      if (ok) broadcast(KANBAN_CHANGED)
       return { ok, error: null }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -489,7 +542,7 @@ export function registerIpcHandlers(services: AppServices): void {
     if (!services.kanbanStore) return { ok: false, error: 'Kanban not initialized' }
     try {
       const ok = services.kanbanStore.deleteItem(id)
-      if (ok) BrowserWindow.getAllWindows().forEach(w => w.webContents.send(KANBAN_CHANGED))
+      if (ok) broadcast(KANBAN_CHANGED)
       return { ok, error: null }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -532,6 +585,7 @@ export function registerIpcHandlers(services: AppServices): void {
     }
     if (!activeGridWindow || activeGridWindow.isDestroyed()) {
       activeGridWindow = createMainWindow(services)
+      registerWindow(activeGridWindow)
       activeGridWindow.on('closed', () => {
         activeGridWindow = null
       })
@@ -610,41 +664,15 @@ export function registerIpcHandlers(services: AppServices): void {
   // Kickoff wizard handlers (Phase 3b — CK-UI-020, CK-PROC-001)
   // ---------------------------------------------------------------------------
 
-  const PHASE_DEFS = [
-    { name: 'ideation', position: 1 },
-    { name: 'requirements', position: 2 },
-    { name: 'architecture', position: 3 },
-    { name: 'development', position: 4 },
-    { name: 'testing', position: 5 },
-    { name: 'fixing', position: 6 },
-    { name: 'audit', position: 7 },
-    { name: 'release-management', position: 8 },
-  ] as const
-
   ipcMain.handle(GRAPH_INIT_PROJECT, async (_event, projectDir: string) => {
-    if (!services.graphWriter) return { ok: false, error: 'Graph not initialized' }
+    if (!services.graphWriter) {
+      return { ok: false, error: subsystemError('graph', 'Graph not initialized') }
+    }
     try {
-      const uids: string[] = []
-      for (const p of PHASE_DEFS) {
-        const { uid } = services.graphWriter.upsertNode({
-          kind: 'phase',
-          title: p.name,
-          path: join(projectDir, '.cipher-keel', 'phases', p.name),
-          frontmatter: { name: p.name, position: p.position, phase_status: 'ausstehend' },
-        })
-        uids.push(uid)
-      }
-      for (let i = 0; i < uids.length - 1; i++) {
-        services.graphWriter.linkEdge({
-          src: uids[i],
-          dst: uids[i + 1],
-          type: 'naechste_phase',
-          source: 'inferred',
-        })
-      }
-      return { ok: true, phaseUids: uids }
+      return initProjectPhases(services.graphWriter, projectDir)
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      const message = err instanceof Error ? err.message : String(err)
+      return { ok: false, error: subsystemError('graph', message) }
     }
   })
 
@@ -661,74 +689,18 @@ export function registerIpcHandlers(services: AppServices): void {
     return { canceled: false, path: filePaths[0] }
   })
 
-  ipcMain.handle(PROJECT_KICKOFF, async (_event, payload: {
-    name: string
-    rootPath: string
-    initGit?: boolean
-    github?: {
-      action: 'create' | 'link' | 'skip'
-      name?: string
-      desc?: string
-      visibility?: 'public' | 'private'
-      ownerRepo?: string
-    }
-  }) => {
-    try {
-      // 1. Create project record
-      const project = projectManager.createProject(payload.name, payload.rootPath)
-
-      // 2. Optional: git init
-      if (payload.initGit) {
-        try {
-          await execFileAsync('git', ['init', payload.rootPath])
-        } catch (err) {
-          console.warn('[ipc] project:kickoff — git init failed:', err)
-        }
-      }
-
-      // 3. Initialize graph (8 phases + chain)
-      let phaseUids: string[] = []
-      if (services.graphWriter) {
-        const uids: string[] = []
-        for (const p of PHASE_DEFS) {
-          const { uid } = services.graphWriter.upsertNode({
-            kind: 'phase',
-            title: p.name,
-            path: join(payload.rootPath, '.cipher-keel', 'phases', p.name),
-            frontmatter: { name: p.name, position: p.position, phase_status: 'ausstehend' },
-          })
-          uids.push(uid)
-        }
-        for (let i = 0; i < uids.length - 1; i++) {
-          services.graphWriter.linkEdge({
-            src: uids[i],
-            dst: uids[i + 1],
-            type: 'naechste_phase',
-            source: 'inferred',
-          })
-        }
-        phaseUids = uids
-      }
-
-      // 4. Optional: GitHub
-      let githubResult = null
-      const gh = payload.github
-      if (gh && gh.action !== 'skip') {
-        if (gh.action === 'create') {
-          githubResult = await createRepo(
-            gh.name ?? payload.name,
-            gh.desc ?? '',
-            gh.visibility ?? 'private',
-            payload.rootPath,
-          )
-        } else if (gh.action === 'link' && gh.ownerRepo) {
-          githubResult = await linkRepo(gh.ownerRepo, payload.rootPath)
-        }
-      }
-
-      return { ok: true, project, phaseUids, githubResult }
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) }
-    }
+  ipcMain.handle(PROJECT_KICKOFF, async (_event, payload: KickoffPayload) => {
+    const result = await runKickoff(
+      {
+        writer: services.graphWriter,
+        createProject: (name, rootPath) => projectManager.createProject(name, rootPath),
+        gitInit: async (rootPath) => { await execFileAsync('git', ['init', rootPath]) },
+        createRepo,
+        linkRepo,
+      },
+      payload,
+    )
+    activateAfterKickoff((id) => projectManager.switchProject(id), result)
+    return result
   })
 }

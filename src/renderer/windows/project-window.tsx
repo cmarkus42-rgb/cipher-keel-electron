@@ -56,9 +56,27 @@ function ProjectApp() {
     setView('list')
   }, [loadProjects])
 
-  const handleWizardCancel = useCallback(() => {
+  const handleWizardCancel = useCallback(async () => {
+    // Befund 5: a project can exist in config from an earlier failed kickoff
+    // attempt on this wizard visit — reload so it isn't invisible until restart.
+    await loadProjects()
     setView('list')
-  }, [])
+  }, [loadProjects])
+
+  // Befund 5: a degraded-graph kickoff still creates the project — refresh the
+  // list in the background so it's there once the user does leave the wizard,
+  // without switching away from the wizard (which would hide the error).
+  const handleProjectCreated = useCallback(() => {
+    void loadProjects()
+  }, [loadProjects])
+
+  const handleOpenGrid = useCallback(async () => {
+    try {
+      await api().invoke('window:open-grid', activeProjectId ?? undefined)
+    } catch (err) {
+      console.error('[project-window] window:open-grid failed:', err)
+    }
+  }, [activeProjectId])
 
   if (loading) {
     return (
@@ -74,18 +92,31 @@ function ProjectApp() {
         {(view === 'project' || view === 'wizard') && (
           <button
             style={styles.backBtn}
-            onClick={() => setView('list')}
+            onClick={view === 'wizard' ? handleWizardCancel : () => setView('list')}
           >
             ←
           </button>
         )}
         <span style={styles.logo}>cipher keel</span>
         <span style={styles.subtitle}>Projekte</span>
+        {view === 'project' && (
+          <button
+            style={styles.gridBtn}
+            onClick={handleOpenGrid}
+            title="Grid-Fenster mit den Sessions dieses Projekts oeffnen"
+          >
+            Grid oeffnen
+          </button>
+        )}
       </div>
       {view === 'project' ? (
         <ProjectView projectPath={projects.find(p => p.id === activeProjectId)?.rootPath} />
       ) : view === 'wizard' ? (
-        <KickoffWizard onComplete={handleWizardComplete} onCancel={handleWizardCancel} />
+        <KickoffWizard
+          onComplete={handleWizardComplete}
+          onCancel={handleWizardCancel}
+          onProjectCreated={handleProjectCreated}
+        />
       ) : (
         <ProjectList
           projects={projects}
@@ -139,6 +170,16 @@ const styles = {
     cursor: 'pointer',
     padding: '0 8px 0 0',
     lineHeight: 1,
+  },
+  gridBtn: {
+    marginLeft: 'auto' as const,
+    padding: '4px 10px',
+    background: '#1a1a1a',
+    color: '#ddd',
+    border: '1px solid #333',
+    borderRadius: 3,
+    cursor: 'pointer' as const,
+    fontSize: 12,
   },
 }
 

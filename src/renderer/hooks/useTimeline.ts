@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { deriveGates } from '../timeline-utils'
 import type { PhaseData, ArtifactData, GateData, TimelineState, PhaseUIStatus } from '../timeline-utils'
+import { errorMessage } from '../../shared/service-status'
 
 const api = () => (window as any).cipherKeel
 
@@ -65,7 +66,12 @@ function parseArtifacts(rows: RawArtifactRow[]): ArtifactData[] {
   })
 }
 
-export function useTimeline(projectPath?: string): TimelineState {
+export interface UseTimelineResult extends TimelineState {
+  /** Re-runs the phase/artifact fetch — used to recover once a degraded graph reports ready again. */
+  refresh: () => Promise<void>
+}
+
+export function useTimeline(projectPath?: string): UseTimelineResult {
   const [state, setState] = useState<TimelineState>({
     phases: [],
     artifacts: [],
@@ -80,6 +86,10 @@ export function useTimeline(projectPath?: string): TimelineState {
 
       // Fetch phase chain (CK-PROC-001)
       const phaseResult = await api().graph.query({ template: 'phase_chain' })
+      if (phaseResult?.error) {
+        setState(prev => ({ ...prev, loading: false, error: errorMessage(phaseResult.error) }))
+        return
+      }
       const phases = parsePhases(phaseResult?.rows ?? [])
 
       // Fetch artifact nodes (uebergabedokument + artefakt + note + entscheidung)
@@ -109,5 +119,5 @@ export function useTimeline(projectPath?: string): TimelineState {
     refresh()
   }, [refresh])
 
-  return state
+  return { ...state, refresh }
 }

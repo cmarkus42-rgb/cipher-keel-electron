@@ -35,7 +35,18 @@ export class ProjectManager {
     this.activeId = saved.activeId
   }
 
+  /**
+   * Creates a project, or returns the existing one for the same rootPath unchanged.
+   *
+   * Idempotent on rootPath (Befund 5): a retried kickoff after a degraded-graph
+   * failure calls createProject again with the same rootPath. Without this guard
+   * every retry minted a fresh record, so the project list accumulated duplicates
+   * for what the user experienced as a single "Fertigstellen" click.
+   */
   createProject(name: string, rootPath: string): Project {
+    const existing = this.list.find(p => p.rootPath === rootPath)
+    if (existing) return existing
+
     const project: Project = {
       id: `proj-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       name,

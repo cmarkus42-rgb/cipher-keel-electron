@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest'
 import {
   validateStep1,
   validateStep2,
+  leftAProjectBehind,
   WIZARD_STEPS,
   initialWizardData,
   type WizardData,
@@ -83,6 +84,25 @@ describe('validateStep2 — git init is optional (CK-UI-020)', () => {
 
   it('returns true when initGit is true', () => {
     expect(validateStep2({ initGit: true } as WizardData)).toBe(true)
+  })
+})
+
+describe('leftAProjectBehind (Befund 5)', () => {
+  it('is true when the kickoff failed but a project was created', () => {
+    expect(leftAProjectBehind({ ok: false, project: { id: 'proj-1' } })).toBe(true)
+  })
+
+  it('is false when the kickoff succeeded', () => {
+    expect(leftAProjectBehind({ ok: true, project: { id: 'proj-1' } })).toBe(false)
+  })
+
+  it('is false when the kickoff failed before a project existed', () => {
+    expect(leftAProjectBehind({ ok: false, project: null })).toBe(false)
+  })
+
+  it('is false for a null/undefined result', () => {
+    expect(leftAProjectBehind(null)).toBe(false)
+    expect(leftAProjectBehind(undefined)).toBe(false)
   })
 })
 
