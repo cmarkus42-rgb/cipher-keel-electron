@@ -96,6 +96,12 @@ export function getServiceStatus(): ServiceStatusMap {
   return status
 }
 
+// ci-selftest: deliberately invalid — a string assigned to a number-typed
+// export. tsc --noEmit must reject this. If it doesn't, the Typecheck gate
+// isn't checking this file. Exported (rather than a bare unused const) so
+// this doesn't also trip the Lint gate's no-unused-vars rule.
+export const ciSelftestTypeError: number = 'this is a string, not a number'
+
 /** Test seam — clears status and the idempotence latch. */
 export function resetServiceLifecycle(): void {
   status = freshStatus()
