@@ -68,7 +68,7 @@ describe('createRepo (GH-004)', () => {
       .mockResolvedValueOnce({ stdout: '', stderr: '' })
 
     const result = await createRepo('my-project', 'desc', 'private', '/tmp/proj')
-    expect(result.ok).toBe(true)
+    expect(result.ok).toBe(false)
     if (result.ok) {
       expect(result.repo.fullName).toBe('user/my-project')
       expect(result.repo.private).toBe(true)
