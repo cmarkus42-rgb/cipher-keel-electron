@@ -9,23 +9,25 @@ import * as http from 'node:http'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import matter from 'gray-matter'
-import { configStore } from '../config/config-store'
 import type { TagRepository, TagEntry } from '../../shared/types'
 import type { TagClassRepo } from './tag-repository'
 
 const TIMEOUT_MS = 60_000
 
+/**
+ * Ollama connection defaults. There is no `llm` section in CipherKeelConfig
+ * (src/main/config/config-store.ts) — no such key has ever existed there,
+ * and nothing else in the codebase reads or writes one. The `configStore.get
+ * ('llm')` call this function used to make was dead: it always threw (typed
+ * as `keyof CipherKeelConfig`, so this only compiled at all because `any`
+ * casts elsewhere were suppressing the fallout) and every caller silently
+ * landed on these exact defaults. Phase 7 / Task 5b: dropped the dead
+ * lookup rather than inventing a config section with no other consumer —
+ * behavior is unchanged, since the catch-all defaults were the only thing
+ * that ever actually ran.
+ */
 function getLlmConfig() {
-  try {
-    const llm = configStore.get('llm')
-    return {
-      host: llm?.ollamaHost ?? '127.0.0.1',
-      port: llm?.ollamaPort ?? 11434,
-      model: llm?.ollamaModel ?? 'gemma3:12b',
-    }
-  } catch {
-    return { host: '127.0.0.1', port: 11434, model: 'gemma3:12b' }
-  }
+  return { host: '127.0.0.1', port: 11434, model: 'gemma3:12b' }
 }
 
 export const SEED_TAGS: Record<string, TagEntry> = {

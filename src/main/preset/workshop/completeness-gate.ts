@@ -10,7 +10,7 @@
  *   experimental — nur Kriterium 1 (Forward-Traceability)
  */
 
-import type { WorkItem } from './worker-task-format'
+import type { WorkItem } from './routing'
 
 // ---------------------------------------------------------------------------
 // Types
