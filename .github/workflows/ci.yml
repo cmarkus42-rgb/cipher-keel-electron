@@ -5,15 +5,18 @@ on:
     branches: [main]
   pull_request:
 
-# Ein neuer Push auf denselben Branch macht den laufenden Job hinfaellig.
+# A new push to the same branch supersedes the running job.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   verify:
-    # macOS ist Pflicht, nicht Bequemlichkeit: tmux, Unix-Domain-Sockets und Keychain
-    # sind macOS-gebunden (siehe "Nicht im Scope" der Fertigstellungs-Roadmap).
+    # macOS is required, not a convenience: tmux, Unix domain sockets and the
+    # Keychain are macOS-bound (see "Out of scope" in the completion roadmap).
     runs-on: macos-latest
     timeout-minutes: 15
 
@@ -23,17 +26,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
-          # Der Rechenteil der Pipeline dauert rund zehn Sekunden; die Laufzeit
-          # entscheidet sich am Download. Ohne dieses Cache waere jeder Lauf teuer.
+          # The compute part of the pipeline takes about ten seconds; runtime
+          # is decided by the download. Without this cache every run would be costly.
           cache: 'npm'
 
       - name: Install
         run: npm ci
 
       - name: Typecheck
-        # Eigenes Gate, nicht Teil von `test`: vitest transformiert TypeScript ueber
-        # esbuild und prueft dabei keine Typen. Ein IPC-Kanal in der falschen Union
-        # wuerde die Testsuite nicht rot machen — nur tsc faengt das.
+        # Its own gate, not part of `test`: vitest transforms TypeScript via
+        # esbuild and does not check types while doing so. An IPC channel in
+        # the wrong union would not make the test suite red — only tsc catches that.
         run: npm run typecheck
 
       - name: Lint

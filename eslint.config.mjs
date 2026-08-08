@@ -1,11 +1,11 @@
-// ESLint 9 Flat Config.
+// ESLint 9 flat config.
 //
-// Umfang: src/ und tests/. Beides, weil ein Gate, das die Testsuite auslaesst, falsche
-// Sicherheit gibt — gerade no-unused-expressions faengt dort echte Fehler (ein vergessenes
-// await, ein Vergleich ohne Wirkung).
+// Scope: src/ and tests/. Both, because a gate that skips the test suite gives false
+// confidence — no-unused-expressions in particular catches real bugs there (a forgotten
+// await, a comparison with no effect).
 //
-// Der _-Praefix-Ignore ist Standardkonfiguration, keine Aufweichung: die Adapter in
-// src/main/agent/ fuehren absichtlich ungenutzte Parameter, um eine Schnittstelle zu erfuellen.
+// The `_` prefix ignore is standard configuration, not a loosening: the adapters in
+// src/main/agent/ deliberately carry unused parameters to satisfy an interface.
 
 import tseslint from 'typescript-eslint'
 
