@@ -139,7 +139,7 @@ export function KickoffWizard({ onComplete, onCancel, onProjectCreated }: Kickof
                 ownerRepo: data.githubOwnerRepo,
               }
             : undefined,
-      })
+      }) as { ok: boolean; project: unknown; error?: unknown }
       if (result?.ok === false) {
         setError(errorMessage(result.error ?? 'Kickoff fehlgeschlagen'))
         // Befund 5: even a failed kickoff (e.g. degraded graph) can have created

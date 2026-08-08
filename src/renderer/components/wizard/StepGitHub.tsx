@@ -46,9 +46,8 @@ export function StepGitHub({ data, onChange }: StepGitHubProps) {
   // Check auth on mount
   useEffect(() => {
     setAuthChecking(true)
-    api()
-      .invoke('github:check-auth')
-      .then((result: AuthStatus & { error?: string }) => {
+    ;(api().invoke('github:check-auth') as Promise<AuthStatus & { error?: string }>)
+      .then((result) => {
         if (result.error) {
           setAuthError(result.error)
         } else {
@@ -66,9 +65,8 @@ export function StepGitHub({ data, onChange }: StepGitHubProps) {
     if (data.githubAction !== 'link' || !auth?.authenticated) return
     setReposLoading(true)
     setReposError(null)
-    api()
-      .invoke('github:list-repos')
-      .then((result: { repos: RepoInfo[]; error?: string }) => {
+    ;(api().invoke('github:list-repos') as Promise<{ repos: RepoInfo[]; error?: string }>)
+      .then((result) => {
         if (result.error) {
           setReposError(result.error)
         } else {
@@ -86,13 +84,13 @@ export function StepGitHub({ data, onChange }: StepGitHubProps) {
     setPatSaving(true)
     setPatError(null)
     try {
-      const result = await api().invoke('github:store-pat', patInput.trim())
+      const result = await api().invoke('github:store-pat', patInput.trim()) as { ok: boolean; error?: string }
       if (result.ok) {
         setShowPatInput(false)
         setPatInput('')
         // Re-check auth with stored PAT
         setAuthChecking(true)
-        const newAuth = await api().invoke('github:check-auth')
+        const newAuth = await api().invoke('github:check-auth') as AuthStatus
         setAuth(newAuth)
         setAuthError(null)
       } else {

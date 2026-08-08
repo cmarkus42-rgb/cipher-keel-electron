@@ -72,7 +72,7 @@ function App() {
     setSlots((prev) =>
       prev.map((s) => (s.sessionId === sessionId ? { ...s, status: 'closing' as const } : s))
     )
-    const result = await api().invoke('session:destroy', sessionId)
+    const result = await api().invoke('session:destroy', sessionId) as { ok: boolean; error: string | null }
     if (result?.ok) {
       setSlots((prev) => prev.filter((s) => s.sessionId !== sessionId))
     } else {
@@ -83,12 +83,17 @@ function App() {
     }
   }, [])
 
-  // Listen for context usage updates from StatusLineMonitor
+  // Listen for context usage updates from StatusLineMonitor. Extra args on a
+  // MainToRendererChannel listener are typed unknown — narrowed here rather
+  // than annotated, since the wire payload isn't statically known until checked.
   useEffect(() => {
-    const unsub = api().on('statusline:ctx-update', (_event: unknown, sessionId: string, usage: { percentage: number }) => {
+    const unsub = api().on('statusline:ctx-update', (_event, sessionId, usage) => {
+      if (typeof sessionId !== 'string') return
+      const percentage = (usage as { percentage?: unknown } | null)?.percentage
+      if (typeof percentage !== 'number') return
       setSlots((prev) =>
         prev.map((s) =>
-          s.sessionId === sessionId ? { ...s, contextUsage: usage.percentage } : s
+          s.sessionId === sessionId ? { ...s, contextUsage: percentage } : s
         )
       )
     })

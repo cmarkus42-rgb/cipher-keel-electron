@@ -28,6 +28,9 @@ interface RawArtifactRow {
   erstellt: string
 }
 
+/** Shape of a graph.query() response — narrowed at each call site below. */
+type QueryResult<T> = { rows?: T[]; error?: unknown } | undefined
+
 /** Parse phase rows from graph phase_chain query result. */
 function parsePhases(rows: RawPhaseRow[]): PhaseData[] {
   return rows.map(row => {
@@ -85,7 +88,7 @@ export function useTimeline(projectPath?: string): UseTimelineResult {
       setState(prev => ({ ...prev, loading: true, error: null }))
 
       // Fetch phase chain (CK-PROC-001)
-      const phaseResult = await api().graph.query({ template: 'phase_chain' })
+      const phaseResult = await api().graph.query({ template: 'phase_chain' }) as QueryResult<RawPhaseRow>
       if (phaseResult?.error) {
         setState(prev => ({ ...prev, loading: false, error: errorMessage(phaseResult.error) }))
         return
@@ -94,9 +97,9 @@ export function useTimeline(projectPath?: string): UseTimelineResult {
 
       // Fetch artifact nodes (uebergabedokument + artefakt + note + entscheidung)
       const [udResult, artefaktResult, noteResult] = await Promise.all([
-        api().graph.query({ template: 'nodes_by_kind', params: { kind: 'uebergabedokument', limit: 200 } }),
-        api().graph.query({ template: 'nodes_by_kind', params: { kind: 'artefakt', limit: 200 } }),
-        api().graph.query({ template: 'nodes_by_kind', params: { kind: 'note', limit: 200 } }),
+        api().graph.query({ template: 'nodes_by_kind', params: { kind: 'uebergabedokument', limit: 200 } }) as Promise<QueryResult<RawArtifactRow>>,
+        api().graph.query({ template: 'nodes_by_kind', params: { kind: 'artefakt', limit: 200 } }) as Promise<QueryResult<RawArtifactRow>>,
+        api().graph.query({ template: 'nodes_by_kind', params: { kind: 'note', limit: 200 } }) as Promise<QueryResult<RawArtifactRow>>,
       ])
 
       const allRaw: RawArtifactRow[] = [

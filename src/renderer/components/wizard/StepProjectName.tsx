@@ -16,7 +16,7 @@ interface StepProjectNameProps {
 export function StepProjectName({ data, onChange }: StepProjectNameProps) {
   const handlePickDir = async () => {
     try {
-      const result = await api().invoke('dialog:open-directory', { title: 'Root-Ordner wählen' })
+      const result = await api().invoke('dialog:open-directory', { title: 'Root-Ordner wählen' }) as { canceled: boolean; path: string | null }
       if (!result.canceled && result.path) {
         onChange({ rootPath: result.path })
       }

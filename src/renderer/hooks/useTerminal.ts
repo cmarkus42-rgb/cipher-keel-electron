@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react'
+import type { IpcRendererEvent } from 'electron'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
@@ -179,9 +180,12 @@ export function useTerminal(sessionId: string): UseTerminalResult {
       api().send('terminal:data-outbound', sessionId, data)
     })
 
-    // Receive output from main process
-    const unsubscribe = api().on('session:output', (_event: unknown, paneId: string, data: string) => {
-      if (paneId === sessionId) {
+    // Receive output from main process. Extra args on a MainToRendererChannel
+    // listener are typed unknown (Electron's own event arg is the only fixed
+    // parameter) — narrowed here rather than annotated, since the wire
+    // payload isn't statically known to be a string until checked.
+    const unsubscribe = api().on('session:output', (_event: IpcRendererEvent, paneId, data) => {
+      if (paneId === sessionId && typeof data === 'string') {
         term.write(data)
       }
     })
