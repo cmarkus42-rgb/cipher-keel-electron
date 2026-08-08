@@ -15,6 +15,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 
 import type { RendererToMainChannel, MainToRendererChannel } from './shared/ipc-channels'
+import type { CipherKeelBridge } from './shared/cipher-keel-bridge'
 
 // ---------------------------------------------------------------------------
 // The API exposed to the renderer (window.cipherKeel)
@@ -180,9 +181,9 @@ const graphApi = {
     ipcRenderer.invoke('graph:delete' as RendererToMainChannel, uid),
 }
 
-contextBridge.exposeInMainWorld('cipherKeel', { ...api, voice: voiceApi, notes: notesApi, graph: graphApi })
+// Type-checked against the canonical shape (src/shared/cipher-keel-bridge.ts)
+// that src/renderer/preload-api.d.ts declares window.cipherKeel with — this
+// is what keeps the two in sync instead of drifting apart silently.
+const fullApi: CipherKeelBridge = { ...api, voice: voiceApi, notes: notesApi, graph: graphApi }
 
-// ---------------------------------------------------------------------------
-// Type declaration for the renderer (window.cipherKeel)
-// ---------------------------------------------------------------------------
-export type CipherKeelApi = typeof api & { voice: typeof voiceApi; notes: typeof notesApi; graph: typeof graphApi }
+contextBridge.exposeInMainWorld('cipherKeel', fullApi)
