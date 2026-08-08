@@ -30,6 +30,7 @@ import {
   type WorkshopRun,
 } from '../src/main/preset/workshop/fix-report-generator'
 import { getNiveauWorkshopConfig } from '../src/main/preset/workshop/niveau-config'
+import type { WorkItem } from '../src/main/preset/workshop/routing'
 import { validateFrontmatter } from '../src/main/p1/frontmatter-schema'
 import { Sidebar, filterUebergabedokumente, type SidebarNote } from '../src/renderer/components/Sidebar'
 import { StatusBar, type StatusBarProps } from '../src/renderer/components/StatusBar'
@@ -40,7 +41,7 @@ import { NOTES_SAVE_RAW, NOTES_VALIDATION_WARNING } from '../src/shared/ipc-chan
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeItem(id: string): WorkerTask {
+function makeWorkerTask(id: string): WorkerTask {
   return {
     id,
     description: `Bug ${id}: Login-Button reagiert nicht`,
@@ -48,6 +49,23 @@ function makeItem(id: string): WorkerTask {
     observed: 'Button ist klickbar aber nichts passiert',
     expected: 'Login-Flow wird gestartet',
     completionCriteria: 'Login-Form oeffnet sich nach Klick',
+  }
+}
+
+/**
+ * Builds a real WorkItem (id, titel, typ, stand) from ./routing — not a
+ * WorkerTask. evaluateCompleteness() and generateFixReport() both take
+ * WorkItem[]; previously this helper returned a WorkerTask (which lacks
+ * `titel`/`typ`/`stand`), so generateFixReport's `item.titel` interpolated
+ * `undefined` in every test and nothing caught it because tests/ was not
+ * typechecked (see A2) and no test asserted the rendered title text.
+ */
+function makeItem(id: string): WorkItem {
+  return {
+    id,
+    titel: `Bug ${id}: Login-Button reagiert nicht`,
+    typ: 'BUG',
+    stand: 'in-arbeit',
   }
 }
 
@@ -65,31 +83,31 @@ function makeFix(itemId: string, withTestcase = true): Fix {
 
 describe('formatWorkerTask — Pflichtfelder', () => {
   it('enthält Bug/Item-Beschreibung', () => {
-    const item = makeItem('BUG-001')
+    const item = makeWorkerTask('BUG-001')
     const task = formatWorkerTask(item)
     expect(task).toContain('Login-Button reagiert nicht')
   })
 
   it('enthält Datei/Modul', () => {
-    const item = makeItem('BUG-001')
+    const item = makeWorkerTask('BUG-001')
     const task = formatWorkerTask(item)
     expect(task).toContain('src/renderer/Login.tsx')
   })
 
   it('enthält beobachtetes Verhalten', () => {
-    const item = makeItem('BUG-001')
+    const item = makeWorkerTask('BUG-001')
     const task = formatWorkerTask(item)
     expect(task).toContain('Button ist klickbar aber nichts passiert')
   })
 
   it('enthält erwartetes Verhalten', () => {
-    const item = makeItem('BUG-001')
+    const item = makeWorkerTask('BUG-001')
     const task = formatWorkerTask(item)
     expect(task).toContain('Login-Flow wird gestartet')
   })
 
   it('enthält Abschluss-Kriterium', () => {
-    const item = makeItem('BUG-001')
+    const item = makeWorkerTask('BUG-001')
     const task = formatWorkerTask(item)
     expect(task).toContain('Login-Form oeffnet sich nach Klick')
   })
@@ -97,7 +115,7 @@ describe('formatWorkerTask — Pflichtfelder', () => {
 
 describe('validateWorkerTask — Validierung', () => {
   it('valider Task besteht Pruefung', () => {
-    const task = formatWorkerTask(makeItem('BUG-001'))
+    const task = formatWorkerTask(makeWorkerTask('BUG-001'))
     const result = validateWorkerTask(task)
     expect(result.valid).toBe(true)
     expect(result.errors).toHaveLength(0)
@@ -240,6 +258,13 @@ describe('generateFixReport — P1-Frontmatter', () => {
     const report = generateFixReport(run)
     const parsed = matter(report)
     expect(parsed.content).toContain('## Bearbeitete Befunde')
+  })
+
+  it('Befunde-Zeile enthält das WorkItem-Titel-Feld, nicht "undefined"', () => {
+    const report = generateFixReport(run)
+    // run.items[0].titel === 'Bug BUG-001: Login-Button reagiert nicht'
+    expect(report).toContain('Bug BUG-001: Login-Button reagiert nicht')
+    expect(report).not.toContain('undefined')
   })
 
   it('Body enthält Aenderungen-Sektion', () => {
