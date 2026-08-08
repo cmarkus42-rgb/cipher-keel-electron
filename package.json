@@ -10,7 +10,7 @@
     "build": "electron-vite build",
     "start": "electron .",
     "preview": "electron-vite preview",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -b --noEmit --force",
     "lint": "eslint src tests",
     "test": "vitest run",
     "test:watch": "vitest"
