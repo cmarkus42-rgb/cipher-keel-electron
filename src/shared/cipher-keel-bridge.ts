@@ -19,20 +19,29 @@
  * `skipLibCheck: true` skips validating that declaration merges agree.
  * There is now exactly one declaration of this shape.
  *
+ * Follow-up finding: that consolidation kept the *looser* of the two
+ * declarations — `channel` typed as plain `string` here, vs.
+ * `RendererToMainChannel` / `MainToRendererChannel` in src/preload.ts's
+ * actual implementation — so the renderer had zero compile-time validation
+ * of IPC channel names. Now imports and uses the same two unions from
+ * ipc-channels.ts that src/preload.ts already uses, so this declaration and
+ * the implementation it describes cannot drift apart again.
+ *
  * CK-INF-009, CK-INF-022
  */
 
 import type { IpcRendererEvent } from 'electron'
+import type { RendererToMainChannel, MainToRendererChannel } from './ipc-channels'
 
 export interface CipherKeelBridge {
   /** Fire-and-forget message to main process. */
-  send(channel: string, ...args: unknown[]): void
+  send(channel: RendererToMainChannel, ...args: unknown[]): void
   /** Invoke main handler and await response. */
-  invoke(channel: string, ...args: unknown[]): Promise<unknown>
+  invoke(channel: RendererToMainChannel, ...args: unknown[]): Promise<unknown>
   /** Subscribe to push events from main. Returns unsubscribe function. */
-  on(channel: string, listener: (event: IpcRendererEvent, ...args: unknown[]) => void): () => void
+  on(channel: MainToRendererChannel, listener: (event: IpcRendererEvent, ...args: unknown[]) => void): () => void
   /** Subscribe once to a push event from main. */
-  once(channel: string, listener: (event: IpcRendererEvent, ...args: unknown[]) => void): void
+  once(channel: MainToRendererChannel, listener: (event: IpcRendererEvent, ...args: unknown[]) => void): void
 
   voice: {
     available(): Promise<unknown>
