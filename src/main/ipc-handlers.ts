@@ -98,6 +98,7 @@ import type { KickoffPayload } from './project/kickoff'
 import { configStore } from './config/config-store'
 import type { CipherKeelConfig } from './config/config-store'
 import { graphSearch, graphGetNode, graphExpand } from './graph/search'
+import type { SearchParams, ExpandParams } from './graph/search'
 import { graphQuery } from './graph/query'
 import { graphMaintain } from './graph/maintain'
 import type { GraphWriter } from './graph/writer'
@@ -229,7 +230,11 @@ export function registerIpcHandlers(services: AppServices): void {
   ipcMain.handle(GRAPH_SEARCH, async (_event, params: { query: string; limit?: number; kind?: string }) => {
     if (!services.graphDb) return { hits: [], error: 'Graph not initialized' }
     try {
-      return graphSearch(services.graphDb, params)
+      // IPC payloads carry `kind` as a plain string (the wire format cannot
+      // express NodeKind's literal union); graphSearch treats an unknown
+      // kind as a filter that simply matches nothing, so this narrowing is
+      // safe at the boundary without re-validating here.
+      return graphSearch(services.graphDb, params as SearchParams)
     } catch (err) {
       return { hits: [], error: err instanceof Error ? err.message : String(err) }
     }
@@ -247,7 +252,11 @@ export function registerIpcHandlers(services: AppServices): void {
   ipcMain.handle(GRAPH_EXPAND, async (_event, params: { uid: string; depth?: number; edge_type?: string; direction?: string }) => {
     if (!services.graphDb) return { center: null, neighbors: [], edges: [] }
     try {
-      return graphExpand(services.graphDb, params)
+      // Same IPC-boundary narrowing as GRAPH_SEARCH above. Unlike `kind`,
+      // graphExpand actively validates edge_type against the allowlist
+      // (isValidEdgeType, F-ADV-001) and throws on an unrecognized value —
+      // caught below and returned as a graceful error, not a crash.
+      return graphExpand(services.graphDb, params as ExpandParams)
     } catch (err) {
       return { center: null, neighbors: [], edges: [], error: err instanceof Error ? err.message : String(err) }
     }
