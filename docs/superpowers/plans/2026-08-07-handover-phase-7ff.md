@@ -38,7 +38,27 @@
 
 ---
 
-## 2. Phase 7 (CI-Pipeline) — konkrete Eingaben
+## 2. Phase 7 (CI-Pipeline) — ERLEDIGT (2026-08-08, Merge `56f13a0`)
+
+> Phase 7 ist abgeschlossen und auf `main`. Was unten als Eingabe stand, ist umgesetzt:
+> ESLint installiert und der Bestand von 152 Treffern bereinigt; Typecheck als eigenes Gate
+> **und repariert** (`tsc --noEmit` prüfte bei Project References null Dateien — 28 echte
+> Typfehler kamen zum Vorschein und sind behoben); `npm ci` auf frischem Klon repariert; ein
+> Test-Flake beseitigt, der die Hälfte aller Läufe rot machte.
+>
+> **Die Pipeline:** macOS-Runner, vier Gates (typecheck, lint, test, build), ~36 s bei warmem
+> Cache, grüner Lauf auf `main` (`31255005585`), Badge `passing`. **Jedes Gate ist einzeln rot
+> bewiesen** — typecheck `31253354400`, lint `31208508223`, test `31208403719`,
+> build `31210760855`.
+>
+> Neu im Repo: `CONTRIBUTING.md`, `SECURITY.md` (Private Vulnerability Reporting aktiviert),
+> `tsconfig.test.json` (die Tests waren von keinem Typecheck erfasst),
+> `src/shared/cipher-keel-bridge.ts` (eine statt zwei `Window.cipherKeel`-Deklarationen, jetzt
+> mit typisierten Kanalnamen), `.claude/skills/run-keel/` (Treiber für die laufende App).
+>
+> **Was für Phase 8+ bleibt** — siehe Abschnitt 6.
+
+### Ursprüngliche Eingaben (historisch)
 
 ### 2.1 Blocker: `npm run lint` ist kaputt
 
@@ -184,3 +204,52 @@ präzisiert — in den Ideation-Verzeichnissen, nicht im Repo"):
 **Reihenfolge-Empfehlung unverändert:** Phase 7 (CI) und Phase 8 (Packaging) können parallel
 starten, 7 ist billiger und schützt 8. Phase 9 misst am Produktionsbuild aus 8. Phase 10 ist von
 allem anderen unabhängig, sobald `assembleEntityClaudeMd` angeschlossen ist.
+
+
+---
+
+## 9. Nachtrag nach Phase 7 (2026-08-08)
+
+### Die Falle, die dreimal zuschnappte — und wieder zuschnappen wird
+
+`better-sqlite3` existiert zweimal im `node_modules`: gegen Electrons ABI (für die App, unter
+`bin/darwin-arm64-<abi>/`) und gegen Nodes ABI (für vitest, unter `build/Release`). **Jede
+Abhängigkeitsoperation kann eines oder beide zerstören**, und `engines: ">=22"` erlaubt jede
+Node-Version ab 22, während die gebaute Binary immer nur zu genau einer passt.
+
+In Phase 7 ist das dreimal passiert: bei der Lockfile-Neuerzeugung, beim Testlauf unter
+gewechseltem Node, und in der Schluss-Fixwelle — dort war das Electron-Artefakt **ganz
+verschwunden** und lokal fielen 497 Tests, während die CI grün blieb (sie installiert frisch
+unter Node 22).
+
+**Gegenmittel, jedes Mal:** `npm run rebuild-native` (baut beide). Dokumentiert in
+`CONTRIBUTING.md`. Erzwingbar ist es nicht — es bleibt eine manuelle Disziplin.
+
+**Merkregel:** Grüne Tests sind kein Beleg, dass beide Builds in Ordnung sind. Die Testseite ist
+genau die, die weiterläuft, wenn die Electron-Seite bricht. Nach jeder Abhängigkeitsänderung die
+App einmal über `.claude/skills/run-keel/` starten und `graph=ready` prüfen.
+
+### Offene Befunde aus Phase 7
+
+| Befund | Ort | Bewertung |
+|--------|-----|-----------|
+| Zwei nackte `eslint-disable` ohne Begründung | `src/main/voice/stt-engine.ts:79,103` | Älter als Phase 7 (aus der Zeit, als ESLint nie lief). Widerspricht dem Standard der Phase. |
+| Ein weiteres nacktes `eslint-disable` | `tests/phase4a-rolling-summary.test.ts:30` | Dasselbe Muster wurde anderswo in Phase 7 durch Wegfall des Casts behoben — zwei Behandlungen für einen Fall. |
+| `npm audit`: 1 moderate **und 1 high** | `vite <=6.4.2`, verschachteltes `esbuild` | Nur Dev-Server, aber der Stand im Ledger war veraltet. Bewusst annehmen oder `vite` anheben. |
+| `executeCommand` sendet `threadId: null` statt zu werfen | `src/main/nanoclaw/adapter.ts` | Anders als das Geschwister in `ClaudeCodeAdapter`. Null Aufrufer — offene Designfrage, ob die Methode überhaupt schon funktionieren soll. |
+| GitHub-Actions per Major-Tag statt SHA gepinnt | `.github/workflows/ci.yml` | Auf einem public Repo eine Lieferketten-Erwägung. Repo-Default ist `read`. |
+
+### Empfehlungen aus dem Schluss-Review
+
+1. **Typ-bewusstes Linting einschalten.** `@typescript-eslint/no-floating-promises` hätte den
+   `void fs.mkdir(...)`-Flake gefunden, der eine Fix-Runde und die halbe CI-Glaubwürdigkeit
+   gekostet hat. Braucht `parserOptions.projectService` — die Solution-tsconfig unterstützt das
+   jetzt.
+2. **Den CI-Check auf `main` als erforderlich schalten.** Ein Gate, das nichts erzwingt, ist eine
+   Empfehlung.
+3. **Zählbasierte Regressionswächter durch die Ausgabe der Werkzeuge ersetzen.** vitest meldet
+   übersprungene Tests, `tsc` Fehlerzahlen, eslint Trefferzahlen. Ein `grep`, der das annähert,
+   kann in die beruhigende Richtung falsch liegen — die schlimmste Art.
+4. **Wer im Kommentar behauptet, was Code früher tat, zitiert die Zeile, die es belegt.** Phase 7
+   produzierte zwei selbstbewusst falsche Begründungen; die zweite kam im Commit direkt nach der
+   Korrektur der ersten. Ein Review-Durchgang reicht gegen dieses Muster nicht.
