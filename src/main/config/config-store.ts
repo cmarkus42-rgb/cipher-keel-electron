@@ -49,6 +49,11 @@ export interface CipherKeelConfig {
     enabled: boolean
     piperVoice: string
   }
+  llm: {
+    ollamaHost: string
+    ollamaPort: number
+    ollamaModel: string
+  }
   projects: {
     list: ProjectRecord[]
     activeId: string | null
@@ -81,6 +86,11 @@ const defaults: CipherKeelConfig = {
   voice: {
     enabled: true,
     piperVoice: 'de_DE-cipher_adult-medium',
+  },
+  llm: {
+    ollamaHost: '127.0.0.1',
+    ollamaPort: 11434,
+    ollamaModel: 'gemma3:12b',
   },
   projects: {
     list: [],
