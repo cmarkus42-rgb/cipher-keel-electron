@@ -77,3 +77,6 @@ export function errorMessage(value: unknown): string {
   }
   return 'Unbekannter Fehler'
 }
+
+// ci-proof: deliberate type error — a string is not assignable to number.
+export const CI_PROOF_TYPE_ERROR: number = 'not a number'
