@@ -46,5 +46,5 @@ jobs:
         run: npm test
 
       - name: Build
-        # Faengt Bruch in der electron-vite-Konfiguration, den keine Unit ueberdeckt.
+        # Catches breakage in the electron-vite configuration that no unit test covers.
         run: npm run build
