@@ -9,11 +9,10 @@
  */
 
 import { createHash } from 'crypto'
-import { readFileSync, writeFileSync, renameSync, readdirSync, statSync, existsSync, unlinkSync } from 'fs'
+import { readFileSync, writeFileSync, renameSync, readdirSync, statSync, existsSync } from 'fs'
 import { join, relative, extname, basename } from 'path'
 import type Database from 'better-sqlite3'
 import { GraphWriter } from './writer'
-import type { NodeKind } from './node-types'
 import { isValidKind } from './node-types'
 import { isValidEdgeType } from './edge-types'
 

@@ -21,7 +21,7 @@ describe('CF Risk Review (CK-P3CF-005)', () => {
     phaseUid = phase.uid
   })
 
-  afterEach(() => { db?.open && db.close() })
+  afterEach(() => { if (db?.open) db.close() })
 
   it('creates gate_befund with gate_typ risk-review', () => {
     const result = createRiskReview(writer, {

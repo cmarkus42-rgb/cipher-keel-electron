@@ -1,9 +1,4 @@
 /// <reference types="vite/client" />
 
-import type { CipherKeelApi } from '../preload'
-
-declare global {
-  interface Window {
-    cipherKeel: CipherKeelApi
-  }
-}
+// window.cipherKeel is declared once, in preload-api.d.ts — see that file's
+// doc comment for why a second declaration used to live here.

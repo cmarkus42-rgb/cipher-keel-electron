@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push to the same branch supersedes the running job.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    # macOS is required, not a convenience: tmux, Unix domain sockets and the
+    # Keychain are macOS-bound (see "Out of scope" in the completion roadmap).
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          # The compute part of the pipeline takes about ten seconds; runtime
+          # is decided by the download. Without this cache every run would be costly.
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        # Its own gate, not part of `test`: vitest transforms TypeScript via
+        # esbuild and does not check types while doing so. An IPC channel in
+        # the wrong union would not make the test suite red — only tsc catches that.
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        # Catches breakage in the electron-vite configuration that no unit test covers.
+        run: npm run build

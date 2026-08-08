@@ -54,7 +54,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  db?.open && db.close()
+  if (db?.open) db.close()
 })
 
 describe('phase_skip_status template (PROC-004)', () => {

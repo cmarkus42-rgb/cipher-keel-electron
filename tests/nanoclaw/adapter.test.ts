@@ -4,7 +4,7 @@
  * Covers: isAvailable, getCapabilities, sendPrompt, adapter metadata.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { NanoClawChannelAdapter } from '../../src/main/nanoclaw/adapter'
 import { NanoClawBridge } from '../../src/main/nanoclaw/bridge'
 

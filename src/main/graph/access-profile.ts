@@ -10,7 +10,7 @@
  */
 
 import { RollenTyp, type PresetRahmen } from '../preset/schema'
-import { isValidKind, type NodeKind } from './node-types'
+import { isValidKind } from './node-types'
 
 // ---------------------------------------------------------------------------
 // AccessProfile

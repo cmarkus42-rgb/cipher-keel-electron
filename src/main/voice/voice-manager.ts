@@ -16,7 +16,7 @@ import path from 'node:path'
 import { STTRouter, type STTRouterConfig } from './stt-router'
 import { PiperTTS } from './tts-piper'
 import { MacOSTTS } from './tts-macos'
-import { VoiceInputRouter, type VoiceInputRouterDeps } from './voice-input-router'
+import { VoiceInputRouter } from './voice-input-router'
 import { VoiceStateMachine, VoiceState } from './voice-state'
 import type { TTSEngine } from './tts-engine'
 

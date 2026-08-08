@@ -8,7 +8,7 @@ import { useState, useEffect, useRef } from 'react'
 import { type WizardData } from '../KickoffWizard'
 import { errorMessage } from '../../../shared/service-status'
 
-const api = () => (window as any).cipherKeel
+const api = () => window.cipherKeel
 
 const PHASE_NAMES = [
   'ideation',
@@ -38,9 +38,8 @@ export function StepGraphInit({ data }: StepGraphInitProps) {
     initiated.current = true
 
     setStatus('running')
-    api()
-      .invoke('graph:init-project', data.rootPath)
-      .then((result: { ok: boolean; phaseUids?: string[]; error?: unknown }) => {
+    ;(api().invoke('graph:init-project', data.rootPath) as Promise<{ ok: boolean; phaseUids?: string[]; error?: unknown }>)
+      .then((result) => {
         if (result.ok) {
           setPhaseUids(result.phaseUids ?? [])
           setStatus('done')

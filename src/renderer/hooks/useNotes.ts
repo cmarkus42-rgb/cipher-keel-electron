@@ -8,7 +8,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { NoteInfo, NoteContent, TagRepository, TagIndexData } from '../../shared/types'
 
-const api = () => (window as any).cipherKeel
+const api = () => window.cipherKeel
 
 export function useNotes() {
   const [notes, setNotes] = useState<NoteInfo[]>([])
@@ -19,9 +19,9 @@ export function useNotes() {
   const refresh = useCallback(async () => {
     try {
       const [list, tags, idx] = await Promise.all([
-        api().notes.list(),
-        api().notes.tags(),
-        api().notes.tagIndex().catch(() => ({ tagToNoteIds: {}, classValueCounts: {}, totalNotes: 0, builtAt: '' } as TagIndexData)),
+        api().notes.list() as Promise<NoteInfo[]>,
+        api().notes.tags() as Promise<TagRepository>,
+        (api().notes.tagIndex() as Promise<TagIndexData>).catch(() => ({ tagToNoteIds: {}, classValueCounts: {}, totalNotes: 0, builtAt: '' } as TagIndexData)),
       ])
       setNotes(list)
       setTagRepo(tags)
@@ -78,7 +78,7 @@ export function useNotes() {
   }, [])
 
   const autoTag = useCallback(async (content: string): Promise<string[] | null> => {
-    return api().notes.autoTag(content)
+    return api().notes.autoTag(content) as Promise<string[] | null>
   }, [])
 
   return {

@@ -16,7 +16,6 @@ import * as fs from 'fs'
 import { NanoClawBridge } from '../../src/main/nanoclaw/bridge'
 import { NanoClawChannelAdapter } from '../../src/main/nanoclaw/adapter'
 import {
-  buildInboundMessage,
   CHANNEL_TYPE,
   PLATFORM_ID,
 } from '../../src/main/nanoclaw/types'

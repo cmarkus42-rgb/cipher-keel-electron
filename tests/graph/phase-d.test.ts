@@ -17,7 +17,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  db?.open && db.close()
+  if (db?.open) db.close()
 })
 
 // -------------------------------------------------------------------
@@ -63,8 +63,9 @@ describe('Schema validation (CK-GRAPH-013)', () => {
     try {
       writer.upsertNode({ kind: 'github_repo', title: 'R', frontmatter: {} })
       expect.fail('Should have thrown')
-    } catch (e: any) {
-      expect(e.message).toContain('url')
+    } catch (e: unknown) {
+      expect(e).toBeInstanceOf(SchemaError)
+      expect((e as SchemaError).message).toContain('url')
     }
   })
 })
@@ -82,7 +83,7 @@ describe('Idempotent upsert (CK-GRAPH-012)', () => {
     expect(r2.created).toBe(false)
     expect(r1.uid).toBe(r2.uid)
 
-    const count = db.prepare('SELECT COUNT(*) as c FROM node').get() as any
+    const count = db.prepare('SELECT COUNT(*) as c FROM node').get() as { c: number }
     expect(count.c).toBe(1)
   })
 
@@ -282,7 +283,7 @@ describe('deleteNode', () => {
 describe('FTS sync', () => {
   it('inserted node is searchable via FTS', () => {
     writer.upsertNode({ kind: 'note', title: 'Knowledge Graph', path: '/n.md', body: 'SQLite index' })
-    const results = db.prepare(`SELECT uid FROM node_fts WHERE node_fts MATCH 'Knowledge'`).all() as any[]
+    const results = db.prepare(`SELECT uid FROM node_fts WHERE node_fts MATCH 'Knowledge'`).all() as { uid: string }[]
     expect(results).toHaveLength(1)
   })
 

@@ -111,13 +111,9 @@ describe('chunkText (CK-GRAPH-031)', () => {
   it('chunks have overlap', () => {
     const text = 'First paragraph content here.\n\nSecond paragraph content here.\n\nThird paragraph.'
     const chunks = chunkText(text, { maxChunkSize: 50, overlap: 10 })
-    if (chunks.length >= 2) {
-      // Check that consecutive chunks have overlapping content
-      const c0end = chunks[0].text.slice(-10)
-      const c1start = chunks[1].text.slice(0, 20)
-      // There should be some shared text
-      expect(c1start.length).toBeGreaterThan(0)
-    }
+    expect(chunks.length).toBeGreaterThanOrEqual(2)
+    // Consecutive chunks' offset ranges should overlap
+    expect(chunks[1].startOffset).toBeLessThan(chunks[0].endOffset)
   })
 })
 
@@ -187,7 +183,7 @@ describe('Summary nodes (CK-GRAPH-027)', () => {
     })
 
     expect(uid).toBeTruthy()
-    const node = db.prepare('SELECT * FROM node WHERE uid = ?').get(uid) as any
+    const node = db.prepare('SELECT * FROM node WHERE uid = ?').get(uid) as { kind: string; frontmatter: string; body: string }
     expect(node.kind).toBe('note')
     expect(JSON.parse(node.frontmatter).notetyp).toBe('summary')
     expect(node.body).toContain('graph foundation')
@@ -212,7 +208,7 @@ describe('Summary nodes (CK-GRAPH-027)', () => {
     })
 
     expect(uid1).toBe(uid2) // Same natural key = same uid
-    const node = db.prepare('SELECT body FROM node WHERE uid = ?').get(uid2) as any
+    const node = db.prepare('SELECT body FROM node WHERE uid = ?').get(uid2) as { body: string }
     expect(node.body).toContain('Version 2')
   })
 
@@ -253,6 +249,13 @@ describe('Summary nodes (CK-GRAPH-027)', () => {
     const filtered = getSummaryNodes(db, p1.uid)
     expect(filtered).toHaveLength(1)
     expect(filtered[0].title).toBe('S1')
+
+    // Pins the fix in 26d18a0: the SQL alias must be `scopeUid` (camelCase),
+    // matching the declared SummaryNodeRow return type. Before that fix the
+    // alias was `scope_uid`, so `.scopeUid` on every returned row read
+    // undefined.
+    expect(all[0].scopeUid).toBeTruthy()
+    expect([p1.uid, p2.uid]).toContain(filtered[0].scopeUid)
   })
 
   it('stale summary detected by hygiene (CK-GRAPH-027 acceptance)', () => {
@@ -308,6 +311,8 @@ describe('traceHerkunft (CK-GRAPH-035)', () => {
     expect(uids).toContain(subAnf.uid)
     // rootAnf should be reachable via subAnf's verfeinert edge
     expect(uids).toContain(rootAnf.uid)
+    // ent should be reachable via art's setzt_um edge
+    expect(uids).toContain(ent.uid)
   })
 
   it('includes erzeugt_von link to anlass', () => {
@@ -421,12 +426,12 @@ describe('Token-sparende Performance (CK-GRAPH-032)', () => {
   })
 
   it('summary nodes reduce required get_node calls', () => {
-    const { phase, art, tst } = buildHerkunftsKette(db)
+    const { phase } = buildHerkunftsKette(db)
 
     // Without summary: agent needs to load each child node
     const childCount = db.prepare(
       'SELECT COUNT(*) as cnt FROM edge WHERE dst = ?'
-    ).get(phase.uid) as any
+    ).get(phase.uid) as { cnt: number }
 
     // With summary: one summary load covers all children
     upsertSummaryNode(db, {
@@ -450,7 +455,7 @@ describe('MaintenanceHelper interface (CK-GRAPH-048)', () => {
   it('interface is importable and type-checkable', async () => {
     // This is a compile-time check — if this test file compiles, the interface works.
     // The actual implementation is M2/M5 concern.
-    const { type } = await import('../../src/main/graph/chunking')
+    await import('../../src/main/graph/chunking')
     // Interface exists as a TypeScript construct — runtime check just confirms module loads
     expect(true).toBe(true)
   })

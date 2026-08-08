@@ -80,7 +80,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  db?.open && db.close()
+  if (db?.open) db.close()
 })
 
 function makePhase(name: string, position: number) {

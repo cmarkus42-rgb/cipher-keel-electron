@@ -7,7 +7,7 @@
 import { useState, useEffect } from 'react'
 import { type WizardData } from '../KickoffWizard'
 
-const api = () => (window as any).cipherKeel
+const api = () => window.cipherKeel
 
 interface StepGitInitProps {
   data: WizardData
@@ -21,9 +21,8 @@ export function StepGitInit({ data, onChange }: StepGitInitProps) {
   useEffect(() => {
     if (!data.rootPath) return
     setChecking(true)
-    api()
-      .invoke('git:has-repo', data.rootPath)
-      .then((result: { hasRepo: boolean }) => {
+    ;(api().invoke('git:has-repo', data.rootPath) as Promise<{ hasRepo: boolean }>)
+      .then((result) => {
         setHasRepo(result.hasRepo)
         if (result.hasRepo) {
           // Already a repo — disable and force initGit:false

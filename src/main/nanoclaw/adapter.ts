@@ -13,7 +13,6 @@ import type {
   AgentAdapter,
   LaunchCommand,
   LaunchOpts,
-  AdapterContext,
   ProjectInstructions,
   SendOpts,
   OutputEvent,
@@ -144,7 +143,11 @@ Multi-model routing: different agent groups can use different providers.
    * to receive them. CK-ENT-026
    */
   async executeCommand(command: string): Promise<string> {
-    const sent = this.bridge.sendMessage(command)
+    // No tmux pane / thread context is available at this call site (unlike
+    // sendPrompt, which derives threadId from tmuxTarget) — bridge.sendMessage's
+    // threadId param is typed `string | null` precisely to allow this: null
+    // routes the message without pinning it to a specific NanoClaw thread.
+    const sent = this.bridge.sendMessage(command, null)
     if (!sent) {
       throw new Error('[NanoClawChannelAdapter] executeCommand failed — bridge is not connected')
     }

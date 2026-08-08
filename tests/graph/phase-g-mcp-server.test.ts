@@ -8,10 +8,30 @@ import type Database from 'better-sqlite3'
 import { openGraphDb } from '../../src/main/graph/db'
 import { GraphWriter } from '../../src/main/graph/writer'
 import { GraphMcpServer, TOOL_DEFINITIONS } from '../../src/main/graph/mcp-server'
-import type { JsonRpcRequest, JsonRpcResponse } from '../../src/main/graph/mcp-server'
+import type { JsonRpcRequest } from '../../src/main/graph/mcp-server'
 
 function makeReq(method: string, params?: unknown, id: number = 1): JsonRpcRequest {
   return { jsonrpc: '2.0', id, method, params }
+}
+
+// -------------------------------------------------------------------
+// Result shapes — JsonRpcResponse.result is `unknown` on the wire;
+// these mirror what GraphMcpServer actually puts there (see
+// src/main/graph/mcp-server.ts handleRequest / handleToolCall).
+// -------------------------------------------------------------------
+
+interface McpInitializeResult {
+  serverInfo: { name: string; version: string }
+  capabilities: { tools: Record<string, unknown> }
+}
+
+interface McpToolsListResult {
+  tools: Array<{ name: string }>
+}
+
+interface McpToolCallResult {
+  content: Array<{ type: string; text: string }>
+  isError?: boolean
 }
 
 // -------------------------------------------------------------------
@@ -33,7 +53,7 @@ describe('MCP Server (CK-GRAPH-037)', () => {
   it('responds to initialize with server info', () => {
     const res = server.handleRequest(makeReq('initialize'))
     expect(res.error).toBeUndefined()
-    const result = res.result as any
+    const result = res.result as unknown as McpInitializeResult
     expect(result.serverInfo.name).toBe('cipher-keel-graph')
     expect(result.capabilities.tools).toBeDefined()
   })
@@ -43,13 +63,13 @@ describe('MCP Server (CK-GRAPH-037)', () => {
   it('lists exactly 7 tools', () => {
     const res = server.handleRequest(makeReq('tools/list'))
     expect(res.error).toBeUndefined()
-    const tools = (res.result as any).tools
+    const tools = (res.result as unknown as McpToolsListResult).tools
     expect(tools).toHaveLength(7)
   })
 
   it('tool names match expected set', () => {
     const res = server.handleRequest(makeReq('tools/list'))
-    const names = (res.result as any).tools.map((t: any) => t.name)
+    const names = (res.result as unknown as McpToolsListResult).tools.map((t) => t.name)
     expect(names).toContain('graph_search')
     expect(names).toContain('graph_get_node')
     expect(names).toContain('graph_expand')
@@ -89,7 +109,7 @@ describe('MCP Server (CK-GRAPH-037)', () => {
     }))
 
     expect(res.error).toBeUndefined()
-    const content = (res.result as any).content[0]
+    const content = (res.result as unknown as McpToolCallResult).content[0]
     expect(content.type).toBe('text')
     const data = JSON.parse(content.text)
     expect(data.length).toBeGreaterThan(0)
@@ -108,7 +128,7 @@ describe('MCP Server (CK-GRAPH-037)', () => {
     }))
 
     expect(res.error).toBeUndefined()
-    const data = JSON.parse((res.result as any).content[0].text)
+    const data = JSON.parse((res.result as unknown as McpToolCallResult).content[0].text)
     expect(data.uid).toBe(node.uid)
     expect(data.body).toBe('body content')
   })
@@ -120,7 +140,7 @@ describe('MCP Server (CK-GRAPH-037)', () => {
     }))
 
     expect(res.error).toBeUndefined()
-    const result = res.result as any
+    const result = res.result as unknown as McpToolCallResult
     expect(result.isError).toBe(true)
     const data = JSON.parse(result.content[0].text)
     expect(data.error).toContain('not found')
@@ -140,7 +160,7 @@ describe('MCP Server (CK-GRAPH-037)', () => {
     }))
 
     expect(res.error).toBeUndefined()
-    const data = JSON.parse((res.result as any).content[0].text)
+    const data = JSON.parse((res.result as unknown as McpToolCallResult).content[0].text)
     expect(data.neighbors.length).toBeGreaterThan(0)
   })
 
@@ -156,7 +176,7 @@ describe('MCP Server (CK-GRAPH-037)', () => {
     }))
 
     expect(res.error).toBeUndefined()
-    const data = JSON.parse((res.result as any).content[0].text)
+    const data = JSON.parse((res.result as unknown as McpToolCallResult).content[0].text)
     expect(data.count).toBe(1)
   })
 
@@ -167,7 +187,7 @@ describe('MCP Server (CK-GRAPH-037)', () => {
     }))
 
     expect(res.error).toBeUndefined()
-    const result = res.result as any
+    const result = res.result as unknown as McpToolCallResult
     expect(result.isError).toBe(true)
   })
 
@@ -180,7 +200,7 @@ describe('MCP Server (CK-GRAPH-037)', () => {
     }))
 
     expect(res.error).toBeUndefined()
-    const data = JSON.parse((res.result as any).content[0].text)
+    const data = JSON.parse((res.result as unknown as McpToolCallResult).content[0].text)
     expect(data.uid).toBeTruthy()
     expect(data.created).toBe(true)
   })
@@ -191,7 +211,7 @@ describe('MCP Server (CK-GRAPH-037)', () => {
       arguments: { kind: 'bogus', title: 'Bad' }
     }))
 
-    const result = res.result as any
+    const result = res.result as unknown as McpToolCallResult
     expect(result.isError).toBe(true)
   })
 
@@ -208,7 +228,7 @@ describe('MCP Server (CK-GRAPH-037)', () => {
     }))
 
     expect(res.error).toBeUndefined()
-    const data = JSON.parse((res.result as any).content[0].text)
+    const data = JSON.parse((res.result as unknown as McpToolCallResult).content[0].text)
     expect(data.type).toBe('setzt_um')
     expect(data.created).toBe(true)
   })
@@ -222,7 +242,7 @@ describe('MCP Server (CK-GRAPH-037)', () => {
     }))
 
     expect(res.error).toBeUndefined()
-    const data = JSON.parse((res.result as any).content[0].text)
+    const data = JSON.parse((res.result as unknown as McpToolCallResult).content[0].text)
     expect(data.operation).toBe('hygiene')
   })
 
@@ -233,7 +253,7 @@ describe('MCP Server (CK-GRAPH-037)', () => {
       name: 'graph_destroy_everything'
     }))
 
-    const result = res.result as any
+    const result = res.result as unknown as McpToolCallResult
     expect(result.isError).toBe(true)
   })
 })

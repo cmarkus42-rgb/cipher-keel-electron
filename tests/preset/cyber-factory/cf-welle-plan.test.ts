@@ -14,7 +14,7 @@ describe('CF Welle Plan (CK-P3CF-002)', () => {
     writer = new GraphWriter(db)
   })
 
-  afterEach(() => { db?.open && db.close() })
+  afterEach(() => { if (db?.open) db.close() })
 
   function createSubsystem(name: string, path: string) {
     return writer.upsertNode({

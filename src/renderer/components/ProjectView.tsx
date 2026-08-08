@@ -15,8 +15,6 @@ import { useKanban } from '../hooks/useKanban'
 import {
   clampTimelinePct,
   phaseNameToNumber,
-  MIN_TIMELINE_PCT,
-  MAX_TIMELINE_PCT,
   DEFAULT_TIMELINE_PCT,
 } from '../timeline-utils'
 import type { ArtifactData } from '../timeline-utils'
@@ -77,7 +75,7 @@ export function ProjectView({ projectPath, onArtifactOpen }: ProjectViewProps) {
   // degrading later), re-fetch both panes so a shown-degraded project window
   // updates rather than staying stale until the user does something else.
   useEffect(() => {
-    const api = (window as any).cipherKeel
+    const api = window.cipherKeel
     if (!api) return
     const unsub = api.on(SERVICES_STATUS_CHANGED, () => {
       reloadKanban()

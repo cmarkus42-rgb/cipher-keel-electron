@@ -67,7 +67,7 @@ describe('TriggerAttrs interface', () => {
   })
 
   it('niveau values A, B, C are all valid strings', () => {
-    const levels = ['A', 'B', 'C']
+    const levels: Array<'A' | 'B' | 'C'> = ['A', 'B', 'C']
     for (const n of levels) {
       const attrs: TriggerAttrs = {
         entitaets_id: 'x',

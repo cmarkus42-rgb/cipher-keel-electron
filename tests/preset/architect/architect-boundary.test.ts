@@ -1,6 +1,6 @@
 // tests/preset/architect/architect-boundary.test.ts
 import { describe, it, expect } from 'vitest'
-import { checkArchitectBoundary, checkCfBoundary } from '../../../src/main/preset/capability-lint'
+import { checkArchitectBoundary } from '../../../src/main/preset/capability-lint'
 
 describe('Architect Boundary Check (CK-P3A-013)', () => {
   it('returns warning for .ts file write', () => {

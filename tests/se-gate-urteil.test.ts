@@ -19,7 +19,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  db?.open && db.close()
+  if (db?.open) db.close()
 })
 
 function seedPhase(name: string, position: number) {
@@ -79,7 +79,7 @@ describe('seGateUrteil (CK-3C-003)', () => {
 
 describe('createTrigger (CK-3C-003)', () => {
   it('creates a trigger node in the graph', async () => {
-    const phase = seedPhase('requirements', 2)
+    seedPhase('requirements', 2)
 
     await createTrigger(db, {
       entitaets_id: 'se-001',
@@ -258,7 +258,7 @@ describe('trigger_for_phase query template (CK-3C-003)', () => {
 
   it('returns only triggers targeting the specified phase', async () => {
     const phaseReq = seedPhase('requirements', 2)
-    const phaseArch = seedPhase('architecture', 3)
+    seedPhase('architecture', 3)
 
     // Trigger for requirements
     await createTrigger(db, {

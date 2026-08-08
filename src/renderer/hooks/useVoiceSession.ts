@@ -23,7 +23,7 @@ interface Toast {
   type: 'transcription' | 'dispatched' | 'error'
 }
 
-const api = () => (window as any).cipherKeel
+const api = () => window.cipherKeel
 
 export function useVoiceSession(focusedSessionId: string | null) {
   const [mode, setMode] = useState<VoiceMode>('off')
@@ -152,14 +152,14 @@ export function useVoiceSession(focusedSessionId: string | null) {
 
     // Activate STT
     try {
-      const availResult = await api().voice.available()
+      const availResult = await api().voice.available() as { available: boolean; reason?: string }
       if (!availResult.available) {
         setError(`Voice not available — ${availResult.reason ?? 'native modules missing'}`)
         setMode('off')
         return
       }
 
-      const result = await api().voice.startSession()
+      const result = await api().voice.startSession() as { ok: boolean; error?: string }
       if (!result.ok) {
         setError(result.error ?? 'Failed to start STT mode')
         setMode('off')
@@ -258,7 +258,7 @@ export function useVoiceSession(focusedSessionId: string | null) {
   // CK-VOICE-009: Check voice availability on mount — detect disabled config
   // CK-VOICE-010: No mic permission dialog when voice is disabled
   useEffect(() => {
-    api().voice.available().then((result: { available: boolean; reason?: string }) => {
+    (api().voice.available() as Promise<{ available: boolean; reason?: string }>).then((result) => {
       if (!result.available && result.reason === 'Voice disabled in config') {
         setDisabled(true)
       }

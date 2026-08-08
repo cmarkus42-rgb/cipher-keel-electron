@@ -8,7 +8,6 @@ import {
   estimateTokens,
   lintCapabilities,
   warnOversizedPackages,
-  type LintResult,
   type PackageContent,
 } from '../src/main/preset/capability-lint'
 import { LoaderType, type CapabilityPackage } from '../src/main/preset/capability-schema'

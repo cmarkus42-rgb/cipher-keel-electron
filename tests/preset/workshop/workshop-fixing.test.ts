@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { dispatchFixingItem, classifyItem, type FixingItem } from '../../../src/main/preset/workshop/workshop-fixing-dispatch'
+import { dispatchFixingItem, classifyItem } from '../../../src/main/preset/workshop/workshop-fixing-dispatch'
 
 describe('Workshop Fixing Dispatch (CK-PROC-015)', () => {
   it('classifies BUG items', () => {

@@ -19,7 +19,7 @@ describe('Vault Index (CK-NOTES-008)', () => {
   })
 
   afterEach(() => {
-    db?.open && db.close()
+    if (db?.open) db.close()
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 

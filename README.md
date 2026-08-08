@@ -5,14 +5,16 @@
 <p>
   <img alt="Status" src="https://img.shields.io/badge/status-pre--alpha-orange?style=flat-square&labelColor=000000">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square&labelColor=000000">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-1390%20passing-brightgreen?style=flat-square&labelColor=000000">
+  <img alt="CI" src="https://github.com/cmarkus42-rgb/cipher-keel-electron/actions/workflows/ci.yml/badge.svg">
   <img alt="Platform" src="https://img.shields.io/badge/platform-macOS-lightgrey?style=flat-square&labelColor=000000">
 </p>
 
 > **Pre-alpha — source only.** The modules, architecture and test suite exist and are green.
-> There is no packaged build, no release, and no end-to-end click-through UX yet. Read this
-> repository as a working system under construction, not as a product you can install.
-> See [Current state](#current-state) for exactly what is and isn't wired up.
+> There is no packaged build and no release. The click-through path — create a project,
+> open the grid, start a session — is wired end to end, but there is no accompanying
+> product experience beyond it. Read this repository as a working system under
+> construction, not as a product you can install. See [Current state](#current-state)
+> for exactly what is and isn't wired up.
 
 ---
 
@@ -164,7 +166,7 @@ improvising.
 
 ## Current state
 
-All 1390 tests pass across 93 test files (`npm test`, ~5s).
+All 1511 tests pass across 105 test files (`npm test`, ~5s).
 
 | Phase | Content | Status |
 |-------|---------|--------|
@@ -178,22 +180,28 @@ All 1390 tests pass across 93 test files (`npm test`, ~5s).
 | Phase 3c | Systems Engineer preset, entity assembly | Done, audited |
 | Phase 4 | Architect and Cyber Factory presets | Done, audited |
 | Phase 5 | Stabilisation — Kanban, session snapshots, vault validator, status bar | Done, audited |
+| Phase 6 | Service lifecycle, event bus, degraded-state surfacing, a deterministic kickoff → project window → grid → session path | Done |
+| Phase 7 | CI pipeline — typecheck, lint, test and build gating every push and PR | Done |
 
-The last five phases each ended in a formal audit with a RELEASE verdict; findings are
-recorded in `docs/superpowers/specs/`.
+Phases 3a through 5 each ended in a formal audit with a RELEASE verdict; findings are
+recorded in `docs/superpowers/specs/`. Phase 6 and Phase 7 completed without that same
+formal audit step; their work is tracked in `docs/superpowers/plans/` instead.
 
 ### What is not there yet
 
 - **No packaged build.** `electron-builder` is configured for a macOS DMG, but no release
   has been produced. Run from source
-- **No end-to-end UX flow.** The main window is a session grid; the project window with
-  timeline and Kanban is a second window. The components exist and are tested, but they
-  are not yet joined into one continuous path from kickoff to shipped code
+- **Entity prompt assembly is not wired into session launch.** Preset selection determines
+  which of the four entities a session represents, and starting one creates a real, project-bound
+  tmux session — that path was verified end to end in the running app. What is missing is the
+  next step: `assembleEntityClaudeMd`, which would inject the entity's role-specific `CLAUDE.md`
+  content into the session, has no production caller yet
 - **macOS only.** tmux plus Unix domain sockets plus keychain. Linux is plausible, Windows is not planned
-- **Idle RAM budget unverified.** The <300 MB target is architecturally supported
-  (lazy init, WAL, no in-memory cache) but has not been measured in a running Electron process
-- **Codex and Gemini adapters** are a design target, not implemented
-- **No CI.** Tests run locally
+- **Idle RAM budget and cold-start time unverified.** The <300 MB / <5s targets are
+  architecturally supported (lazy init, WAL, no in-memory cache, deferred service start)
+  but have not been measured against a production build
+- **Codex and Gemini adapters** are a design target, not implemented — `AdapterRegistry`
+  currently has exactly one implementation (`claude-code`)
 
 ## Repository layout
 
@@ -217,33 +225,42 @@ src/renderer/      — React 19 UI: SessionGrid, ProjectView, Timeline, KanbanBo
                      KickoffWizard, NotesCell
 src/shared/        — Typed IPC channels and domain types
 src/preload.ts     — contextBridge API (window.cipherKeel)
-tests/             — 1390 Vitest tests
+tests/             — 1511 Vitest tests
 docs/superpowers/  — Implementation plans, design specs and audit reports per phase
 ```
 
 ## Development
 
-**Requirements:** macOS, Node.js 20+, tmux, and a working Claude Code CLI for live sessions.
+**Requirements:** macOS, Node.js 22 (pinned in [`.nvmrc`](.nvmrc) — the lockfile is
+npm-major-sensitive, see [`CONTRIBUTING.md`](CONTRIBUTING.md)), tmux, and a working
+Claude Code CLI for live sessions.
 
 ```bash
 git clone https://github.com/cmarkus42-rgb/cipher-keel-electron.git
 cd cipher-keel-electron
-npm install
-npx electron-rebuild   # required — see below
+npm ci
+npm run rebuild-native   # required to actually run the app — see below
 npm run dev
 ```
 
-`better-sqlite3` is a native Node addon and must be compiled against the Electron version
-in use. Without `npx electron-rebuild` after `npm install` you get a `NODE_MODULE_VERSION`
-mismatch at startup. Re-run it after every `npm install` and every Electron upgrade.
+`better-sqlite3` is a native Node addon and has to exist as two separate builds: one
+compiled against Electron's ABI (used when the app runs) and one against Node's ABI
+(used by Vitest). `npm run rebuild-native` produces the Electron-ABI build and then
+restores the Node-ABI one, in that order — it is deliberately two chained commands, and
+running only one of them leaves the other build broken. Skip this step and the tests
+still pass (they only exercise the Node-ABI side), while the app's knowledge graph
+silently fails to load. Re-run it after every dependency install and every Electron
+upgrade. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full explanation and the
+other setup traps (Node version pinning, the `xterm` peer-dependency override).
 
 | Command | Purpose |
 |---------|---------|
 | `npm run dev` | electron-vite dev server with HMR |
 | `npm run build` | Production build |
 | `npm start` | Launch Electron (after build) |
+| `npm run rebuild-native` | Rebuild `better-sqlite3` for Electron's ABI, then restore the Node-ABI build |
 | `npm test` | Vitest suite |
-| `npm run typecheck` | TypeScript check, no emit |
+| `npm run typecheck` | TypeScript check (`tsc -b`), no emit |
 | `npm run lint` | ESLint |
 
 **Stack:** Electron 42, React 19, TypeScript (strict), Vite / electron-vite, xterm.js

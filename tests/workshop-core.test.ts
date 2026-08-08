@@ -61,8 +61,8 @@ function makeRoutingDecision(overrides: Partial<RoutingDecision> = {}): RoutingD
   }
 }
 
-function makeMockGraphDb(): RoutingGraphDb & { nodes: Array<{ labels: string[]; props: Record<string, string> }> } {
-  const nodes: Array<{ labels: string[]; props: Record<string, string> }> = []
+function makeMockGraphDb(): RoutingGraphDb & { nodes: Array<{ labels: string[]; properties: Record<string, string> }> } {
+  const nodes: Array<{ labels: string[]; properties: Record<string, string> }> = []
   return {
     nodes,
     createNode(labels, properties): RoutingNodeId {

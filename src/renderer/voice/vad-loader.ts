@@ -7,9 +7,32 @@
  * Ported from cipher-mux 0.9.x.
  */
 
+// Shape of the `vad-web` UMD bundle loaded via <script> in index.html
+// (CK-NFR-006: local ONNX/WASM assets, no npm package — no upstream types).
+interface MicVADFactory {
+  new: (config: {
+    getStream: () => Promise<MediaStream>
+    pauseStream: () => Promise<void>
+    resumeStream: () => Promise<MediaStream>
+    audioContext: AudioContext
+    baseAssetPath: string
+    onnxWASMBasePath: string
+    model: string
+    startOnLoad: boolean
+    positiveSpeechThreshold?: number
+    negativeSpeechThreshold?: number
+    redemptionFrames?: number
+    minSpeechFrames?: number
+    preSpeechPadFrames?: number
+    onSpeechStart: () => void
+    onSpeechEnd: (audio: Float32Array) => void
+    onVADMisfire?: () => void
+  }) => Promise<MicVADInstance>
+}
+
 declare global {
   interface Window {
-    vad?: { MicVAD: any }
+    vad?: { MicVAD: MicVADFactory }
     ort?: { env: { wasm: { numThreads: number } } }
   }
 }

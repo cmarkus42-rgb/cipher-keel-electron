@@ -27,7 +27,7 @@ describe('CF Rueckweg Protocol (CK-P3CF-006)', () => {
     subsystemUid = sub.uid
   })
 
-  afterEach(() => { db?.open && db.close() })
+  afterEach(() => { if (db?.open) db.close() })
 
   it('creates gate_befund with gate_typ architektur-bruch', () => {
     const result = reportArchitekturBruch(writer, {
@@ -52,7 +52,7 @@ describe('CF Rueckweg Protocol (CK-P3CF-006)', () => {
 
     // Verify the uebergabedokument exists
     const docs = graphQuery(db, { template: 'vault_index' })
-    const rueckweg = docs.rows.find((r: any) => r.uid === result.rueckwegDokUid)
+    const rueckweg = docs.rows.find((r: Record<string, unknown>) => r.uid === result.rueckwegDokUid)
     expect(rueckweg).toBeDefined()
   })
 })

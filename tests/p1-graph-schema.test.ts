@@ -40,7 +40,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  db?.open && db.close()
+  if (db?.open) db.close()
 })
 
 // ---------------------------------------------------------------------------
@@ -128,8 +128,9 @@ describe('Schema-Validation: ungueltige dokumentTyp abgelehnt (CK-P1-001)', () =
         frontmatter: { dokumentTyp: 'ungueltig' }
       })
       expect.fail('Should have thrown')
-    } catch (e: any) {
-      expect(e.message).toContain('dokumentTyp')
+    } catch (e: unknown) {
+      expect(e).toBeInstanceOf(SchemaError)
+      expect((e as SchemaError).message).toContain('dokumentTyp')
     }
   })
 })
@@ -348,7 +349,7 @@ describe('REQ_ID_PREFIXES (CK-P1-012)', () => {
   it('jeder Praefix hat eine Vergabe-Phase', () => {
     for (const [, value] of Object.entries(REQ_ID_PREFIXES)) {
       expect(value).toHaveProperty('phase')
-      expect((value as any).phase).toBeTruthy()
+      expect(value.phase).toBeTruthy()
     }
   })
 })

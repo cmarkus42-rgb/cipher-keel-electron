@@ -8,7 +8,7 @@
  * Frontmatter fuer den validateFrontmatter-Check.
  */
 
-import type { WorkItem } from './worker-task-format'
+import type { WorkItem } from './routing'
 import type { Fix } from './completeness-gate'
 
 // ---------------------------------------------------------------------------
@@ -77,7 +77,7 @@ function buildBody(run: WorkshopRun): string {
     const fix = fixMap.get(item.id)
     const status = fix ? fix.status : 'offen'
     const testcases = fix?.testcaseIds.join(', ') ?? '—'
-    return `- **${item.id}**: ${item.description} — Status: ${status} | Testcases: ${testcases}`
+    return `- **${item.id}**: ${item.titel} — Status: ${status} | Testcases: ${testcases}`
   })
 
   const aenderungen = run.fixes

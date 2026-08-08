@@ -6,13 +6,9 @@ import { graphQuery } from '../src/main/graph/query'
 import { deriveProfile } from '../src/main/graph/access-profile'
 import { ARCHITECT_RAHMEN, createArchitectRahmen } from '../src/main/preset/architect/architect-preset'
 import { CF_RAHMEN, createCfRahmen } from '../src/main/preset/cyber-factory/cf-preset'
-import { getArchitectCapabilities } from '../src/main/preset/architect/architect-capabilities'
-import { getCfCapabilities } from '../src/main/preset/cyber-factory/cf-capabilities'
 import { buildWellePlan } from '../src/main/preset/cyber-factory/cf-welle-plan'
 import { routeModel } from '../src/main/preset/cyber-factory/cf-model-routing'
 import { createRiskReview } from '../src/main/preset/cyber-factory/cf-risk-review'
-import { reportArchitekturBruch } from '../src/main/preset/cyber-factory/cf-rueckweg'
-import { assembleEntityClaudeMd } from '../src/main/session/assemble-entity'
 import { validatePresetRahmen } from '../src/main/preset/schema'
 import { CapabilityNiveau } from '../src/main/preset/niveau'
 import type Database from 'better-sqlite3'
@@ -26,7 +22,7 @@ describe('Phase 4 Integration', () => {
     writer = new GraphWriter(db)
   })
 
-  afterEach(() => { db?.open && db.close() })
+  afterEach(() => { if (db?.open) db.close() })
 
   it('Architect gets read:wide write:full via graphAnbindung override', () => {
     const profile = deriveProfile(ARCHITECT_RAHMEN)

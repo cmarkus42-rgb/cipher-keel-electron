@@ -18,7 +18,7 @@ import { StepGitHub } from './wizard/StepGitHub'
 import { StepToolConfig } from './wizard/StepToolConfig'
 import { errorMessage } from '../../shared/service-status'
 
-const api = () => (window as any).cipherKeel
+const api = () => window.cipherKeel
 
 // ---------------------------------------------------------------------------
 // WizardData — shared state passed through all steps
@@ -139,7 +139,7 @@ export function KickoffWizard({ onComplete, onCancel, onProjectCreated }: Kickof
                 ownerRepo: data.githubOwnerRepo,
               }
             : undefined,
-      })
+      }) as { ok: boolean; project: unknown; error?: unknown }
       if (result?.ok === false) {
         setError(errorMessage(result.error ?? 'Kickoff fehlgeschlagen'))
         // Befund 5: even a failed kickoff (e.g. degraded graph) can have created

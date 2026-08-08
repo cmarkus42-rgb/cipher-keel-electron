@@ -87,6 +87,15 @@ function validFmA(overrides: Record<string, unknown> = {}): Record<string, unkno
 
 describe('validateFrontmatter — Niveau A (CK-P1-002)', () => {
   it('accepts a fully populated Niveau-A frontmatter', () => {
+    // Guard against drift: the per-field loop below is parameterized over
+    // REQUIRED_FIELDS_NIVEAU_A, so it cannot detect that constant itself shrinking or
+    // growing (a dropped field would just generate no test case for it, silently). This
+    // literal is an independent oracle, deliberately not derived from the constant.
+    expect([...REQUIRED_FIELDS_NIVEAU_A].sort()).toEqual([
+      'dokument-typ', 'phase', 'phasenuebergang', 'stand', 'status',
+      'version', 'projekt', 'adressat', 'req-ids', 'graph-knoten-id',
+    ].sort())
+
     const result = validateFrontmatter(validFmA(), 'A')
     expect(result.valid).toBe(true)
     expect(result.errors).toHaveLength(0)
@@ -107,11 +116,7 @@ describe('validateFrontmatter — Niveau A (CK-P1-002)', () => {
   })
 
   // One test per required field
-  const requiredFields = [
-    'dokument-typ', 'phase', 'phasenuebergang', 'stand', 'status',
-    'version', 'projekt', 'adressat', 'req-ids', 'graph-knoten-id',
-  ]
-  for (const field of requiredFields) {
+  for (const field of REQUIRED_FIELDS_NIVEAU_A) {
     it(`rejects frontmatter missing required field '${field}'`, () => {
       const fm = validFmA()
       delete fm[field]
@@ -165,6 +170,8 @@ describe('validateFrontmatter — Niveau C (CK-P1-003)', () => {
       'version': 'v1.0',
       'projekt': 'cipher-keel',
     }
+    // Guard against drift: this literal must cover exactly the real Niveau-C field set.
+    expect(Object.keys(fm).sort()).toEqual([...REQUIRED_FIELDS_NIVEAU_C].sort())
     expect(validateFrontmatter(fm, 'C').valid).toBe(true)
   })
 

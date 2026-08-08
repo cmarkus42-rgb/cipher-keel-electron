@@ -21,7 +21,13 @@ export class BargeInMonitor {
   private onBargeIn: () => void
 
   private analyser: AnalyserNode | null = null
-  private dataBuffer: Float32Array | null = null
+  // Typed arrays became generic over their buffer type in TS 5.7+; DOM lib's
+  // AnalyserNode.getFloatTimeDomainData() requires Float32Array<ArrayBuffer>
+  // specifically (excluding SharedArrayBuffer), which is exactly what
+  // `new Float32Array(length)` below constructs — declaring the field with
+  // that same, more precise type (instead of the default-widened
+  // Float32Array<ArrayBufferLike>) keeps it assignable without a cast.
+  private dataBuffer: Float32Array<ArrayBuffer> | null = null
   private pollTimer: ReturnType<typeof setInterval> | null = null
 
   private enabled = false

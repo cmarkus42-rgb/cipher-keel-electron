@@ -9,7 +9,7 @@ import type Database from 'better-sqlite3'
 import { openGraphDb } from '../../src/main/graph/db'
 import { GraphWriter } from '../../src/main/graph/writer'
 import { graphSearch, graphGetNode, graphExpand } from '../../src/main/graph/search'
-import { graphQuery, graphSandboxedQuery, QUERY_TEMPLATES } from '../../src/main/graph/query'
+import { graphQuery, graphSandboxedQuery } from '../../src/main/graph/query'
 import { graphMaintain, MAINTAIN_OPERATIONS } from '../../src/main/graph/maintain'
 
 // -------------------------------------------------------------------
@@ -62,7 +62,10 @@ function buildTestGraph(db: Database.Database) {
 
   const repo = w.upsertNode({
     kind: 'github_repo', title: 'cipher-keel-electron',
-    path: null, frontmatter: {
+    // UpsertNodeInput.path is `path?: string` (optional, not nullable) —
+    // github_repo nodes have no filesystem path, so omit it rather than
+    // passing `null`.
+    frontmatter: {
       url: 'https://github.com/cipher/keel',
       owner: 'cipher',
       name: 'keel',
@@ -463,7 +466,7 @@ describe('graph_maintain (CK-GRAPH-024)', () => {
     w.linkEdge({ src: newD.uid, dst: old.uid, type: 'abgeloest_durch' })
 
     // old is still 'aktiv'
-    const before = db.prepare('SELECT status FROM node WHERE uid = ?').get(old.uid) as any
+    const before = db.prepare('SELECT status FROM node WHERE uid = ?').get(old.uid) as { status: string }
     expect(before.status).toBe('aktiv')
 
     const result = graphMaintain(db, { operation: 'konsolidierung' })
@@ -473,7 +476,7 @@ describe('graph_maintain (CK-GRAPH-024)', () => {
     }
 
     // After konsolidierung, old should be 'abgeloest'
-    const after = db.prepare('SELECT status FROM node WHERE uid = ?').get(old.uid) as any
+    const after = db.prepare('SELECT status FROM node WHERE uid = ?').get(old.uid) as { status: string }
     expect(after.status).toBe('abgeloest')
   })
 
@@ -551,7 +554,7 @@ describe('graphSandboxedQuery (CK-GRAPH-049)', () => {
 
   it('logs execution when logFn provided', () => {
     buildTestGraph(db)
-    const logs: any[] = []
+    const logs: { sql: string; timestamp: string; rows: number }[] = []
     graphSandboxedQuery(db, 'SELECT COUNT(*) as c FROM node', (entry) => logs.push(entry))
     expect(logs).toHaveLength(1)
     expect(logs[0]).toHaveProperty('sql')

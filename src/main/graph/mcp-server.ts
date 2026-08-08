@@ -16,6 +16,7 @@
  */
 
 import type Database from 'better-sqlite3'
+import { createInterface } from 'readline'
 import { graphSearch, graphGetNode, graphExpand } from './search'
 import { graphQuery, QUERY_TEMPLATES } from './query'
 import { graphMaintain, MAINTAIN_OPERATIONS } from './maintain'
@@ -360,9 +361,8 @@ export interface JsonRpcResponse {
  */
 export function startStdioServer(db: Database.Database): void {
   const server = new GraphMcpServer(db)
-  const readline = require('readline') as typeof import('readline')
 
-  const rl = readline.createInterface({ input: process.stdin, terminal: false })
+  const rl = createInterface({ input: process.stdin, terminal: false })
 
   rl.on('line', (line: string) => {
     if (!line.trim()) return

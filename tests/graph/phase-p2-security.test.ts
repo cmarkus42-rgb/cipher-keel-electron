@@ -13,6 +13,7 @@ import type Database from 'better-sqlite3'
 import { openGraphDb } from '../../src/main/graph/db'
 import { GraphWriter } from '../../src/main/graph/writer'
 import { graphExpand } from '../../src/main/graph/search'
+import type { EdgeType } from '../../src/main/graph/edge-types'
 import { graphQuery } from '../../src/main/graph/query'
 import {
   GraphMcpServer,
@@ -31,6 +32,13 @@ import type { JsonRpcRequest } from '../../src/main/graph/mcp-server'
 
 function makeReq(method: string, params?: unknown, id: number = 1): JsonRpcRequest {
   return { jsonrpc: '2.0', id, method, params }
+}
+
+// JsonRpcResponse.result is `unknown` on the wire; this mirrors what
+// GraphMcpServer.handleRequest/handleToolCall actually puts there.
+interface McpToolCallResult {
+  content: Array<{ type: string; text: string }>
+  isError?: boolean
 }
 
 // -------------------------------------------------------------------
@@ -88,7 +96,7 @@ describe('P2-SEC-1: SQL parameterized queries', () => {
   it('graphExpand rejects invalid edge_type before query', () => {
     const anf = w.upsertNode({ kind: 'anforderung', title: 'REQ-BAD', path: '/rb.md' })
     expect(() => {
-      graphExpand(db, { uid: anf.uid, depth: 1, edge_type: "'; DROP TABLE node; --" as any })
+      graphExpand(db, { uid: anf.uid, depth: 1, edge_type: "'; DROP TABLE node; --" as unknown as EdgeType })
     }).toThrow(/Invalid edge_type/)
   })
 
@@ -289,7 +297,7 @@ describe('P2-SEC-2: MCP runtime validation', () => {
         name: 'graph_search',
         arguments: { query: 42 }
       }))
-      const result = res.result as any
+      const result = res.result as unknown as McpToolCallResult
       expect(result.isError).toBe(true)
       expect(result.content[0].text).toContain('query')
     })
@@ -299,7 +307,7 @@ describe('P2-SEC-2: MCP runtime validation', () => {
         name: 'graph_get_node',
         arguments: {}
       }))
-      const result = res.result as any
+      const result = res.result as unknown as McpToolCallResult
       expect(result.isError).toBe(true)
       expect(result.content[0].text).toContain('uid')
     })
@@ -309,7 +317,7 @@ describe('P2-SEC-2: MCP runtime validation', () => {
         name: 'graph_expand',
         arguments: { uid: ['not', 'a', 'string'] }
       }))
-      const result = res.result as any
+      const result = res.result as unknown as McpToolCallResult
       expect(result.isError).toBe(true)
     })
 
@@ -318,7 +326,7 @@ describe('P2-SEC-2: MCP runtime validation', () => {
         name: 'graph_upsert_node',
         arguments: { title: 'No kind' }
       }))
-      const result = res.result as any
+      const result = res.result as unknown as McpToolCallResult
       expect(result.isError).toBe(true)
       expect(result.content[0].text).toContain('kind')
     })
@@ -328,7 +336,7 @@ describe('P2-SEC-2: MCP runtime validation', () => {
         name: 'graph_link',
         arguments: { src: 123, dst: 'ABC' }
       }))
-      const result = res.result as any
+      const result = res.result as unknown as McpToolCallResult
       expect(result.isError).toBe(true)
       expect(result.content[0].text).toContain('src')
     })
@@ -338,7 +346,7 @@ describe('P2-SEC-2: MCP runtime validation', () => {
         name: 'graph_maintain',
         arguments: {}
       }))
-      const result = res.result as any
+      const result = res.result as unknown as McpToolCallResult
       expect(result.isError).toBe(true)
       expect(result.content[0].text).toContain('operation')
     })
@@ -348,7 +356,7 @@ describe('P2-SEC-2: MCP runtime validation', () => {
         name: 'graph_query',
         arguments: { template: true }
       }))
-      const result = res.result as any
+      const result = res.result as unknown as McpToolCallResult
       expect(result.isError).toBe(true)
       expect(result.content[0].text).toContain('template')
     })

@@ -3,9 +3,8 @@
  * CK-GRAPH-001, 002, 028, 038, 043, 044
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import Database from 'better-sqlite3'
-import * as sqliteVec from 'sqlite-vec'
 import { applySchema } from '../../src/main/graph/schema'
 import { openGraphDb } from '../../src/main/graph/db'
 import { deterministicUlid, freshUlid, isValidUlid, naturalKey } from '../../src/main/graph/uid'
@@ -17,20 +16,20 @@ import { deterministicUlid, freshUlid, isValidUlid, naturalKey } from '../../src
 describe('openGraphDb', () => {
   let db: Database.Database
 
-  afterEach(() => { db?.open && db.close() })
+  afterEach(() => { if (db?.open) db.close() })
 
   it('creates all four tables (CK-GRAPH-038)', () => {
     db = openGraphDb({ path: ':memory:' })
-    const tables = db.prepare(
+    const tables = (db.prepare(
       `SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY name`
-    ).all().map((r: any) => r.name)
+    ).all() as { name: string }[]).map((r) => r.name)
 
     expect(tables).toContain('node')
     expect(tables).toContain('edge')
     // Virtual tables show up in sqlite_master too
-    const allNames = db.prepare(
+    const allNames = (db.prepare(
       `SELECT name FROM sqlite_master ORDER BY name`
-    ).all().map((r: any) => r.name)
+    ).all() as { name: string }[]).map((r) => r.name)
     expect(allNames.some((n: string) => n.startsWith('vec_chunks'))).toBe(true)
     expect(allNames.some((n: string) => n.startsWith('node_fts'))).toBe(true)
   })
@@ -43,13 +42,13 @@ describe('openGraphDb', () => {
 
   it('loads sqlite-vec extension (CK-GRAPH-002)', () => {
     db = openGraphDb({ path: ':memory:' })
-    const row = db.prepare('SELECT vec_version() as v').get() as any
+    const row = db.prepare('SELECT vec_version() as v').get() as { v: string }
     expect(row.v).toMatch(/^v\d+/)
   })
 
   it('node table has correct columns (CK-GRAPH-011)', () => {
     db = openGraphDb({ path: ':memory:' })
-    const cols = db.prepare(`PRAGMA table_info(node)`).all().map((c: any) => c.name)
+    const cols = (db.prepare(`PRAGMA table_info(node)`).all() as { name: string }[]).map((c) => c.name)
     for (const col of ['uid', 'kind', 'path', 'title', 'status', 'frontmatter', 'body', 'content_hash', 'erstellt', 'abgeloest', 'natural_key']) {
       expect(cols).toContain(col)
     }
@@ -57,7 +56,7 @@ describe('openGraphDb', () => {
 
   it('edge table has correct columns (CK-GRAPH-015)', () => {
     db = openGraphDb({ path: ':memory:' })
-    const cols = db.prepare(`PRAGMA table_info(edge)`).all().map((c: any) => c.name)
+    const cols = (db.prepare(`PRAGMA table_info(edge)`).all() as { name: string }[]).map((c) => c.name)
     for (const col of ['id', 'src', 'dst', 'type', 'source', 'props', 'erstellt']) {
       expect(cols).toContain(col)
     }
@@ -87,7 +86,7 @@ describe('openGraphDb', () => {
     db.prepare(`INSERT INTO node_fts (uid, title, body) VALUES ('n1', 'Knowledge Graph Foundation', 'SQLite as derived index')`).run()
     db.prepare(`INSERT INTO node_fts (uid, title, body) VALUES ('n2', 'Voice Pipeline', 'Whisper local STT')`).run()
 
-    const results = db.prepare(`SELECT uid, rank FROM node_fts WHERE node_fts MATCH 'SQLite' ORDER BY rank`).all() as any[]
+    const results = db.prepare(`SELECT uid, rank FROM node_fts WHERE node_fts MATCH 'SQLite' ORDER BY rank`).all() as { uid: string; rank: number }[]
     expect(results).toHaveLength(1)
     expect(results[0].uid).toBe('n1')
   })

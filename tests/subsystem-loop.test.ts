@@ -82,7 +82,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  db?.open && db.close()
+  if (db?.open) db.close()
 })
 
 function makeSubsystem(title: string, opts: { scope?: string; status?: string; blocked_grund?: string } = {}) {

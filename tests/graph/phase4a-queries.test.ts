@@ -89,7 +89,7 @@ describe('Phase 4a Query Templates', () => {
     writer = new GraphWriter(db)
   })
 
-  afterEach(() => { db?.open && db.close() })
+  afterEach(() => { if (db?.open) db.close() })
 
   it('adr_list returns all ADR nodes', () => {
     seedArchitectGraph(writer)
