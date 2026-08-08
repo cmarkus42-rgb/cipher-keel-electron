@@ -62,7 +62,10 @@ function buildTestGraph(db: Database.Database) {
 
   const repo = w.upsertNode({
     kind: 'github_repo', title: 'cipher-keel-electron',
-    path: null, frontmatter: {
+    // UpsertNodeInput.path is `path?: string` (optional, not nullable) —
+    // github_repo nodes have no filesystem path, so omit it rather than
+    // passing `null`.
+    frontmatter: {
       url: 'https://github.com/cipher/keel',
       owner: 'cipher',
       name: 'keel',

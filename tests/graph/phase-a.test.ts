@@ -20,16 +20,16 @@ describe('openGraphDb', () => {
 
   it('creates all four tables (CK-GRAPH-038)', () => {
     db = openGraphDb({ path: ':memory:' })
-    const tables = db.prepare(
+    const tables = (db.prepare(
       `SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY name`
-    ).all().map((r: { name: string }) => r.name)
+    ).all() as { name: string }[]).map((r) => r.name)
 
     expect(tables).toContain('node')
     expect(tables).toContain('edge')
     // Virtual tables show up in sqlite_master too
-    const allNames = db.prepare(
+    const allNames = (db.prepare(
       `SELECT name FROM sqlite_master ORDER BY name`
-    ).all().map((r: { name: string }) => r.name)
+    ).all() as { name: string }[]).map((r) => r.name)
     expect(allNames.some((n: string) => n.startsWith('vec_chunks'))).toBe(true)
     expect(allNames.some((n: string) => n.startsWith('node_fts'))).toBe(true)
   })
@@ -48,7 +48,7 @@ describe('openGraphDb', () => {
 
   it('node table has correct columns (CK-GRAPH-011)', () => {
     db = openGraphDb({ path: ':memory:' })
-    const cols = db.prepare(`PRAGMA table_info(node)`).all().map((c: { name: string }) => c.name)
+    const cols = (db.prepare(`PRAGMA table_info(node)`).all() as { name: string }[]).map((c) => c.name)
     for (const col of ['uid', 'kind', 'path', 'title', 'status', 'frontmatter', 'body', 'content_hash', 'erstellt', 'abgeloest', 'natural_key']) {
       expect(cols).toContain(col)
     }
@@ -56,7 +56,7 @@ describe('openGraphDb', () => {
 
   it('edge table has correct columns (CK-GRAPH-015)', () => {
     db = openGraphDb({ path: ':memory:' })
-    const cols = db.prepare(`PRAGMA table_info(edge)`).all().map((c: { name: string }) => c.name)
+    const cols = (db.prepare(`PRAGMA table_info(edge)`).all() as { name: string }[]).map((c) => c.name)
     for (const col of ['id', 'src', 'dst', 'type', 'source', 'props', 'erstellt']) {
       expect(cols).toContain(col)
     }
