@@ -249,6 +249,13 @@ describe('Summary nodes (CK-GRAPH-027)', () => {
     const filtered = getSummaryNodes(db, p1.uid)
     expect(filtered).toHaveLength(1)
     expect(filtered[0].title).toBe('S1')
+
+    // Pins the fix in 26d18a0: the SQL alias must be `scopeUid` (camelCase),
+    // matching the declared SummaryNodeRow return type. Before that fix the
+    // alias was `scope_uid`, so `.scopeUid` on every returned row read
+    // undefined.
+    expect(all[0].scopeUid).toBeTruthy()
+    expect([p1.uid, p2.uid]).toContain(filtered[0].scopeUid)
   })
 
   it('stale summary detected by hygiene (CK-GRAPH-027 acceptance)', () => {
