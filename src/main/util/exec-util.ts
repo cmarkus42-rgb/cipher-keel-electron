@@ -1,6 +1,8 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import * as os from 'os'
+import { statSync } from 'node:fs'
+import { join } from 'node:path'
 
 export const execFileAsync = promisify(execFile)
 
@@ -20,6 +22,22 @@ export function getEnhancedPath(): string {
   const existing = process.env.PATH ?? ''
   const extras = EXTRA_PATHS.filter((p) => !existing.includes(p))
   return extras.length ? `${existing}:${extras.join(':')}` : existing
+}
+
+/**
+ * True if cmd exists as an executable file in one of the directories of the
+ * enhanced PATH. Synchronous, no side effects — deliberately the same logic
+ * that ClaudeCodeAdapter.isAvailable() used to keep to itself.
+ */
+export function isCommandOnPath(cmd: string): boolean {
+  const dirs = getEnhancedPath().split(':').filter(Boolean)
+  return dirs.some((dir) => {
+    try {
+      return statSync(join(dir, cmd)).isFile()
+    } catch {
+      return false
+    }
+  })
 }
 
 /**

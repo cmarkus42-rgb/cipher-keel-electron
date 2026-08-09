@@ -9,7 +9,8 @@
 import { ipcMain, BrowserWindow, dialog } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { execFileAsync } from './util/exec-util'
+import { execFileAsync, isCommandOnPath } from './util/exec-util'
+import { describeMissingTool } from './util/missing-tool'
 import {
   checkAuthStatus,
   getToken,
@@ -154,6 +155,15 @@ export function registerIpcHandlers(services: AppServices): void {
       }
       if (!name) {
         return { id: null, name: null, error: 'No session name and no active project' }
+      }
+
+      // A missing CLI would otherwise end up as an empty tmux session showing an
+      // incomprehensible shell error. CK-NFR-010: degrade visibly instead.
+      if (opts.command) {
+        const binary = opts.command.trim().split(/\s+/)[0]
+        if (binary && !isCommandOnPath(binary)) {
+          return { id: null, name: null, error: describeMissingTool(binary) }
+        }
       }
 
       if (!services.tmux.isConnected()) {

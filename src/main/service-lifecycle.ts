@@ -35,6 +35,7 @@ import {
   type SubsystemStatus,
 } from '../shared/service-status'
 import { broadcast } from './event-bus'
+import { describeToolFailure } from './util/missing-tool'
 import { openGraphDb } from './graph/db'
 import { resolveBetterSqliteBinding } from './graph/native-binding'
 import { GraphMcpServer } from './graph/mcp-server'
@@ -226,7 +227,7 @@ async function initTmux(services: AppServices): Promise<void> {
     setStatus('tmux', 'ready', null)
     console.log('[service-lifecycle] tmux control mode connected')
   } catch (err) {
-    setStatus('tmux', 'degraded', reasonOf(err))
+    setStatus('tmux', 'degraded', describeToolFailure('tmux', err))
     console.warn('[service-lifecycle] tmux connect failed (retry on first session create):', err)
   }
 }
