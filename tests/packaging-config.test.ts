@@ -60,4 +60,8 @@ describe('electron-builder configuration', () => {
       expect(pkg.scripts[script]).toContain('npm run build')
     }
   })
+
+  it('exposes the packaged smoke test as a script', () => {
+    expect(pkg.scripts['smoke:packaged']).toBe('node scripts/smoke-packaged.mjs')
+  })
 })
