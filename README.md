@@ -9,12 +9,12 @@
   <img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-lightgrey?style=flat-square&labelColor=000000">
 </p>
 
-> **0.1 alpha — installable, unsigned, Apple Silicon only.** There is a packaged DMG
-> and a GitHub release. The click-through path — create a project, open the grid, start
-> a session — is wired end to end, and the knowledge graph is verified to come up inside
-> the packaged build. What is missing is product polish, not a working system. Read this
-> repository as a working system under construction. See [Current state](#current-state)
-> for exactly what is and isn't wired up.
+> **0.1 alpha — installable, unsigned, Apple Silicon only.** `npm run dist` builds a
+> packaged, unsigned DMG from this branch. The click-through path — create a project,
+> open the grid, start a session — is wired end to end, and the knowledge graph is
+> verified to come up inside that packaged build. What is missing is product polish,
+> not a working system. Read this repository as a working system under construction.
+> See [Current state](#current-state) for exactly what is and isn't wired up.
 
 ---
 
@@ -166,7 +166,7 @@ improvising.
 
 ## Current state
 
-All 1511 tests pass across 105 test files (`npm test`, ~5s).
+All 1541 tests pass across 107 test files (`npm test`, ~5s).
 
 | Phase | Content | Status |
 |-------|---------|--------|
@@ -208,9 +208,11 @@ formal audit step; their work is tracked in `docs/superpowers/plans/` instead.
 
 ## Install
 
-Download `cipher keel-0.1.0-arm64.dmg` from the
-[latest release](https://github.com/cmarkus42-rgb/cipher-keel-electron/releases/latest),
-open it, and drag the app to `/Applications`.
+Build a DMG from this branch with `npm run dist` — it produces
+`release/cipher keel-0.1.0-arm64.dmg` — or, once one has been published, download the
+same artefact from the
+[latest release](https://github.com/cmarkus42-rgb/cipher-keel-electron/releases/latest).
+Open the DMG and drag the app to `/Applications`.
 
 **The build is not code-signed.** macOS will refuse to open it until you clear the
 quarantine attribute — once, after installing:
@@ -259,7 +261,7 @@ src/renderer/      — React 19 UI: SessionGrid, ProjectView, Timeline, KanbanBo
                      KickoffWizard, NotesCell
 src/shared/        — Typed IPC channels and domain types
 src/preload.ts     — contextBridge API (window.cipherKeel)
-tests/             — 1511 Vitest tests
+tests/             — 1541 Vitest tests
 docs/superpowers/  — Implementation plans, design specs and audit reports per phase
 ```
 
