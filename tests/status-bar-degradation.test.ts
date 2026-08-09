@@ -9,12 +9,13 @@ import type { ServiceStatusMap } from '../src/shared/service-status'
 
 function statusMap(overrides: Partial<ServiceStatusMap> = {}): ServiceStatusMap {
   return {
-    tmux:     { id: 'tmux',     state: 'ready', reason: null },
-    nanoclaw: { id: 'nanoclaw', state: 'ready', reason: null },
-    voice:    { id: 'voice',    state: 'ready', reason: null },
-    graph:    { id: 'graph',    state: 'ready', reason: null },
-    kanban:   { id: 'kanban',   state: 'ready', reason: null },
-    notes:    { id: 'notes',    state: 'ready', reason: null },
+    tmux:      { id: 'tmux',      state: 'ready', reason: null },
+    claudeCli: { id: 'claudeCli', state: 'ready', reason: null },
+    nanoclaw:  { id: 'nanoclaw',  state: 'ready', reason: null },
+    voice:     { id: 'voice',     state: 'ready', reason: null },
+    graph:     { id: 'graph',     state: 'ready', reason: null },
+    kanban:    { id: 'kanban',    state: 'ready', reason: null },
+    notes:     { id: 'notes',     state: 'ready', reason: null },
     ...overrides,
   }
 }

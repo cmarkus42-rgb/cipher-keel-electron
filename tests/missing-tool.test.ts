@@ -17,13 +17,21 @@ describe('looksLikeMissingCommand', () => {
     expect(looksLikeMissingCommand(err)).toBe(true)
   })
 
-  it('recognises the message alone when no code is attached', () => {
-    expect(looksLikeMissingCommand(new Error('tmux control mode failed: command not found')))
-      .toBe(true)
+  it('recognises the Node spawn-ENOENT message shape alone when no code is attached', () => {
+    expect(looksLikeMissingCommand(new Error('spawn tmux ENOENT'))).toBe(true)
   })
 
   it('does not claim an unrelated failure is a missing command', () => {
     expect(looksLikeMissingCommand(new Error('tmux exited with code 1'))).toBe(false)
+  })
+
+  it('does not misdiagnose a wrapped tmux failure whose stderr happens to contain "command not found"', () => {
+    // tmux-manager.ts wraps tmux's own stderr as "tmux control mode failed: <stderr>".
+    // That stderr is arbitrary text — a broken .tmux.conf or a bad $SHELL can contain
+    // this exact phrase even though tmux itself is installed and ran fine.
+    expect(looksLikeMissingCommand(
+      new Error('tmux control mode failed: command not found: some-plugin.sh'),
+    )).toBe(false)
   })
 })
 
@@ -58,6 +66,13 @@ describe('describeToolFailure', () => {
   it('passes an unrelated error through unchanged', () => {
     expect(describeToolFailure('tmux', new Error('tmux exited with code 1')))
       .toBe('tmux exited with code 1')
+  })
+
+  it('passes a wrapped tmux failure through unchanged instead of misreporting tmux as missing', () => {
+    const err = new Error('tmux control mode failed: command not found: some-plugin.sh')
+    expect(describeToolFailure('tmux', err)).toBe(
+      'tmux control mode failed: command not found: some-plugin.sh',
+    )
   })
 })
 

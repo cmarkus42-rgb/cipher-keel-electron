@@ -10,13 +10,25 @@ const INSTALL_HINTS: Record<string, string> = {
   claude: 'Claude Code CLI not found. Install it from: https://claude.com/claude-code',
 }
 
-/** True if the error looks like the command does not exist at all. */
+/**
+ * True if the error looks like the command does not exist at all.
+ *
+ * Deliberately narrow: only the ENOENT error code, or the exact "spawn <cmd>
+ * ENOENT" message shape Node's child_process produces when spawn() can't find
+ * the binary (covers the rare case a wrapped/reconstructed error lost its
+ * .code). A bare "command not found" substring is NOT matched — tmux-manager.ts
+ * wraps tmux's own stderr as "tmux control mode failed: <stderr>", and that
+ * stderr is arbitrary text (a broken .tmux.conf, a bad $SHELL) that can contain
+ * that exact phrase without tmux itself being missing. Misreporting that as
+ * "tmux not found" would send a user to reinstall something they already have
+ * while hiding the real cause.
+ */
 export function looksLikeMissingCommand(err: unknown): boolean {
   if (typeof err === 'object' && err !== null && 'code' in err) {
     if ((err as { code?: unknown }).code === 'ENOENT') return true
   }
   const message = err instanceof Error ? err.message : String(err)
-  return message.includes('ENOENT') || message.includes('command not found')
+  return /^spawn \S+ ENOENT$/.test(message)
 }
 
 /** Actionable message for a missing tool. */

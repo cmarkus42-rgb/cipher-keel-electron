@@ -28,6 +28,12 @@ export function getEnhancedPath(): string {
  * True if cmd exists as an executable file in one of the directories of the
  * enhanced PATH. Synchronous, no side effects — deliberately the same logic
  * that ClaudeCodeAdapter.isAvailable() used to keep to itself.
+ *
+ * Contract: cmd must be a bare command name (e.g. "tmux"), not an absolute or
+ * relative path. join(dir, cmd) does not special-case an already-absolute cmd —
+ * join('/opt/homebrew/bin', '/usr/local/bin/foo') yields
+ * '/opt/homebrew/bin/usr/local/bin/foo', which will never resolve. No caller
+ * today passes anything else; add explicit path handling before any caller does.
  */
 export function isCommandOnPath(cmd: string): boolean {
   const dirs = getEnhancedPath().split(':').filter(Boolean)
