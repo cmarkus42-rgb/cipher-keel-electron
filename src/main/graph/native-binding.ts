@@ -1,20 +1,23 @@
 /**
- * native-binding.ts — Aufloesung der nativen Artefakte des Knowledge Graph.
+ * native-binding.ts — resolution of the Knowledge Graph's native artefacts.
  *
- * Zwei getrennte Probleme, dieselbe Ursache:
+ * Two separate problems, one root cause:
  *
- * 1. ABI. vitest laeuft unter Node, die App unter Electron — verschiedene
- *    NODE_MODULE_VERSION. electron-rebuild legt den Electron-Build unter
- *    bin/<platform>-<arch>-<abi>/ ab, waehrend die Standardaufloesung zuerst
- *    build/Release findet (den Node-Build). Ein expliziter nativeBinding laesst
- *    beide nebeneinander bestehen.
+ * 1. ABI. vitest runs under Node, the app runs under Electron — different
+ *    NODE_MODULE_VERSION. electron-rebuild places the Electron build under
+ *    bin/<platform>-<arch>-<abi>/, while the default resolution finds
+ *    build/Release first (the Node build). An explicit nativeBinding lets both
+ *    coexist without a rebuild toggle.
  *
- * 2. asar. Im gepackten Build liegen beide Artefakte nominell in app.asar.
- *    Electron biegt process.dlopen selbst auf app.asar.unpacked um, sqlite3s
- *    eigenes dlopen (fuer die vec0-Erweiterung) tut das nicht. Und existsSync
- *    beantwortet innerhalb von app.asar den Archiv-Index statt die Platte —
- *    gemessen 2026-08-09. Deshalb wird jeder Pfad vor Pruefung und Rueckgabe
- *    auf das entpackte Verzeichnis gebogen.
+ * 2. asar. In a packaged build both artefacts nominally live inside app.asar.
+ *    Electron's own process.dlopen patch copes with a .node file inside the
+ *    archive by extracting it to a temp file; the separate redirect to
+ *    app.asar.unpacked applies to files electron-builder actually unpacked onto
+ *    disk. sqlite3's own dlopen (used to load the vec0 extension) has neither
+ *    mechanism — it hands the raw path straight to the OS loader. And existsSync
+ *    inside app.asar answers from the archive index, not from disk — measured
+ *    2026-08-09. So every path is rewritten to the unpacked directory before it
+ *    is checked and before it is returned.
  */
 
 import { existsSync } from 'node:fs'
@@ -24,19 +27,20 @@ const ASAR_SEGMENT = `${sep}app.asar${sep}`
 const UNPACKED_SEGMENT = `${sep}app.asar.unpacked${sep}`
 
 /**
- * Biegt einen Pfad innerhalb von app.asar auf app.asar.unpacked um.
- * Idempotent; ausserhalb eines gepackten Builds ein No-op.
+ * Rewrites a path inside app.asar to app.asar.unpacked. A no-op outside a
+ * packaged build, and naturally idempotent: once rewritten, the path no longer
+ * contains an app.asar segment, since the character after "app.asar" is then
+ * "." rather than a separator, so a second call finds nothing to replace.
  */
 export function toUnpackedPath(p: string): string {
-  if (p.includes(UNPACKED_SEGMENT)) return p
   return p.replace(ASAR_SEGMENT, UNPACKED_SEGMENT)
 }
 
 /**
- * Liefert den Pfad zum ABI-passenden better-sqlite3-Addon, oder undefined, wenn
- * keines existiert — dann faellt der Aufrufer auf die Standardaufloesung zurueck.
+ * Returns the path to the ABI-matching better-sqlite3 addon, or undefined when
+ * none exists — the caller should then fall back to default resolution.
  *
- * @param moduleRoot Pfad zum better-sqlite3-Paketverzeichnis.
+ * @param moduleRoot Path to the better-sqlite3 package directory.
  */
 export function resolveBetterSqliteBinding(
   moduleRoot: string,
@@ -51,17 +55,18 @@ export function resolveBetterSqliteBinding(
 
   console.warn(
     `[native-binding] no ABI-matching better-sqlite3 addon at ${candidate} — ` +
-      'falling back to default resolution, which will load the Node-ABI build and throw',
+      'falling back to default resolution, which under Electron will likely load ' +
+      'the Node-ABI build and fail to open',
   )
   return undefined
 }
 
 /**
- * Liefert den ladbaren Pfad der sqlite-vec-Erweiterung. sqlite3 laedt sie ueber
- * sein eigenes dlopen, das kein asar kennt — der Pfad muss deshalb auf das
- * entpackte Verzeichnis zeigen.
+ * Returns the loadable path for the sqlite-vec extension. sqlite3 loads it
+ * through its own dlopen, which has no asar awareness — the path must
+ * therefore point at the unpacked directory.
  *
- * @param loadablePath Rueckgabe von sqliteVec.getLoadablePath().
+ * @param loadablePath Return value of sqliteVec.getLoadablePath().
  */
 export function resolveVecExtensionPath(loadablePath: string): string {
   return toUnpackedPath(loadablePath)
