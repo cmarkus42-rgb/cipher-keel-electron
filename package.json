@@ -13,7 +13,9 @@
     "typecheck": "tsc -b --noEmit --force",
     "lint": "eslint src tests",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "pack": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir --arm64",
+    "dist": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --arm64"
   },
   "keywords": [
     "electron",
@@ -72,17 +74,31 @@
   "build": {
     "appId": "dev.cipher.keel",
     "productName": "cipher keel",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
     "mac": {
       "target": [
         {
           "target": "dmg",
           "arch": [
-            "arm64",
-            "x64"
+            "arm64"
           ]
         }
       ],
       "category": "public.app-category.developer-tools"
+    },
+    "dmg": {
+      "title": "cipher keel ${version}",
+      "contents": [
+        { "x": 140, "y": 200, "type": "file" },
+        { "x": 400, "y": 200, "type": "link", "path": "/Applications" }
+      ]
     }
   }
 }
