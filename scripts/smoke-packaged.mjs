@@ -38,8 +38,13 @@ function finish(code, message) {
   if (settled) return
   settled = true
   child.kill('SIGTERM')
-  rmSync(userDataDir, { recursive: true, force: true })
   console.log(message)
+  try {
+    rmSync(userDataDir, { recursive: true, force: true })
+  } catch {
+    // Electron can still be writing to userData right after SIGTERM. A leftover
+    // temp directory is harmless; losing the verdict is not.
+  }
   process.exit(code)
 }
 
