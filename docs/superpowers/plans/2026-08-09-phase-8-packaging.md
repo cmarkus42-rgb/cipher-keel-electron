@@ -525,6 +525,28 @@ verdict in the main process log. Run against the current build it exits 1 with
 
 ## Task 3: asar-sichere Auflösung beider nativer Artefakte
 
+> **Nachtrag 2026-08-10 — der ausgelieferte Code weicht in sechs Punkten von den
+> Literalen unten ab** (Commits `e2f3340`, `b982857`; Review-Befunde, vom Nutzer zur
+> Behebung freigegeben). Wer den Code unten abschreibt, schreibt die Fehler mit ab:
+>
+> 1. Der `if (p.includes(UNPACKED_SEGMENT)) return p`-Guard ist **toter Code** und
+>    entfernt. `replace()` ist von sich aus idempotent, weil auf `app.asar` in
+>    `app.asar.unpacked` ein `.` folgt und kein `sep`. Der Guard konnte die Antwort nur
+>    dort ändern, wo er falsch lag: bei einem Pfad mit `app.asar.unpacked`-Segment und
+>    einem *späteren* echten `/app.asar/`-Segment.
+> 2. Der Warntext behauptete „will load the Node-ABI build and throw". Unter Node ist
+>    das nachweislich falsch. Ausgeliefert: „…which under Electron will likely load the
+>    Node-ABI build and fail to open".
+> 3. Der Kopfkommentar verwechselte zwei Mechanismen: Electrons `process.dlopen`-Patch
+>    **entpackt ein `.node` in eine Temp-Datei**; die Umleitung *auf*
+>    `app.asar.unpacked` kommt aus der asar-Pfadauflösung für entpackte Dateien.
+> 4. Die Kommentare sind **englisch**, nicht deutsch — die beiden Commits vor diesem
+>    Branch (`ee4295b`, `b5da98f`) haben den Bestand gerade auf Englisch umgestellt.
+> 5. Die Tests räumen ihre `mkdtempSync`-Verzeichnisse per `beforeEach`/`afterEach` auf.
+> 6. **`tests/graph/native-binding.test.ts` existierte bereits seit dem 7. August** —
+>    der Plan hat das übersehen. Die neuen Fälle liegen dort, die Wurzeldatei
+>    `tests/native-binding.test.ts` existiert nicht.
+
 **Files:**
 - Modify: `src/main/graph/native-binding.ts`
 - Modify: `src/main/graph/db.ts:45-46`
