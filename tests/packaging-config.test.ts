@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 interface MacTarget { target: string; arch: string[] }
@@ -63,5 +63,10 @@ describe('electron-builder configuration', () => {
 
   it('exposes the packaged smoke test as a script', () => {
     expect(pkg.scripts['smoke:packaged']).toBe('node scripts/smoke-packaged.mjs')
+  })
+
+  it('ships an app icon rather than the Electron default', () => {
+    expect(pkg.build.mac.icon).toBe('build/icon.icns')
+    expect(existsSync(join(process.cwd(), 'build', 'icon.icns'))).toBe(true)
   })
 })
