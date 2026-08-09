@@ -9,6 +9,7 @@
 
 import Database from 'better-sqlite3'
 import * as sqliteVec from 'sqlite-vec'
+import { resolveVecExtensionPath } from './native-binding'
 import { applySchema, DEFAULT_EMBEDDING_DIM } from './schema'
 
 export interface OpenDbOptions {
@@ -43,7 +44,11 @@ export function openGraphDb(opts: OpenDbOptions): Database.Database {
   db.pragma('foreign_keys = ON')
 
   // CK-GRAPH-002: Load sqlite-vec extension for vec0 virtual tables.
-  sqliteVec.load(db)
+  // sqliteVec.load() would hand sqlite3 a path inside app.asar, and sqlite3's own
+  // dlopen cannot read from the archive. Measured 2026-08-09: the packaged app failed
+  // with dlopen(.../app.asar/node_modules/sqlite-vec-darwin-arm64/vec0.dylib.dylib)
+  // errno=20. Outside a package the rewrite is a no-op.
+  db.loadExtension(resolveVecExtensionPath(sqliteVec.getLoadablePath()))
 
   // CK-GRAPH-038: Apply schema (node, edge, vec_chunks, node_fts).
   applySchema(db, opts.embeddingDim ?? DEFAULT_EMBEDDING_DIM)
