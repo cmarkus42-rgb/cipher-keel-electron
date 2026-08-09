@@ -431,8 +431,16 @@ function finish(code, message) {
   if (settled) return
   settled = true
   child.kill('SIGTERM')
-  rmSync(userDataDir, { recursive: true, force: true })
+  // Verdikt zuerst. Electron schreibt nach SIGTERM noch kurz ins userData-
+  // Verzeichnis, ein rmSync davor kann mit ENOTEMPTY werfen und die Diagnose
+  // verschlucken — beobachtet 2026-08-09. Ein liegengebliebenes Temp-Verzeichnis
+  // ist harmlos, ein verlorenes Verdikt nicht.
   console.log(message)
+  try {
+    rmSync(userDataDir, { recursive: true, force: true })
+  } catch {
+    // absichtlich geschluckt, siehe oben
+  }
   process.exit(code)
 }
 
