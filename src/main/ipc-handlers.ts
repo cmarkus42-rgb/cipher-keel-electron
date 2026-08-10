@@ -112,6 +112,7 @@ import { getEntityDefinition } from './preset/registry'
 import { getGlobalRules } from './preset/global-rules'
 import { assembleEntityClaudeMd } from './session/assemble-entity'
 import { resolveCapabilityRefs } from './session/capability-refs'
+import { materialiseCapabilities } from './session/materialise-capabilities'
 import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-file'
 import { formatShellCommand } from './util/shell-quote'
 import { AdapterRegistry } from './agent/registry'
@@ -180,6 +181,13 @@ export function registerIpcHandlers(services: AppServices): void {
       const def = getEntityDefinition(entityId)
       if (!def) {
         return { id: null, name: null, error: `Unknown entity '${entityId}'` }
+      }
+
+      const materialised = materialiseCapabilities(def.rahmen.capabilityAnbindung, cwd)
+      if (materialised.unknown.length > 0) {
+        console.warn(
+          `[ipc] entity '${entityId}': no SKILL.md asset for ${materialised.unknown.join(', ')}`
+        )
       }
 
       const refs = resolveCapabilityRefs(def.rahmen.capabilityAnbindung, cwd)

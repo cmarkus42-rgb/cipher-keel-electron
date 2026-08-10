@@ -3391,3 +3391,52 @@ Session-Start nach `<projekt>/.claude/capabilities/<id>/SKILL.md` materialisiert
 `postLaunchInjection`/`settings.local.json`), `resolveCapabilityRefs` liefert weiter Referenzen.
 Ein Task „Capabilities materialisieren" wird vor Task 10 eingeschoben. Volles Protokoll inkl.
 `od -c`-Verifikation der Rohausgabe: `.superpowers/sdd/2026-08-10-entitaets-startstrecke-und-personas/task-9-report.md`.
+
+## Messprotokoll Task 14
+
+Ausgeführt 2026-08-10 über `.claude/skills/run-keel/` (Profil `/tmp/keel-verify`). Voller
+Bericht mit allen Zwischenschritten: `.superpowers/sdd/2026-08-10-entitaets-startstrecke-und-personas/task-14-report.md`.
+
+**`npm run verify:bundle`:** `5/5 markers present` — der neue Capability-Marker
+(`implementierungsfertiger Code ist verboten`, aus `architect-core-identity/SKILL.md`) überlebt
+das Rollup zusammen mit den vier bestehenden Markern.
+
+**Baseline** (`tmux list-sessions` vor dem Lauf): nur die vier fremden `cmux-*`-Sessions,
+keine `keel-*`. Nach dem Lauf und `stop.sh` ("tmux sessions removed: 1"): wieder nur die vier
+`cmux-*`-Sessions — die `keel-*`-Session restlos entfernt, die vier fremden unverändert.
+
+**`session:create({ entityId: 'architect' })`** (kein `command`-Feld):
+`{ "id": "$8", "name": "keel-task14probe-architect-hf04", "error": null }`
+
+**Befehl im Pane**, über `ps -ww -p <pid> -o pid,command` am tatsächlich laufenden Prozess
+bestätigt (PID 74945):
+```
+claude --dangerously-skip-permissions --append-system-prompt-file /private/tmp/keel-verify/entity-prompts/keel-task14probe-architect-hf04.md
+```
+
+**Prompt-Datei:** `/private/tmp/keel-verify/entity-prompts/keel-task14probe-architect-hf04.md`,
+`-rw-------@ 1 cipher wheel 4007`. `grep -c "claude/capabilities"` → **7** (gegenüber `0` in
+Task 8, weil dort keine SKILL.md-Dateien existierten). Der `BEGIN:Capabilities`-Block listet
+genau die sieben Architect-Capability-IDs aus `ARCHITECT_CAPABILITIES`, inklusive
+`rolling-summary` aus dem geteilten Verzeichnis.
+
+**`.claude/capabilities/` im Projekt:** sieben Verzeichnisse
+(`adr-format-guide`, `anforderungspaket-formulierer`, `architect-core-identity`,
+`coaching-loop-guide`, `niveau-c-formulierer`, `rolling-summary`,
+`subsystem-zerlegung-guide`), Inhalt von `architect-core-identity/SKILL.md` byte-identisch mit
+`src/main/preset/architect/capabilities/architect-core-identity/SKILL.md` (`diff` liefert keine
+Abweichung).
+
+**Antwort auf eine Capability-spezifische Frage** ("Welche vier Pflichtteile hat ein ADR bei
+dir, und wie heisst die Query, um ein bestehendes ADR in einer bestimmten Tiefe abzurufen?"):
+Die Antwort griff exakt die Mechanik aus `adr-format-guide/SKILL.md` auf — das `tiefen`-Objekt
+mit den Schlüsseln `summary`/`context`/`alternatives`/`consequences` versus die
+`adr_by_tiefe`-Query, die nur `summary`/`context`/`full` akzeptiert — und stellte von sich aus
+die im SKILL.md tatsächlich vorhandene Inkonsistenz zwischen beiden zur Diskussion (`full` ist
+kein `tiefen`-Key, `alternatives`/`consequences` sind über die Query nicht erreichbar). Dieses
+Detail steht ausschließlich in der Capability-Datei, nicht im Architect-Body — die Antwort
+beweist, dass die materialisierte SKILL.md tatsächlich gelesen wurde, nicht nur referenziert.
+
+**Ergebnis:** Beide geänderten Erwartungen aus Schritt 7 erfüllt — 7 Referenzen statt 0, sieben
+materialisierte Verzeichnisse statt keinem. Die Antwort trägt nachweislich Capability-Inhalt,
+nicht nur Body-Inhalt.

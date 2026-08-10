@@ -24,6 +24,10 @@ const MARKERS = [
   { needle: 'Du bist die Cyber Factory', source: 'src/main/preset/cyber-factory/cf-body.md' },
   { needle: 'Dein Vibe ist positiver Cyberpunk', source: 'src/main/preset/shared/personas/cipher.md' },
   { needle: 'Stelle gezielte, freundliche Gegenfragen', source: 'src/main/preset/shared/personas/theaitetos.md' },
+  {
+    needle: 'implementierungsfertiger Code ist verboten',
+    source: 'src/main/preset/architect/capabilities/architect-core-identity/SKILL.md',
+  },
 ]
 
 if (!existsSync(BUNDLE)) {
