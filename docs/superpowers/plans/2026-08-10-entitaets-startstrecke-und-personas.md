@@ -895,7 +895,20 @@ export function getEntityDefinition(
   const rahmen = entry.rahmen(niveau)
   // The rahmen may leave personaVorgabe empty (workshop does) — the catalog default fills in.
   const vorgabe = rahmen.personaVorgabe || getDefaultPersona(entityId) || ''
-  const persona = vorgabe ? resolvePersona(vorgabe, personasDir) : null
+
+  // Two different nulls, and only one of them is benign: "no persona configured" is a
+  // valid state, "a persona was named and could not be found" is a config error. Folding
+  // both into a silent null is how a typo in personaVorgabe ships unnoticed.
+  let persona: string | null = null
+  if (vorgabe) {
+    persona = resolvePersona(vorgabe, personasDir)
+    if (persona === null) {
+      console.warn(
+        `[preset/registry] entity '${entityId}' requests persona '${vorgabe}', ` +
+        'which resolves to nothing — the session will start without a persona layer'
+      )
+    }
+  }
 
   return { id: entityId, rahmen, body: entry.body, persona }
 }
@@ -977,10 +990,18 @@ import { readFileSync, existsSync } from 'node:fs'
 
 const BUNDLE = 'dist/main/index.js'
 
-/** Marker text that must appear in the bundle, and where it comes from. */
+/**
+ * Marker text that must appear in the bundle, and where it comes from.
+ *
+ * Pick needles that are pure ASCII and free of quotes: the markdown lands in the
+ * bundle as a JS string literal, so quotes are escaped and non-ASCII may be
+ * escaped too. A needle containing either would make this guard cry wolf.
+ */
 const MARKERS = [
   { needle: 'Du bist der Architect', source: 'src/main/preset/architect/architect-body.md' },
   { needle: 'Du bist die Cyber Factory', source: 'src/main/preset/cyber-factory/cf-body.md' },
+  { needle: 'Dein Vibe ist positiver Cyberpunk', source: 'src/main/preset/shared/personas/cipher.md' },
+  { needle: 'Stelle gezielte, freundliche Gegenfragen', source: 'src/main/preset/shared/personas/theaitetos.md' },
 ]
 
 if (!existsSync(BUNDLE)) {
