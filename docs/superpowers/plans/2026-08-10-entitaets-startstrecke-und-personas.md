@@ -298,8 +298,11 @@ describe('Systems Engineer Body (M5 section 4)', () => {
     expect(body).toMatch(/schreibt keinen Code|führt nicht aus/i)
   })
 
-  it('separates Führung from Orchestrierung', () => {
-    expect(body).toContain('Orchestrierung')
+  // Corrected 2026-08-10 after the Task 2 review: the original assertion was
+  // toContain('Orchestrierung'), which passes on any stray mention of the word and
+  // never checks the distinction the test is named after.
+  it('separates Fuehrung from Orchestrierung', () => {
+    expect(body).toMatch(/Führung[\s\S]{0,400}Orchestrierung|Orchestrierung[\s\S]{0,400}Führung/)
   })
 })
 ```
@@ -348,8 +351,11 @@ describe('Workshop Body (M5 section 8.5)', () => {
     expect(body).toMatch(/keine phasenübergreifende Koordination/i)
   })
 
+  // Corrected 2026-08-10 after the Task 2 review: /Debugger/i also matched the
+  // Debugger's earlier mention as a dispatch target, so the prohibition itself
+  // was never asserted.
   it('forbids deep single-bug analysis (Debugger territory)', () => {
-    expect(body).toMatch(/Debugger/i)
+    expect(body).toMatch(/(keine|kein).{0,40}(Tiefen-?Analyse|Einzel-?Bug)[\s\S]{0,120}Debugger/i)
   })
 })
 ```
