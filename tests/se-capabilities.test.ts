@@ -9,15 +9,17 @@ import {
   SE_CAPABILITIES_B,
   SE_CAPABILITIES_C,
   getSECapabilities,
+  SE_PACKAGES,
 } from '../src/main/preset/systems-engineer/se-capabilities'
+import { validateCapabilityPackage } from '../src/main/preset/capability-schema'
 
 // ---------------------------------------------------------------------------
-// SE_CAPABILITIES_A — 8 packages
+// SE_CAPABILITIES_A — 7 packages (companion-memory-tools dropped, Task 12)
 // ---------------------------------------------------------------------------
 
 describe('SE_CAPABILITIES_A', () => {
-  it('contains exactly 8 package IDs', () => {
-    expect(SE_CAPABILITIES_A).toHaveLength(8)
+  it('contains exactly 7 package IDs', () => {
+    expect(SE_CAPABILITIES_A).toHaveLength(7)
   })
 
   it('includes se-core-identity', () => {
@@ -34,12 +36,13 @@ describe('SE_CAPABILITIES_A', () => {
 })
 
 // ---------------------------------------------------------------------------
-// SE_CAPABILITIES_B — 6 packages (no graph-navigation-advanced, no steuer-ueberblick-tool)
+// SE_CAPABILITIES_B — 5 packages (no graph-navigation-advanced, no steuer-ueberblick-tool,
+// no companion-memory-tools — Task 12)
 // ---------------------------------------------------------------------------
 
 describe('SE_CAPABILITIES_B', () => {
-  it('contains exactly 6 package IDs', () => {
-    expect(SE_CAPABILITIES_B).toHaveLength(6)
+  it('contains exactly 5 package IDs', () => {
+    expect(SE_CAPABILITIES_B).toHaveLength(5)
   })
 
   it('does not contain graph-navigation-advanced', () => {
@@ -75,12 +78,12 @@ describe('SE_CAPABILITIES_C', () => {
 // ---------------------------------------------------------------------------
 
 describe('getSECapabilities', () => {
-  it('niveau A returns 8 packages', () => {
-    expect(getSECapabilities('A')).toHaveLength(8)
+  it('niveau A returns 7 packages', () => {
+    expect(getSECapabilities('A')).toHaveLength(7)
   })
 
-  it('niveau B returns 6 packages', () => {
-    expect(getSECapabilities('B')).toHaveLength(6)
+  it('niveau B returns 5 packages', () => {
+    expect(getSECapabilities('B')).toHaveLength(5)
   })
 
   it('niveau C returns 1 package', () => {
@@ -97,5 +100,35 @@ describe('getSECapabilities', () => {
 
   it('niveau C result matches SE_CAPABILITIES_C', () => {
     expect(getSECapabilities('C')).toEqual([...SE_CAPABILITIES_C])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// SE capability packages (CapabilityPackage objects)
+// ---------------------------------------------------------------------------
+
+describe('SE capability packages', () => {
+  it('defines a package for every Niveau-A capability', () => {
+    const names = SE_PACKAGES.map(p => p.name)
+    for (const id of getSECapabilities('A')) {
+      expect(names, id).toContain(id)
+    }
+  })
+
+  it('every package passes the schema validator', () => {
+    for (const pkg of SE_PACKAGES) {
+      expect(validateCapabilityPackage(pkg).errors, pkg.name).toEqual([])
+    }
+  })
+
+  it('no longer carries companion-memory-tools', () => {
+    // The companion is deferred; keel has no companion_memory_* MCP tools.
+    expect(getSECapabilities('A')).not.toContain('companion-memory-tools')
+    expect(getSECapabilities('B')).not.toContain('companion-memory-tools')
+  })
+
+  it('keeps seven capabilities at Niveau A and five at Niveau B', () => {
+    expect(getSECapabilities('A')).toHaveLength(7)
+    expect(getSECapabilities('B')).toHaveLength(5)
   })
 })

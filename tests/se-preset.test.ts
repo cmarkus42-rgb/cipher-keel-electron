@@ -30,8 +30,8 @@ describe('SE_RAHMEN (CK-3C-002)', () => {
     expect(SE_RAHMEN.personaVorgabe).toBe('cipher')
   })
 
-  it('capabilityAnbindung has exactly 8 entries', () => {
-    expect(SE_RAHMEN.capabilityAnbindung).toHaveLength(8)
+  it('capabilityAnbindung has exactly 7 entries', () => {
+    expect(SE_RAHMEN.capabilityAnbindung).toHaveLength(7)
   })
 
   it('capabilityAnbindung contains all expected packages', () => {
@@ -40,7 +40,6 @@ describe('SE_RAHMEN (CK-3C-002)', () => {
       'gate-urteil-guide',
       'trigger-zeiger-format',
       'steuer-ueberblick-tool',
-      'companion-memory-tools',
       'handoff-logik-guide',
       'rolling-summary',
       'graph-navigation-advanced',

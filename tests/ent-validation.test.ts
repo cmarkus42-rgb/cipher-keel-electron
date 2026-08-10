@@ -42,7 +42,7 @@ function seRahmen(niveau: CapabilityNiveau = CapabilityNiveau.A): PresetRahmen {
     phasenBindung: [],
     capabilityAnbindung: [
       'se-core-identity', 'gate-urteil-guide', 'trigger-zeiger-format',
-      'steuer-ueberblick-tool', 'companion-memory-tools', 'handoff-logik-guide',
+      'steuer-ueberblick-tool', 'handoff-logik-guide',
       'rolling-summary', 'graph-navigation-advanced',
     ],
     graphAnbindung: { lesen: true, schreiben: true },

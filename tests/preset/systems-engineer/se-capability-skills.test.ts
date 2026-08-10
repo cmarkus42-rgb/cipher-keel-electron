@@ -1,20 +1,20 @@
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
-import { ARCHITECT_CAPABILITIES } from '../../../src/main/preset/architect/architect-preset'
+import { getSECapabilities } from '../../../src/main/preset/systems-engineer/se-capabilities'
 
-const OWN = path.join(__dirname, '../../../src/main/preset/architect/capabilities')
+const OWN = path.join(__dirname, '../../../src/main/preset/systems-engineer/capabilities')
 const SHARED = path.join(__dirname, '../../../src/main/preset/shared/capabilities')
 
-// rolling-summary is shared with the Systems Engineer and lives at the shared
+// rolling-summary is shared with the Architect and lives at the shared
 // location — one file, one source of truth, referenced from both presets.
 const fileFor = (id: string) =>
   id === 'rolling-summary'
     ? path.join(SHARED, id, 'SKILL.md')
     : path.join(OWN, id, 'SKILL.md')
 
-describe('Architect capability SKILL.md files', () => {
-  for (const id of ARCHITECT_CAPABILITIES) {
+describe('SE capability SKILL.md files', () => {
+  for (const id of getSECapabilities('A')) {
     describe(id, () => {
       const file = fileFor(id)
 
