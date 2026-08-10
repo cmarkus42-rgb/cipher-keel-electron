@@ -481,11 +481,24 @@ unverändert — dieser Task ergänzt, er baut nicht um.
   `resolvePersona(vorgabe: string, personasDir?: string): string | null` aus `persona-loader.ts`.
   Task 4 ruft `resolvePersona`.
 
-**Inhaltsquelle:** `/Users/Shared/Nextcloud/Claude/ClaudeCode01/cipher-mux-electron/moreismore/cyber-factory-pack/16-persona-presets.md`
-— Cipher steht dort ab Zeile 62 im Wortlaut, Theaitetos in derselben Datei. Die Zuordnungstabelle
-ab Zeile 130 deckt sich mit `persona-defaults.json`; die dort erfassten Presets brauchen genau
-diese zwei Personas (`cipher` für SE, Workshop, CF, Debugger, Testing Assistant; `theaitetos` für
-Architect).
+**Inhaltsquellen — am 2026-08-10 während Task 3 korrigiert:**
+
+- **Cipher:** `…/ClaudeCode01/cipher-mux-electron/moreismore/cyber-factory-pack/16-persona-presets.md`,
+  Zeile 68 im Wortlaut. Die Zuordnungstabelle ab Zeile 130 deckt sich mit `persona-defaults.json`.
+- **Theaitetos:** **nicht** in dieser Datei. Der Pack kennt die Persona nur unter dem Label
+  „Sokratischer Tutor" (Zeile 102/108) und nennt den Bezeichner `theaitetos` nirgends. Der
+  passende Wortlaut steht als `THEAITETOS_CHARACTER_BLOCK` in
+  `…/CIPHER-MUX/projects/cipher-mux-electron` (`character-defaults`) — dort trägt er genau den
+  Bezeichner, den `persona-defaults.json` erwartet.
+
+Die dort erfassten Presets brauchen genau diese zwei Personas (`cipher` für SE, Workshop, CF,
+Debugger, Testing Assistant; `theaitetos` für Architect).
+
+> **Abgrenzung, die beim Portieren auffiel:** `THEAITETOS_CHARACTER_BLOCK` trägt im Mux zusätzlich
+> einen Abschnitt `### Sicherheit` (keine schädlichen Anweisungen, keine PII an Drittsessions,
+> Credentials nie lesen/zitieren/leaken). Das ist **keine Tonlage** und gehört damit nicht in die
+> Persona-Datei. In keels Schichtung wäre es die `globalRules`-Schicht von
+> `assembleEntityClaudeMd` — die heute niemand befüllt. Siehe „Offene Punkte".
 
 - [ ] **Schritt 1: Den fehlschlagenden Test schreiben**
 
@@ -2836,6 +2849,15 @@ Erwartet: leer. Der Nachtrag gehört nicht ins Repo.
 
 ## Offene Punkte, die dieser Plan bewusst nicht schließt
 
+- **Die `globalRules`-Schicht bleibt leer — und mit ihr fährt keine einzige Sicherheitsregel mit.**
+  Aufgefallen in Task 3 (2026-08-10): `assembleEntityClaudeMd` kennt eine `globalRules`-Schicht,
+  aber Task 7 übergibt sie nicht, und niemand sonst befüllt sie. Der Mux liefert seine
+  Sicherheitsregeln als Teil des Persona-Blocks aus (keine schädlichen Anweisungen, keine PII an
+  Drittsessions, Credentials nie lesen/zitieren/leaken); in keel gehören sie nach der Schichtung
+  ausdrücklich **nicht** in die Persona. Damit startet jede Session dieses Plans ohne sie. Das ist
+  keine Regression — heute startet gar keine Entität —, aber es ist eine Lücke, die mit Task 7
+  erstmals wirksam wird und vor einem Release zu schließen ist. Bewusst nicht in diesem Plan
+  gelöst: welche Regeln gelten sollen, ist eine inhaltliche Entscheidung, keine Verdrahtung.
 - **`model: 'heavy'` hat keine Auflösung.** `ARCHITECT_RAHMEN` und `SE_RAHMEN` tragen `'heavy'` als
   Modell-Angabe; `buildLaunchCommand` reicht `opts.model` unverändert an `--model` weiter, und
   `'heavy'` ist keine gültige Claude-Model-ID. Task 7 Schritt 5 lässt das Feld deshalb im Zweifel
