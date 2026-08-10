@@ -213,30 +213,30 @@ describe('validatePresetRahmen (CK-ENT-004, CK-ENT-023)', () => {
 // -----------------------------------------------------------------------
 describe('AdapterRegistry.getForRuntime (CK-ENT-010, CK-ENT-028)', () => {
   it('undefined runtime returns default ClaudeCodeAdapter', () => {
-    const registry = new AdapterRegistry()
+    const registry = new AdapterRegistry({ getSkipPermissions: () => false })
     const adapter = registry.getForRuntime(undefined)
     expect(adapter.id).toBe('claude-code')
   })
 
   it('empty string runtime returns default ClaudeCodeAdapter', () => {
-    const registry = new AdapterRegistry()
+    const registry = new AdapterRegistry({ getSkipPermissions: () => false })
     const adapter = registry.getForRuntime('')
     expect(adapter.id).toBe('claude-code')
   })
 
   it('claude-cli-tmux maps to ClaudeCodeAdapter', () => {
-    const registry = new AdapterRegistry()
+    const registry = new AdapterRegistry({ getSkipPermissions: () => false })
     const adapter = registry.getForRuntime('claude-cli-tmux')
     expect(adapter.id).toBe('claude-code')
   })
 
   it('unknown runtime throws Error containing the unknown value', () => {
-    const registry = new AdapterRegistry()
+    const registry = new AdapterRegistry({ getSkipPermissions: () => false })
     expect(() => registry.getForRuntime('unknown-xyz')).toThrow(/unknown-xyz/)
   })
 
   it('no silent fallback: unknown runtime does not silently return default', () => {
-    const registry = new AdapterRegistry()
+    const registry = new AdapterRegistry({ getSkipPermissions: () => false })
     let threw = false
     try {
       registry.getForRuntime('unbekannter-wert')

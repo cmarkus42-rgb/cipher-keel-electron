@@ -31,19 +31,6 @@ export interface AgentConfigReader {
   getSkipPermissions(): boolean
 }
 
-/** Default reader — the persisted agent config decides. */
-const defaultConfigReader: AgentConfigReader = {
-  getSkipPermissions(): boolean {
-    // Lazy, and require rather than import(): this getter is synchronous, and
-    // config-store pulls in electron at module scope — an eager import would break
-    // every adapter unit test, which runs without an Electron app instance.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { configStore } = require('../../config/config-store') as
-      typeof import('../../config/config-store')
-    return configStore.get('agent').skipPermissions
-  },
-}
-
 export class ClaudeCodeAdapter implements AgentAdapter {
   readonly id = 'claude-code'
   readonly displayName = 'Claude Code'
@@ -51,8 +38,8 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
   private readonly configReader: AgentConfigReader
 
-  constructor(configReader?: AgentConfigReader) {
-    this.configReader = configReader ?? defaultConfigReader
+  constructor(configReader: AgentConfigReader) {
+    this.configReader = configReader
   }
 
   buildLaunchCommand(opts: LaunchOpts): LaunchCommand {
