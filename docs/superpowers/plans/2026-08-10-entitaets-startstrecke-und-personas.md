@@ -1313,6 +1313,14 @@ describe('entity prompt file', () => {
     expect(fs.existsSync(entityPromptPath(userData, 'keel-demo-se-ab12'))).toBe(false)
     expect(() => removeEntityPromptFile(userData, 'keel-demo-se-ab12')).not.toThrow()
   })
+
+  // Added 2026-08-10 after the Task 5 review: the original removeEntityPromptFile
+  // resolved the path inside its try, so an unsafe name was swallowed into a warning
+  // and the call reported success without checking or deleting anything.
+  it('rejects an unsafe session name on removal instead of no-oping', () => {
+    expect(() => removeEntityPromptFile(userData, '../escape')).toThrow()
+    expect(() => removeEntityPromptFile(userData, 'a/b')).toThrow()
+  })
 })
 ```
 
@@ -1365,10 +1373,18 @@ export function writeEntityPromptFile(
   return filePath
 }
 
-/** Remove a session's prompt file. Missing file is not an error. */
+/**
+ * Remove a session's prompt file. A missing file is not an error.
+ *
+ * The path is resolved OUTSIDE the try on purpose: an unsafe session name is a
+ * programming error and must propagate, while a filesystem hiccup during cleanup
+ * is survivable. Resolving inside the try would turn the former into a logged
+ * no-op that reports success without having checked or deleted anything.
+ */
 export function removeEntityPromptFile(userDataPath: string, sessionName: string): void {
+  const filePath = entityPromptPath(userDataPath, sessionName)
   try {
-    fs.rmSync(entityPromptPath(userDataPath, sessionName), { force: true })
+    fs.rmSync(filePath, { force: true })
   } catch (err) {
     console.warn('[prompt-file] cleanup failed:', err)
   }
