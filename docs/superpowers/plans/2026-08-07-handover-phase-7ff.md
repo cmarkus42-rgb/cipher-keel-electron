@@ -119,31 +119,44 @@ Als nächstes anbietet sich `createSessionForProject(deps, opts)`.
 > Abschnitts waren falsch: (a) `asarUnpack` war nicht nötig — electron-builder 26
 > entpackt `better-sqlite3` und `sqlite-vec-darwin-arm64` von selbst, und Electron biegt
 > `process.dlopen` bereits auf `app.asar.unpacked` um; (b) die Falle war nicht stumm —
-> `initGraph` fängt, setzt `degraded` und warnt. Der tatsächliche Bruch lag bei
-> `sqlite-vec`: `db.loadExtension()` geht durch sqlite3s eigenes `dlopen`, das kein asar
-> kennt. Zusätzlich gefunden: das Ausgabeverzeichnis `dist` kollidierte mit
-> electron-vite und verhinderte jeden Paketbau, und `existsSync` beantwortet innerhalb
-> von `app.asar` den Archiv-Index statt die Platte, weshalb der zugesagte
-> `undefined`-Fallback im Paket nie griff. Detail und Messprotokolle:
-> `2026-08-09-phase-8-packaging.md`.
+> `initGraph` fängt, setzt `degraded` und warnt, und das galt schon seit Phase 6, nicht
+> erst seit einem Phase-8-Fix. Der tatsächliche Bruch lag bei `sqlite-vec`:
+> `db.loadExtension()` geht durch sqlite3s eigenes `dlopen`, das kein asar kennt.
+> Zusätzlich gefunden: das Ausgabeverzeichnis `dist` kollidierte mit electron-vite und
+> verhinderte jeden Paketbau, und `existsSync` beantwortet innerhalb von `app.asar` den
+> Archiv-Index statt die Platte, weshalb der zugesagte `undefined`-Fallback im Paket nie
+> griff. Die unten durchgestrichenen Stellen sind entsprechend widerlegt; die
+> „Zu tun"-Liste ist um den tatsächlichen Stand ergänzt.
 
 `resolveBetterSqliteBinding(moduleRoot)` (`src/main/graph/native-binding.ts`) sucht unter
 `<moduleRoot>/bin/<platform>-<arch>-<abi>/better-sqlite3.node` und gibt `undefined` zurück, wenn
 dort nichts liegt — dann fällt `openGraphDb` auf die Default-Auflösung zurück.
 
 Im gepackten Build liegt `node_modules` in `app.asar`, aus dem sich **keine `.node`-Datei laden
-lässt**. Ohne `asarUnpack`-Eintrag für `better-sqlite3` findet der Resolver nichts, die
+lässt**. ~~Ohne `asarUnpack`-Eintrag für `better-sqlite3` findet der Resolver nichts, die
 Default-Auflösung schlägt ebenfalls fehl — und das Ganze passiert **ohne Warnung**, weil der
 Resolver ein legitimes `undefined` liefert statt zu meckern. Symptom im Paket: Graph degradiert,
-App läuft weiter, niemand weiß warum.
+App läuft weiter, niemand weiß warum.~~ **Widerlegt (siehe Nachtrag oben):** electron-builder 26
+entpackt `better-sqlite3` von selbst, ganz ohne `asarUnpack`-Eintrag, und `initGraph`
+(`src/main/service-lifecycle.ts`, seit Phase 6) fängt den Fehlerfall bereits ab, setzt `graph` und
+`kanban` auf `degraded` und schreibt `console.warn` — nie stumm gewesen. Der tatsächliche Bruch lag
+bei `sqlite-vec`, siehe Nachtrag oben.
 
 **Zu tun:**
-- `asarUnpack` für `better-sqlite3` (und `sqlite-vec-darwin-arm64`) in den `build`-Block
-- `app.getAppPath()` zeigt im Paket auf `app.asar` — der an `initializeServices` übergebene
-  `appPath` muss auf das **entpackte** Verzeichnis zeigen (`app.asar.unpacked`)
-- Erwäge, den Resolver bei Nichtfinden `console.warn`en zu lassen, damit die Falle nicht stumm bleibt
+- ~~`asarUnpack` für `better-sqlite3` (und `sqlite-vec-darwin-arm64`) in den `build`-Block~~
+  **Nie nötig gewesen** — electron-builder 26 entpackt beide nativen Pakete automatisch, ohne
+  eigenen `build`-Eintrag
+- ~~`app.getAppPath()` zeigt im Paket auf `app.asar` — der an `initializeServices` übergebene
+  `appPath` muss auf das **entpackte** Verzeichnis zeigen (`app.asar.unpacked`)~~ **Gelöst, aber
+  anders als hier beschrieben:** `appPath` bleibt unverändert und zeigt weiterhin auf `app.asar`;
+  die Umschreibung passiert pro Pfad in `resolveBetterSqliteBinding` und
+  `resolveVecExtensionPath` über `toUnpackedPath()` (`src/main/graph/native-binding.ts`), nicht am
+  `appPath` selbst
+- ~~Erwäge, den Resolver bei Nichtfinden `console.warn`en zu lassen, damit die Falle nicht stumm
+  bleibt~~ **Erledigt** — `resolveBetterSqliteBinding` warnt bei Nichtfinden
+  (`src/main/graph/native-binding.ts`)
 - Signierung ist entschieden: **unsigniert**, `xattr -cr`-Anleitung prominent ins README (Roadmap
-  Entscheidung 1)
+  Entscheidung 1) — unverändert aktuell
 
 ---
 
