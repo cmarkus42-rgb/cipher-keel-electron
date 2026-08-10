@@ -12,10 +12,18 @@ import { readFileSync, existsSync } from 'node:fs'
 
 const BUNDLE = 'dist/main/index.js'
 
-/** Marker text that must appear in the bundle, and where it comes from. */
+/**
+ * Marker text that must appear in the bundle, and where it comes from.
+ *
+ * Pick needles that are pure ASCII and free of quotes: the markdown lands in the
+ * bundle as a JS string literal, so quotes are escaped and non-ASCII may be
+ * escaped too. A needle containing either would make this guard cry wolf.
+ */
 const MARKERS = [
   { needle: 'Du bist der Architect', source: 'src/main/preset/architect/architect-body.md' },
   { needle: 'Du bist die Cyber Factory', source: 'src/main/preset/cyber-factory/cf-body.md' },
+  { needle: 'Dein Vibe ist positiver Cyberpunk', source: 'src/main/preset/shared/personas/cipher.md' },
+  { needle: 'Stelle gezielte, freundliche Gegenfragen', source: 'src/main/preset/shared/personas/theaitetos.md' },
 ]
 
 if (!existsSync(BUNDLE)) {

@@ -66,7 +66,20 @@ export function getEntityDefinition(
   const rahmen = entry.rahmen(niveau)
   // The rahmen may leave personaVorgabe empty (workshop does) — the catalog default fills in.
   const vorgabe = rahmen.personaVorgabe || getDefaultPersona(entityId) || ''
-  const persona = vorgabe ? resolvePersona(vorgabe, personasDir) : null
+
+  // Two different nulls, and only one of them is benign: "no persona configured" is a
+  // valid state, "a persona was named and could not be found" is a config error. Folding
+  // both into a silent null is how a typo in personaVorgabe ships unnoticed.
+  let persona: string | null = null
+  if (vorgabe) {
+    persona = resolvePersona(vorgabe, personasDir)
+    if (persona === null) {
+      console.warn(
+        `[preset/registry] entity '${entityId}' requests persona '${vorgabe}', ` +
+        'which resolves to nothing — the session will start without a persona layer'
+      )
+    }
+  }
 
   return { id: entityId, rahmen, body: entry.body, persona }
 }

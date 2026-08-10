@@ -1,5 +1,5 @@
 // tests/preset/registry.test.ts
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { getEntityDefinition, listEntityIds } from '../../src/main/preset/registry'
 import { CapabilityNiveau } from '../../src/main/preset/niveau'
 import { getBuiltinPersona } from '../../src/main/preset/shared/persona-loader'
@@ -81,5 +81,51 @@ describe('entity registry', () => {
       const result = validatePresetRahmen(def.rahmen)
       expect(result.errors, choice.id).toEqual([])
     }
+  })
+})
+
+// A personasDir that merely exists but has no matching file does NOT construct a miss for
+// any of the four shipped ids: resolvePersona() falls through to the builtin persona map,
+// and both 'cipher' and 'theaitetos' are builtins. Verified directly: getEntityDefinition
+// with a nonexistent personasDir still returns getBuiltinPersona('theaitetos') for
+// 'architect'. So the miss below is constructed the other way the review suggested — an
+// id whose personaVorgabe names something that exists nowhere (not builtin, not on disk) —
+// by mocking the architect factory to report such a value, the same shape a future
+// misconfigured preset would actually produce.
+describe('entity registry — persona miss', () => {
+  afterEach(() => {
+    vi.doUnmock('../../src/main/preset/architect/architect-preset')
+    vi.resetModules()
+  })
+
+  it('warns and returns persona: null when personaVorgabe resolves to nothing', async () => {
+    vi.resetModules()
+    vi.doMock('../../src/main/preset/architect/architect-preset', async () => {
+      const actual = await vi.importActual<
+        typeof import('../../src/main/preset/architect/architect-preset')
+      >('../../src/main/preset/architect/architect-preset')
+      return {
+        ...actual,
+        createArchitectRahmen: (niveau: CapabilityNiveau) => ({
+          ...actual.createArchitectRahmen(niveau),
+          personaVorgabe: 'does-not-exist-anywhere',
+        }),
+      }
+    })
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { getEntityDefinition: getEntityDefinitionMocked } = await import(
+      '../../src/main/preset/registry'
+    )
+
+    const def = getEntityDefinitionMocked('architect')
+
+    expect(def).not.toBeNull()
+    expect(def!.persona).toBeNull()
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    expect(warnSpy.mock.calls[0][0]).toContain('does-not-exist-anywhere')
+    expect(warnSpy.mock.calls[0][0]).toContain('architect')
+
+    warnSpy.mockRestore()
   })
 })
