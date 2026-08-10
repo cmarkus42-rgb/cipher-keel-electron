@@ -925,12 +925,18 @@ entfernen.
 Ausführen: `npm test && npm run typecheck && npm run lint`
 Erwartet: alles grün.
 
-- [ ] **Schritt 8: Den Bündel-Nachweis führen — hier, nicht in Task 1**
+- [ ] **Schritt 8: Den Bündel-Nachweis erwarten — und den `0` als Befund hinnehmen**
 
-> **Nachgezogen am 2026-08-10 aus dem Review von Task 1.** Erst ab hier hat `bodies.ts` einen
-> echten Konsumenten: die Registry importiert alle vier Bodies, die Registry hängt über
-> `preset/index.ts` an der Hauptprozess-Kette. Vorher hätte Rollup das Modul entfernt, und der
-> `grep` hätte nur mit einem Gerüst-Re-Export bestanden.
+> **Zweite Korrektur, am 2026-08-10 in Task 4 gemessen.** Der Nachweis war aus Task 1 hierher
+> verschoben worden mit der Begründung, die Registry sei der erste echte Konsument. **Das war
+> falsch, und zwar nachgemessen:** `src/main/ipc-handlers.ts` importiert aus dem Preset-Bereich
+> ausschließlich `src/shared/preset-catalog.ts`. Nichts im Hauptprozess erreicht
+> `preset/index.ts` oder `registry.ts` — die Registry hat selbst noch keinen Aufrufer. Rollup
+> entfernt die Kette also weiterhin zu Recht.
+>
+> **Die Kette schließt erst in Task 7**, wo `ipc-handlers.ts` `getEntityDefinition` aufruft. Der
+> Nachweis wandert dorthin. Die Regel bleibt dieselbe wie in Task 1: kein Gerüst, um einen
+> Nachweis künstlich bestehen zu lassen.
 
 Ausführen:
 
@@ -939,10 +945,12 @@ npm run build
 grep -c "Du bist der Architect" dist/main/index.js
 ```
 
-Erwartet: `1` oder höher. Bei `0` ist der Body-Text **nicht** im Bundle — dann wäre der gesamte
-`?raw`-Weg aus Task 1 in der gepackten App wirkungslos, und zwar still: die Unit-Tests bleiben
-grün, weil vitest die Datei von der Platte liest. Auf `0` also nicht weiterbauen, sondern
-zurückgehen und klären, warum die Import-Kette von `main.ts` bis `bodies.ts` reißt.
+Erwarteter Stand **in diesem Task**: `0`. Das ist kein Fehlschlag, sondern der dokumentierte
+Zwischenzustand — festhalten, nicht reparieren. **Insbesondere nicht** durch einen Re-Export in
+`src/main/main.ts`; das wurde in Task 1 gebaut, geprüft und verworfen.
+
+Ein Wert `≥ 1` hier wäre umgekehrt ein Befund: er hieße, dass etwas die Registry bereits erreicht,
+das der Plan nicht kennt.
 
 - [ ] **Schritt 9: Den Nachweis als Script festschreiben**
 
@@ -1006,23 +1014,45 @@ In `package.json` unter `scripts` ergänzen:
     "verify:bundle": "node scripts/verify-bundle.mjs",
 ```
 
-- [ ] **Schritt 10: Das Script gegen beide Zustände prüfen**
+- [ ] **Schritt 10: Das Script gegen beide Zustände prüfen — an einem synthetischen Bündel**
+
+> **Korrigiert am 2026-08-10.** Der ursprüngliche Schritt erwartete `OK — 2/2` gegen den echten
+> Build. Das kann in diesem Task nicht eintreten (siehe Schritt 8): das echte Bündel enthält die
+> Marker noch nicht, das Script meldet dort korrekt `2/2 MISSING`. Eine Gegenprobe gegen ein
+> bereits rotes Bündel beweist nichts — sie ist rot, egal was das Script tut.
+
+Deshalb wird das Script gegen ein **synthetisches** Bündel geprüft, in dem beide Marker
+nachweislich vorkommen. Nur so trennt die Probe „Script funktioniert" von „Bündel ist leer":
 
 ```bash
-npm run build && npm run verify:bundle
+# 1. Echter Build: der dokumentierte Zwischenzustand
+npm run build && npm run verify:bundle; echo "exit=$?"
 ```
 
-Erwartet: `[verify-bundle] OK — 2/2 markers present`, Exit-Code 0.
-
-Und die Gegenprobe, damit das Script nicht bloß immer „OK" sagt:
+Erwartet: zwei `MISSING`-Zeilen, `exit=1`.
 
 ```bash
-node -e "const s=require('fs').readFileSync('scripts/verify-bundle.mjs','utf-8');require('fs').writeFileSync('/tmp/vb-probe.mjs',s.replace('Du bist der Architect','TEXT-DER-NICHT-VORKOMMT'))"
-node /tmp/vb-probe.mjs; echo "exit=$?"
-rm /tmp/vb-probe.mjs
+# 2. Synthetisches Bündel MIT beiden Markern — beweist, dass das Script OK sagen kann
+mkdir -p /tmp/vb/dist/main
+cat src/main/preset/architect/architect-body.md src/main/preset/cyber-factory/cf-body.md \
+  > /tmp/vb/dist/main/index.js
+cp scripts/verify-bundle.mjs /tmp/vb/
+(cd /tmp/vb && node verify-bundle.mjs); echo "exit=$?"
 ```
 
-Erwartet: `MISSING`-Zeile und `exit=1`. Meldet die Gegenprobe `OK`, prüft das Script nichts.
+Erwartet: `OK — 2/2 markers present`, `exit=0`.
+
+```bash
+# 3. Dasselbe Bündel, ein Marker zerstört — beweist, dass das Script auch nein sagen kann
+sed -i '' 's/Du bist der Architect/ZERSTOERT/' /tmp/vb/dist/main/index.js
+(cd /tmp/vb && node verify-bundle.mjs); echo "exit=$?"
+rm -rf /tmp/vb
+```
+
+Erwartet: eine `MISSING`-Zeile für `architect-body.md`, `exit=1`.
+
+Sagt Probe 2 nicht `OK`, ist die Nadel falsch abgelesen. Sagt Probe 3 `OK`, prüft das Script
+nichts. Beide Ausgaben gehören in den Bericht.
 
 - [ ] **Schritt 11: Committen**
 
@@ -1703,7 +1733,29 @@ Ausführen: `npm test && npm run typecheck && npm run lint`
 Erwartet: alles grün — und **das beweist nichts über die Verdrahtung**. Kein Test dieses Repos
 erreicht einen `ipcMain`-Handler. Der Beweis kommt in Task 8.
 
-- [ ] **Schritt 8: Committen**
+- [ ] **Schritt 8: Der Bündel-Nachweis — hier schließt die Kette wirklich**
+
+> **Zweimal verschoben, am 2026-08-10 jeweils nach dem Nachmessen.** Der Nachweis stand
+> ursprünglich in Task 1 (dort unmöglich: `bodies.ts` hatte keinen Konsumenten) und dann in
+> Task 4 (dort ebenso: die Registry selbst hatte keinen Aufrufer, `ipc-handlers.ts` importierte
+> aus dem Preset-Bereich nur `preset-catalog.ts`). **Erst dieser Task** importiert
+> `getEntityDefinition` in `ipc-handlers.ts`, und `ipc-handlers.ts` hängt an `main.ts`. Damit
+> reicht die Import-Kette zum ersten Mal von der Einstiegsdatei bis zu den Bodies.
+
+```bash
+npm run build && npm run verify:bundle; echo "exit=$?"
+```
+
+Erwartet: `[verify-bundle] OK — 4/4 markers present`, `exit=0` — zwei Bodies aus Task 1, zwei
+Personas aus Task 3.
+
+Meldet es weiterhin `MISSING`, ist **das der Befund dieses Tasks**, wichtiger als jeder grüne
+Unit-Test: dann verliert die gepackte App ihre Entitäts-Texte still, während die Suite grün
+bleibt. Nicht durch einen Re-Export in `main.ts` reparieren — dieser Weg wurde in Task 1 gebaut
+und verworfen. Stattdessen die Import-Kette von `main.ts` über `ipc-handlers.ts` bis `bodies.ts`
+nachverfolgen und melden, wo sie reißt.
+
+- [ ] **Schritt 9: Committen**
 
 ```bash
 git add src/main/util/shell-quote.ts tests/util/shell-quote.test.ts src/main/ipc-handlers.ts
