@@ -6,7 +6,7 @@
  * CK-INF-009
  */
 
-import { ipcMain, BrowserWindow, dialog } from 'electron'
+import { ipcMain, BrowserWindow, dialog, app } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileAsync } from './util/exec-util'
@@ -108,9 +108,23 @@ import { createMainWindow } from './window-manager'
 import type { AppServices } from './window-manager'
 import { registerWindow, broadcast } from './event-bus'
 import { normalizeToP1Format } from './p1/normalizer'
+import { getEntityDefinition } from './preset/registry'
+import { getGlobalRules } from './preset/global-rules'
+import { assembleEntityClaudeMd } from './session/assemble-entity'
+import { resolveCapabilityRefs } from './session/capability-refs'
+import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-file'
+import { formatShellCommand } from './util/shell-quote'
+import { AdapterRegistry } from './agent/registry'
 
 // Tracks the active grid window for focus-or-create logic (CK-UI-002)
 let activeGridWindow: BrowserWindow | null = null
+
+// The registry demands its config reader — see Task 6. This is the one place that has
+// both Electron and the ConfigStore loaded, which is why the reading happens here and
+// not inside the adapter.
+const adapterRegistry = new AdapterRegistry({
+  getSkipPermissions: () => configStore.get('agent').skipPermissions,
+})
 
 export function registerIpcHandlers(services: AppServices): void {
   // Project manager — wired to configStore for persistence (CK-INF-020)
@@ -156,10 +170,49 @@ export function registerIpcHandlers(services: AppServices): void {
         return { id: null, name: null, error: 'No session name and no active project' }
       }
 
+      // Assemble the entity prompt. A caller-supplied command wins — the smoke
+      // driver uses it — but the real UI path never sets one.
+      let command = opts.command
+      if (!command && cwd) {
+        const def = getEntityDefinition(entityId)
+        if (!def) {
+          return { id: null, name: null, error: `Unknown entity '${entityId}'` }
+        }
+
+        const refs = resolveCapabilityRefs(def.rahmen.capabilityAnbindung, cwd)
+        if (refs.missing.length > 0) {
+          console.warn(
+            `[ipc] entity '${entityId}': ${refs.missing.length} capability SKILL.md missing, ` +
+            `not referenced: ${refs.missing.join(', ')}`
+          )
+        }
+
+        const prompt = assembleEntityClaudeMd({
+          body: def.body,
+          persona: def.persona ?? undefined,
+          globalRules: getGlobalRules(def.rahmen.capabilityNiveau),
+          niveau: def.rahmen.capabilityNiveau,
+          capabilities: refs.present,
+        })
+        const promptPath = writeEntityPromptFile(app.getPath('userData'), name, prompt)
+
+        // def.rahmen.model carries values like 'heavy', which is a CF/architect model
+        // tier label, not a Claude model id — there is no tier-to-id translation
+        // anywhere in the codebase (checked: grep -rn "'heavy'" src/). Passing it
+        // through would break the launch, so model is omitted here entirely.
+        const adapter = adapterRegistry.getDefault()
+        const launch = adapter.buildLaunchCommand({
+          projectPath: cwd,
+          sessionName: name,
+          appendSystemPromptFile: promptPath,
+        })
+        command = formatShellCommand(launch.cmd, launch.args)
+      }
+
       if (!services.tmux.isConnected()) {
         await services.tmux.connect()
       }
-      const sessionId = await services.tmux.createSession(name, { ...opts, cwd })
+      const sessionId = await services.tmux.createSession(name, { ...opts, cwd, command })
       services.tmux.watchSession(name, name)
 
       if (ctx && services.graphWriter) {
@@ -181,6 +234,7 @@ export function registerIpcHandlers(services: AppServices): void {
     try {
       services.tmux.unwatchSession(name)
       await services.tmux.killSession(name)
+      removeEntityPromptFile(app.getPath('userData'), name)
       return { ok: true, error: null }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
