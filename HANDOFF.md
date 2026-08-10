@@ -1,5 +1,11 @@
 # HANDOFF — cipher-keel-electron
 
+> **Dieses Dokument ist historisch und endet am 2026-06-05 bei Wave 4.** Es kennt die
+> Phasen 3a bis 8 nicht. Der aktuelle Einstieg ist
+> **`docs/superpowers/plans/2026-08-10-handover-nach-phase-8.md`**; die Handovers der
+> späteren Phasen liegen ebenfalls unter `docs/superpowers/plans/`. Was unten steht, bleibt
+> als Protokoll der frühen Bauwellen erhalten — als Zustandsbeschreibung ist es überholt.
+
 ## Wave 4 — Integration + NFR-Checks (2026-06-05, abgeschlossen)
 
 Worker: Integration-Worker | Stand: 2026-06-05 | Status: **abgeschlossen**
