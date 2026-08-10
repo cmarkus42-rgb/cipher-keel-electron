@@ -13,8 +13,16 @@ Session nur einen Teil der Zerlegung übernimmt.
 
 ## Vorgehen
 
-**Input lesen.** Hol dir zuerst alle `phase_subsystem`-Knoten über die Query `subsystem_list` —
-sie liefert pro Subsystem `scope`, `status`, `blocked_grund` (aus dem Frontmatter) sowie
+**Input lesen.** Hol dir zuerst alle `phase_subsystem`-Knoten über die Query `subsystem_list`.
+Sie liefert zwei unterschiedliche, gleich aussehende Spalten — verwechsle sie nicht:
+
+- `status` — der Knoten-Lebenszyklus (`aktiv` | `abgeloest` | `verworfen`), nicht aus dem
+  Frontmatter, sondern die Spalte `node.status`.
+- `sub_status` — der fachliche Bearbeitungsstand aus dem Frontmatter
+  (`json_extract(frontmatter, '$.status')`, entspricht `PhaseSubsystemAttrs.status`). **Das ist
+  die Spalte, die beantwortet, ob ein Subsystem bereit zum Bauen ist** — nicht `status`.
+
+Zusätzlich liefert die Query `scope` und `blocked_grund` (beide aus dem Frontmatter) sowie
 `dep_count`, die Anzahl ausgehender `haengt_ab_von`-Kanten. Ist das Ergebnis leer, gibt es
 nichts zu bauen.
 

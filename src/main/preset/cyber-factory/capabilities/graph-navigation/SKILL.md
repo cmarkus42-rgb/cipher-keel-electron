@@ -45,15 +45,31 @@ Verfügung — es gibt keine weiteren:
 - `adr_list` (optional `project_uid`) und `adr_by_tiefe` (Pflichtparameter `adr_uid`; optional
   `tiefe` mit `'summary' | 'context' | 'full'`, Default `summary`) — Architektur-Entscheidungen
   nachlesen, wenn eine Bau-Entscheidung von einer ADR abhängt.
-- `offene_fragen` (optional `subsystem`) — deine eigenen offenen Coaching-Fragen an den
-  Architect, um zu prüfen, ob schon eine Antwort vorliegt.
+- `offene_fragen` (optional `subsystem`) — nur noch **unbeantwortete** Fragen (filtert intern
+  auf `status = 'offen'`). Damit erkennst du, welche deiner Fragen noch offen sind — für die
+  Antwort selbst reicht dieses Template nicht.
+- `coaching_historie` (Pflichtparameter `subsystem` — UID des Subsystems, gegen
+  `frage_knoten.frontmatter.subsystem` gematcht; ohne Parameter lehnt die Query ab) — die
+  eigentliche Antwort-Abholung: liefert pro Frage-Knoten eine Zeile mit `frage_uid`,
+  `frage_title`, `frage`, `antwort_uid`, `antwort`, `erstellt`, chronologisch aufsteigend. Die
+  Antwort-Spalten sind `null`, solange kein `antwort_knoten` über die `beantwortet`-Kante
+  verlinkt ist (LEFT JOIN) — so unterscheidest du "noch offen" von "beantwortet, aber noch nicht
+  an den Worker weitergegeben". Nutze `coaching_historie`, nicht `offene_fragen`, um Antworten
+  einzusammeln und an den fragenden Worker weiterzuleiten.
 - `risk_reviews` — deine bisherigen Risk-Review-Befunde, neueste zuerst.
 
 **Schreib-Pfad.** Für eigene Knoten (Frage-Knoten, Gate-Befunde, Rückweg-Dokumente) nutzt du
-`graph_upsert_node`, für Verknüpfungen (z. B. `beantwortet` zwischen `antwort_knoten` und
-`frage_knoten`) `graph_link`. Beide validieren gegen das Schema, bevor sie schreiben — ein
-fehlendes Pflichtfeld oder ein für das Knoten-Paar ungültiger Kantentyp führt zu einem
-Fehlerergebnis, nicht zu einem stillschweigend unvollständigen Knoten.
+`graph_upsert_node`. Schreibst du einen `frage_knoten`, sind vier Frontmatter-Felder Pflicht:
+`subsystem`, `frage`, `worker_id`, `status` — und `status` muss zusätzlich einer von `offen` |
+`beantwortet` sein. Fehlt eines oder ist `status` ungültig, lehnt der Aufruf den Knoten ab,
+bevor irgendetwas geschrieben wird. Für Verknüpfungen nutzt du `graph_link` — ein Beispiel aus
+deinem eigenen Territorium: Verlinkst du einen selbst geschriebenen `gate_befund` mit der
+zugehörigen `phase`, ist der abgeleitete Kantentyp `gate_fuer` (Paar-Ableitungstabelle in
+`edge-types.ts`). Die `beantwortet`-Kante zwischen `antwort_knoten` und `frage_knoten` schreibt
+dagegen der Architect, nicht du — du liest sie nur, über `coaching_historie`. Beide Schreib-Tools
+validieren gegen das Schema, bevor sie schreiben — ein fehlendes Pflichtfeld oder ein für das
+Knoten-Paar ungültiger Kantentyp führt zu einem Fehlerergebnis, nicht zu einem stillschweigend
+unvollständigen Knoten.
 
 ## Grenzen
 
