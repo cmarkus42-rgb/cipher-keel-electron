@@ -145,7 +145,6 @@ export function registerIpcHandlers(services: AppServices): void {
     name?: string
     entityId?: string
     cwd?: string
-    command?: string
     env?: Record<string, string>
     width?: number
     height?: number
@@ -170,44 +169,47 @@ export function registerIpcHandlers(services: AppServices): void {
         return { id: null, name: null, error: 'No session name and no active project' }
       }
 
-      // Assemble the entity prompt. A caller-supplied command wins — the smoke
-      // driver uses it — but the real UI path never sets one.
-      let command = opts.command
-      if (!command && cwd) {
-        const def = getEntityDefinition(entityId)
-        if (!def) {
-          return { id: null, name: null, error: `Unknown entity '${entityId}'` }
-        }
-
-        const refs = resolveCapabilityRefs(def.rahmen.capabilityAnbindung, cwd)
-        if (refs.missing.length > 0) {
-          console.warn(
-            `[ipc] entity '${entityId}': ${refs.missing.length} capability SKILL.md missing, ` +
-            `not referenced: ${refs.missing.join(', ')}`
-          )
-        }
-
-        const prompt = assembleEntityClaudeMd({
-          body: def.body,
-          persona: def.persona ?? undefined,
-          globalRules: getGlobalRules(def.rahmen.capabilityNiveau),
-          niveau: def.rahmen.capabilityNiveau,
-          capabilities: refs.present,
-        })
-        const promptPath = writeEntityPromptFile(app.getPath('userData'), name, prompt)
-
-        // def.rahmen.model carries values like 'heavy', which is a CF/architect model
-        // tier label, not a Claude model id — there is no tier-to-id translation
-        // anywhere in the codebase (checked: grep -rn "'heavy'" src/). Passing it
-        // through would break the launch, so model is omitted here entirely.
-        const adapter = adapterRegistry.getDefault()
-        const launch = adapter.buildLaunchCommand({
-          projectPath: cwd,
-          sessionName: name,
-          appendSystemPromptFile: promptPath,
-        })
-        command = formatShellCommand(launch.cmd, launch.args)
+      // Assemble the entity prompt. The IPC surface takes no caller-supplied command —
+      // it never had a real user, and a generic untyped `invoke` bridge means nothing
+      // stops the renderer from injecting raw keystrokes through such a field. The
+      // composition always runs once a project directory is known.
+      if (!cwd) {
+        return { id: null, name: null, error: 'No project directory (cwd) — cannot start the entity' }
       }
+
+      const def = getEntityDefinition(entityId)
+      if (!def) {
+        return { id: null, name: null, error: `Unknown entity '${entityId}'` }
+      }
+
+      const refs = resolveCapabilityRefs(def.rahmen.capabilityAnbindung, cwd)
+      if (refs.missing.length > 0) {
+        console.warn(
+          `[ipc] entity '${entityId}': ${refs.missing.length} capability SKILL.md missing, ` +
+          `not referenced: ${refs.missing.join(', ')}`
+        )
+      }
+
+      const prompt = assembleEntityClaudeMd({
+        body: def.body,
+        persona: def.persona ?? undefined,
+        globalRules: getGlobalRules(def.rahmen.capabilityNiveau),
+        niveau: def.rahmen.capabilityNiveau,
+        capabilities: refs.present,
+      })
+      const promptPath = writeEntityPromptFile(app.getPath('userData'), name, prompt)
+
+      // def.rahmen.model carries values like 'heavy', which is a CF/architect model
+      // tier label, not a Claude model id — there is no tier-to-id translation
+      // anywhere in the codebase (checked: grep -rn "'heavy'" src/). Passing it
+      // through would break the launch, so model is omitted here entirely.
+      const adapter = adapterRegistry.getDefault()
+      const launch = adapter.buildLaunchCommand({
+        projectPath: cwd,
+        sessionName: name,
+        appendSystemPromptFile: promptPath,
+      })
+      const command = formatShellCommand(launch.cmd, launch.args)
 
       if (!services.tmux.isConnected()) {
         await services.tmux.connect()
