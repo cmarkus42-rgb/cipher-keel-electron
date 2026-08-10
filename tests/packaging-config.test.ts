@@ -1,7 +1,7 @@
 /**
- * Packaging-Konfiguration — Regressionswächter.
- * Phase 8 / Task 1. Jede Zusicherung hier hat einen gemessenen Befund als Anlass
- * (siehe docs/superpowers/plans/2026-08-09-phase-8-packaging.md, „Ausgangslage").
+ * Packaging configuration — regression guard.
+ * Phase 8 / Task 1. Every assertion here has a measured finding as its reason
+ * (see docs/superpowers/plans/2026-08-09-phase-8-packaging.md, "Starting point").
  */
 
 import { describe, it, expect } from 'vitest'
@@ -28,15 +28,24 @@ const pkg = JSON.parse(
 
 describe('electron-builder configuration', () => {
   it('does not write its output into the electron-vite build directory', () => {
-    // Befund 1: Default 'dist' kollidiert mit electron-vite. electron-builder
-    // schliesst sein Ausgabeverzeichnis aus dem Archiv aus — die App fehlte.
+    // Finding 1: the default 'dist' collides with electron-vite. electron-builder
+    // excludes its own output directory from the archive — the app was missing.
     expect(pkg.build.directories?.output).toBe('release')
   })
 
   it('ships only the built app, not sources, tests or local settings', () => {
-    // Befund 6: ohne files-Allowlist landeten src/, tests/, docs/ und die nicht
-    // versionierte .claude/settings.local.json im Archiv.
-    expect(pkg.build.files).toEqual(['dist/**', 'package.json'])
+    // Finding 6: without a files allowlist, src/, tests/, docs/ and the
+    // unversioned .claude/settings.local.json ended up in the archive. Narrowed to
+    // the three directories electron-vite actually writes (dist/main, dist/preload,
+    // dist/renderer — see electron.vite.config.ts) rather than 'dist/**', which also
+    // swept in a stray dist/test/tsconfig.test.tsbuildinfo and a stale
+    // dist/builder-debug.yml left over from a build-machine run.
+    expect(pkg.build.files).toEqual([
+      'dist/main/**',
+      'dist/preload/**',
+      'dist/renderer/**',
+      'package.json',
+    ])
   })
 
   it('covers the declared entry point with the files allowlist', () => {
@@ -44,7 +53,7 @@ describe('electron-builder configuration', () => {
   })
 
   it('targets Apple Silicon only', () => {
-    // Befund 5: ein x64-Paket enthielt arm64-Binaries und waere tot ausgeliefert.
+    // Finding 5: an x64 package contained arm64 binaries and would have shipped dead on arrival.
     expect(pkg.build.mac.target).toHaveLength(1)
     expect(pkg.build.mac.target[0].arch).toEqual(['arm64'])
   })

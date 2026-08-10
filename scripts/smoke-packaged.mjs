@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * smoke-packaged.mjs — startet das gepackte Artefakt und prueft, ob der
- * Knowledge Graph im Paket wirklich hochkommt.
+ * smoke-packaged.mjs — launches the packaged artefact and checks whether the
+ * knowledge graph actually comes up inside the package.
  *
- * Existiert, weil die Testsuite unter Node laeuft und dort dieselben nativen
- * Artefakte korrekt laedt, die im Paket brechen. Gruene Tests sagen ueber das
- * Paket nichts aus (Handover Phase 7, Abschnitt 9).
+ * Exists because the test suite runs under Node, where it correctly loads the
+ * same native artefacts that break inside the package. Green tests say
+ * nothing about the package (Phase 7 handover, section 9).
  *
- * Nutzt ein Wegwerf-userData-Verzeichnis, damit der echte Graph des Nutzers
- * unberuehrt bleibt.
+ * Uses a throwaway userData directory so the user's real graph stays
+ * untouched.
  */
 
 import { spawn } from 'node:child_process'
