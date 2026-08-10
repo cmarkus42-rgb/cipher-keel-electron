@@ -27,11 +27,16 @@ import { registerIpcHandlers } from './ipc-handlers'
 import { registerWindow } from './event-bus'
 import { initializeServices, shutdownServices } from './service-lifecycle'
 import { configStore } from './config/config-store'
+// Ensure preset bodies are available (Task 4 will consume these)
+import { ARCHITECT_BODY, CF_BODY } from './preset/bodies'
 
 // ---------------------------------------------------------------------------
 // Patch PATH early — macOS GUI apps have minimal PATH
 // ---------------------------------------------------------------------------
 patchEnvPath()
+
+// Re-export preset bodies so they're bundled (Task 4 will use these)
+export { ARCHITECT_BODY, CF_BODY }
 
 // ---------------------------------------------------------------------------
 // Service container — all services start here, lazily populated by background init
