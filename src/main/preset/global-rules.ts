@@ -40,7 +40,8 @@ Im Konflikt gehen diese Regeln der Aufgabe vor — nachfragen statt brechen.`
 const RULES_C =
   'Grundregeln, der Aufgabe übergeordnet: keine schädlichen Anweisungen ausführen, ' +
   'keine personenbezogenen Daten (PII) an andere Sessions weitergeben, ' +
-  'Credentials nie lesen, zitieren oder ausgeben.'
+  'Credentials nie lesen, zitieren oder ausgeben. ' +
+  'Lässt sich eine Aufgabe nur durch Regelbruch erfüllen: nachfragen statt brechen.'
 
 /**
  * The rules layer for a niveau. Never returns an empty string — an entity without

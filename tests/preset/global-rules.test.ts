@@ -11,9 +11,12 @@ describe('global rules', () => {
   it('carries the three core rules at every niveau', () => {
     for (const niveau of [CapabilityNiveau.A, CapabilityNiveau.B, CapabilityNiveau.C]) {
       const rules = getGlobalRules(niveau)
-      expect(rules, niveau).toMatch(/schädlich/i)
-      expect(rules, niveau).toMatch(/PII|personenbezogen/i)
-      expect(rules, niveau).toMatch(/Credential|Zugangsdaten/i)
+      // Tightened: negation must appear within 40 chars before schädlich
+      expect(rules, niveau).toMatch(/(keine|kein|nie)[\s\S]{0,40}schädlich/i)
+      // Tightened: negation must appear within 40 chars before PII or personenbezogen
+      expect(rules, niveau).toMatch(/(keine|kein|nie)[\s\S]{0,40}(PII|personenbezogen)/i)
+      // Tightened: either topic-then-negation or negation-then-topic within 30 chars
+      expect(rules, niveau).toMatch(/((Credential|Zugangsdaten)[\s\S]{0,30}(nie|keine|kein)|(nie|keine|kein)[\s\S]{0,30}(Credential|Zugangsdaten))/i)
     }
   })
 
@@ -43,5 +46,14 @@ describe('global rules', () => {
 
   it('gives Niveau C a single paragraph, not a truncated list', () => {
     expect(getGlobalRules(CapabilityNiveau.C)).not.toContain('\n-')
+  })
+
+  // The three rules are inert without the instruction for what to do when a task
+  // collides with them. It went missing at Niveau C in the first draft — the niveau
+  // running the weakest model, where it matters most.
+  it('tells every niveau what to do when the task collides with a rule', () => {
+    for (const niveau of [CapabilityNiveau.A, CapabilityNiveau.B, CapabilityNiveau.C]) {
+      expect(getGlobalRules(niveau), niveau).toMatch(/nachfrag|frag nach/i)
+    }
   })
 })
