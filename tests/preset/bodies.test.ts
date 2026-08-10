@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
-import { ARCHITECT_BODY, CF_BODY } from '../../src/main/preset/bodies'
+import { ARCHITECT_BODY, CF_BODY, SE_BODY, WORKSHOP_BODY } from '../../src/main/preset/bodies'
 
 const SRC = path.join(__dirname, '../../src/main/preset')
 
@@ -20,5 +20,15 @@ describe('preset bodies are compiled into the bundle', () => {
   it('bodies are non-empty', () => {
     expect(ARCHITECT_BODY.length).toBeGreaterThan(100)
     expect(CF_BODY.length).toBeGreaterThan(100)
+  })
+
+  it('SE_BODY matches the source file byte for byte', () => {
+    const onDisk = fs.readFileSync(path.join(SRC, 'systems-engineer/se-body.md'), 'utf-8')
+    expect(SE_BODY).toBe(onDisk)
+  })
+
+  it('WORKSHOP_BODY matches the source file byte for byte', () => {
+    const onDisk = fs.readFileSync(path.join(SRC, 'workshop/workshop-body.md'), 'utf-8')
+    expect(WORKSHOP_BODY).toBe(onDisk)
   })
 })
