@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "pack": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir --arm64",
     "dist": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --arm64",
-    "smoke:packaged": "node scripts/smoke-packaged.mjs"
+    "smoke:packaged": "node scripts/smoke-packaged.mjs",
+    "verify:bundle": "node scripts/verify-bundle.mjs"
   },
   "keywords": [
     "electron",

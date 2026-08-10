@@ -11,6 +11,7 @@ import { RollenTyp } from '../schema'
 import { CapabilityNiveau } from '../niveau'
 import type { PresetRahmen } from '../schema'
 import type { Preset } from '../types'
+import { getSECapabilities } from './se-capabilities'
 
 /** Eight capability packages bound to the SE at Niveau A. */
 export const SE_CAPABILITIES = [
@@ -37,6 +38,21 @@ export const SE_RAHMEN: PresetRahmen = {
   model: 'heavy',
   capabilityNiveau: CapabilityNiveau.A,
   harnessBindung: '',
+}
+
+/**
+ * Create a PresetRahmen for the Systems Engineer at the given niveau.
+ *
+ * SE_RAHMEN stays the Niveau-A constant; this factory brings the SE to the same
+ * shape as the other presets so the registry needs no special case.
+ */
+export function createSERahmen(niveau: CapabilityNiveau): PresetRahmen {
+  return {
+    ...SE_RAHMEN,
+    capabilityAnbindung: getSECapabilities(niveau),
+    model: niveau === CapabilityNiveau.A ? 'heavy' : '',
+    capabilityNiveau: niveau,
+  }
 }
 
 /**
