@@ -37,7 +37,9 @@ describe('Systems Engineer Body (M5 section 4)', () => {
     expect(body).toMatch(/schreibt keinen Code|führt nicht aus/i)
   })
 
-  it('separates Führung from Orchestrierung', () => {
-    expect(body).toContain('Orchestrierung')
+  // Corrected after review: toContain('Orchestrierung') passed on any stray mention
+  // and never checked the distinction this test is named after.
+  it('separates Fuehrung from Orchestrierung', () => {
+    expect(body).toMatch(/Führung[\s\S]{0,400}Orchestrierung|Orchestrierung[\s\S]{0,400}Führung/)
   })
 })

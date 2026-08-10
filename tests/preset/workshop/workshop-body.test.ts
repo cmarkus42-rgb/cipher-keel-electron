@@ -39,7 +39,9 @@ describe('Workshop Body (M5 section 8.5)', () => {
     expect(body).toMatch(/keine phasenübergreifende Koordination/i)
   })
 
+  // Corrected after review: /Debugger/i also matched the Debugger's earlier mention
+  // as a dispatch target, so the prohibition itself went unasserted.
   it('forbids deep single-bug analysis (Debugger territory)', () => {
-    expect(body).toMatch(/Debugger/i)
+    expect(body).toMatch(/(keine|kein).{0,40}(Tiefen-?Analyse|Einzel-?Bug)[\s\S]{0,120}Debugger/i)
   })
 })
