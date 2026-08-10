@@ -1509,18 +1509,44 @@ In `src/main/agent/agent-adapter.ts` innerhalb von `LaunchOpts` ergänzen:
 In `src/main/agent/adapters/claude-code.ts` den `defaultConfigReader` an den ConfigStore hängen:
 
 ```typescript
-/** Default reader — the persisted agent config decides. */
-const defaultConfigReader: AgentConfigReader = {
-  getSkipPermissions(): boolean {
-    // Lazy, and require rather than import(): this getter is synchronous, and
-    // config-store pulls in electron at module scope — an eager import would break
-    // every adapter unit test, which runs without an Electron app instance.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { configStore } = require('../../config/config-store') as
-      typeof import('../../config/config-store')
-    return configStore.get('agent').skipPermissions
-  },
-}
+> **Verworfen und ersetzt am 2026-08-10, nach Fix-Runde 1.** Die erste Fassung ließ den Adapter
+> seinen ConfigStore selbst per lazy `require` holen. Das funktionierte, erzwang aber einen Test,
+> der Nodes `Module._resolveFilename` patcht — weil ein nacktes `require` an Vites Modulgraph
+> vorbeigeht und `vi.doMock` es nicht erreicht. Der Test war das Symptom; die Ursache war, dass
+> der Adapter sich globalen Zustand greift, statt ihn zu bekommen.
+>
+> **Nutzer-Entscheidung: umdrehen.** Der Reader wird dort injiziert, wo Electron ohnehin geladen
+> ist. Damit entfallen `defaultConfigReader`, das lazy `require`, die eslint-Ausnahme und der
+> gesamte Modul-Patch im Test.
+
+Es gibt keinen `defaultConfigReader` mehr. Der Konstruktor verlangt den Reader:
+
+```typescript
+export class ClaudeCodeAdapter implements AgentAdapter {
+  private readonly configReader: AgentConfigReader
+
+  constructor(configReader: AgentConfigReader) {
+    this.configReader = configReader
+  }
+```
+
+Und `src/main/agent/registry.ts` reicht ihn durch — ebenfalls **verpflichtend**, nicht optional
+mit Default:
+
+```typescript
+  constructor(configReader: AgentConfigReader) {
+    const claude = new ClaudeCodeAdapter(configReader)
+    this.adapters.set(claude.id, claude)
+  }
+```
+
+Verpflichtend, weil `AdapterRegistry` bisher keine Produktions-Konstruktionsstelle hat — Task 7
+legt die erste an. Damit **kann** Task 7 den echten Config-Zugriff nicht vergessen: es wäre ein
+Compilerfehler, keine Session, die die Nutzereinstellung stillschweigend ignoriert.
+
+Die fünf `new AdapterRegistry()`-Aufrufe in `tests/preset-schema.test.ts` (Zeilen 216, 222, 228,
+234, 239) bekommen einen Stub-Reader `{ getSkipPermissions: () => false }`. Diese Tests prüfen
+Adapter-Lookup, nicht Rechte — mehr als das Argument wird dort nicht angefasst.
 ```
 
 Und in `buildLaunchCommand` vor dem `return` einfügen:
@@ -1962,8 +1988,17 @@ wird durch die letzte Zeile oben ersetzt — `command` muss **nach** dem Spread 
 Oberhalb der Handler-Registrierung, einmalig im Modul:
 
 ```typescript
-const adapterRegistry = new AdapterRegistry()
+// The registry demands its config reader — see Task 6. This is the one place that has
+// both Electron and the ConfigStore loaded, which is why the reading happens here and
+// not inside the adapter.
+const adapterRegistry = new AdapterRegistry({
+  getSkipPermissions: () => configStore.get('agent').skipPermissions,
+})
 ```
+
+`configStore` ist in `ipc-handlers.ts` bereits importiert (Zeile 98) — kein neuer Import nötig.
+Fehlt das Argument, schlägt der Typecheck fehl; das ist beabsichtigt und der Grund, warum der
+Parameter in Task 6 verpflichtend gemacht wurde.
 
 `def.rahmen.model` trägt `'heavy'` beziehungsweise `''`. `'heavy'` ist **keine** gültige
 Claude-Model-ID. Vor dem Weiterreichen prüfen, wie `model` sonst im Repo aufgelöst wird
