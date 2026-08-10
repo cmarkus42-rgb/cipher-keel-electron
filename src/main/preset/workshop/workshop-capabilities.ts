@@ -14,11 +14,20 @@
  * niveauMinimum here is documentation metadata: nothing in
  * getNiveauWorkshopConfig or workshop-preset.ts consumes it — the actual
  * per-Niveau gating runs entirely through the explicit
- * CAPABILITIES_NIVEAU_A/B/C arrays. See the debugger-beauftragung and
- * worker-monitoring SKILL.md files for what the field does and does not
- * track for each of them.
+ * CAPABILITIES_NIVEAU_A/B/C arrays. Because nothing consumes it, it can
+ * silently drift out of sync with those arrays — the test suite pins it in
+ * place (tests/preset/workshop/workshop-capability-skills.test.ts, the
+ * niveauMinimum-sync assertion, same shape as tests/se-capabilities.test.ts):
+ * a package flagged 'A' must be absent from Niveau B and C; a package
+ * flagged 'B' must be present at A and B but absent at C; an unflagged
+ * package must be present everywhere it's expected. See the
+ * debugger-beauftragung and worker-monitoring SKILL.md files for what the
+ * field means for each of them.
  *
- * Task 13
+ * Task 13; niveauMinimum on debugger-beauftragung corrected 'B' -> 'A' in
+ * fix round 1 (it is Niveau-A-only per CAPABILITIES_NIVEAU_A/B/C; the prior
+ * value came from a stale comment in niveau-config.ts, now corrected there
+ * too).
  */
 
 import { LoaderType } from '../capability-schema'
@@ -43,7 +52,7 @@ export const WORKSHOP_PACKAGES: CapabilityPackage[] = [
     beschreibung: 'Debugger als phasen-interne Spezialinstanz beauftragen, kein Ketten-Handoff',
     loader: LoaderType.SkillMd,
     pfad: '.claude/capabilities/debugger-beauftragung/SKILL.md',
-    niveauMinimum: 'B',
+    niveauMinimum: 'A',
   },
   {
     name: 'completeness-gate',

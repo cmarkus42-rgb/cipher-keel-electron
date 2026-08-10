@@ -29,10 +29,31 @@ describe('Workshop capability packages', () => {
     }
   })
 
-  it('marks debugger-beauftragung as reference material, matching the Niveau-B note', () => {
-    const pkg = WORKSHOP_PACKAGES.find(p => p.name === 'debugger-beauftragung')!
-    expect(pkg.niveauMinimum).toBe('B')
-  })
+  // niveauMinimum is documentation only — nothing in getNiveauWorkshopConfig consumes it, so
+  // it can silently drift out of sync with the CAPABILITIES_NIVEAU_A/B/C arrays (fix round 1:
+  // debugger-beauftragung was flagged 'B' off a stale comment in niveau-config.ts, while the
+  // array itself only ever carried it at Niveau A). This is the price of keeping the field —
+  // unlike the guard tests below (frontmatter/sections/length only), this assertion can catch
+  // its own subject: a wrong value here fails directly, in either direction. Ordering is
+  // A > B > C (Niveau A carries every package, C the fewest, CK-P4-010): niveauMinimum 'X'
+  // means "present from Niveau X up to A, absent below X"; no flag means present everywhere.
+  const NIVEAU_RANK: Record<'A' | 'B' | 'C', number> = { C: 0, B: 1, A: 2 }
+  const MEMBERSHIP: Record<'A' | 'B' | 'C', readonly string[]> = {
+    A: getNiveauWorkshopConfig('A').capabilities,
+    B: getNiveauWorkshopConfig('B').capabilities,
+    C: getNiveauWorkshopConfig('C').capabilities,
+  }
+
+  for (const pkg of WORKSHOP_PACKAGES) {
+    it(`${pkg.name}: niveauMinimum (${pkg.niveauMinimum ?? 'none'}) matches its actual Niveau-list membership`, () => {
+      const requiredRank = pkg.niveauMinimum ? NIVEAU_RANK[pkg.niveauMinimum] : NIVEAU_RANK.C
+      for (const niveau of ['A', 'B', 'C'] as const) {
+        const isPresent = MEMBERSHIP[niveau].includes(pkg.name)
+        const expectedPresent = NIVEAU_RANK[niveau] >= requiredRank
+        expect(isPresent, `${pkg.name} at Niveau ${niveau}`).toBe(expectedPresent)
+      }
+    })
+  }
 })
 
 describe('Workshop capability SKILL.md files', () => {
