@@ -73,3 +73,37 @@ export function getDefaultPersona(presetId: string): string | null {
   if (!presetId) return null
   return PERSONA_DEFAULTS[presetId] ?? null
 }
+
+// ---------------------------------------------------------------------------
+// Builtin personas (bundled)
+// ---------------------------------------------------------------------------
+
+import cipherPersona from './personas/cipher.md?raw'
+import theaitetosPersona from './personas/theaitetos.md?raw'
+
+/**
+ * Personas shipped with the app, compiled into the bundle.
+ * loadPersona() still serves user-supplied persona directories.
+ */
+const BUILTIN_PERSONAS: Record<string, string> = {
+  cipher: cipherPersona,
+  theaitetos: theaitetosPersona,
+}
+
+/** Look up a persona that ships with the app. */
+export function getBuiltinPersona(vorgabe: string): string | null {
+  if (!vorgabe) return null
+  return BUILTIN_PERSONAS[vorgabe] ?? null
+}
+
+/**
+ * Resolve a persona: a user directory wins, the shipped persona is the fallback.
+ * Returns null when neither knows the identifier.
+ */
+export function resolvePersona(vorgabe: string, personasDir?: string): string | null {
+  if (personasDir) {
+    const fromDisk = loadPersona(vorgabe, personasDir)
+    if (fromDisk !== null) return fromDisk
+  }
+  return getBuiltinPersona(vorgabe)
+}
