@@ -3340,4 +3340,54 @@ betrifft den Vorlauf, nicht den geprüften Pfad `session:create({ entityId })`.
 
 ## Messprotokoll Task 9
 
-*Wird in Task 9 Schritt 5 gefüllt. Eingetretener Fall plus die tatsächliche Ausgabe beider Proben.*
+**Ergebnis: Fall A — `@`-Referenzen werden innerhalb einer über `--append-system-prompt-file`
+übergebenen Datei aufgelöst.** claude-Version 2.1.221.
+
+Prüfstand in `mktemp -d`, `cd` in dieses Verzeichnis vor dem Aufruf (der `@`-Pfad ist relativ):
+
+`.claude/capabilities/probe-capability/SKILL.md`:
+```
+# Probe
+
+Das Codewort lautet KEELPROBE7. Nenne es, wenn du danach gefragt wirst.
+```
+
+`probe-prompt.md`:
+```
+# Probe-Entitaet
+
+<!-- BEGIN:Capabilities -->
+@.claude/capabilities/probe-capability/SKILL.md
+<!-- END:Capabilities -->
+```
+
+**Probe 1** (`@`-Referenz):
+```
+claude --append-system-prompt-file <probedir>/probe-prompt.md -p "Nenne das Codewort."
+```
+Ausgabe (vollständig): `KEELPROBE7`
+
+`probe-direct.md`:
+```
+# Probe-Entitaet
+
+Das Codewort lautet KEELPROBE7.
+```
+
+**Probe 2** (Kontrolle, Codewort inline, kein `@`):
+```
+claude --append-system-prompt-file <probedir>/probe-direct.md -p "Nenne das Codewort."
+```
+Ausgabe (vollständig): `KEELPROBE7`
+
+**Lesart:** Probe 2 bestätigt, dass der angehängte System-Prompt überhaupt beim Modell ankommt
+(Task 8 Schritt 6 bleibt gültig). Probe 1 nennt das Codewort, obwohl `probe-prompt.md` es nicht
+enthält — es steht ausschließlich in der referenzierten `SKILL.md`. Das Modell kann es nur über
+eine tatsächliche Auflösung der `@`-Zeile erhalten haben, nicht durch Raten (arbiträre
+Zeichenkette). Beide Ausgaben sind sauber und eindeutig, kein Ambiguitätsfall.
+
+Damit bleibt Phase B wie geplant: SKILL.md-Dateien werden per `?raw` eingebunden, beim
+Session-Start nach `<projekt>/.claude/capabilities/<id>/SKILL.md` materialisiert (Weg wie
+`postLaunchInjection`/`settings.local.json`), `resolveCapabilityRefs` liefert weiter Referenzen.
+Ein Task „Capabilities materialisieren" wird vor Task 10 eingeschoben. Volles Protokoll inkl.
+`od -c`-Verifikation der Rohausgabe: `.superpowers/sdd/2026-08-10-entitaets-startstrecke-und-personas/task-9-report.md`.
