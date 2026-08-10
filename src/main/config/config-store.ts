@@ -65,7 +65,8 @@ const defaults: CipherKeelConfig = {
     maxSessions: MAX_SESSIONS,
   },
   agent: {
-    skipPermissions: false,
+    // Sessions are launched by the app itself; true matches cipher-mux 0.9.x behaviour.
+    skipPermissions: true,
   },
   ui: {
     theme: 'dark',

@@ -31,11 +31,16 @@ export interface AgentConfigReader {
   getSkipPermissions(): boolean
 }
 
-/** Default reader — returns true (skip-permissions enabled by default for dev). */
+/** Default reader — the persisted agent config decides. */
 const defaultConfigReader: AgentConfigReader = {
   getSkipPermissions(): boolean {
-    // Will be wired to ConfigStore in Phase C
-    return true
+    // Lazy, and require rather than import(): this getter is synchronous, and
+    // config-store pulls in electron at module scope — an eager import would break
+    // every adapter unit test, which runs without an Electron app instance.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { configStore } = require('../../config/config-store') as
+      typeof import('../../config/config-store')
+    return configStore.get('agent').skipPermissions
   },
 }
 
@@ -63,6 +68,16 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     }
     if (opts.model) {
       args.push('--model', opts.model)
+    }
+    if (opts.appendSystemPromptFile !== undefined) {
+      if (!opts.appendSystemPromptFile) {
+        // Starting without the entity prompt looks like a working session but is not one.
+        throw new Error(
+          '[ClaudeCodeAdapter] --append-system-prompt-file was set but empty — ' +
+          'refusing to launch without the entity prompt'
+        )
+      }
+      args.push('--append-system-prompt-file', opts.appendSystemPromptFile)
     }
     return { cmd: 'claude', args }
   }

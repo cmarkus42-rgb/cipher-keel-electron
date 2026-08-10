@@ -1,0 +1,39 @@
+import { describe, it, expect } from 'vitest'
+import { ClaudeCodeAdapter } from '../../src/main/agent/adapters/claude-code'
+
+describe('ClaudeCodeAdapter launch command (entity prompt)', () => {
+  const opts = { projectPath: '/tmp/p', sessionName: 'keel-demo-architect-ab12' }
+
+  it('appends the system prompt file flag when a path is given', () => {
+    const adapter = new ClaudeCodeAdapter({ getSkipPermissions: () => false })
+    const cmd = adapter.buildLaunchCommand({ ...opts, appendSystemPromptFile: '/tmp/x.md' })
+    expect(cmd.args).toContain('--append-system-prompt-file')
+    expect(cmd.args[cmd.args.indexOf('--append-system-prompt-file') + 1]).toBe('/tmp/x.md')
+  })
+
+  it('omits the flag entirely when no path is given', () => {
+    const adapter = new ClaudeCodeAdapter({ getSkipPermissions: () => false })
+    const cmd = adapter.buildLaunchCommand(opts)
+    expect(cmd.args).not.toContain('--append-system-prompt-file')
+  })
+
+  it('rejects an empty path instead of starting without a prompt', () => {
+    const adapter = new ClaudeCodeAdapter({ getSkipPermissions: () => false })
+    expect(() => adapter.buildLaunchCommand({ ...opts, appendSystemPromptFile: '' }))
+      .toThrow(/append-system-prompt-file/)
+  })
+
+  it('keeps the prompt path out of the executable name', () => {
+    const adapter = new ClaudeCodeAdapter({ getSkipPermissions: () => false })
+    const cmd = adapter.buildLaunchCommand({ ...opts, appendSystemPromptFile: '/tmp/x.md' })
+    expect(cmd.cmd).toBe('claude')
+  })
+
+  it('reads skip-permissions from the injected reader, not from a hardcoded value', () => {
+    const off = new ClaudeCodeAdapter({ getSkipPermissions: () => false })
+    expect(off.buildLaunchCommand(opts).args).not.toContain('--dangerously-skip-permissions')
+
+    const on = new ClaudeCodeAdapter({ getSkipPermissions: () => true })
+    expect(on.buildLaunchCommand(opts).args).toContain('--dangerously-skip-permissions')
+  })
+})

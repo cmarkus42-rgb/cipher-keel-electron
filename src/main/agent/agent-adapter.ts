@@ -42,6 +42,11 @@ export interface LaunchOpts {
   resume?: boolean
   /** Model override (e.g. 'haiku', 'sonnet', 'opus') — passed as --model <id> */
   model?: string
+  /**
+   * Path to a file whose content is appended to the agent's system prompt.
+   * Carries the assembled entity prompt. Claude Code: --append-system-prompt-file.
+   */
+  appendSystemPromptFile?: string
 }
 
 export interface AdapterContext {
