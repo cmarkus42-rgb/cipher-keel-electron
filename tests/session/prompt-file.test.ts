@@ -66,4 +66,11 @@ describe('entity prompt file', () => {
     expect(fs.existsSync(entityPromptPath(userData, 'keel-demo-se-ab12'))).toBe(false)
     expect(() => removeEntityPromptFile(userData, 'keel-demo-se-ab12')).not.toThrow()
   })
+
+  // The original resolved the path inside its try, so an unsafe name was swallowed into
+  // a warning and the call reported success without checking or deleting anything.
+  it('rejects an unsafe session name on removal instead of no-oping', () => {
+    expect(() => removeEntityPromptFile(userData, '../escape')).toThrow()
+    expect(() => removeEntityPromptFile(userData, 'a/b')).toThrow()
+  })
 })

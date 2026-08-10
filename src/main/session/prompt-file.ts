@@ -40,10 +40,18 @@ export function writeEntityPromptFile(
   return filePath
 }
 
-/** Remove a session's prompt file. Missing file is not an error. */
+/**
+ * Remove a session's prompt file. A missing file is not an error.
+ *
+ * The path is resolved OUTSIDE the try on purpose: an unsafe session name is a
+ * programming error and must propagate, while a filesystem hiccup during cleanup
+ * is survivable. Resolving inside the try would turn the former into a logged
+ * no-op that reports success without having checked or deleted anything.
+ */
 export function removeEntityPromptFile(userDataPath: string, sessionName: string): void {
+  const filePath = entityPromptPath(userDataPath, sessionName)
   try {
-    fs.rmSync(entityPromptPath(userDataPath, sessionName), { force: true })
+    fs.rmSync(filePath, { force: true })
   } catch (err) {
     console.warn('[prompt-file] cleanup failed:', err)
   }
