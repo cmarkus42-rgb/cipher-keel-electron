@@ -205,10 +205,22 @@ Erwartet: beide ohne Ausgabe. Schlägt der Typecheck mit
 `include` von `tsconfig.node.json` — es deckt `src/main/**/*` ab, die Datei muss also genau dort
 liegen.
 
-- [ ] **Schritt 7: Beweisen, dass es auch gebündelt trägt**
+- [ ] **Schritt 7: Den Bündel-Nachweis *nicht* hier führen**
 
-Ausführen: `npm run build && grep -c "Du bist der Architect" dist/main/index.js`
-Erwartet: `1` oder höher. Bei `0` ist der Text nicht im Bundle und der ganze Task wirkungslos.
+> **Korrektur am 2026-08-10, nach dem Review von Task 1.** Der ursprüngliche Schritt 7 verlangte
+> `npm run build && grep -c "Du bist der Architect" dist/main/index.js` mit der Erwartung `≥ 1`.
+> Dieser Nachweis ist in Task 1 **nicht führbar**: `rollupOptions.input` des Hauptprozesses ist
+> genau `src/main/main.ts`, und Rollup wirft ein Modul, das von dort aus niemand erreicht, aus dem
+> Bundle. `bodies.ts` hat in Task 1 noch keinen Konsumenten. Der Nachweis war also nur zu bestehen,
+> indem man `main.ts` ein Gerüst-Re-Export verpasst — Produktionscode ohne fachlichen Zweck, den
+> später niemand zu entfernen gezwungen ist.
+>
+> **Entscheidung (Nutzer):** Kein Gerüst. Der Nachweis wandert nach Task 4, wo die Registry die
+> Bodies echt importiert und der `grep` deshalb etwas über den Produktionspfad aussagt.
+> `src/main/main.ts` wird in Task 1 **nicht angefasst**.
+
+Task 1 endet mit den drei geplanten Dateien. Die Unit-Tests aus Schritt 5 belegen, dass der
+`?raw`-Import auflöst; dass er das Bündeln überlebt, belegt Task 4.
 
 - [ ] **Schritt 8: Committen**
 
@@ -572,16 +584,39 @@ Erwartet: PASS, 6 Tests. Der erste Test deckt alle sechs Einträge aus `persona-
 schlägt er für `debugger` oder `testing-assistant` fehl, ist das kein Fehler: beide zeigen auf
 `cipher`, das genügt.
 
-- [ ] **Schritt 6: Volle Suite, Typecheck, Lint**
+- [ ] **Schritt 6: Die Personas in den Bündel-Wächter aufnehmen**
+
+`scripts/verify-bundle.mjs` (aus Task 4) kennt bisher nur die zwei Bodies. Beide Personas sind
+nach demselben Muster einzutragen — sie sind über `?raw` eingebunden und teilen damit exakt die
+Schwachstelle, für die das Script existiert:
+
+```javascript
+  { needle: '<markanter Satz aus cipher.md>', source: 'src/main/preset/shared/personas/cipher.md' },
+  { needle: '<markanter Satz aus theaitetos.md>', source: 'src/main/preset/shared/personas/theaitetos.md' },
+```
+
+Die Nadeln aus den geschriebenen Dateien **ablesen**, nicht erfinden, und einen Satz wählen, der
+nirgends sonst im Bundle vorkommt. Danach:
+
+```bash
+npm run build && npm run verify:bundle
+```
+
+Erwartet: `OK — 4/4 markers present`.
+
+Läuft Task 3 vor Task 4 (das Script existiert dann noch nicht), diesen Schritt überspringen und
+stattdessen in der Rückmeldung vermerken — Task 4 trägt die Personas dann gleich mit ein.
+
+- [ ] **Schritt 7: Volle Suite, Typecheck, Lint**
 
 Ausführen: `npm test && npm run typecheck && npm run lint`
 Erwartet: alles grün.
 
-- [ ] **Schritt 7: Committen**
+- [ ] **Schritt 8: Committen**
 
 ```bash
 git add src/main/preset/shared/personas src/main/preset/shared/persona-loader.ts \
-        tests/preset/builtin-personas.test.ts
+        tests/preset/builtin-personas.test.ts scripts/verify-bundle.mjs
 git commit -m "feat(preset): ship cipher and theaitetos personas with the bundle"
 ```
 
@@ -840,11 +875,111 @@ entfernen.
 Ausführen: `npm test && npm run typecheck && npm run lint`
 Erwartet: alles grün.
 
-- [ ] **Schritt 8: Committen**
+- [ ] **Schritt 8: Den Bündel-Nachweis führen — hier, nicht in Task 1**
+
+> **Nachgezogen am 2026-08-10 aus dem Review von Task 1.** Erst ab hier hat `bodies.ts` einen
+> echten Konsumenten: die Registry importiert alle vier Bodies, die Registry hängt über
+> `preset/index.ts` an der Hauptprozess-Kette. Vorher hätte Rollup das Modul entfernt, und der
+> `grep` hätte nur mit einem Gerüst-Re-Export bestanden.
+
+Ausführen:
+
+```bash
+npm run build
+grep -c "Du bist der Architect" dist/main/index.js
+```
+
+Erwartet: `1` oder höher. Bei `0` ist der Body-Text **nicht** im Bundle — dann wäre der gesamte
+`?raw`-Weg aus Task 1 in der gepackten App wirkungslos, und zwar still: die Unit-Tests bleiben
+grün, weil vitest die Datei von der Platte liest. Auf `0` also nicht weiterbauen, sondern
+zurückgehen und klären, warum die Import-Kette von `main.ts` bis `bodies.ts` reißt.
+
+- [ ] **Schritt 9: Den Nachweis als Script festschreiben**
+
+> **Entscheidung (Nutzer, 2026-08-10):** Der Bündel-Nachweis wird automatisiert, nicht nur
+> dokumentiert. Grund: Die Unit-Tests aus Task 1 wären auch dann grün, wenn `bodies.ts` später auf
+> `fs.readFileSync` zurückfiele — also genau auf das Verhalten, das in der gepackten App bricht.
+> Das Muster wiederholt sich in Task 3 (Personas) und Task 14 (~27 Capability-Dateien); ohne
+> Wächter multipliziert sich die blinde Stelle.
+
+`scripts/verify-bundle.mjs` anlegen:
+
+```javascript
+/**
+ * verify-bundle.mjs — assert that inlined markdown survived the rollup build.
+ *
+ * The main process is bundled into a single dist/main/index.js. Markdown is
+ * inlined via Vite's `?raw`; a regression back to fs.readFileSync would keep
+ * every unit test green (vitest reads from disk) and only break in the packaged
+ * app, where the source tree does not exist. This is the guard for that.
+ *
+ * Run after `npm run build`.
+ */
+import { readFileSync, existsSync } from 'node:fs'
+
+const BUNDLE = 'dist/main/index.js'
+
+/** Marker text that must appear in the bundle, and where it comes from. */
+const MARKERS = [
+  { needle: 'Du bist der Architect', source: 'src/main/preset/architect/architect-body.md' },
+  { needle: 'Du bist die Cyber Factory', source: 'src/main/preset/cyber-factory/cf-body.md' },
+]
+
+if (!existsSync(BUNDLE)) {
+  console.error(`[verify-bundle] ${BUNDLE} is missing — run \`npm run build\` first`)
+  process.exitCode = 1
+} else {
+  const bundle = readFileSync(BUNDLE, 'utf-8')
+  const missing = MARKERS.filter(m => !bundle.includes(m.needle))
+
+  for (const m of missing) {
+    console.error(`[verify-bundle] MISSING: ${m.source} — text not found in ${BUNDLE}`)
+  }
+  if (missing.length > 0) {
+    console.error(
+      `[verify-bundle] ${missing.length}/${MARKERS.length} markers missing. ` +
+      'Inlined markdown did not survive bundling; the packaged app would lose it silently.'
+    )
+    process.exitCode = 1
+  } else {
+    console.log(`[verify-bundle] OK — ${MARKERS.length}/${MARKERS.length} markers present`)
+  }
+}
+```
+
+Der genaue Wortlaut der zweiten Nadel ist aus `src/main/preset/cyber-factory/cf-body.md`
+abzulesen, nicht zu raten — passt er nicht, meldet das Script einen Fehlalarm.
+
+In `package.json` unter `scripts` ergänzen:
+
+```json
+    "verify:bundle": "node scripts/verify-bundle.mjs",
+```
+
+- [ ] **Schritt 10: Das Script gegen beide Zustände prüfen**
+
+```bash
+npm run build && npm run verify:bundle
+```
+
+Erwartet: `[verify-bundle] OK — 2/2 markers present`, Exit-Code 0.
+
+Und die Gegenprobe, damit das Script nicht bloß immer „OK" sagt:
+
+```bash
+node -e "const s=require('fs').readFileSync('scripts/verify-bundle.mjs','utf-8');require('fs').writeFileSync('/tmp/vb-probe.mjs',s.replace('Du bist der Architect','TEXT-DER-NICHT-VORKOMMT'))"
+node /tmp/vb-probe.mjs; echo "exit=$?"
+rm /tmp/vb-probe.mjs
+```
+
+Erwartet: `MISSING`-Zeile und `exit=1`. Meldet die Gegenprobe `OK`, prüft das Script nichts.
+
+- [ ] **Schritt 11: Committen**
 
 ```bash
 git add src/main/preset/registry.ts src/main/preset/index.ts \
-        src/main/preset/systems-engineer/se-preset.ts tests/preset/registry.test.ts
+        src/main/preset/systems-engineer/se-preset.ts tests/preset/registry.test.ts \
+        scripts/verify-bundle.mjs package.json
 git commit -m "feat(preset): entity registry mapping entityId to rahmen, body and persona"
 ```
 
