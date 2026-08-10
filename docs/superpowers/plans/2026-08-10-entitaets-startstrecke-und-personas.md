@@ -1512,7 +1512,10 @@ In `src/main/agent/adapters/claude-code.ts` den `defaultConfigReader` an den Con
 /** Default reader — the persisted agent config decides. */
 const defaultConfigReader: AgentConfigReader = {
   getSkipPermissions(): boolean {
-    // Lazy require: the adapter is unit-tested without an Electron app instance.
+    // Lazy, and require rather than import(): this getter is synchronous, and
+    // config-store pulls in electron at module scope — an eager import would break
+    // every adapter unit test, which runs without an Electron app instance.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { configStore } = require('../../config/config-store') as
       typeof import('../../config/config-store')
     return configStore.get('agent').skipPermissions
@@ -1553,12 +1556,43 @@ Kommentar darüber setzen:
 Ausführen: `npx vitest run tests/agent/claude-code-adapter.test.ts`
 Erwartet: PASS.
 
-- [ ] **Schritt 7: Prüfen, ob der geänderte Default bestehende Tests kippt**
+- [ ] **Schritt 7: Den geänderten Default festnageln — es gibt bisher keinen Test dafür**
 
-Ausführen: `npx vitest run tests/config`
-Erwartet: PASS. Zusichert ein Test `skipPermissions` als `false`, ist er auf `true` zu ziehen —
-der Default ist eine bewusste Entscheidung, nicht ein Versehen. Den Testnamen entsprechend
-anpassen, nicht nur den Wert.
+> **Korrigiert am 2026-08-10 vor dem Dispatch.** Der ursprüngliche Schritt sagte
+> „`npx vitest run tests/config`" und rechnete damit, einen bestehenden Test nachziehen zu
+> müssen. Nachgesehen: **es gibt weder ein Verzeichnis `tests/config` noch irgendeinen Test, der
+> `config-store` importiert.** Der Default ist heute völlig ungeprüft — und er ist eine
+> sicherheitsrelevante Nutzerentscheidung, kein Implementierungsdetail.
+
+Deshalb wird der Default hier erstmals festgehalten. Neue Datei `tests/config/config-defaults.test.ts`:
+
+```typescript
+// tests/config/config-defaults.test.ts
+import { describe, it, expect, vi } from 'vitest'
+
+// config-store imports electron at module scope; the tests never touch a real app.
+vi.mock('electron', () => ({ app: { getPath: () => '/tmp/keel-config-test' } }))
+
+describe('agent config defaults', () => {
+  it('defaults skipPermissions to true', async () => {
+    // A user decision (2026-08-10): the app launches sessions itself, and the
+    // launched agent runs with --dangerously-skip-permissions unless turned off.
+    // If this ever flips silently, sessions change behaviour with no visible cause.
+    const { configStore } = await import('../../src/main/config/config-store')
+    expect(configStore.getAll().agent.skipPermissions).toBe(true)
+  })
+})
+```
+
+Ausführen: `npx vitest run tests/config/config-defaults.test.ts`
+Erwartet: PASS.
+
+Schlägt der Import an `electron` fehl, ist das der Beleg dafür, warum der Adapter seinen
+ConfigStore lazy lädt — dann den `vi.mock`-Aufruf prüfen, nicht den Adapter ändern.
+
+Danach `npm test` — findet sich wider Erwarten doch ein Test, der `skipPermissions` als `false`
+zusichert, ist er auf `true` zu ziehen **und sein Name mitzuändern**: der Default ist eine
+Entscheidung, kein Versehen.
 
 - [ ] **Schritt 8: Volle Suite, Typecheck, Lint**
 
