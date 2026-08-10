@@ -111,6 +111,22 @@ Als nächstes anbietet sich `createSessionForProject(deps, opts)`.
 
 ## 3. Phase 8 (Packaging) — eine stille Falle
 
+> **Nachtrag (Stand 2026-08-09/10):** Die Paketierung ist gebaut und gegen ein
+> automatisiertes Smoke-Skript geprüft — Details und Messprotokolle in
+> `2026-08-09-phase-8-packaging.md`. **Bewusst noch offen:** ein Release ist nicht
+> veröffentlicht (menschliche Entscheidung, kein Befund), und der Erst-Start auf einem
+> zweiten Apple-Silicon-Mac ohne Entwicklungsumgebung ist ungeprüft. Zwei Annahmen dieses
+> Abschnitts waren falsch: (a) `asarUnpack` war nicht nötig — electron-builder 26
+> entpackt `better-sqlite3` und `sqlite-vec-darwin-arm64` von selbst, und Electron biegt
+> `process.dlopen` bereits auf `app.asar.unpacked` um; (b) die Falle war nicht stumm —
+> `initGraph` fängt, setzt `degraded` und warnt. Der tatsächliche Bruch lag bei
+> `sqlite-vec`: `db.loadExtension()` geht durch sqlite3s eigenes `dlopen`, das kein asar
+> kennt. Zusätzlich gefunden: das Ausgabeverzeichnis `dist` kollidierte mit
+> electron-vite und verhinderte jeden Paketbau, und `existsSync` beantwortet innerhalb
+> von `app.asar` den Archiv-Index statt die Platte, weshalb der zugesagte
+> `undefined`-Fallback im Paket nie griff. Detail und Messprotokolle:
+> `2026-08-09-phase-8-packaging.md`.
+
 `resolveBetterSqliteBinding(moduleRoot)` (`src/main/graph/native-binding.ts`) sucht unter
 `<moduleRoot>/bin/<platform>-<arch>-<abi>/better-sqlite3.node` und gibt `undefined` zurück, wenn
 dort nichts liegt — dann fällt `openGraphDb` auf die Default-Auflösung zurück.

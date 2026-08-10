@@ -182,6 +182,7 @@ All 1541 tests pass across 107 test files (`npm test`, ~5s).
 | Phase 5 | Stabilisation — Kanban, session snapshots, vault validator, status bar | Done, audited |
 | Phase 6 | Service lifecycle, event bus, degraded-state surfacing, a deterministic kickoff → project window → grid → session path | Done |
 | Phase 7 | CI pipeline — typecheck, lint, test and build gating every push and PR | Done |
+| Phase 8 | Packaging — separate build output, an archive limited to the built app, an Apple-Silicon-only DMG target, a generated app icon, the asar path fix that lets the knowledge graph initialise inside a package, an automated smoke test against the packaged app, and comprehensible messages for missing CLI tools | Done, unreleased |
 
 Phases 3a through 5 each ended in a formal audit with a RELEASE verdict; findings are
 recorded in `docs/superpowers/specs/`. Phase 6 and Phase 7 completed without that same
