@@ -1529,8 +1529,11 @@ Und in `buildLaunchCommand` vor dem `return` einfügen:
     if (opts.appendSystemPromptFile !== undefined) {
       if (!opts.appendSystemPromptFile) {
         // Starting without the entity prompt looks like a working session but is not one.
+        // The message names the CLI flag, not the internal property: someone reading a
+        // log greps for what the command line would have carried. (Corrected 2026-08-10 —
+        // the original named the property and so did not match this task's own test regex.)
         throw new Error(
-          '[ClaudeCodeAdapter] appendSystemPromptFile was set but empty — ' +
+          '[ClaudeCodeAdapter] --append-system-prompt-file was set but empty — ' +
           'refusing to launch without the entity prompt'
         )
       }
