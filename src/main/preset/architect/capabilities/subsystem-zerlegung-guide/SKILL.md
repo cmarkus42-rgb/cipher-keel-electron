@@ -39,15 +39,21 @@ laufen, entscheidet die Cyber Factory anhand dieser Kanten, nicht du.
 
 **Schnittstellen-Vertrag pro Grenze.** Für jede Grenze zwischen zwei Subsystemen legst du
 einen `schnittstellen_vertrag`-Knoten an, verlinkt über `schnittstellen_vertrag_fuer` mit dem
-betroffenen Subsystem. Der Vertrag trägt drei Pflichtfelder:
+betroffenen Subsystem. Der Vertrag hat sechs Pflichtfelder, sonst weist ihn der Graph beim
+Anlegen zurück:
 
+- `subsystem_a`, `subsystem_b` — die beiden Subsysteme, zwischen denen der Vertrag gilt
 - `input_schema` — Typen und Format dessen, was hereinkommt
 - `output_schema` — Typen und Format dessen, was herausgeht
 - `fehlerverhalten` — welche Fehlerfälle auftreten können und wie darauf reagiert wird
+- `template_version` — Version des Vertrags-Templates
 
-Ein Vertrag ohne `fehlerverhalten` ist unvollständig — ein Worker, der die Blackbox baut, muss
-wissen, was bei einem Fehlerfall an der Grenze passiert, nicht nur, was im Erfolgsfall
-durchgereicht wird.
+Das Paar `subsystem_a`/`subsystem_b` und `template_version` sind strukturell — sie identifizieren
+und versionieren den Vertrag. Die drei Inhaltsfelder `input_schema`, `output_schema` und
+`fehlerverhalten` sind die eigentliche Substanz. Ein Vertrag ohne `fehlerverhalten` ist
+inhaltlich unvollständig — ein Worker, der die Blackbox baut, muss wissen, was bei einem
+Fehlerfall an der Grenze passiert, nicht nur, was im Erfolgsfall durchgereicht wird — und fehlt
+eines der sechs Felder überhaupt, lässt sich der Knoten gar nicht erst anlegen.
 
 ## Grenzen
 

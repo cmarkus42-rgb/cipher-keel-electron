@@ -28,17 +28,20 @@ Lege für jedes ADR einen `adr`-Knoten mit den Feldern `title`, `context`, `opti
 **Tiefe je Niveau — vier vorgerechnete Renderings, nicht ein Text, der zur Laufzeit gekürzt
 wird.** Jedes ADR trägt zusätzlich ein `tiefen`-Objekt mit den Schlüsseln `summary`, `context`,
 `alternatives` und `consequences` — je eine vorformulierte, in sich abgeschlossene Fassung des
-ADRs auf unterschiedlicher Detailstufe. Welche Fassung ein Leser bekommt, hängt vom Niveau ab:
+ADRs auf unterschiedlicher Detailstufe. Welche Fassung ein Leser bekommt, hängt vom Niveau ab.
+Diese Zuordnung ist Orientierung, keine im Code erzwungene Regel — sie verbindet
+`architect-body.md`s Niveau-Hinweise mit dem `tiefen`-Objekt, ist aber selbst nirgends so
+festgeschrieben:
 
-- **Niveau A**: volles ADR — alle vier Pflichtteile ungekürzt, plus `tiefen.consequences` bei
-  Bedarf für eine fokussierte Konsequenzen-Ansicht
+- **Niveau A**: volles ADR — alle vier Pflichtteile ungekürzt
 - **Niveau B**: Kurzform — `tiefen.summary` oder `tiefen.context`, nicht das volle ADR
 - **Niveau C**: keine ADRs. Niveau C kennt nur den Schnittstellen-Stempel-Modus; ADRs entfallen
   vollständig (siehe `architect-core-identity`)
 
-Wer ein bestehendes ADR abruft, tut das über die `adr_by_tiefe`-Query mit dem Parameter
-`tiefe` (`summary` | `context` | `full`) statt den vollen Frontmatter-Blob zu lesen und selbst
-zu kürzen — die Kürzung ist bereits im Knoten hinterlegt, nicht dein Job zur Lesezeit.
+Wer ein bestehendes ADR abruft, tut das über die `adr_by_tiefe`-Query mit den Parametern
+`adr_uid` (Pflicht — ohne sie lehnt die Query ab) und `tiefe` (optional, `summary` | `context` |
+`full`, Default `summary`), statt den vollen Frontmatter-Blob zu lesen und selbst zu kürzen —
+die Kürzung ist bereits im Knoten hinterlegt, nicht dein Job zur Lesezeit.
 
 **Nicht jede Entscheidung verdient ein ADR.** Wäge ab: Trifft die Entscheidung eine
 Subsystem-Grenze, eine Schnittstellen-Form oder eine Abhängigkeitsrichtung — ja. Ist es eine
