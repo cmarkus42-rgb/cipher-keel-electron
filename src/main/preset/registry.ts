@@ -1,9 +1,14 @@
 /**
  * Entity registry — maps an entityId to everything a session start needs.
  *
- * The four shipped presets differ in shape: three carry a niveau factory, the
- * Systems Engineer used to carry only a constant (createSERahmen closes that).
- * Callers see one uniform record and never touch the individual modules.
+ * The five shipped presets differ in shape: four carried a niveau factory from the
+ * start, the Systems Engineer used to carry only a constant (createSERahmen closes
+ * that). Callers see one uniform record and never touch the individual modules.
+ *
+ * The Testing Assistant (Task 15) is registered here but not yet in
+ * src/shared/preset-catalog.ts — the registry knowing an entity is a separate
+ * question from the catalog offering it in the launcher UI; Task 16 does the latter
+ * deliberately, once the entity is complete.
  *
  * CK-ENT-001, CK-ENT-004
  */
@@ -13,8 +18,9 @@ import { CapabilityNiveau } from './niveau'
 import { createArchitectRahmen } from './architect/architect-preset'
 import { createCfRahmen } from './cyber-factory/cf-preset'
 import { createSERahmen } from './systems-engineer/se-preset'
+import { createTaRahmen } from './testing-assistant/ta-preset'
 import { createWorkshopRahmen } from './workshop/workshop-preset'
-import { ARCHITECT_BODY, CF_BODY, SE_BODY, WORKSHOP_BODY } from './bodies'
+import { ARCHITECT_BODY, CF_BODY, SE_BODY, TA_BODY, WORKSHOP_BODY } from './bodies'
 import { resolvePersona, getDefaultPersona } from './shared/persona-loader'
 
 export interface EntityDefinition {
@@ -40,6 +46,7 @@ const ENTITIES: Record<string, EntityEntry> = {
   'architect': { rahmen: createArchitectRahmen, body: ARCHITECT_BODY },
   'cyber-factory': { rahmen: createCfRahmen, body: CF_BODY },
   'workshop': { rahmen: createWorkshopRahmen, body: WORKSHOP_BODY },
+  'testing-assistant': { rahmen: createTaRahmen, body: TA_BODY },
 }
 
 /** All entity ids the registry can build. */

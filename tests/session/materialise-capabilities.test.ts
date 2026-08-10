@@ -8,6 +8,7 @@ import { CAPABILITY_SKILLS } from '../../src/main/preset/capability-assets'
 import { ARCHITECT_CAPABILITIES } from '../../src/main/preset/architect/architect-preset'
 import { CF_CAPABILITIES } from '../../src/main/preset/cyber-factory/cf-preset'
 import { SE_CAPABILITIES } from '../../src/main/preset/systems-engineer/se-preset'
+import { TA_CAPABILITIES } from '../../src/main/preset/testing-assistant/ta-preset'
 import { WORKSHOP_CAPABILITY_PAKETE } from '../../src/main/preset/workshop/workshop-preset'
 
 let projectDir: string
@@ -44,14 +45,15 @@ describe('materialiseCapabilities', () => {
     expect(fs.readFileSync(file, 'utf-8')).not.toBe('stale')
   })
 
-  it('carries exactly the capabilities the four presets declare — no more, no fewer', () => {
+  it('carries exactly the capabilities the five presets declare — no more, no fewer', () => {
     // A count check alone would miss a typo that swaps one id for another while
-    // keeping the total at 27 — the map would then silently orphan a real
+    // keeping the total the same — the map would then silently orphan a real
     // capability under a wrong key. Set equality catches that; a count does not.
     const declared = new Set<string>([
       ...ARCHITECT_CAPABILITIES,
       ...CF_CAPABILITIES,
       ...SE_CAPABILITIES,
+      ...TA_CAPABILITIES,
       ...WORKSHOP_CAPABILITY_PAKETE,
     ])
     expect(Object.keys(CAPABILITY_SKILLS).sort()).toEqual([...declared].sort())

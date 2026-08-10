@@ -34,6 +34,13 @@ import seSeCoreIdentity from './systems-engineer/capabilities/se-core-identity/S
 import seSteuerUeberblickTool from './systems-engineer/capabilities/steuer-ueberblick-tool/SKILL.md?raw'
 import seTriggerZeigerFormat from './systems-engineer/capabilities/trigger-zeiger-format/SKILL.md?raw'
 
+// Testing Assistant
+import taAdversarialProbing from './testing-assistant/capabilities/adversarial-probing/SKILL.md?raw'
+import taFindingsDokumentation from './testing-assistant/capabilities/findings-dokumentation/SKILL.md?raw'
+import taSuiteLaufProtokoll from './testing-assistant/capabilities/suite-lauf-protokoll/SKILL.md?raw'
+import taTaCoreIdentity from './testing-assistant/capabilities/ta-core-identity/SKILL.md?raw'
+import taTestqualitaetBeurteilung from './testing-assistant/capabilities/testqualitaet-beurteilung/SKILL.md?raw'
+
 // Workshop
 import wsCompletenessGate from './workshop/capabilities/completeness-gate/SKILL.md?raw'
 import wsDebuggerBeauftragung from './workshop/capabilities/debugger-beauftragung/SKILL.md?raw'
@@ -67,6 +74,11 @@ export const CAPABILITY_SKILLS: Record<string, string> = {
   'se-core-identity': seSeCoreIdentity,
   'steuer-ueberblick-tool': seSteuerUeberblickTool,
   'trigger-zeiger-format': seTriggerZeigerFormat,
+  'adversarial-probing': taAdversarialProbing,
+  'findings-dokumentation': taFindingsDokumentation,
+  'suite-lauf-protokoll': taSuiteLaufProtokoll,
+  'ta-core-identity': taTaCoreIdentity,
+  'testqualitaet-beurteilung': taTestqualitaetBeurteilung,
   'completeness-gate': wsCompletenessGate,
   'debugger-beauftragung': wsDebuggerBeauftragung,
   'findings-lesen': wsFindingsLesen,
