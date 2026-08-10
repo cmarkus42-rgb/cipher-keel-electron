@@ -7,15 +7,23 @@ description: Rolling Summary im Graph pflegen — ein Knoten pro Entität, bei j
 
 ## Wann das gilt
 
-Nur auf Niveau A — auf Niveau B ist diese Capability für beide Entitäten, die sie tragen
-(Architect, Systems Engineer), nicht geladen; dort trägst du deinen Zustand ohne Rolling
-Summary. Auf Niveau A ist sie für beide Pflicht (`pflicht: true` in der jeweiligen
-Konfiguration): Bei jedem deiner Auslöser aktualisierst du deine Zusammenfassung.
+Die Niveau-Gültigkeit unterscheidet sich zwischen den beiden Entitäten, die diese Capability
+tragen — prüfe deine eigene Capability-Liste, nicht eine pauschale Regel:
 
-Diese Capability-Datei liegt an einem gemeinsamen Ort, weil ihr Inhalt für beide Entitäten
-identisch ist — der Mechanismus selbst kennt keine Rolle, nur eine `entityId`. Was sich je
-Rolle unterscheidet, sind Auslöser und Felder deiner eigenen Konfiguration, nicht der
-Mechanismus.
+- **Architect**: nur auf Niveau A. `rolling-summary` trägt dort `niveauMinimum: 'A'` und wird
+  auf Niveau B herausgefiltert (`getArchitectCapabilities`) — auf Niveau B trägst du deinen
+  Zustand ohne Rolling Summary.
+- **Systems Engineer**: ab Niveau B. `rolling-summary` steht sowohl in `SE_CAPABILITIES_A` als
+  auch in `SE_CAPABILITIES_B` — nur `SE_CAPABILITIES_C` enthält sie nicht. Auf Niveau B bist du
+  **nicht** von dieser Capability ausgenommen.
+
+Auf jedem Niveau, auf dem sie für dich geladen ist, ist sie Pflicht (`pflicht: true` in deiner
+jeweiligen Konfiguration): Bei jedem deiner Auslöser aktualisierst du deine Zusammenfassung.
+
+Diese Capability-Datei liegt an einem gemeinsamen Ort, weil ihr Mechanismus für beide Entitäten
+identisch ist — er kennt keine Rolle, nur eine `entityId`. Was sich je Rolle unterscheidet, sind
+nicht nur Auslöser und Felder deiner eigenen Konfiguration (siehe unten), sondern auch, ab
+welchem Niveau die Capability überhaupt geladen ist.
 
 ## Vorgehen
 

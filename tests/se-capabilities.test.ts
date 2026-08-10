@@ -131,4 +131,19 @@ describe('SE capability packages', () => {
     expect(getSECapabilities('A')).toHaveLength(7)
     expect(getSECapabilities('B')).toHaveLength(5)
   })
+
+  // niveauMinimum is documentation only — nothing in getSECapabilities consumes it,
+  // so it can silently drift out of sync with SE_CAPABILITIES_B. This assertion is
+  // the price of keeping the field: a package flagged niveauMinimum 'A' must be
+  // absent from Niveau B, and one without the flag must be present there.
+  it('niveauMinimum stays in sync with SE_CAPABILITIES_B membership', () => {
+    for (const pkg of SE_PACKAGES) {
+      const inNiveauB = (SE_CAPABILITIES_B as readonly string[]).includes(pkg.name)
+      if (pkg.niveauMinimum === 'A') {
+        expect(inNiveauB, `${pkg.name} flagged niveauMinimum 'A'`).toBe(false)
+      } else {
+        expect(inNiveauB, `${pkg.name} has no niveauMinimum flag`).toBe(true)
+      }
+    }
+  })
 })
