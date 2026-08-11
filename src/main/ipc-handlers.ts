@@ -115,19 +115,26 @@ import { materialiseCapabilities } from './session/materialise-capabilities'
 import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-file'
 import { formatShellCommand } from './util/shell-quote'
 import { AdapterRegistry } from './agent/registry'
+import { NanoClawChannelAdapter } from './nanoclaw'
 import { describeMissingTool } from './util/missing-tool'
 
 // Tracks the active grid window for focus-or-create logic (CK-UI-002)
 let activeGridWindow: BrowserWindow | null = null
 
-// The registry demands its config reader — see Task 6. This is the one place that has
-// both Electron and the ConfigStore loaded, which is why the reading happens here and
-// not inside the adapter.
-const adapterRegistry = new AdapterRegistry({
-  getSkipPermissions: () => configStore.get('agent').skipPermissions,
-})
-
 export function registerIpcHandlers(services: AppServices): void {
+  // The registry demands its config reader — see Task 6. This is the one place that has
+  // both Electron and the ConfigStore loaded, which is why the reading happens here and
+  // not inside the adapter.
+  //
+  // It is built here rather than at module level because registering the second Schenkel
+  // needs `services.nanoClawBridge`, which only exists once services are handed in.
+  // Before that, main.ts constructed NanoClawChannelAdapter into a discarded variable, so
+  // `runtime: 'nanoclaw-channel-route'` would have silently launched a Claude session.
+  const adapterRegistry = new AdapterRegistry({
+    getSkipPermissions: () => configStore.get('agent').skipPermissions,
+  })
+  adapterRegistry.register(new NanoClawChannelAdapter(services.nanoClawBridge))
+
   // Project manager — wired to configStore for persistence (CK-INF-020)
   const projectManager = new ProjectManager(
     (data) => configStore.set('projects', data),
@@ -183,11 +190,26 @@ export function registerIpcHandlers(services: AppServices): void {
         return { id: null, name: null, error: `Unknown entity '${entityId}'` }
       }
 
+      // The Rahmen declares which harness this entity runs on (M2 section 11.4).
+      // An unknown runtime throws rather than falling back — a silent fallback would
+      // start a Claude session for an entity that asked for something else.
+      let adapter
+      try {
+        adapter = adapterRegistry.getForRuntime(def.rahmen.runtime)
+      } catch (err) {
+        return { id: null, name: null, error: (err as Error).message }
+      }
+
       // Gate before any file is written: a launch that fails here leaves no
       // orphaned prompt file and no rewritten .claude/capabilities/ tree behind.
-      const adapter = adapterRegistry.getDefault()
       if (!adapter.isAvailable()) {
-        return { id: null, name: null, error: describeMissingTool('claude') }
+        return {
+          id: null,
+          name: null,
+          error: adapter.id === 'claude-code'
+            ? describeMissingTool('claude')
+            : `Adapter '${adapter.displayName}' is not available — session not started`,
+        }
       }
 
       const materialised = materialiseCapabilities(def.rahmen.capabilityAnbindung, cwd)
