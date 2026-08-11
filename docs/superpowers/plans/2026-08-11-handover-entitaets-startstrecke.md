@@ -5,7 +5,14 @@
 **Kurzfassung:** Die Startstrecke ist gebaut, reviewt und dreimal in der laufenden App belegt.
 Sie liegt in **PR #11**, gestapelt auf dem weiterhin offenen PR #10.
 
-> **Dies ist das Einstiegsdokument nach `2026-08-10-handover-nach-phase-8.md`.** Es beschreibt,
+> **Nicht mehr das Einstiegsdokument.** Der Einstieg ist
+> `2026-08-11-handover-niveau-adapter.md`. Dieses Dokument bleibt gültig für die
+> Startstrecke selbst und für die offenen Punkte in Abschnitt 5, die der Niveau- und
+> Adapter-Plan nicht anfasst — aber die drei aufruferlosen `CapabilityPackage[]` aus
+> Abschnitt 5 sind dort erledigt, und die Aussage „Niveau B und C sind unerreichbar"
+> ist überholt.
+>
+> **Ursprünglich:** Einstiegsdokument nach `2026-08-10-handover-nach-phase-8.md`. Es beschreibt,
 > was seither entstanden ist und was bewusst liegen blieb. Der Plan selbst
 > (`2026-08-10-entitaets-startstrecke-und-personas.md`) enthält die Messprotokolle und die
 > Korrekturen, die während der Ausführung nötig wurden — er ist die Detailquelle, nicht dieses
