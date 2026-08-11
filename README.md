@@ -241,9 +241,10 @@ being terse about a missing signature, not a corrupted download.
 - **tmux** — `brew install tmux`. Without it, sessions cannot start; the status bar
   says so
 - **[Claude Code CLI](https://claude.com/claude-code)** — required to do anything useful
-  in a session; the app does not launch it for you. A session opens a shell in the
-  project directory and you run `claude` yourself. The status bar reports whether the
-  app can find it on the usual paths (`/opt/homebrew/bin`, `~/.local/bin`,
+  in a session; the app launches it itself, with the entity's assembled system prompt
+  appended. Without it on PATH, `session:create` refuses to start and returns an error
+  naming the missing binary, instead of opening a dead shell. The status bar reports
+  whether the app can find it on the usual paths (`/opt/homebrew/bin`, `~/.local/bin`,
   `~/.claude/local`), even when launched from Finder
 
 Everything else — the knowledge graph, notes, kanban — works without those two.
