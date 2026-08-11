@@ -1813,3 +1813,123 @@ im Code, nicht `forRuntime` wie in einer frühen Spec-Fassung.
 **Reihenfolge.** Task 8 braucht Task 5 und 6. Task 9 braucht 3, 4, 6, 8. Task 10 braucht 9.
 Task 3 braucht 1 und 2. Innerhalb dieser Abhängigkeiten ist die Nummerierung
 ausführungsfähig.
+
+---
+
+## Messprotokoll Task 12
+
+**Datum:** 2026-08-11 · **Build:** Branch `niveau-adapter-anbindung`, Stand nach Task 11
+**Profil:** `/tmp/keel-verify` (Wegwerf-Profil über `.claude/skills/run-keel/launch.sh`)
+
+### Schritt 1 — Baseline
+
+`tmux list-sessions` vor dem Start: fünf fremde Sessions
+(`cmux-cipher-grow-kit-5n80`, `cmux-cipher-grow-kit-ngfe`, `cmux-cyber-factory-55q6`,
+`cmux-debugger-jcvn`, `cmux-testing-assistant-jb06`). Am Ende exakt dieselben fünf — siehe
+Schritt 7.
+
+### Schritt 2 — StatusBar
+
+```
+tmux ready · claudeCli ready · graph ready · kanban ready · notes ready
+nanoclaw degraded — connect ENOENT …/channels/cipher-keel.sock
+voice    degraded — STT model missing
+```
+
+`nanoclaw degraded` ist korrekt: Es läuft kein Daemon. Task 2 registriert den Adapter,
+startet ihn nicht.
+
+### Schritt 3 — Architect-Session, Kommandozeile
+
+Aufruf ausschließlich `session:create({ entityId: 'architect' })`, kein weiteres Feld.
+Session `keel-probe12-architect-26q4`, Pane-PID über `tmux list-panes`, Kindprozess:
+
+```
+claude --dangerously-skip-permissions --model opus \
+       --append-system-prompt-file /private/tmp/keel-verify/entity-prompts/keel-probe12-architect-26q4.md
+```
+
+**`--model opus` ist da.** Der Tier-Resolver aus Task 4 ist verdrahtet — der Rahmen sagt
+`heavy`, `agent.modelTiers.heavy` sagt `opus`, die Kommandozeile trägt es.
+
+### Schritt 4 — Prompt-Datei, selbst gelesen
+
+Datei `/private/tmp/keel-verify/entity-prompts/keel-probe12-architect-26q4.md`:
+
+| Prüfung | Erwartet | Gemessen |
+|---|---|---|
+| Kopfzeile | `# Architect` | `# Architect` |
+| `BEGIN:Persona` | 1 | 1 |
+| `BEGIN:GlobalRules` | 1 | 1 |
+| Zeilen mit `claude/capabilities` | 7 | 7 |
+
+Die sieben Referenzen: `architect-core-identity`, `subsystem-zerlegung-guide`,
+`adr-format-guide`, `anforderungspaket-formulierer`, `niveau-c-formulierer`,
+`coaching-loop-guide`, `rolling-summary`.
+
+### Schritt 5 — Vorschau gegen die Wirklichkeit
+
+Weg durch die Oberfläche, nicht am IPC vorbei: Projekt über den Kickoff-Wizard angelegt →
+Projekt geöffnet → „Grid oeffnen" → Launcher-Zelle → Preset-Liste → 👁 neben *Architect*.
+Kopfzeile der Vorschau:
+
+```
+Schichten: Body · Capabilities · Persona · GlobalRules — 7 Capabilities — Modell: opus — 453 Wörter
+```
+
+Text der Vorschau (`<pre>.textContent`) gegen die Datei aus Schritt 4, beide aus **demselben
+App-Lauf**:
+
+```
+delivered chars: 4043 | preview chars: 4043 | identical: true
+```
+
+**Kein Unterschied** — Stringgleichheit, nicht nur Längengleichheit.
+
+### Schritt 6 — Niveau B in der Vorschau
+
+Umschalter auf *Niveau B* in derselben Vorschau:
+
+```
+Schichten: Body · Capabilities · Persona · GlobalRules — 5 Capabilities — Modell: Harness-Default — 449 Wörter
+```
+
+Zeilen, die mit `@` beginnen: **0**. Stattdessen der Hinweis „Diese Fähigkeiten stehen dir
+als Dateien im Projekt zur Verfügung. Lies die zugehörige Datei, sobald du eine davon
+brauchst — sie wird nicht automatisch geladen." und darunter je Eintrag Name, Beschreibung
+und Pfad. Task 8 trägt in der laufenden App.
+
+**Zwei Abweichungen von den Erwartungen dieses Plans — beide gewollt, keine Fehler:**
+
+1. **Fünf Einträge auf B, nicht sieben.** Schritt 6 erwartete sieben. `filterByNiveau`
+   entfernt auf B die Pakete mit `niveauMinimum: 'A'` — hier `coaching-loop-guide` und
+   `rolling-summary`. Das ist genau die Verengung, die Task 6 gebaut hat;
+   `architect-capabilities.ts` schreibt sie wörtlich hin („Niveau A: all 7. Niveau B: 5").
+   Die Planzeile war falsch, nicht der Bau.
+2. **Modell auf B: Harness-Default.** `createArchitectRahmen` setzt `model` nur auf A auf
+   `'heavy'`, auf B und C auf `''`, und `resolveModel('')` liefert bewusst `undefined`.
+   Eine B-Session bekäme also **kein** `--model`. Für Schenkel 2 verlangt M2 §6.3 ein
+   `provider:modell`-Handle — das deklariert heute kein Rahmen. **Das gehört in den
+   Nachtrag (Task 13), nicht in diesen Plan:** Das Gefälle ist oben verdrahtet und unten
+   noch nicht.
+
+### Schritt 7 — Aufgeräumt
+
+`stop.sh` meldete „tmux sessions removed: 1"; `tmux list-sessions` danach zeigt exakt die
+fünf fremden Sessions aus Schritt 1. Keine Rückstände.
+
+### Was dieser Lauf **nicht** belegt
+
+- **Keine NanoClaw-Session.** Niveau B ist in der Vorschau belegt, nicht im Betrieb — es
+  gibt keinen B-Adapter, der eine Session startet.
+- **Kein Lazy-Loading-Nachweis auf A.** Ob Claude Code die sieben `@`-Referenzen eifrig
+  oder bedarfsgesteuert lädt, misst dieser Lauf nicht (Handover §6.2).
+- **Kein Blick auf das Fenster.** Alle Aussagen stammen aus DOM-Text, Prozessliste und
+  Dateiinhalt; Screenshots gibt der Treiber nicht her.
+
+### Nebenbefund
+
+Ein über `project:create` angelegtes Projekt überlebte den App-Neustart nicht und tauchte
+in `project:list` nicht auf; über den Kickoff-Wizard angelegt, blieb es. Das deckt sich mit
+dem offenen Punkt „Projektliste nach `project:kickoff`" aus dem Vorgänger-Handover und
+wurde hier nicht angefasst.
