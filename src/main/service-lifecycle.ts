@@ -221,10 +221,13 @@ async function runInit(
 }
 
 /**
- * Reports whether the Claude Code CLI is reachable, as a subsystem status rather
- * than a launch-time gate — the app has no production code path that actually
- * invokes `claude` today (session:create only opens a plain shell), so this is
- * purely informational: it puts the answer where a user looks, next to tmux.
+ * Reports whether the Claude Code CLI is reachable, as a subsystem status the
+ * user can see at startup rather than only at launch time. `session:create`
+ * (ipc-handlers.ts) runs the same `isCommandOnPath('claude')` check — via
+ * `ClaudeCodeAdapter.isAvailable()` — as a hard gate before it writes anything,
+ * and returns a real error if it fails. This status is the earlier, passive
+ * half of that: it puts the answer where a user looks, next to tmux, before
+ * they ever try to start a session.
  */
 function initClaudeCli(): void {
   if (isCommandOnPath('claude')) {

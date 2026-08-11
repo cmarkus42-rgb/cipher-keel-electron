@@ -3,8 +3,17 @@
  *
  * Niveau A emits `@.claude/capabilities/<id>/SKILL.md` lines. A reference to a file
  * that does not exist is worse than no reference: the agent silently loses the
- * capability and nothing says so. Only present files are referenced; missing ones
- * are returned so the caller can log them.
+ * capability and nothing says so.
+ *
+ * `session:create` (ipc-handlers.ts) no longer calls `resolveCapabilityRefs` directly —
+ * it uses `materialiseCapabilities`'s own `written` result instead, since a second
+ * `existsSync` re-scan of paths that call just wrote is redundant, and the one case
+ * where it would differ (a stale directory left by an older app version for an id no
+ * longer shipped) is a bug, not a feature: it would reference stale content instead of
+ * reporting nothing to reference. `capabilityRefPath` here is still the shared path
+ * helper `materialiseCapabilities` writes through. `resolveCapabilityRefs` itself is
+ * kept, with its test, as a standalone "what SKILL.md files actually exist under this
+ * project" query — useful on its own, just not the right tool inside the launch path.
  */
 
 import fs from 'node:fs'

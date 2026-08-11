@@ -4,14 +4,18 @@
  * The SKILL.md files (Task 10-13) are inlined into the bundle via `?raw`
  * (CAPABILITY_SKILLS, capability-assets.ts) so the packaged app carries them
  * without a source tree. They are inert until something writes them into the
- * target project, because `resolveCapabilityRefs` (Task 7) only references
- * files that already exist under `<projectPath>/.claude/capabilities/<id>/SKILL.md`.
+ * target project, under `<projectPath>/.claude/capabilities/<id>/SKILL.md`.
  *
  * This is the same path `ClaudeCodeAdapter.postLaunchInjection` already uses for
  * `.claude/settings.local.json` — the project's `.claude/` directory is written
  * by the app as a matter of course, not something new introduced here.
  *
- * Called from `session:create` before `resolveCapabilityRefs` (ipc-handlers.ts).
+ * Called from `session:create` (ipc-handlers.ts). Its `written` result — the ids
+ * whose SKILL.md was actually placed on disk this call — is what the assembled
+ * prompt references; a stale directory from an older app version, for an id no
+ * longer shipped, is a `.claude/capabilities/` leftover, not a `written` capability
+ * (see `capability-refs.ts` for the `resolveCapabilityRefs` re-scan this replaced
+ * in the launch path — kept for its `capabilityRefPath` helper and its own test).
  */
 
 import fs from 'node:fs'

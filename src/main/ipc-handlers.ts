@@ -111,11 +111,11 @@ import { normalizeToP1Format } from './p1/normalizer'
 import { getEntityDefinition } from './preset/registry'
 import { getGlobalRules } from './preset/global-rules'
 import { assembleEntityClaudeMd } from './session/assemble-entity'
-import { resolveCapabilityRefs } from './session/capability-refs'
 import { materialiseCapabilities } from './session/materialise-capabilities'
 import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-file'
 import { formatShellCommand } from './util/shell-quote'
 import { AdapterRegistry } from './agent/registry'
+import { describeMissingTool } from './util/missing-tool'
 
 // Tracks the active grid window for focus-or-create logic (CK-UI-002)
 let activeGridWindow: BrowserWindow | null = null
@@ -183,18 +183,17 @@ export function registerIpcHandlers(services: AppServices): void {
         return { id: null, name: null, error: `Unknown entity '${entityId}'` }
       }
 
+      // Gate before any file is written: a launch that fails here leaves no
+      // orphaned prompt file and no rewritten .claude/capabilities/ tree behind.
+      const adapter = adapterRegistry.getDefault()
+      if (!adapter.isAvailable()) {
+        return { id: null, name: null, error: describeMissingTool('claude') }
+      }
+
       const materialised = materialiseCapabilities(def.rahmen.capabilityAnbindung, cwd)
       if (materialised.unknown.length > 0) {
         console.warn(
           `[ipc] entity '${entityId}': no SKILL.md asset for ${materialised.unknown.join(', ')}`
-        )
-      }
-
-      const refs = resolveCapabilityRefs(def.rahmen.capabilityAnbindung, cwd)
-      if (refs.missing.length > 0) {
-        console.warn(
-          `[ipc] entity '${entityId}': ${refs.missing.length} capability SKILL.md missing, ` +
-          `not referenced: ${refs.missing.join(', ')}`
         )
       }
 
@@ -203,7 +202,7 @@ export function registerIpcHandlers(services: AppServices): void {
         persona: def.persona ?? undefined,
         globalRules: getGlobalRules(def.rahmen.capabilityNiveau),
         niveau: def.rahmen.capabilityNiveau,
-        capabilities: refs.present,
+        capabilities: materialised.written,
       })
       const promptPath = writeEntityPromptFile(app.getPath('userData'), name, prompt)
 
@@ -211,7 +210,6 @@ export function registerIpcHandlers(services: AppServices): void {
       // tier label, not a Claude model id — there is no tier-to-id translation
       // anywhere in the codebase (checked: grep -rn "'heavy'" src/). Passing it
       // through would break the launch, so model is omitted here entirely.
-      const adapter = adapterRegistry.getDefault()
       const launch = adapter.buildLaunchCommand({
         projectPath: cwd,
         sessionName: name,
