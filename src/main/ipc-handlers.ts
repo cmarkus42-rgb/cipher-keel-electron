@@ -111,6 +111,7 @@ import { normalizeToP1Format } from './p1/normalizer'
 import { getEntityDefinition, getEntityRahmen } from './preset/registry'
 import { resolveModel } from './session/model-resolver'
 import { getGlobalRules } from './preset/global-rules'
+import { getCapabilityPackages } from './preset/capabilities'
 import { assembleEntityClaudeMd } from './session/assemble-entity'
 import { materialiseCapabilities } from './session/materialise-capabilities'
 import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-file'
@@ -234,6 +235,7 @@ export function registerIpcHandlers(services: AppServices): void {
         globalRules: getGlobalRules(def.rahmen.capabilityNiveau),
         niveau: def.rahmen.capabilityNiveau,
         capabilities: materialised.written,
+        capabilityPackages: getCapabilityPackages(entityId, def.rahmen.capabilityNiveau),
       })
       const promptPath = writeEntityPromptFile(app.getPath('userData'), name, prompt)
 
