@@ -199,6 +199,13 @@ formal audit step; their work is tracked in `docs/superpowers/plans/` instead.
   `heavy`, but none of those tier labels map to a Claude model id anywhere in the codebase —
   `session:create` drops `model` entirely rather than pass through a value that would break the
   launch, so every session runs on the harness default regardless of what its preset asked for
+- **`agent.skipPermissions` has no settings UI.** Every session the app launches runs `claude`
+  with `--dangerously-skip-permissions` by default — this is a deliberate 0.1 decision
+  (2026-08-10), not an oversight: the app itself launches the agent, so it also owns the
+  decision to skip Claude Code's own permission prompts. The only way to turn it off today is
+  by hand-editing `agent.skipPermissions` to `false` in the config file (`cipher-keel-config.json`
+  under the app's `userData` directory — see `getConfigPath()` in
+  `src/main/config/config-store.ts`); there is no in-app toggle
 - **macOS on Apple Silicon only.** tmux plus Unix domain sockets plus keychain. Linux is
   an intended later target and nothing in the packaging setup blocks it; Windows is not
   planned. There is no Intel build
