@@ -24,6 +24,7 @@ import {
   SESSION_LIST,
   SESSION_CREATE,
   SESSION_DESTROY,
+  PRESET_PREVIEW_PROMPT,
   TERMINAL_DATA_OUTBOUND,
   TERMINAL_RESIZE,
   NANOCLAW_MESSAGE_OUTBOUND,
@@ -112,6 +113,8 @@ import { getEntityDefinition, getEntityRahmen } from './preset/registry'
 import { resolveModel } from './session/model-resolver'
 import { getGlobalRules } from './preset/global-rules'
 import { getCapabilityPackages } from './preset/capabilities'
+import { CapabilityNiveau } from './preset/niveau'
+import { buildPromptPreview } from './session/preview-prompt'
 import { assembleEntityClaudeMd } from './session/assemble-entity'
 import { materialiseCapabilities } from './session/materialise-capabilities'
 import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-file'
@@ -283,6 +286,17 @@ export function registerIpcHandlers(services: AppServices): void {
       const msg = err instanceof Error ? err.message : String(err)
       return { ok: false, error: msg }
     }
+  })
+
+  // Read-only counterpart to session:create — assembles the same prompt, starts nothing
+  // and touches no project directory (CK-NFR-012). The niveau is a parameter here rather
+  // than the adapter's, so a level no registered adapter serves can still be inspected.
+  ipcMain.handle(PRESET_PREVIEW_PROMPT, (_e, args: { entityId: string; niveau?: string }) => {
+    const niveau = args?.niveau === 'B' ? CapabilityNiveau.B
+      : args?.niveau === 'C' ? CapabilityNiveau.C
+      : CapabilityNiveau.A
+    const preview = buildPromptPreview(args?.entityId, niveau, configStore.get('agent').modelTiers)
+    return preview ?? { error: `Unknown entity '${args?.entityId}'` }
   })
 
   ipcMain.on(TERMINAL_DATA_OUTBOUND, (_event, sessionName: string, data: string) => {
