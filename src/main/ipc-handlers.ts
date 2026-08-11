@@ -108,7 +108,7 @@ import { createMainWindow } from './window-manager'
 import type { AppServices } from './window-manager'
 import { registerWindow, broadcast } from './event-bus'
 import { normalizeToP1Format } from './p1/normalizer'
-import { getEntityDefinition } from './preset/registry'
+import { getEntityDefinition, getEntityRahmen } from './preset/registry'
 import { getGlobalRules } from './preset/global-rules'
 import { assembleEntityClaudeMd } from './session/assemble-entity'
 import { materialiseCapabilities } from './session/materialise-capabilities'
@@ -185,17 +185,18 @@ export function registerIpcHandlers(services: AppServices): void {
         return { id: null, name: null, error: 'No project directory (cwd) — cannot start the entity' }
       }
 
-      const def = getEntityDefinition(entityId)
-      if (!def) {
+      // Two-step resolution: the Rahmen carries `runtime`, the adapter carries the
+      // niveau, and the full definition depends on the niveau (M2 sections 11.3/11.4).
+      const rahmen = getEntityRahmen(entityId)
+      if (!rahmen) {
         return { id: null, name: null, error: `Unknown entity '${entityId}'` }
       }
 
-      // The Rahmen declares which harness this entity runs on (M2 section 11.4).
       // An unknown runtime throws rather than falling back — a silent fallback would
       // start a Claude session for an entity that asked for something else.
       let adapter
       try {
-        adapter = adapterRegistry.getForRuntime(def.rahmen.runtime)
+        adapter = adapterRegistry.getForRuntime(rahmen.runtime)
       } catch (err) {
         return { id: null, name: null, error: (err as Error).message }
       }
@@ -210,6 +211,13 @@ export function registerIpcHandlers(services: AppServices): void {
             ? describeMissingTool('claude')
             : `Adapter '${adapter.displayName}' is not available — session not started`,
         }
+      }
+
+      // The niveau comes from the harness that will actually run this session, not from
+      // a default. Every session was Niveau A before this, whatever its adapter could do.
+      const def = getEntityDefinition(entityId, adapter.niveau)
+      if (!def) {
+        return { id: null, name: null, error: `Unknown entity '${entityId}'` }
       }
 
       const materialised = materialiseCapabilities(def.rahmen.capabilityAnbindung, cwd)

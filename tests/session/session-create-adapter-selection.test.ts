@@ -45,7 +45,11 @@ describe('session:create — adapter selection', () => {
     fs.rmSync(projectDir, { recursive: true, force: true })
   })
 
-  async function loadHandler(): Promise<SessionCreateHandler> {
+  async function loadHandler(
+    adapterOpts: { niveau?: string; available?: boolean } = {},
+  ): Promise<SessionCreateHandler> {
+    const niveau = adapterOpts.niveau ?? 'A'
+    const available = adapterOpts.available ?? false
     let registeredHandler: SessionCreateHandler | undefined
 
     vi.doMock('electron', () => ({
@@ -73,10 +77,13 @@ describe('session:create — adapter selection', () => {
           return {
             id: 'claude-code',
             displayName: 'Claude Code',
-            niveau: 'A',
-            isAvailable: () => false,
+            niveau,
+            isAvailable: () => available,
             buildLaunchCommand: () => {
-              throw new Error('buildLaunchCommand must not run for an unavailable adapter')
+              if (!available) {
+                throw new Error('buildLaunchCommand must not run for an unavailable adapter')
+              }
+              return { cmd: 'claude', args: [] }
             },
           }
         }
@@ -105,6 +112,32 @@ describe('session:create — adapter selection', () => {
   it('registers the NanoClaw adapter so the second Schenkel is reachable', async () => {
     await loadHandler()
     expect(registeredAdapterIds).toContain('nanoclaw-channel')
+  })
+
+  it('builds the definition at the niveau the resolved adapter declares', async () => {
+    // A Niveau-B adapter must not get a prompt full of @-references: a harness without
+    // native lazy-loading does not resolve them, so the entity would lose its whole
+    // capability layer silently. Observing the written prompt is the only way to see
+    // which niveau the definition was actually built at.
+    const handler = await loadHandler({ niveau: 'B', available: true })
+    const result = await handler({}, {
+      entityId: 'architect', name: 'niveau-b-session', cwd: projectDir,
+    })
+
+    expect(result.error).toBeNull()
+    const promptFile = path.join(userDataDir, 'entity-prompts', 'niveau-b-session.md')
+    const prompt = fs.readFileSync(promptFile, 'utf8')
+    expect(prompt).not.toMatch(/^@/m)
+  })
+
+  it('keeps emitting @-references for a Niveau-A adapter', async () => {
+    const handler = await loadHandler({ niveau: 'A', available: true })
+    await handler({}, { entityId: 'architect', name: 'niveau-a-session', cwd: projectDir })
+
+    const prompt = fs.readFileSync(
+      path.join(userDataDir, 'entity-prompts', 'niveau-a-session.md'), 'utf8',
+    )
+    expect(prompt).toMatch(/^@\.claude\/capabilities\//m)
   })
 
   it('selects the adapter by the Rahmen runtime, not by getDefault()', async () => {
