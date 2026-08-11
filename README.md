@@ -194,26 +194,29 @@ formal audit step; their work is tracked in `docs/superpowers/plans/` instead.
 - **Unsigned and unnotarised.** The DMG needs a manual `xattr -cr` after install (see
   [Install](#install)). Signing is a deliberate 0.1 decision, not an oversight —
   revisit it if the project finds real distribution
-- **Preset model tiers are not honoured at launch.** Architect and Systems Engineer request
-  `model: 'heavy'` at Niveau A, and Cyber Factory routes waves across `light` / `standard` /
-  `heavy`, but none of those tier labels map to a Claude model id anywhere in the codebase —
-  `session:create` drops `model` entirely rather than pass through a value that would break the
-  launch, so every session runs on the harness default regardless of what its preset asked for
+- **No settings UI for anything but `ui.*`.** Preset model tiers now resolve through
+  `agent.modelTiers` in the config file, so a preset asking for `heavy` launches on the
+  handle that key names — but neither that key nor most others can be reached from inside
+  the app. Which surfaces are adjustable, where each one lives, and which are visible or
+  editable today is inventoried in [`docs/anpassbare-flaechen.md`](docs/anpassbare-flaechen.md)
+  (CK-NFR-012)
 - **`agent.skipPermissions` has no settings UI.** Every session the app launches runs `claude`
   with `--dangerously-skip-permissions` by default — this is a deliberate 0.1 decision
   (2026-08-10), not an oversight: the app itself launches the agent, so it also owns the
   decision to skip Claude Code's own permission prompts. The only way to turn it off today is
   by hand-editing `agent.skipPermissions` to `false` in the config file (`cipher-keel-config.json`
   under the app's `userData` directory — see `getConfigPath()` in
-  `src/main/config/config-store.ts`); there is no in-app toggle
+  `src/main/config/config-store.ts`); there is no in-app toggle. It is one entry among
+  others in [`docs/anpassbare-flaechen.md`](docs/anpassbare-flaechen.md)
 - **macOS on Apple Silicon only.** tmux plus Unix domain sockets plus keychain. Linux is
   an intended later target and nothing in the packaging setup blocks it; Windows is not
   planned. There is no Intel build
 - **Idle RAM budget and cold-start time unverified.** The <300 MB / <5s targets are
   architecturally supported (lazy init, WAL, no in-memory cache, deferred service start)
   but have not been measured against a production build
-- **Codex and Gemini adapters** are a design target, not implemented — `AdapterRegistry`
-  currently has exactly one implementation (`claude-code`)
+- **Codex and Gemini adapters** are a design target, not implemented. `AdapterRegistry`
+  holds two entries: `claude-code`, which launches sessions, and `nanoclaw`, whose
+  `buildLaunchCommand` is a no-op — no NanoClaw session has ever run
 
 ## Install
 

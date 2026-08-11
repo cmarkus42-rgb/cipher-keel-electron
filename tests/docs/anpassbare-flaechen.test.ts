@@ -1,0 +1,50 @@
+import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+const INVENTORY = readFileSync(
+  join(__dirname, '../../docs/anpassbare-flaechen.md'), 'utf8'
+)
+
+// CK-NFR-012: a new adjustable surface without an inventory entry is an audit finding.
+// Binding the test to the config keys is what keeps this from being a document that
+// quietly falls behind the code.
+const CONFIG_PATHS = [
+  'app.maxSessions',
+  'agent.skipPermissions',
+  'agent.modelTiers',
+  'ui.theme',
+  'ui.language',
+  'ui.grid',
+  'mcp.port',
+  'mcp.host',
+  'mcp.apiKey',
+  'voice.enabled',
+  'voice.piperVoice',
+  'llm.ollamaHost',
+  'llm.ollamaPort',
+  'llm.ollamaModel',
+]
+
+describe('CK-NFR-012 — the adjustable-surface inventory', () => {
+  for (const path of CONFIG_PATHS) {
+    it(`lists ${path}`, () => {
+      expect(INVENTORY).toContain(path)
+    })
+  }
+
+  it('lists the prompt layers', () => {
+    for (const layer of ['Body', 'Persona', 'GlobalRules', 'SKILL.md']) {
+      expect(INVENTORY).toContain(layer)
+    }
+  })
+
+  it('marks every entry as either editable or explicitly not yet editable', () => {
+    const rows = INVENTORY.split('\n').filter(l => l.startsWith('| `'))
+    expect(rows.length).toBeGreaterThan(10)
+    for (const row of rows) {
+      expect(row, `row without an editability verdict: ${row}`)
+        .toMatch(/ja|nein/)
+    }
+  })
+})
