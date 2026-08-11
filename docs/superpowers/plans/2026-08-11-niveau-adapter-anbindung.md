@@ -1933,3 +1933,61 @@ Ein über `project:create` angelegtes Projekt überlebte den App-Neustart nicht 
 in `project:list` nicht auf; über den Kickoff-Wizard angelegt, blieb es. Das deckt sich mit
 dem offenen Punkt „Projektliste nach `project:kickoff`" aus dem Vorgänger-Handover und
 wurde hier nicht angefasst.
+
+---
+
+## Messprotokoll: Lädt Niveau A eifrig oder bedarfsgesteuert? (2026-08-11)
+
+**Anlass:** Der Konzept-Nachtrag führt als Punkt 2, dass M2 §5.4 den nativen
+Skill-Mechanismus verlangt, gebaut aber `@`-Referenzen sind — und dass die `KEELPROBE7`-Probe
+eifriges von bedarfsgesteuertem Laden **nicht** unterscheiden kann. Davon hing ab, ob die
+A-Mechanik umgebaut werden muss.
+
+**Aufbau:** Projekt über den Kickoff-Wizard angelegt, Architect-Session gestartet (damit die
+sieben `SKILL.md` real materialisiert sind), App gestoppt. Dann vier Läufe mit
+`claude -p "Antworte mit genau einem Wort: bereit" --model opus --append-system-prompt-file
+<variante> --output-format json` im selben Projektverzeichnis. Gezählt wird
+`input_tokens + cache_creation_input_tokens + cache_read_input_tokens` — die tatsächliche
+Kontextgröße, unabhängig davon, was gerade im Cache liegt. Claude Code 2.1.221.
+
+Die Varianten unterscheiden sich **ausschließlich** im Capabilities-Block:
+
+| Variante | Prompt | Gesamt-Token | Differenz |
+|---|---|---|---|
+| ohne Capabilities | 3617 Zeichen, 0 `@`-Zeilen | 36 477 | — |
+| 1 Referenz | 3727 Zeichen, 1 `@`-Zeile | 37 769 | +1 292 |
+| 7 Referenzen | 4043 Zeichen, 7 `@`-Zeilen | 37 934 | +1 457 |
+| 7 Referenzen, **eine Datei auf 271 000 Zeichen aufgeblasen** | identisch zur Zeile darüber | **37 934** | +1 457 |
+
+### Befund 1 — Niveau A lädt bedarfsgesteuert. Der Umbau entfällt.
+
+Der entscheidende Lauf ist der vierte. `architect-core-identity/SKILL.md` wurde von 4 101 auf
+270 945 Zeichen aufgeblasen — rund 68 000 Token hinter **einer** der sieben Referenzen, bei
+zeichengleichem Prompt. Der Kontext blieb bei **exakt derselben Zahl**: 37 934.
+
+Wäre eifrig geladen worden, hätte dieser Lauf um Zehntausende Token wachsen oder am
+Kontextfenster scheitern müssen. Er tat beides nicht. **Der Inhalt hinter `@`-Referenzen
+steht beim Start nicht im Kontext.** M2 §13 („Lazy-Loading als Pflicht") ist erfüllt, obwohl
+die Mechanik von §5.4 abweicht.
+
+### Befund 2 — Der Mechanismus kostet einmalig, nicht pro Capability
+
+Die erste Referenz kostet **+1 292** Token, jede weitere nur noch rund **28**. Es gibt also
+einen einmaligen Aufschlag von etwa 1 264 Token, sobald überhaupt eine `@`-Referenz im
+angehängten Prompt steht, plus die Zeile selbst.
+
+**Praktische Folge:** Die Capability-Schicht kostet den Architect beim Start 1 457 Token —
+knapp 4 % eines 37 000-Token-Startkontexts, und das unabhängig davon, ob die sieben Dateien
+25 000 oder 271 000 Zeichen umfassen. Eine achte Capability kostet 28 Token. **Die Zahl der
+Capabilities ist damit kein Token-Argument mehr**, weder für noch gegen eine Erweiterung.
+
+### Was diese Messung nicht sagt
+
+- **Woraus die 1 264 Token bestehen**, ist von außen nicht beobachtbar. Naheliegend ist eine
+  eingespielte Anweisung zum Umgang mit Dateireferenzen; belegt ist nur der Betrag.
+- **Gemessen wurde `claude -p`** (Print-Modus), nicht die interaktive Session, die die App
+  startet. Dass die Referenzen in der interaktiven Session aufgelöst *werden*, hat
+  `KEELPROBE7` (Messprotokoll Task 9 der Startstrecke) bereits gezeigt; dass sie dort
+  ebenfalls erst bei Bedarf laden, ist plausibel, aber nicht separat gemessen.
+- **Nichts über Niveau B.** Ob ein NanoClaw-Harness sein Inventar bedarfsgesteuert liest,
+  bleibt offen (Annahme A4b) — dafür müsste eine NanoClaw-Session laufen.
