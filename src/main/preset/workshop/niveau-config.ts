@@ -9,6 +9,9 @@
  * Niveau C ist Bedienhilfe-Modus (D-13).
  */
 
+import { CapabilityNiveau } from '../niveau'
+import { getWorkshopCapabilityPackages } from './workshop-capabilities'
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -36,34 +39,13 @@ export interface WorkshopNiveauConfig {
 // ---------------------------------------------------------------------------
 
 /** Vollstaendige Capability-Liste (Niveau A, alle als SKILL.md) */
-const CAPABILITIES_NIVEAU_A = [
-  'findings-lesen',
-  'item-dispatch',
-  'debugger-beauftragung',
-  'completeness-gate',
-  'status-konsolidierung',
-  'worker-monitoring',
-  'rolling-summary',
-] as const
+const CAPABILITIES_NIVEAU_A = getWorkshopCapabilityPackages(CapabilityNiveau.A).map(p => p.name)
 
-/** Niveau B: debugger-beauftragung entfaellt vollstaendig (Niveau-A-exklusiv), kein Mode-Wechsel */
-const CAPABILITIES_NIVEAU_B = [
-  'findings-lesen',
-  'item-dispatch',
-  'completeness-gate',
-  'status-konsolidierung',
-  'worker-monitoring',
-  'rolling-summary',
-] as const
+/** Niveau B: debugger-beauftragung entfaellt vollstaendig (Niveau-A-exklusiv) */
+const CAPABILITIES_NIVEAU_B = getWorkshopCapabilityPackages(CapabilityNiveau.B).map(p => p.name)
 
-/** Niveau C: 5 Pakete inline, kein debugger-beauftragung */
-const CAPABILITIES_NIVEAU_C = [
-  'findings-lesen',
-  'item-dispatch',
-  'completeness-gate',
-  'status-konsolidierung',
-  'rolling-summary',
-] as const
+/** Niveau C: 5 Pakete, kein debugger-beauftragung, kein worker-monitoring */
+const CAPABILITIES_NIVEAU_C = getWorkshopCapabilityPackages(CapabilityNiveau.C).map(p => p.name)
 
 // ---------------------------------------------------------------------------
 // getNiveauWorkshopConfig

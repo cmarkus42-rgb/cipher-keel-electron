@@ -42,6 +42,29 @@ export function estimateTokenCount(text: string): number {
   return Math.ceil(text.length / 4)
 }
 
+/**
+ * Filter packages by niveau using their declared niveauMinimum.
+ *
+ * niveauMinimum reads as "the least rich niveau this package survives at": 'A' means
+ * Niveau A only, 'B' means A and B, absent means everywhere. Niveau C is deliberately
+ * not decided here — what survives at C differs per entity and stays in the entity's
+ * own getter, where its reason can be written down next to it.
+ *
+ * Lives here rather than in capabilities.ts because the entity getters need it and
+ * capabilities.ts imports them — putting it there would close an import cycle.
+ */
+export function filterByNiveau<T extends { niveauMinimum?: 'A' | 'B' | 'C' }>(
+  packages: T[],
+  niveau: 'A' | 'B' | 'C',
+): T[] {
+  return packages.filter((pkg) => {
+    if (!pkg.niveauMinimum) return true
+    if (niveau === 'A') return true
+    if (niveau === 'B') return pkg.niveauMinimum !== 'A'
+    return false
+  })
+}
+
 const VALID_LOADER_TYPES = new Set<string>(Object.values(LoaderType))
 
 export function validateCapabilityPackage(pkg: unknown): ValidationResult {

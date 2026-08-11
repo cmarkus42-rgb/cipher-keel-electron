@@ -12,45 +12,22 @@
  * Phase 3c / Task 7; companion-memory-tools removal: Task 12
  */
 
-import { LoaderType } from '../capability-schema'
+import { LoaderType, filterByNiveau } from '../capability-schema'
 import type { CapabilityPackage } from '../capability-schema'
-
-/** All 7 capability package IDs available at Niveau A. */
-export const SE_CAPABILITIES_A = [
-  'se-core-identity',
-  'gate-urteil-guide',
-  'trigger-zeiger-format',
-  'steuer-ueberblick-tool',
-  'handoff-logik-guide',
-  'rolling-summary',
-  'graph-navigation-advanced',
-] as const
-
-/** 5 capability package IDs for Niveau B (no graph-navigation-advanced, no steuer-ueberblick-tool). */
-export const SE_CAPABILITIES_B = [
-  'se-core-identity',
-  'gate-urteil-guide',
-  'trigger-zeiger-format',
-  'handoff-logik-guide',
-  'rolling-summary',
-] as const
-
-/** 1 capability package ID for Niveau C — inline only, max 500 tokens. */
-export const SE_CAPABILITIES_C = [
-  'se-core-identity',
-] as const
+import { CapabilityNiveau } from '../niveau'
 
 /**
- * Returns the capability package IDs for the given SE Niveau.
+ * Returns the SE capability packages for a niveau.
  *
- * @param niveau - 'A' | 'B' | 'C'
+ * A: all seven. B: five, filtered off the niveauMinimum the packages already carry.
+ * C: the core identity alone — that cut is not derivable from niveauMinimum, because
+ * four packages without one would otherwise survive.
  */
-export function getSECapabilities(niveau: 'A' | 'B' | 'C'): string[] {
-  switch (niveau) {
-    case 'A': return [...SE_CAPABILITIES_A]
-    case 'B': return [...SE_CAPABILITIES_B]
-    case 'C': return [...SE_CAPABILITIES_C]
+export function getSECapabilityPackages(niveau: CapabilityNiveau): CapabilityPackage[] {
+  if (niveau === CapabilityNiveau.C) {
+    return SE_PACKAGES.filter(p => p.name === 'se-core-identity')
   }
+  return filterByNiveau(SE_PACKAGES, niveau)
 }
 
 /**

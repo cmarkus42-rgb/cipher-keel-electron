@@ -11,6 +11,7 @@
 import { RollenTyp } from '../schema'
 import { CapabilityNiveau } from '../niveau'
 import type { PresetRahmen } from '../schema'
+import { getWorkshopCapabilityPackages } from './workshop-capabilities'
 
 /** Graph-Zugriffsprofile für das Workshop-Preset (CK-P4-001). */
 export type GraphLeseModus = 'targeted' | 'full' | 'none'
@@ -82,17 +83,17 @@ export const WORKSHOP_KONFIGURATION: WorkshopKonfiguration = {
   },
   capabilityPakete: {
     niveauA: {
-      pakete: [...WORKSHOP_CAPABILITY_PAKETE],
+      pakete: getWorkshopCapabilityPackages(CapabilityNiveau.A).map(p => p.name),
       maxParallelWorker: 5,
     },
     niveauB: {
       // debugger-beauftragung entfaellt vollstaendig (Niveau-A-exklusiv), kein Mode-Wechsel
-      pakete: ['findings-lesen', 'item-dispatch', 'completeness-gate', 'status-konsolidierung', 'worker-monitoring', 'rolling-summary'],
+      pakete: getWorkshopCapabilityPackages(CapabilityNiveau.B).map(p => p.name),
       maxParallelWorker: 3,
     },
     niveauC: {
-      // Kein debugger-beauftragung, kein CF-Routing; alle inline
-      pakete: ['findings-lesen', 'item-dispatch', 'completeness-gate', 'status-konsolidierung', 'rolling-summary'],
+      // Kein debugger-beauftragung, kein worker-monitoring; alle inline
+      pakete: getWorkshopCapabilityPackages(CapabilityNiveau.C).map(p => p.name),
       maxParallelWorker: 1,
     },
   },
@@ -106,18 +107,13 @@ export const WORKSHOP_KONFIGURATION: WorkshopKonfiguration = {
  */
 export function createWorkshopRahmen(niveau: CapabilityNiveau): PresetRahmen {
   const cfg = WORKSHOP_KONFIGURATION
-  const niveauCfg = niveau === CapabilityNiveau.A
-    ? cfg.capabilityPakete.niveauA
-    : niveau === CapabilityNiveau.B
-      ? cfg.capabilityPakete.niveauB
-      : cfg.capabilityPakete.niveauC
 
   return {
     id: cfg.id,
     name: 'Workshop',
     rollenTyp: cfg.rollenTyp,
     phasenBindung: [...cfg.phasenBindung],
-    capabilityAnbindung: niveauCfg.pakete,
+    capabilityAnbindung: getWorkshopCapabilityPackages(niveau).map(p => p.name),
     graphAnbindung: { lesen: true, schreiben: true },
     personaVorgabe: '',
     runtime: 'claude-cli-tmux',

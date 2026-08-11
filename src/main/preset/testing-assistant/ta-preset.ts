@@ -38,41 +38,15 @@
 import { RollenTyp } from '../schema'
 import { CapabilityNiveau } from '../niveau'
 import type { PresetRahmen } from '../schema'
+import { getTaCapabilityPackages } from './ta-capabilities'
 
-/** Five capability packages for the Testing Assistant at Niveau A (Task 15, fix round 1). */
-export const TA_CAPABILITIES = [
-  'ta-core-identity',
-  'suite-lauf-protokoll',
-  'testqualitaet-beurteilung',
-  'adversarial-probing',
-  'findings-dokumentation',
-] as const
+/** Capability ids the Testing Assistant carries at Niveau A — derived, not restated. */
+export const TA_CAPABILITIES: readonly string[] =
+  getTaCapabilityPackages(CapabilityNiveau.A).map(p => p.name)
 
-export type TaCapabilityName = (typeof TA_CAPABILITIES)[number]
+export type TaCapabilityName = string
 
-/**
- * Niveau B: 4 capabilities, no suite-lauf-protokoll. NIVEAU_B_TOOLS
- * (src/main/preset/schema.ts) carries no Bash, and suite-lauf-protokoll's entire
- * job — running npm test/typecheck/lint — is a shell operation. Without Bash there
- * is nothing left of that capability to load; it does not survive in reduced form.
- */
-const NIVEAU_B_CAPABILITIES: string[] = [
-  'ta-core-identity',
-  'testqualitaet-beurteilung',
-  'adversarial-probing',
-  'findings-dokumentation',
-]
 
-/**
- * Niveau C: 1 capability (core identity only). NIVEAU_C_TOOLS is Read only — no
- * Write, so findings-dokumentation cannot run either; nothing but the identity file
- * itself is loaded. Not "inline": the Testing Assistant does not use
- * LoaderType.Inline or niveauCExtrakt anywhere — materialisation copies this
- * capability's SKILL.md as-is at every niveau it is loaded at.
- */
-const NIVEAU_C_CAPABILITIES: string[] = [
-  'ta-core-identity',
-]
 
 /** Default Rahmen at Niveau A. */
 export const TA_RAHMEN: PresetRahmen = {
@@ -80,7 +54,7 @@ export const TA_RAHMEN: PresetRahmen = {
   name: 'Testing Assistant',
   rollenTyp: RollenTyp.PhasenEntitaet,
   phasenBindung: ['testing'],
-  capabilityAnbindung: [...TA_CAPABILITIES],
+  capabilityAnbindung: getTaCapabilityPackages(CapabilityNiveau.A).map(p => p.name),
   graphAnbindung: { lesen: true, schreiben: true },
   personaVorgabe: 'cipher',
   runtime: 'claude-cli-tmux',
@@ -93,11 +67,7 @@ export const TA_RAHMEN: PresetRahmen = {
  * Create a PresetRahmen for the Testing Assistant at the given niveau.
  */
 export function createTaRahmen(niveau: CapabilityNiveau): PresetRahmen {
-  const caps = niveau === CapabilityNiveau.A
-    ? [...TA_CAPABILITIES]
-    : niveau === CapabilityNiveau.B
-      ? NIVEAU_B_CAPABILITIES
-      : NIVEAU_C_CAPABILITIES
+  const caps = getTaCapabilityPackages(niveau).map(p => p.name)
 
   return {
     id: 'testing-assistant',

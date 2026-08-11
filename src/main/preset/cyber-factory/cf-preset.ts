@@ -11,6 +11,7 @@
 import { RollenTyp } from '../schema'
 import { CapabilityNiveau } from '../niveau'
 import type { PresetRahmen } from '../schema'
+import { getCfCapabilities } from './cf-capabilities'
 
 /** Eight capability packages for the CF (CK-P3CF-010). */
 export const CF_CAPABILITIES = [
@@ -26,17 +27,7 @@ export const CF_CAPABILITIES = [
 
 export type CfCapabilityName = (typeof CF_CAPABILITIES)[number]
 
-const NIVEAU_B_CAPABILITIES: string[] = [
-  'cf-core-identity',
-  'welle-plan-guide',
-  'worker-startup-protokoll',
-  'welle-plan-granularisierer',
-  'rueckweg-protokoll',
-]
 
-const NIVEAU_C_CAPABILITIES: string[] = [
-  'cf-core-identity',
-]
 
 /** Default Rahmen at Niveau A. CK-P3CF-001 */
 export const CF_RAHMEN: PresetRahmen = {
@@ -44,7 +35,7 @@ export const CF_RAHMEN: PresetRahmen = {
   name: 'Cyber Factory',
   rollenTyp: RollenTyp.PhasenEntitaet,
   phasenBindung: ['development'],
-  capabilityAnbindung: [...CF_CAPABILITIES],
+  capabilityAnbindung: getCfCapabilities(CapabilityNiveau.A).map(p => p.name),
   graphAnbindung: { lesen: true, schreiben: true },
   personaVorgabe: 'cipher',
   runtime: 'claude-cli-tmux',
@@ -55,11 +46,7 @@ export const CF_RAHMEN: PresetRahmen = {
 }
 
 export function createCfRahmen(niveau: CapabilityNiveau): PresetRahmen {
-  const caps = niveau === CapabilityNiveau.A
-    ? [...CF_CAPABILITIES]
-    : niveau === CapabilityNiveau.B
-      ? NIVEAU_B_CAPABILITIES
-      : NIVEAU_C_CAPABILITIES
+  const caps = getCfCapabilities(niveau).map(p => p.name)
 
   return {
     id: 'cyber-factory',

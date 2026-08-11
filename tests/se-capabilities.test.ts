@@ -3,12 +3,10 @@
  * Phase 3c / Task 7
  */
 
+import { CapabilityNiveau } from '../src/main/preset/niveau'
 import { describe, it, expect } from 'vitest'
 import {
-  SE_CAPABILITIES_A,
-  SE_CAPABILITIES_B,
-  SE_CAPABILITIES_C,
-  getSECapabilities,
+  getSECapabilityPackages,
   SE_PACKAGES,
 } from '../src/main/preset/systems-engineer/se-capabilities'
 import { validateCapabilityPackage } from '../src/main/preset/capability-schema'
@@ -16,6 +14,10 @@ import { validateCapabilityPackage } from '../src/main/preset/capability-schema'
 // ---------------------------------------------------------------------------
 // SE_CAPABILITIES_A — 7 packages (companion-memory-tools dropped, Task 12)
 // ---------------------------------------------------------------------------
+
+const SE_CAPABILITIES_A = getSECapabilityPackages(CapabilityNiveau.A).map(p => p.name)
+const SE_CAPABILITIES_B = getSECapabilityPackages(CapabilityNiveau.B).map(p => p.name)
+const SE_CAPABILITIES_C = getSECapabilityPackages(CapabilityNiveau.C).map(p => p.name)
 
 describe('SE_CAPABILITIES_A', () => {
   it('contains exactly 7 package IDs', () => {
@@ -79,27 +81,27 @@ describe('SE_CAPABILITIES_C', () => {
 
 describe('getSECapabilities', () => {
   it('niveau A returns 7 packages', () => {
-    expect(getSECapabilities('A')).toHaveLength(7)
+    expect(getSECapabilityPackages(CapabilityNiveau.A).map(p => p.name)).toHaveLength(7)
   })
 
   it('niveau B returns 5 packages', () => {
-    expect(getSECapabilities('B')).toHaveLength(5)
+    expect(getSECapabilityPackages(CapabilityNiveau.B).map(p => p.name)).toHaveLength(5)
   })
 
   it('niveau C returns 1 package', () => {
-    expect(getSECapabilities('C')).toHaveLength(1)
+    expect(getSECapabilityPackages(CapabilityNiveau.C).map(p => p.name)).toHaveLength(1)
   })
 
   it('niveau A result matches SE_CAPABILITIES_A', () => {
-    expect(getSECapabilities('A')).toEqual([...SE_CAPABILITIES_A])
+    expect(getSECapabilityPackages(CapabilityNiveau.A).map(p => p.name)).toEqual([...SE_CAPABILITIES_A])
   })
 
   it('niveau B result matches SE_CAPABILITIES_B', () => {
-    expect(getSECapabilities('B')).toEqual([...SE_CAPABILITIES_B])
+    expect(getSECapabilityPackages(CapabilityNiveau.B).map(p => p.name)).toEqual([...SE_CAPABILITIES_B])
   })
 
   it('niveau C result matches SE_CAPABILITIES_C', () => {
-    expect(getSECapabilities('C')).toEqual([...SE_CAPABILITIES_C])
+    expect(getSECapabilityPackages(CapabilityNiveau.C).map(p => p.name)).toEqual([...SE_CAPABILITIES_C])
   })
 })
 
@@ -110,7 +112,7 @@ describe('getSECapabilities', () => {
 describe('SE capability packages', () => {
   it('defines a package for every Niveau-A capability', () => {
     const names = SE_PACKAGES.map(p => p.name)
-    for (const id of getSECapabilities('A')) {
+    for (const id of getSECapabilityPackages(CapabilityNiveau.A).map(p => p.name)) {
       expect(names, id).toContain(id)
     }
   })
@@ -123,13 +125,13 @@ describe('SE capability packages', () => {
 
   it('no longer carries companion-memory-tools', () => {
     // The companion is deferred; keel has no companion_memory_* MCP tools.
-    expect(getSECapabilities('A')).not.toContain('companion-memory-tools')
-    expect(getSECapabilities('B')).not.toContain('companion-memory-tools')
+    expect(getSECapabilityPackages(CapabilityNiveau.A).map(p => p.name)).not.toContain('companion-memory-tools')
+    expect(getSECapabilityPackages(CapabilityNiveau.B).map(p => p.name)).not.toContain('companion-memory-tools')
   })
 
   it('keeps seven capabilities at Niveau A and five at Niveau B', () => {
-    expect(getSECapabilities('A')).toHaveLength(7)
-    expect(getSECapabilities('B')).toHaveLength(5)
+    expect(getSECapabilityPackages(CapabilityNiveau.A).map(p => p.name)).toHaveLength(7)
+    expect(getSECapabilityPackages(CapabilityNiveau.B).map(p => p.name)).toHaveLength(5)
   })
 
   // niveauMinimum is documentation only — nothing in getSECapabilities consumes it,
