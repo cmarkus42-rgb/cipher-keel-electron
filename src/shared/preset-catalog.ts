@@ -1,9 +1,10 @@
 /**
  * preset-catalog.ts — the presets offered in the session launcher.
  *
- * Release 0.1 ships four of the eleven roles M5 describes. That is the ratified cut
- * (M6 section 3.1 / BG-1), not a backlog: Ideation, Refinement, Testing Assistant,
- * Audit, Release Manager, Companion and Debugger are post-0.1.
+ * Release 0.1 shipped four of the eleven roles M5 describes (the ratified cut,
+ * M6 section 3.1 / BG-1). The Testing Assistant was added afterwards, moving that
+ * line by one: Ideation, Refinement, Audit, Release Manager, Companion and
+ * Debugger remain unbuilt.
  *
  * CK-ENT-001
  */
@@ -34,6 +35,11 @@ export const PRESET_CATALOG: readonly PresetChoice[] = [
     id: 'cyber-factory',
     label: 'Cyber Factory',
     description: 'Wellenplanung und Worker-Orchestrierung',
+  },
+  {
+    id: 'testing-assistant',
+    label: 'Testing Assistant',
+    description: 'Suite prüfen, Testqualität beurteilen, Findings dokumentieren',
   },
   {
     id: 'workshop',
