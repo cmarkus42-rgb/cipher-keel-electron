@@ -7,7 +7,15 @@ import { materialiseCapabilities } from '../../src/main/session/materialise-capa
 import { CAPABILITY_SKILLS } from '../../src/main/preset/capability-assets'
 import { ARCHITECT_CAPABILITIES } from '../../src/main/preset/architect/architect-preset'
 import { CF_CAPABILITIES } from '../../src/main/preset/cyber-factory/cf-preset'
-import { SE_CAPABILITIES } from '../../src/main/preset/systems-engineer/se-preset'
+// SE_CAPABILITIES (se-preset.ts) is NOT what the registry reads: getEntityDefinition
+// always calls createSERahmen(niveau), which overrides capabilityAnbindung with
+// getSECapabilities(niveau) — SE_CAPABILITIES_A at the default (and only reachable,
+// see se-capabilities.ts) niveau A. SE_CAPABILITIES only feeds the unused-at-runtime
+// SE_RAHMEN/createSEPreset. Importing SE_CAPABILITIES_A here is what makes this guard
+// catch a real drift: if SE_CAPABILITIES_A gains an id that SE_CAPABILITIES lacks (or
+// CAPABILITY_SKILLS lacks), materialisation would silently drop it at launch time while
+// a guard keyed on the wrong constant stayed green.
+import { SE_CAPABILITIES_A } from '../../src/main/preset/systems-engineer/se-capabilities'
 import { TA_CAPABILITIES } from '../../src/main/preset/testing-assistant/ta-preset'
 import { WORKSHOP_CAPABILITY_PAKETE } from '../../src/main/preset/workshop/workshop-preset'
 
@@ -52,7 +60,7 @@ describe('materialiseCapabilities', () => {
     const declared = new Set<string>([
       ...ARCHITECT_CAPABILITIES,
       ...CF_CAPABILITIES,
-      ...SE_CAPABILITIES,
+      ...SE_CAPABILITIES_A,
       ...TA_CAPABILITIES,
       ...WORKSHOP_CAPABILITY_PAKETE,
     ])
