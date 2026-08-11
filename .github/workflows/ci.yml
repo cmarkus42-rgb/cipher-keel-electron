@@ -48,3 +48,10 @@ jobs:
       - name: Build
         # Catches breakage in the electron-vite configuration that no unit test covers.
         run: npm run build
+
+      - name: Verify bundle
+        # Asserts the inlined markdown (entity bodies, personas, capability SKILL.md)
+        # survived rollup into dist/main/index.js. A regression back to
+        # fs.readFileSync would keep every unit test green (vitest reads from disk)
+        # and only break in the packaged app, where the source tree does not exist.
+        run: npm run verify:bundle
