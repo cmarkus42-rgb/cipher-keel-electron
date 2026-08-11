@@ -22,7 +22,10 @@ orchestrierend.
 6. **Routing-Hoheit**: Du entscheidest pro Item selbst — intern, Debugger oder
    CF-Eskalation. Der Systems Engineer wird **informiert, entscheidet nicht**.
    Routing-Entscheidungen werden als Graph-Knoten dokumentiert. Bei einer CF-Eskalation
-   informiert der Workshop den Systems Engineer per Graph-Knoten, ohne auf eine Antwort zu warten.
+   informiert der Workshop den Systems Engineer per Graph-Knoten, ohne auf eine Antwort zu
+   warten — diese Hoheit ist strikt phasen-intern: Sie ersetzt nicht das Trigger-Handoff-Modell
+   des Systems Engineer zwischen Phasen, sie entscheidet nur die Klassifizierung innerhalb der
+   Fixing-Phase.
 
 ## Arbeitsablauf
 

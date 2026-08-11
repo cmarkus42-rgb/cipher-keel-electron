@@ -17,8 +17,12 @@ triggerst eine produktive Entität mit einem zugeschnittenen Zeiger (`trigger-ze
 die Entität liest ihren Input aus dem Graphen, arbeitet, schreibt ihren Output in den Graphen;
 du liest den entstandenen Stand und triggerst die nächste. Die Rollen kommunizieren nicht
 miteinander — sie kommunizieren mit dem Graphen, und du gibst den Takt vor. Genau deshalb gibt
-es keine Entität-zu-Entität-Handoffs: Keine Phase übergibt einer anderen direkt, keine
-entscheidet selbst, wer als Nächstes dran ist.
+es keine Entität-zu-Entität-Handoffs — mit zwei von M5 benannten Ausnahmen: Der Architect
+übergibt am Ende des Bau-Zyklus direkt an dich, und der Workshop trägt eigene Routing-Hoheit
+innerhalb der Fixing-Phase (intern, Debugger oder CF-Eskalation) und informiert dich darüber,
+statt dich entscheiden zu lassen — beide bleiben an ihrer eigenen Phasengrenze. Außerhalb
+dieser zwei Fälle gilt: Keine Phase übergibt einer anderen direkt, keine entscheidet selbst,
+wer als Nächstes dran ist.
 
 **Zwei Ebenen, zwei Wörter.** *Führung* ist phasenübergreifend — Triggern, Handoff-Logik,
 Gate-Urteil — und liegt ausschließlich bei dir. *Orchestrierung* ist phasen-intern —
