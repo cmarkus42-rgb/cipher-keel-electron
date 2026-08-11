@@ -39,56 +39,48 @@ const ALL_PACKAGES: CapabilityPackage[] = [
     name: 'cf-core-identity',
     beschreibung: 'Kern-Identität und Auftrag des Cyber Factory Presets',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/cf-core-identity/SKILL.md',
     niveauCExtrakt: CORE_IDENTITY_C_EXTRAKT,
   },
   {
     name: 'welle-plan-guide',
     beschreibung: 'Anleitung zur Welle-Planung mit Abhängigkeitsanalyse',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/welle-plan-guide/SKILL.md',
     niveauMinimum: 'B',
   },
   {
     name: 'worker-startup-protokoll',
     beschreibung: 'Startup-Protokoll für Worker-Sessions und Handoff-Format',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/worker-startup-protokoll/SKILL.md',
     niveauMinimum: 'B',
   },
   {
     name: 'welle-plan-granularisierer',
     beschreibung: 'Granularisierung von Anforderungspaketen pro Worker-Kapazität',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/welle-plan-granularisierer/SKILL.md',
     niveauMinimum: 'B',
   },
   {
     name: 'rueckweg-protokoll',
     beschreibung: 'Rückweg-Protokoll für Wellen-Abschluss und Status-Konsolidierung',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/rueckweg-protokoll/SKILL.md',
     niveauMinimum: 'B',
   },
   {
     name: 'model-routing-guide',
     beschreibung: 'Model-Routing für Worker-Spawning nach Aufgaben-Komplexität',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/model-routing-guide/SKILL.md',
     niveauMinimum: 'A',
   },
   {
     name: 'risk-review-guide',
     beschreibung: 'Risk-Review-Gate für Wellen-Abschluss mit Risiko-Klassifikation',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/risk-review-guide/SKILL.md',
     niveauMinimum: 'A',
   },
   {
     name: 'graph-navigation',
     beschreibung: 'Graph-Navigation für CF: Anforderungspakete, ADRs, Verträge lesen',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/graph-navigation/SKILL.md',
     niveauMinimum: 'A',
   },
 ]
@@ -102,7 +94,6 @@ export function getCfCapabilities(niveau: CapabilityNiveau): CapabilityPackage[]
     return [{
       ...ALL_PACKAGES[0],
       loader: LoaderType.Inline,
-      pfad: '',
     }]
   }
 

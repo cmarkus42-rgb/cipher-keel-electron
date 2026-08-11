@@ -18,8 +18,11 @@ export interface CapabilityPackage {
   beschreibung: string
   /** How this package is loaded at runtime */
   loader: LoaderType
-  /** Path to the package file (or channel route for nanoclaw-skill) */
-  pfad: string
+  /**
+   * Path to the package file, or channel route for nanoclaw-skill.
+   * Optional for skill-md: derived from the name via capabilityPath().
+   */
+  pfad?: string
   /** Minimum capability level required to load this package */
   niveauMinimum?: 'A' | 'B' | 'C'
   /** Inline extract for Level C (≤ 500 tokens). Required when loader is 'inline'. */
@@ -66,10 +69,14 @@ export function validateCapabilityPackage(pkg: unknown): ValidationResult {
     errors.push(`loader must be one of: ${Array.from(VALID_LOADER_TYPES).join(', ')}`)
   }
 
-  // pfad can be empty only for inline loader (content comes from niveauCExtrakt)
-  const loaderIsInline = p.loader === LoaderType.Inline
-  if (typeof p.pfad !== 'string' || (!loaderIsInline && p.pfad.trim() === '')) {
-    errors.push('pfad is required and must be a non-empty string (except for inline loader)')
+  // pfad is derivable for skill-md (from the name, see capabilityPath) and meaningless
+  // for inline (content comes from niveauCExtrakt). nanoclaw-skill carries a channel
+  // route and reference-material a file that no convention produces — for those it stays
+  // required.
+  const pfadRequired = p.loader === LoaderType.NanoClawSkill
+    || p.loader === LoaderType.ReferenceMaterial
+  if (pfadRequired && (typeof p.pfad !== 'string' || p.pfad.trim() === '')) {
+    errors.push(`pfad is required for loader '${String(p.loader)}'`)
   }
 
   if (p.niveauMinimum !== undefined) {

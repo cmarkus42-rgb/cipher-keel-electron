@@ -25,30 +25,25 @@ export const TA_PACKAGES: CapabilityPackage[] = [
     name: 'ta-core-identity',
     beschreibung: 'Kern-Identität des Testing Assistant und die schärfste Grenze: fixt nicht, ändert keinen Code',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/ta-core-identity/SKILL.md',
   },
   {
     name: 'suite-lauf-protokoll',
     beschreibung: 'Die Test-Suite dieses Repos laufen lassen und den Lauf strukturiert protokollieren',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/suite-lauf-protokoll/SKILL.md',
   },
   {
     name: 'testqualitaet-beurteilung',
     beschreibung: 'Testqualität beurteilen statt Testanzahl zählen — Verhaltens- gegen Implementierungs-Tests',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/testqualitaet-beurteilung/SKILL.md',
   },
   {
     name: 'adversarial-probing',
     beschreibung: 'Edge Cases und Schwachstellen systematisch suchen, über die bestehende Suite hinaus',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/adversarial-probing/SKILL.md',
   },
   {
     name: 'findings-dokumentation',
     beschreibung: 'Findings strukturiert als test-findings-Dokument in den Graphen schreiben',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/findings-dokumentation/SKILL.md',
   },
 ]
