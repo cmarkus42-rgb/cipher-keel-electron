@@ -123,7 +123,7 @@ Beim Abgleich mit M2/M6 gefunden, alle vier neu:
 
 | Nicht drin | Grund |
 |---|---|
-| Niveau-C-Emission | 0.2 laut M6 Z. 177. Die C-Daten bleiben, der Assembler lehnt C explizit ab statt still A-Verhalten zu zeigen. |
+| Niveau-C-Emission (`niveauCExtrakt` inline) | 0.2 laut M6 Z. 177. Die C-Daten und das heutige C-Verhalten des Assemblers bleiben unangetastet. |
 | NanoClaw-Session Ende-zu-Ende | `buildLaunchCommand` ist dort ein No-op; Sessions sind Bridge-Threads. Grid-Zelle, Lifecycle und Output-Events sind eine eigene Phase und brauchen eine laufende NanoClaw-Instanz für einen echten Messlauf. |
 | Die fünfte Schicht (`phaseninput`) | Eigene Phase, aber **vor** NanoClaw-Sessions — siehe §8. |
 | OpenCode-Adapter | Möglich und gewollt, aber `06-offene-punkte.md` verlangt die Lizenz-/ToS-Verifikation vor dem Bau. Als Vorlage/Inspiration ist der Weg frei. |
@@ -230,7 +230,18 @@ Der Assembler verzweigt an einer Stelle, gesteuert von `getNiveauConfig(niveau).
 |---|---|---|
 | A | `nativ` | `@.claude/capabilities/<id>/SKILL.md` — **unverändert** |
 | B | `manuell` | Inventar-Block: je Capability `beschreibung` + Pfad, plus die Anweisung, sie bei Bedarf selbst zu lesen |
-| C | `inline` | nicht gebaut — `NiveauNotSupportedError` |
+| C | `inline` | **unverändert gelassen** — siehe unten |
+
+**Zu C, nach Lektüre des Assemblers korrigiert.** `assemble-entity.ts` behandelt C bereits:
+Es kürzt den Body auf 2000 geschätzte Token (`NIVEAU_C_MAX_TOKENS`) und emittiert keine
+Capability-Referenzen. Das ist nicht falsch, nur unvollständig gegenüber M2 §7.4 (inline
+geführte Extrakte). Ein `NiveauNotSupportedError`, wie eine frühere Fassung dieser Spec
+verlangte, würde vorhandenes und getestetes Verhalten entfernen, um eine Lücke zu
+markieren, die kein Adapter erreichen kann. C bleibt daher unangetastet; die
+`niveauCExtrakt`-Emission ist 0.2-Arbeit.
+
+Damit steht die 2000 bereits im Code — als Body-Kappung, nicht als Prompt-Grenze. Beim
+Bau von C wird daraus die Grenze für den ganzen Prompt.
 
 Niveau A wird bewusst **nicht** angefasst. Die Emission ist dreimal in der laufenden App
 belegt; die offene Frage aus §2.4 Punkt 3 ist eine Messfrage, keine Umbaufrage, und wird
@@ -324,7 +335,7 @@ selbst. Neue anpassbare Flächen ohne Inventar-Eintrag sind ein Audit-Befund.
 | `runtime` unbekannt | `Error` mit dem Wert im Text, kein stiller Rückfall (existiert) |
 | `runtime` leer | Default-Adapter (M2 §11.4) |
 | Adapter nicht verfügbar | `session:create` bricht mit Meldung ab, kein Rückfall auf Claude |
-| Niveau C angefordert | `NiveauNotSupportedError` — ausdrücklich, statt still A-Verhalten |
+| Niveau C angefordert | heutiges Verhalten: Body-Kappung auf 2000 Token, keine Capability-Referenzen |
 | Capability ohne `CAPABILITY_SKILLS`-Eintrag | Wächtertest schlägt fehl; zur Laufzeit meldet die Materialisierung sie als fehlend |
 | Tier nicht in `modelTiers` | `--model` entfällt, wie heute |
 
