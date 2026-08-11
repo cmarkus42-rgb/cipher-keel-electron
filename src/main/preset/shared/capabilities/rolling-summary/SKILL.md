@@ -17,10 +17,12 @@ tragen — prüfe deine eigene Capability-Liste, nicht eine pauschale Regel:
   auch in `SE_CAPABILITIES_B` — nur `SE_CAPABILITIES_C` enthält sie nicht. Auf Niveau B bist du
   **nicht** von dieser Capability ausgenommen.
 - **Workshop**: auf allen drei Niveaus. `rolling-summary` steht in `CAPABILITIES_NIVEAU_A`,
-  `CAPABILITIES_NIVEAU_B` **und** `CAPABILITIES_NIVEAU_C` (`niveau-config.ts:39-66`) — als
-  einzige der sieben Workshop-Capabilities ist sie auf keinem Niveau ausgenommen. Auf Niveau C
-  bleibt sie geladen, obwohl dort nur fünf der sieben Pakete aktiv sind
-  (`debugger-beauftragung` und `worker-monitoring` fehlen dort).
+  `CAPABILITIES_NIVEAU_B` **und** `CAPABILITIES_NIVEAU_C` (`niveau-config.ts:39-66`) — eine von
+  fünf der sieben Workshop-Capabilities, die auf keinem Niveau ausgenommen sind (mit
+  `findings-lesen`, `item-dispatch`, `completeness-gate`, `status-konsolidierung`). Nur
+  `debugger-beauftragung` (ab Niveau B) und `worker-monitoring` (ab Niveau C) werden je
+  ausgenommen. Auf Niveau C bleibt `rolling-summary` also geladen, obwohl dort nur fünf der
+  sieben Pakete aktiv sind (`debugger-beauftragung` und `worker-monitoring` fehlen dort).
 
 Auf jedem Niveau, auf dem sie für dich geladen ist, ist sie Pflicht (`pflicht: true` in deiner
 jeweiligen Konfiguration): Bei jedem deiner Auslöser aktualisierst du deine Zusammenfassung.
