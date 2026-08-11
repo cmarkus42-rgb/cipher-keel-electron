@@ -287,8 +287,8 @@ App einmal über `.claude/skills/run-keel/` starten und `graph=ready` prüfen.
 
 ## 10. Offene Befunde aus Phase 8
 
-> Aus dem Ledger `.superpowers/sdd/2026-08-09-phase-8-packaging/progress.md` (gitignored,
-> wird nach Phase 8 gelöscht) und dem Schluss-Review über den gesamten Branch
+> Aus dem Ledger des gitignorierten SDD-Arbeitsordners zu Phase 8 (inzwischen gelöscht)
+> und dem Schluss-Review über den gesamten Branch
 > (`a6c6bbb..6ceb286`, 16 Commits). Reviewer-Verdikt dort: **bereit zum Merge mit Fixes**,
 > 0 Critical, 2 Important (beide dokumentarisch, in einer Fix-Welle erledigt), 7 Minor. Die
 > Punkte unten sind die, die der Reviewer ausdrücklich als nicht-blockierend eingestuft hat.

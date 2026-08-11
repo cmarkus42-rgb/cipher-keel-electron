@@ -3252,8 +3252,9 @@ Erwartet: leer. Der Nachtrag gehört nicht ins Repo.
 
 ## Messprotokoll Task 8
 
-Ausgeführt 2026-08-10 über `.claude/skills/run-keel/` (Profil `/tmp/keel-verify`). Voller
-Bericht mit allen Zwischenschritten: `.superpowers/sdd/2026-08-10-entitaets-startstrecke-und-personas/task-8-report.md`.
+Ausgeführt 2026-08-10 über `.claude/skills/run-keel/` (Profil `/tmp/keel-verify`). Der
+Task-Bericht mit den Zwischenschritten lag im gitignorierten SDD-Arbeitsordner und ist
+gelöscht — dieses Protokoll ist der Record.
 
 **Baseline** (`tmux list-sessions` vor dem Lauf): nur die vier fremden `cmux-*`-Sessions,
 keine `keel-*`. Nach dem Lauf und `stop.sh` ("tmux sessions removed: 2"): wieder nur die
@@ -3389,13 +3390,15 @@ Zeichenkette). Beide Ausgaben sind sauber und eindeutig, kein Ambiguitätsfall.
 Damit bleibt Phase B wie geplant: SKILL.md-Dateien werden per `?raw` eingebunden, beim
 Session-Start nach `<projekt>/.claude/capabilities/<id>/SKILL.md` materialisiert (Weg wie
 `postLaunchInjection`/`settings.local.json`), `resolveCapabilityRefs` liefert weiter Referenzen.
-Ein Task „Capabilities materialisieren" wird vor Task 10 eingeschoben. Volles Protokoll inkl.
-`od -c`-Verifikation der Rohausgabe: `.superpowers/sdd/2026-08-10-entitaets-startstrecke-und-personas/task-9-report.md`.
+Ein Task „Capabilities materialisieren" wird vor Task 10 eingeschoben. Die Rohausgabe beider
+Proben wurde zusätzlich per `od -c` verifiziert; der Task-Bericht mit dieser Verifikation lag
+im gitignorierten SDD-Arbeitsordner und ist gelöscht.
 
 ## Messprotokoll Task 14
 
-Ausgeführt 2026-08-10 über `.claude/skills/run-keel/` (Profil `/tmp/keel-verify`). Voller
-Bericht mit allen Zwischenschritten: `.superpowers/sdd/2026-08-10-entitaets-startstrecke-und-personas/task-14-report.md`.
+Ausgeführt 2026-08-10 über `.claude/skills/run-keel/` (Profil `/tmp/keel-verify`). Der
+Task-Bericht mit den Zwischenschritten lag im gitignorierten SDD-Arbeitsordner und ist
+gelöscht — dieses Protokoll ist der Record.
 
 **`npm run verify:bundle`:** `5/5 markers present` — der neue Capability-Marker
 (`implementierungsfertiger Code ist verboten`, aus `architect-core-identity/SKILL.md`) überlebt
