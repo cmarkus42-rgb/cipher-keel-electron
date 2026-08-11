@@ -5,10 +5,11 @@
  * start, the Systems Engineer used to carry only a constant (createSERahmen closes
  * that). Callers see one uniform record and never touch the individual modules.
  *
- * The Testing Assistant (Task 15) is registered here but not yet in
- * src/shared/preset-catalog.ts — the registry knowing an entity is a separate
- * question from the catalog offering it in the launcher UI; Task 16 does the latter
- * deliberately, once the entity is complete.
+ * The registry knowing an entity is a separate question from the catalog offering it in
+ * the launcher UI (src/shared/preset-catalog.ts) — this module can build any entity it
+ * lists, whether or not the launcher currently offers it. That gap is deliberate: an
+ * entity lands here once its Rahmen and body are complete, and in the catalog only once
+ * it is ready to be chosen by a user.
  *
  * CK-ENT-001, CK-ENT-004
  */

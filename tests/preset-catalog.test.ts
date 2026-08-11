@@ -1,8 +1,8 @@
 /**
- * tests/preset-catalog.test.ts — die vier 0.1-Presets als UI-Metadaten.
+ * tests/preset-catalog.test.ts — die 0.1-Presets plus Testing Assistant als UI-Metadaten.
  *
  * M6 Abschnitt 3.1 (BG-1) legt fuer Release 0.1 genau vier Rollen fest.
- * M5 kennt elf — die uebrigen sieben sind post-0.1 und hier bewusst nicht enthalten.
+ * M5 kennt elf — die uebrigen sechs sind post-0.1 und hier bewusst nicht enthalten.
  * Der Testing Assistant wurde danach nachgezogen und ist jetzt Teil des Katalogs.
  */
 import { describe, it, expect } from 'vitest'

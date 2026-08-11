@@ -2,7 +2,8 @@
  * LauncherCell — empty grid slot with preset selection.
  *
  * Clicking "+" opens the preset picker; picking a preset starts the session with that
- * entity. Release 0.1 offers four roles (M6 3.1 / BG-1).
+ * entity. Release 0.1 shipped four roles (M6 3.1 / BG-1); the Testing Assistant was
+ * added afterwards, making five.
  *
  * Ported from cipher-mux 0.9.x (CK-INF-023).
  */

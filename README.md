@@ -194,11 +194,11 @@ formal audit step; their work is tracked in `docs/superpowers/plans/` instead.
 - **Unsigned and unnotarised.** The DMG needs a manual `xattr -cr` after install (see
   [Install](#install)). Signing is a deliberate 0.1 decision, not an oversight —
   revisit it if the project finds real distribution
-- **Entity prompt assembly is not wired into session launch.** Preset selection determines
-  which of the five entities a session represents, and starting one creates a real, project-bound
-  tmux session — that path was verified end to end in the running app. What is missing is the
-  next step: `assembleEntityClaudeMd`, which would inject the entity's role-specific `CLAUDE.md`
-  content into the session, has no production caller yet
+- **Preset model tiers are not honoured at launch.** Architect and Systems Engineer request
+  `model: 'heavy'` at Niveau A, and Cyber Factory routes waves across `light` / `standard` /
+  `heavy`, but none of those tier labels map to a Claude model id anywhere in the codebase —
+  `session:create` drops `model` entirely rather than pass through a value that would break the
+  launch, so every session runs on the harness default regardless of what its preset asked for
 - **macOS on Apple Silicon only.** tmux plus Unix domain sockets plus keychain. Linux is
   an intended later target and nothing in the packaging setup blocks it; Windows is not
   planned. There is no Intel build

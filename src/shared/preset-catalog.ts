@@ -39,7 +39,7 @@ export const PRESET_CATALOG: readonly PresetChoice[] = [
   {
     id: 'testing-assistant',
     label: 'Testing Assistant',
-    description: 'Suite prüfen, Testqualität beurteilen, Findings dokumentieren',
+    description: 'Testlauf, Qualitätsurteil und Findings-Dokumentation',
   },
   {
     id: 'workshop',
