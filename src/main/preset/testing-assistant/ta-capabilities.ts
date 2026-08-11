@@ -1,17 +1,19 @@
 /**
  * Testing Assistant Capability Packages.
  *
- * Six packages at Niveau A (TA_CAPABILITIES, ta-preset.ts). Five carry their own
- * SKILL.md under ./capabilities/<id>/; rolling-summary is shared with the
- * Architect, the Systems Engineer and the Workshop and points at the same file —
- * one capability, one source of truth, referenced from all four presets.
+ * Five packages at Niveau A (TA_CAPABILITIES, ta-preset.ts), each with its own
+ * SKILL.md under ./capabilities/<id>/. Unlike the Architect, the Systems Engineer
+ * and the Workshop, the Testing Assistant carries no rolling-summary — the shared
+ * mechanism (src/main/preset/shared/rolling-summary.ts) defines a config for those
+ * three plus the Cyber Factory, none for the Testing Assistant (fix round 1,
+ * Finding A).
  *
  * Unlike architect-capabilities.ts / se-capabilities.ts, no niveauMinimum is set
  * here: the per-niveau narrowing lives entirely in ta-preset.ts's explicit
  * NIVEAU_B_CAPABILITIES / NIVEAU_C_CAPABILITIES lists, so there is no second,
  * derived representation of the same cut that could drift out of sync with it.
  *
- * Task 15
+ * Task 15; rolling-summary entry removed fix round 1 (2026-08-11).
  */
 
 import { LoaderType } from '../capability-schema'
@@ -48,11 +50,5 @@ export const TA_PACKAGES: CapabilityPackage[] = [
     beschreibung: 'Findings strukturiert als test-findings-Dokument in den Graphen schreiben',
     loader: LoaderType.SkillMd,
     pfad: '.claude/capabilities/findings-dokumentation/SKILL.md',
-  },
-  {
-    name: 'rolling-summary',
-    beschreibung: 'Rolling Summary für den Testing-Stand über mehrere Läufe und Trigger hinweg',
-    loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/rolling-summary/SKILL.md',
   },
 ]

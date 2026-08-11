@@ -11,6 +11,12 @@ Nach der Testqualitäts-Beurteilung, bevor du deine Findings konsolidierst. Die 
 zeigt dir, was das Team für prüfenswert hielt — Adversarial Probing sucht gezielt nach dem, was
 sie nicht abdeckt.
 
+Auf Niveau A steht dir `Bash` zur Verfügung — du kannst einzelne Edge Cases gezielt ausprobieren,
+statt nur über sie zu mutmaßen. Auf Niveau B (`NIVEAU_B_TOOLS`, `src/main/preset/schema.ts`, kein
+`Bash`) bleibt dir nur Code-Lektüre und Schlussfolgerung: Du liest die Implementierung und
+begründest, welche der Klassen unten plausibel zutreffen — ohne sie auszuführen. Auf Niveau C —
+nur `Read`, kein `Write` — bist du nicht geladen; dort bleibt nur `ta-core-identity`.
+
 ## Vorgehen
 
 **Sieben Edge-Case-Klassen, systematisch durchgegangen.** Portiert aus dem Cyber-Factory-Pack

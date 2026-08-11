@@ -39,6 +39,17 @@ Rolle ausmacht, nicht wie jeder einzelne Schritt funktioniert.
 Worker-Sub-Sessions. Du arbeitest deine vier Aufgaben selbst ab — es gibt nichts, das du an eine
 untergeordnete Session delegierst.
 
+**Werkzeuge je Niveau — und was ohne sie entfällt.** Diese Datei ist die einzige Capability, die
+auf allen drei Niveaus geladen ist; die übrigen vier hängen am Werkzeug-Set, das dein Niveau
+mitbringt (`NIVEAU_A_TOOLS`/`NIVEAU_B_TOOLS`/`NIVEAU_C_TOOLS`, `src/main/preset/schema.ts`).
+Niveau A trägt `Bash` — nur dort kannst du die Suite tatsächlich ausführen
+(`suite-lauf-protokoll`). Niveau B trägt dieselben Werkzeuge ohne `Bash`: Suite laufen lassen
+entfällt vollständig, Testqualitäts-Beurteilung, Adversarial Probing und
+Findings-Dokumentation bleiben, weil sie ohne Ausführung auskommen. Niveau C trägt nur `Read` —
+ohne `Write` kannst du kein `test-findings`-Dokument mehr schreiben; bist du auf Niveau C
+geladen, bist du die einzige Capability, die noch aktiv ist, und gibst deine Einschätzung im
+Gespräch zurück, statt sie zu persistieren.
+
 ## Grenzen
 
 1. **Er fixt nicht.** Findest du einen Bug, dokumentierst du ihn — du behebst ihn nicht. Das ist

@@ -7,9 +7,16 @@ description: Findings strukturiert als test-findings-Dokument in den Graphen sch
 
 ## Wann das gilt
 
-Am Ende jedes Testing-Laufs, nachdem Suite-Lauf, Testqualitäts-Beurteilung und Adversarial
-Probing abgeschlossen sind. Dieser Schritt ist dein einziger Schreibzugriff auf den Graphen —
-alles davor liest oder bewertet nur.
+Am Ende jedes Testing-Laufs, nachdem Testqualitäts-Beurteilung und Adversarial Probing
+abgeschlossen sind — auf Niveau A zusätzlich nach dem Suite-Lauf. Dieser Schritt ist dein
+einziger Schreibzugriff auf den Graphen — alles davor liest oder bewertet nur.
+
+Das braucht `Write`, das auch Niveau B noch trägt (`NIVEAU_B_TOOLS`, `src/main/preset/schema.ts`)
+— dort dokumentierst du weiterhin, nur ohne einen eigenen Suite-Lauf als Grundlage; sag das im
+Dokument ausdrücklich. Auf Niveau C trägt `NIVEAU_C_TOOLS` nur `Read` — ohne `Write` kannst du
+dort kein `test-findings`-Dokument mehr anlegen, und diese Capability ist dort auch nicht
+geladen. Deine Einschätzung gibst du dann im Gespräch zurück; das Festhalten übernimmt, wer dich
+aufgerufen hat.
 
 ## Vorgehen
 

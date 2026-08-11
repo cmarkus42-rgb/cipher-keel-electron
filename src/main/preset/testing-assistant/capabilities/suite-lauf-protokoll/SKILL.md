@@ -11,6 +11,12 @@ Als erster Schritt jedes Testing-Laufs, bevor Testqualitäts-Audit oder Adversar
 beginnen — du kannst weder Testqualität beurteilen noch Findings dokumentieren, bevor du weißt,
 was die Suite tatsächlich meldet.
 
+Diese Capability ist Niveau-A-exklusiv (`NIVEAU_B_TOOLS`, `src/main/preset/schema.ts`, trägt kein
+`Bash`) — auf Niveau B und C entfällt sie vollständig, nicht nur verkürzt: Ohne `Bash` gibt es
+keine Shell, mit der `npm test`, `npm run typecheck` oder `npm run lint` überhaupt liefen. Bist du
+auf Niveau B oder C geladen, existiert diese Datei für dich nicht — du beurteilst Testqualität
+dann ausschließlich lesend, ohne einen eigenen Lauf als Grundlage.
+
 ## Vorgehen
 
 **Die drei Befehle, in dieser Reihenfolge.** `package.json` definiert die für dich relevanten

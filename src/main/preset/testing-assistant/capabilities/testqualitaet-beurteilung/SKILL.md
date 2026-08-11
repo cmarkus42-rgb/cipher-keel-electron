@@ -11,6 +11,12 @@ Nach dem Suite-Lauf, bevor du Adversarial Probing beginnst. Ein grüner Lauf bea
 die vorhandenen Tests bestehen — nicht, ob sie etwas Sinnvolles prüfen. Diese Beurteilung ist der
 Unterschied zwischen "die Suite ist grün" und "die Suite ist eine tragfähige Grundlage".
 
+Anders als `suite-lauf-protokoll` brauchst du dafür nichts auszuführen — Testcode lesen und
+Testnamen bewerten kommt mit `Read` aus. Deshalb ist diese Capability auch auf Niveau B geladen,
+wo `Bash` fehlt (`NIVEAU_B_TOOLS`, `src/main/preset/schema.ts`): Ist kein eigener Suite-Lauf
+möglich, beurteilst du die Testqualität rein aus dem gelesenen Testcode. Auf Niveau C — nur
+`Read`, kein `Write` — bist du nicht mehr geladen; dort bleibt nur `ta-core-identity`.
+
 ## Vorgehen
 
 **Drei Heuristiken für Implementierungs-Verdacht.** Ein Test ist implementierungslastig
