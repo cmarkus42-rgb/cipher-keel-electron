@@ -29,8 +29,12 @@ wäre bereits Bau-Entscheidung.
 
 **Jedes Subsystem als Knoten.** Lege für jedes identifizierte Subsystem einen
 `phase_subsystem`-Knoten an (Felder: `scope`, `status`, ggf. `blocked_grund`). Subsysteme ohne
-eingehende `haengt_ab_von`-Kante sind die Wurzeln der Zerlegung — dort kann die Cyber Factory
-zuerst ansetzen.
+eingehende `haengt_ab_von`-Kante sind die Wurzeln der *Traversierung* — dort setzt die Cyber
+Factory ihre topologische Abfrage an (`subsystem_dependencies`, siehe `welle-plan-guide`). Das
+sind nicht die Wurzeln des *Baus*: Ein Subsystem ohne eingehende Kante ist eines, von dem
+nichts abhängt — es bekommt den niedrigsten `topo_order`-Wert und wird zuletzt gebaut, nicht
+zuerst. Fundamente mit vielen eingehenden Kanten bekommen den höchsten `topo_order`-Wert und
+werden zuerst gebaut.
 
 **Abhängigkeiten als Kanten, nicht als Reihenfolge.** Wenn Subsystem B auf Subsystem A
 angewiesen ist, setzt du eine `haengt_ab_von`-Kante von B nach A. Das ist eine

@@ -45,11 +45,16 @@ Phasen-uid). Der abgeleitete Kantentyp für das Paar `gate_befund → phase` ist
 `type` weglässt.
 
 **Bestehende Befunde lesen.** `gate_befunde_fuer_phase` (Pflichtparameter `phase_uid`) liefert
-alle Befunde einer Phase, neueste zuerst. `gate_befunde_aggregiert` (ohne Parameter) liefert
-eine Zeile je Phase mit ihrem jeweils neuesten Befund — `befund_uid` ist `null`, solange keiner
-existiert. Nutze diese, bevor du ein neues Urteil schreibst: Ein Gate ist informativ, nicht
-blockierend — der betroffene Strang wartet, die anderen laufen weiter, aber ein bereits
-vorhandenes Urteil erneut zu duplizieren, hilft niemandem.
+alle Befunde einer Phase, neueste zuerst — über alle `gate_typ`-Werte hinweg, nicht nur dein
+eigenes `'coverage'`. Die Cyber Factory schreibt in denselben Knotentyp mit `gate_typ:
+'risk-review'` (`strukturell` dort fest auf `'gruen'`, unabhängig vom Anforderungs-Coverage —
+es bedeutet dort nur „Welle strukturell abgeschlossen") und `gate_typ: 'architektur-bruch'`; der
+Architect schreibt `gate_typ: 'drift'`. Prüfe `gate_typ`, bevor du das `strukturell`-Feld eines
+gelesenen Befunds als dein eigenes Coverage-Signal behandelst. `gate_befunde_aggregiert` (ohne
+Parameter) liefert eine Zeile je Phase mit ihrem jeweils neuesten Befund — `befund_uid` ist
+`null`, solange keiner existiert. Nutze diese, bevor du ein neues Urteil schreibst: Ein Gate ist
+informativ, nicht blockierend — der betroffene Strang wartet, die anderen laufen weiter, aber
+ein bereits vorhandenes Urteil erneut zu duplizieren, hilft niemandem.
 
 ## Grenzen
 

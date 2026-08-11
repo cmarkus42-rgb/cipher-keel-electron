@@ -45,7 +45,7 @@ export interface WorkshopKonfiguration {
 export interface WorkshopCapabilityPakete {
   /** Niveau A: alle 7 Pakete, max 5 parallele Worker */
   niveauA: WorkshopNiveauConfig
-  /** Niveau B: 6 Pakete (debugger als reference-material), max 3 parallele Worker */
+  /** Niveau B: 6 Pakete (debugger-beauftragung entfaellt vollstaendig, Niveau-A-exklusiv), max 3 parallele Worker */
   niveauB: WorkshopNiveauConfig
   /** Niveau C: 5 Pakete inline, max 1 Worker (sequentiell) */
   niveauC: WorkshopNiveauConfig
@@ -86,7 +86,7 @@ export const WORKSHOP_KONFIGURATION: WorkshopKonfiguration = {
       maxParallelWorker: 5,
     },
     niveauB: {
-      // debugger-beauftragung als reference-material, nicht als skill-md
+      // debugger-beauftragung entfaellt vollstaendig (Niveau-A-exklusiv), kein Mode-Wechsel
       pakete: ['findings-lesen', 'item-dispatch', 'completeness-gate', 'status-konsolidierung', 'worker-monitoring', 'rolling-summary'],
       maxParallelWorker: 3,
     },
