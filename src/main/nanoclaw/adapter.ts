@@ -18,12 +18,14 @@ import type {
   OutputEvent,
 } from '../agent/agent-adapter'
 import type { AdapterFeature, AdapterCapabilities } from '../../shared/types'
+import { CapabilityNiveau } from '../preset/niveau'
 import type { NanoClawBridge } from './bridge'
 
 export class NanoClawChannelAdapter implements AgentAdapter {
   readonly id = 'nanoclaw-channel'
   readonly displayName = 'NanoClaw'
   readonly tier = 'tier-2' as const
+  readonly niveau = CapabilityNiveau.B
 
   private bridge: NanoClawBridge
 

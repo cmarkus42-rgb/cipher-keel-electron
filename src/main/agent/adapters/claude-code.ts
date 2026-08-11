@@ -24,6 +24,7 @@ import type {
   OutputEvent,
 } from '../agent-adapter'
 import type { AdapterFeature, AdapterCapabilities } from '../../../shared/types'
+import { CapabilityNiveau } from '../../preset/niveau'
 import { runCommand, isCommandOnPath } from '../../util/exec-util'
 
 /** Minimal interface for reading the agent config section. */
@@ -35,6 +36,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   readonly id = 'claude-code'
   readonly displayName = 'Claude Code'
   readonly tier = 'tier-1' as const
+  readonly niveau = CapabilityNiveau.A
 
   private readonly configReader: AgentConfigReader
 
