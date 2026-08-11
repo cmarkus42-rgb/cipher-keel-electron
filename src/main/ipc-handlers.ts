@@ -109,6 +109,7 @@ import type { AppServices } from './window-manager'
 import { registerWindow, broadcast } from './event-bus'
 import { normalizeToP1Format } from './p1/normalizer'
 import { getEntityDefinition, getEntityRahmen } from './preset/registry'
+import { resolveModel } from './session/model-resolver'
 import { getGlobalRules } from './preset/global-rules'
 import { assembleEntityClaudeMd } from './session/assemble-entity'
 import { materialiseCapabilities } from './session/materialise-capabilities'
@@ -236,14 +237,16 @@ export function registerIpcHandlers(services: AppServices): void {
       })
       const promptPath = writeEntityPromptFile(app.getPath('userData'), name, prompt)
 
-      // def.rahmen.model carries values like 'heavy', which is a CF/architect model
-      // tier label, not a Claude model id — there is no tier-to-id translation
-      // anywhere in the codebase (checked: grep -rn "'heavy'" src/). Passing it
-      // through would break the launch, so model is omitted here entirely.
+      // The Rahmen's model is a tier label (Schenkel 1) or a provider:model handle
+      // (Schenkel 2, M2 section 6.3). Unresolvable values omit --model, which is what
+      // every session did before the tier table existed.
+      const model = resolveModel(def.rahmen.model, configStore.get('agent').modelTiers)
+
       const launch = adapter.buildLaunchCommand({
         projectPath: cwd,
         sessionName: name,
         appendSystemPromptFile: promptPath,
+        model,
       })
       const command = formatShellCommand(launch.cmd, launch.args)
 

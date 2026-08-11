@@ -29,6 +29,7 @@ describe('session:create — adapter selection', () => {
   let projectDir: string
   let registeredAdapterIds: string[]
   let requestedRuntimes: (string | undefined)[]
+  let launchOpts: { model?: string }[]
 
   beforeEach(() => {
     vi.resetModules()
@@ -36,6 +37,7 @@ describe('session:create — adapter selection', () => {
     projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keel-project-'))
     registeredAdapterIds = []
     requestedRuntimes = []
+    launchOpts = []
   })
 
   afterEach(() => {
@@ -79,10 +81,11 @@ describe('session:create — adapter selection', () => {
             displayName: 'Claude Code',
             niveau,
             isAvailable: () => available,
-            buildLaunchCommand: () => {
+            buildLaunchCommand: (opts: { model?: string }) => {
               if (!available) {
                 throw new Error('buildLaunchCommand must not run for an unavailable adapter')
               }
+              launchOpts.push(opts)
               return { cmd: 'claude', args: [] }
             },
           }
@@ -138,6 +141,17 @@ describe('session:create — adapter selection', () => {
       path.join(userDataDir, 'entity-prompts', 'niveau-a-session.md'), 'utf8',
     )
     expect(prompt).toMatch(/^@\.claude\/capabilities\//m)
+  })
+
+  it('passes the resolved model handle to the launch command', async () => {
+    // The Architect's Rahmen says `model: 'heavy'`, which used to be dropped because it
+    // maps to no model id. With the tier table it resolves — this is the one behaviour
+    // change of this work, and it is what makes the strength gradient real.
+    const handler = await loadHandler({ available: true })
+    await handler({}, { entityId: 'architect', name: 'model-tier-session', cwd: projectDir })
+
+    expect(launchOpts).toHaveLength(1)
+    expect(launchOpts[0].model).toBe('opus')
   })
 
   it('selects the adapter by the Rahmen runtime, not by getDefault()', async () => {

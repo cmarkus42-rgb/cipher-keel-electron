@@ -28,6 +28,12 @@ export interface CipherKeelConfig {
   }
   agent: {
     skipPermissions: boolean
+    /**
+     * Tier label -> model handle, for the Rahmen's `model` field (M2 section 5.3).
+     * Aliases rather than pinned ids: M2 calls concrete handles fragile, and aliases
+     * survive model releases. An empty value means "let the harness decide".
+     */
+    modelTiers: { light: string; standard: string; heavy: string }
   }
   ui: {
     theme: 'dark' | 'light' | 'cipher-ivory'
@@ -67,6 +73,9 @@ const defaults: CipherKeelConfig = {
   agent: {
     // Sessions are launched by the app itself; true matches cipher-mux 0.9.x behaviour.
     skipPermissions: true,
+    // The strength gradient the presets already express: heavy where errors multiply
+    // (Systems Engineer, Architect), standard elsewhere. Editable per CK-NFR-012.
+    modelTiers: { light: 'haiku', standard: 'sonnet', heavy: 'opus' },
   },
   ui: {
     theme: 'dark',
