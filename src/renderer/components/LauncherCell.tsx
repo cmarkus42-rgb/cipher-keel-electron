@@ -10,6 +10,7 @@
 
 import { useState, useCallback } from 'react'
 import { PRESET_CATALOG } from '../../shared/preset-catalog'
+import { PromptPreview } from './PromptPreview'
 
 interface LauncherCellProps {
   slotIndex: number
@@ -21,6 +22,7 @@ export function LauncherCell({ slotIndex, onStart }: LauncherCellProps) {
   const [picking, setPicking] = useState(false)
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [previewing, setPreviewing] = useState<{ id: string; label: string } | null>(null)
 
   const handleOpen = useCallback(() => {
     if (starting) return
@@ -61,24 +63,37 @@ export function LauncherCell({ slotIndex, onStart }: LauncherCellProps) {
   if (picking) {
     return (
       <div style={{
+        position: 'relative',
         display: 'flex', flexDirection: 'column', gap: '6px', justifyContent: 'center',
         height: '100%', padding: '12px', border: '1px solid #333', borderRadius: '4px',
         background: '#0a0a0a',
       }}>
         {PRESET_CATALOG.map(preset => (
-          <button
-            key={preset.id}
-            onClick={() => handlePick(preset.id)}
-            title={preset.description}
-            style={{
-              padding: '8px 10px', textAlign: 'left', cursor: 'pointer',
-              background: '#141414', color: '#ddd',
-              border: `1px solid ${preset.isDefault ? '#555' : '#2a2a2a'}`,
-              borderRadius: '3px', fontSize: '13px',
-            }}
-          >
-            {preset.label}
-          </button>
+          <div key={preset.id} style={{ display: 'flex', gap: '4px' }}>
+            <button
+              onClick={() => handlePick(preset.id)}
+              title={preset.description}
+              style={{
+                flex: 1, padding: '8px 10px', textAlign: 'left', cursor: 'pointer',
+                background: '#141414', color: '#ddd',
+                border: `1px solid ${preset.isDefault ? '#555' : '#2a2a2a'}`,
+                borderRadius: '3px', fontSize: '13px',
+              }}
+            >
+              {preset.label}
+            </button>
+            <button
+              onClick={() => setPreviewing({ id: preset.id, label: preset.label })}
+              title="Prompt ansehen"
+              style={{
+                padding: '8px', cursor: 'pointer', background: 'transparent',
+                color: '#666', border: '1px solid #2a2a2a', borderRadius: '3px',
+                fontSize: '12px',
+              }}
+            >
+              👁
+            </button>
+          </div>
         ))}
         <button
           onClick={() => setPicking(false)}
@@ -89,6 +104,13 @@ export function LauncherCell({ slotIndex, onStart }: LauncherCellProps) {
         >
           Abbrechen
         </button>
+        {previewing && (
+          <PromptPreview
+            entityId={previewing.id}
+            label={previewing.label}
+            onClose={() => setPreviewing(null)}
+          />
+        )}
       </div>
     )
   }
