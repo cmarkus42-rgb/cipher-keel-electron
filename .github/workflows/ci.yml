@@ -25,6 +25,15 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
+          # .nvmrc pins Node 24 (Active LTS, npm 11). The major of npm matters more
+          # here than the major of Node: npm 11 and npm 10 hoist nested dependencies
+          # differently, so a lockfile written by one can be rejected by the other.
+          # That is exactly what happened — CI sat red from the packaging work until
+          # 2026-08-12 with "Missing: esbuild@0.28.2 from lock file", because the
+          # lockfile was regenerated on a workstation running npm 11 while this
+          # pinned Node 22 with npm 10. Keep this in step with the machines that
+          # write the lockfile, and prefer an LTS line: Node 25 would have matched
+          # the workstation exactly and has been end-of-life since 2026-06-01.
           node-version-file: '.nvmrc'
           # The compute part of the pipeline takes about ten seconds; runtime
           # is decided by the download. Without this cache every run would be costly.
