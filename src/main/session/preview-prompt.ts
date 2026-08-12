@@ -7,13 +7,19 @@
  *
  * A niveau can be requested that no registered adapter serves. That is deliberate: it
  * is the only way to see what Niveau B looks like before a B harness exists.
+ *
+ * The graph handle is not optional decoration: session:create assembles a phaseninput
+ * layer from it, so a preview built without it would show something other than what is
+ * delivered — and a preview that differs from the delivered prompt is worse than none.
  */
 
+import type Database from 'better-sqlite3'
 import { getEntityDefinition } from '../preset/registry'
 import { getCapabilityPackages } from '../preset/capabilities'
 import { getGlobalRules } from '../preset/global-rules'
 import { CapabilityNiveau } from '../preset/niveau'
 import { assembleEntityClaudeMd } from './assemble-entity'
+import { buildPhaseInputSection } from './phase-input'
 import { resolveModel, type ModelTiers } from './model-resolver'
 
 export interface PromptPreview {
@@ -29,11 +35,12 @@ export interface PromptPreview {
   wortZahl: number
 }
 
-export function buildPromptPreview(
+export async function buildPromptPreview(
   entityId: string,
   niveau: CapabilityNiveau,
   tiers: ModelTiers,
-): PromptPreview | null {
+  graphDb: Database.Database | null = null,
+): Promise<PromptPreview | null> {
   const def = getEntityDefinition(entityId, niveau)
   if (!def) return null
 
@@ -47,6 +54,7 @@ export function buildPromptPreview(
     niveau,
     capabilities,
     capabilityPackages: packages,
+    phaseInput: await buildPhaseInputSection(graphDb, def.rahmen.phasenBindung),
   })
 
   const schichten = ['Body']

@@ -42,8 +42,10 @@ Sinne dieser Anforderung — die App schreibt sie selbst und liest sie nur zurü
 
 ## Prompt-Schichten
 
-Alle vier Schichten sind seit der Prompt-Vorschau **sichtbar** (Launcher → Preset → 👁),
-aber keine ist in der App editierbar: Die Inhalte liegen per `?raw` im Bundle.
+Alle fünf Schichten sind seit der Prompt-Vorschau **sichtbar** (Launcher → Preset → 👁).
+Vier davon liegen per `?raw` im Bundle und sind in der App nicht editierbar; die fünfte
+kommt aus dem Graphen und wird über die Arbeit im Projekt beeinflusst, nicht über eine
+Einstellung.
 
 | Fläche | Herkunft | In der App sichtbar | Editierbar |
 |---|---|---|---|
@@ -51,10 +53,12 @@ aber keine ist in der App editierbar: Die Inhalte liegen per `?raw` im Bundle.
 | Persona | `src/main/preset/shared/personas/` | ja — Prompt-Vorschau | nein — Folgephase. `resolvePersona` kennt einen Nutzerverzeichnis-Zweig, der nie aufgerufen wird |
 | GlobalRules | `src/main/preset/global-rules.ts` | ja — Prompt-Vorschau | nein — Folgephase |
 | Capability-`SKILL.md` | `src/main/preset/*/capabilities/*/SKILL.md` | ja — Prompt-Vorschau | nein — Folgephase |
+| PhaseInput | Graph — `phasenoutput`-Artefakte der Vorgängerphase, aufgelöst über `phasenBindung` | ja — Prompt-Vorschau, sobald der Graph Artefakte trägt | mittelbar — ja, über die Artefakte im Graphen; es gibt keine Einstellung dafür |
 
-Die fünfte im Konzept vorgesehene Schicht, der graph-aufgelöste `phaseninput` (M2 §9.1 und
-§17.4), ist in `assemble-entity.ts` als Option vorhanden, wird aber von keinem Aufrufer
-gesetzt — sie ist deshalb keine anpassbare Fläche, sondern eine offene Lücke.
+Der `phaseninput` (M2 §9.1 und §17.4) trägt keine Inhalte, sondern **Zeiger**: Titel, uid
+und — sofern vorhanden — Pfad. Die Entität holt sich das Artefakt selbst über den Graphen.
+Eine Entität ohne Phasenbindung (der Systems Engineer) bekommt die Schicht nicht, eine mit
+mehreren (der Workshop: `fixing` und `development`) bekommt einen Block je Phase.
 
 ## Preset-Eigenschaften
 

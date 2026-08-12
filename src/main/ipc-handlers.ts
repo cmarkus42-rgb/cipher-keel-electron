@@ -115,6 +115,7 @@ import { getGlobalRules } from './preset/global-rules'
 import { getCapabilityPackages } from './preset/capabilities'
 import { CapabilityNiveau } from './preset/niveau'
 import { buildPromptPreview } from './session/preview-prompt'
+import { buildPhaseInputSection } from './session/phase-input'
 import { assembleEntityClaudeMd } from './session/assemble-entity'
 import { materialiseCapabilities } from './session/materialise-capabilities'
 import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-file'
@@ -239,6 +240,9 @@ export function registerIpcHandlers(services: AppServices): void {
         niveau: def.rahmen.capabilityNiveau,
         capabilities: materialised.written,
         capabilityPackages: getCapabilityPackages(entityId, def.rahmen.capabilityNiveau),
+        // The fifth layer (M2 sections 9.1/17.4): where in the process this entity stands.
+        // Resolved from the graph, so a degraded graph costs the layer, not the session.
+        phaseInput: await buildPhaseInputSection(services.graphDb, def.rahmen.phasenBindung),
       })
       const promptPath = writeEntityPromptFile(app.getPath('userData'), name, prompt)
 
@@ -291,11 +295,15 @@ export function registerIpcHandlers(services: AppServices): void {
   // Read-only counterpart to session:create — assembles the same prompt, starts nothing
   // and touches no project directory (CK-NFR-012). The niveau is a parameter here rather
   // than the adapter's, so a level no registered adapter serves can still be inspected.
-  ipcMain.handle(PRESET_PREVIEW_PROMPT, (_e, args: { entityId: string; niveau?: string }) => {
+  ipcMain.handle(PRESET_PREVIEW_PROMPT, async (_e, args: { entityId: string; niveau?: string }) => {
     const niveau = args?.niveau === 'B' ? CapabilityNiveau.B
       : args?.niveau === 'C' ? CapabilityNiveau.C
       : CapabilityNiveau.A
-    const preview = buildPromptPreview(args?.entityId, niveau, configStore.get('agent').modelTiers)
+    // Same graph handle session:create uses — otherwise the preview would omit the
+    // phaseninput layer and quietly stop matching what is delivered.
+    const preview = await buildPromptPreview(
+      args?.entityId, niveau, configStore.get('agent').modelTiers, services.graphDb,
+    )
     return preview ?? { error: `Unknown entity '${args?.entityId}'` }
   })
 
