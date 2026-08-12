@@ -1,8 +1,9 @@
 # Contributing to cipher keel
 
-cipher keel is pre-alpha: source and tests exist and are green, but there is no packaged
-release yet. Contributions are welcome, with the understanding that the codebase and its
-conventions can still move.
+cipher keel is 0.1 alpha: source and tests exist and are green, and the app is
+installable — `npm run dist` builds an unsigned, Apple-Silicon-only DMG — but no release
+has been tagged or published yet. Contributions are welcome, with the understanding that
+the codebase and its conventions can still move.
 
 ## Prerequisites
 
@@ -115,6 +116,23 @@ gate was fixed to use build mode (`-b`) — the typecheck gate had never checked
 and turning it into a real check immediately surfaced 28 pre-existing type errors. If you
 ever find yourself "simplifying" this script back to `tsc --noEmit`, don't — it turns the
 gate back into a no-op that always passes.
+
+## Verifying a packaged build
+
+`npm test` runs under Node and loads the Node-ABI native build (see
+[After setup: rebuilding the native module](#after-setup-rebuilding-the-native-module)
+above); the packaged app loads the Electron-ABI build instead. A green test suite says
+nothing about whether the package itself works.
+
+```bash
+npm run pack            # builds dist/ and produces release/mac-arm64/cipher keel.app
+npm run smoke:packaged  # launches that .app and checks the knowledge graph initialises inside it
+```
+
+These are not part of the four CI gates above — that is deliberate, not an oversight. Run
+them yourself whenever you touch `package.json`'s `build` block or
+`electron.vite.config.ts`'s output directories; nothing else in this repository's
+workflow would catch a break there.
 
 ## Verifying a change in the running app
 

@@ -24,7 +24,7 @@ import type {
   OutputEvent,
 } from '../agent-adapter'
 import type { AdapterFeature, AdapterCapabilities } from '../../../shared/types'
-import { runCommand } from '../../util/exec-util'
+import { runCommand, isCommandOnPath } from '../../util/exec-util'
 
 /** Minimal interface for reading the agent config section. */
 export interface AgentConfigReader {
@@ -199,14 +199,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
    * Synchronous, no side effects. CK-ENT-026
    */
   isAvailable(): boolean {
-    const pathDirs = (process.env.PATH ?? '').split(':').filter(Boolean)
-    return pathDirs.some(dir => {
-      try {
-        return fs.statSync(path.join(dir, 'claude')).isFile()
-      } catch {
-        return false
-      }
-    })
+    return isCommandOnPath('claude')
   }
 
   /**

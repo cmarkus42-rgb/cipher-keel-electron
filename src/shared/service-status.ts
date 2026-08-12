@@ -10,7 +10,7 @@
 // ---------------------------------------------------------------------------
 
 /** All subsystems initialized by service-lifecycle, in initialization order. */
-export const SUBSYSTEM_IDS = ['tmux', 'nanoclaw', 'voice', 'graph', 'kanban', 'notes'] as const
+export const SUBSYSTEM_IDS = ['tmux', 'claudeCli', 'nanoclaw', 'voice', 'graph', 'kanban', 'notes'] as const
 
 export type SubsystemId = (typeof SUBSYSTEM_IDS)[number]
 

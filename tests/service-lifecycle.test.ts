@@ -8,6 +8,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+
+// Only isCommandOnPath is overridden per-test (claudeCli status); every other
+// export stays real so tmux/graph/notes init in this file is unaffected.
+vi.mock('../src/main/util/exec-util', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/main/util/exec-util')>()
+  return { ...actual, isCommandOnPath: vi.fn(actual.isCommandOnPath) }
+})
+
 import {
   initializeServices,
   getServiceStatus,
@@ -18,6 +26,8 @@ import {
 import { registerWindow, resetEventBus, type BroadcastTarget } from '../src/main/event-bus'
 import { VoiceManager } from '../src/main/voice/voice-manager'
 import type { AppServices } from '../src/main/window-manager'
+import { isCommandOnPath } from '../src/main/util/exec-util'
+import { describeMissingTool } from '../src/main/util/missing-tool'
 
 let userDataPath: string
 
@@ -213,6 +223,28 @@ describe('initializeServices — degradation is reported, never thrown', () => {
   })
 })
 
+describe('initializeServices — claudeCli status (Task 6 fix)', () => {
+  it('reports claudeCli ready when the CLI is present', async () => {
+    vi.mocked(isCommandOnPath).mockReturnValueOnce(true)
+
+    const status = await initializeServices(makeServices(), makeContext())
+
+    expect(status.claudeCli).toEqual({ id: 'claudeCli', state: 'ready', reason: null })
+  })
+
+  it('reports claudeCli degraded with an install instruction when absent, without blocking anything else', async () => {
+    vi.mocked(isCommandOnPath).mockReturnValueOnce(false)
+
+    const status = await initializeServices(makeServices(), makeContext())
+
+    expect(status.claudeCli.state).toBe('degraded')
+    expect(status.claudeCli.reason).toBe(describeMissingTool('claude'))
+    // A missing CLI is a status, not a gate — the rest of the app stays usable.
+    expect(status.graph.state).toBe('ready')
+    expect(status.notes.state).toBe('ready')
+  })
+})
+
 describe('initializeServices — retry after a rejected run', () => {
   it('lets a later call succeed after a run that threw', async () => {
     const services = makeServices({
@@ -324,11 +356,11 @@ describe('setStatus broadcasts services:status-changed (Befund 3)', () => {
     await initializeServices(makeServices(), makeContext())
 
     const statusMessages = win.sent.filter(m => m.channel === 'services:status-changed')
-    // Default happy path: tmux, nanoclaw, voice (disabled), graph, kanban, notes —
-    // each transitions exactly once away from its "not initialized" baseline.
-    expect(statusMessages).toHaveLength(6)
+    // Default happy path: tmux, claudeCli, nanoclaw, voice (disabled), graph, kanban,
+    // notes — each transitions exactly once away from its "not initialized" baseline.
+    expect(statusMessages).toHaveLength(7)
     const ids = statusMessages.map(m => (m.args[0] as { id: string }).id).sort()
-    expect(ids).toEqual(['graph', 'kanban', 'nanoclaw', 'notes', 'tmux', 'voice'].sort())
+    expect(ids).toEqual(['claudeCli', 'graph', 'kanban', 'nanoclaw', 'notes', 'tmux', 'voice'].sort())
   })
 
   it('carries the subsystem id, state and reason as the payload', async () => {

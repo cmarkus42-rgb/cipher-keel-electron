@@ -2,9 +2,10 @@
 
 ## Supported versions
 
-cipher keel is pre-alpha. There is no tagged release and no packaged build; only `main`
-exists. Security reports are accepted against `main` as it currently stands — there is no
-older version to back-port a fix to.
+cipher keel is 0.1 alpha — installable, unsigned, Apple Silicon only. `npm run dist`
+builds an unsigned, arm64-only DMG from `main`, but no release has been tagged or
+published; only `main` exists. Security reports are accepted against `main` as it
+currently stands — there is no older version to back-port a fix to.
 
 ## Reporting a vulnerability
 

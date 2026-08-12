@@ -111,23 +111,52 @@ Als nächstes anbietet sich `createSessionForProject(deps, opts)`.
 
 ## 3. Phase 8 (Packaging) — eine stille Falle
 
+> **Nachtrag (Stand 2026-08-09/10):** Die Paketierung ist gebaut und gegen ein
+> automatisiertes Smoke-Skript geprüft — Details und Messprotokolle in
+> `2026-08-09-phase-8-packaging.md`. **Bewusst noch offen:** ein Release ist nicht
+> veröffentlicht (menschliche Entscheidung, kein Befund), und der Erst-Start auf einem
+> zweiten Apple-Silicon-Mac ohne Entwicklungsumgebung ist ungeprüft. Zwei Annahmen dieses
+> Abschnitts waren falsch: (a) `asarUnpack` war nicht nötig — electron-builder 26
+> entpackt `better-sqlite3` und `sqlite-vec-darwin-arm64` von selbst, und Electron biegt
+> `process.dlopen` bereits auf `app.asar.unpacked` um; (b) die Falle war nicht stumm —
+> `initGraph` fängt, setzt `degraded` und warnt, und das galt schon seit Phase 6, nicht
+> erst seit einem Phase-8-Fix. Der tatsächliche Bruch lag bei `sqlite-vec`:
+> `db.loadExtension()` geht durch sqlite3s eigenes `dlopen`, das kein asar kennt.
+> Zusätzlich gefunden: das Ausgabeverzeichnis `dist` kollidierte mit electron-vite und
+> verhinderte jeden Paketbau, und `existsSync` beantwortet innerhalb von `app.asar` den
+> Archiv-Index statt die Platte, weshalb der zugesagte `undefined`-Fallback im Paket nie
+> griff. Die unten durchgestrichenen Stellen sind entsprechend widerlegt; die
+> „Zu tun"-Liste ist um den tatsächlichen Stand ergänzt.
+
 `resolveBetterSqliteBinding(moduleRoot)` (`src/main/graph/native-binding.ts`) sucht unter
 `<moduleRoot>/bin/<platform>-<arch>-<abi>/better-sqlite3.node` und gibt `undefined` zurück, wenn
 dort nichts liegt — dann fällt `openGraphDb` auf die Default-Auflösung zurück.
 
 Im gepackten Build liegt `node_modules` in `app.asar`, aus dem sich **keine `.node`-Datei laden
-lässt**. Ohne `asarUnpack`-Eintrag für `better-sqlite3` findet der Resolver nichts, die
+lässt**. ~~Ohne `asarUnpack`-Eintrag für `better-sqlite3` findet der Resolver nichts, die
 Default-Auflösung schlägt ebenfalls fehl — und das Ganze passiert **ohne Warnung**, weil der
 Resolver ein legitimes `undefined` liefert statt zu meckern. Symptom im Paket: Graph degradiert,
-App läuft weiter, niemand weiß warum.
+App läuft weiter, niemand weiß warum.~~ **Widerlegt (siehe Nachtrag oben):** electron-builder 26
+entpackt `better-sqlite3` von selbst, ganz ohne `asarUnpack`-Eintrag, und `initGraph`
+(`src/main/service-lifecycle.ts`, seit Phase 6) fängt den Fehlerfall bereits ab, setzt `graph` und
+`kanban` auf `degraded` und schreibt `console.warn` — nie stumm gewesen. Der tatsächliche Bruch lag
+bei `sqlite-vec`, siehe Nachtrag oben.
 
 **Zu tun:**
-- `asarUnpack` für `better-sqlite3` (und `sqlite-vec-darwin-arm64`) in den `build`-Block
-- `app.getAppPath()` zeigt im Paket auf `app.asar` — der an `initializeServices` übergebene
-  `appPath` muss auf das **entpackte** Verzeichnis zeigen (`app.asar.unpacked`)
-- Erwäge, den Resolver bei Nichtfinden `console.warn`en zu lassen, damit die Falle nicht stumm bleibt
+- ~~`asarUnpack` für `better-sqlite3` (und `sqlite-vec-darwin-arm64`) in den `build`-Block~~
+  **Nie nötig gewesen** — electron-builder 26 entpackt beide nativen Pakete automatisch, ohne
+  eigenen `build`-Eintrag
+- ~~`app.getAppPath()` zeigt im Paket auf `app.asar` — der an `initializeServices` übergebene
+  `appPath` muss auf das **entpackte** Verzeichnis zeigen (`app.asar.unpacked`)~~ **Gelöst, aber
+  anders als hier beschrieben:** `appPath` bleibt unverändert und zeigt weiterhin auf `app.asar`;
+  die Umschreibung passiert pro Pfad in `resolveBetterSqliteBinding` und
+  `resolveVecExtensionPath` über `toUnpackedPath()` (`src/main/graph/native-binding.ts`), nicht am
+  `appPath` selbst
+- ~~Erwäge, den Resolver bei Nichtfinden `console.warn`en zu lassen, damit die Falle nicht stumm
+  bleibt~~ **Erledigt** — `resolveBetterSqliteBinding` warnt bei Nichtfinden
+  (`src/main/graph/native-binding.ts`)
 - Signierung ist entschieden: **unsigniert**, `xattr -cr`-Anleitung prominent ins README (Roadmap
-  Entscheidung 1)
+  Entscheidung 1) — unverändert aktuell
 
 ---
 
@@ -253,3 +282,46 @@ App einmal über `.claude/skills/run-keel/` starten und `graph=ready` prüfen.
 4. **Wer im Kommentar behauptet, was Code früher tat, zitiert die Zeile, die es belegt.** Phase 7
    produzierte zwei selbstbewusst falsche Begründungen; die zweite kam im Commit direkt nach der
    Korrektur der ersten. Ein Review-Durchgang reicht gegen dieses Muster nicht.
+
+---
+
+## 10. Offene Befunde aus Phase 8
+
+> Aus dem Ledger `.superpowers/sdd/2026-08-09-phase-8-packaging/progress.md` (gitignored,
+> wird nach Phase 8 gelöscht) und dem Schluss-Review über den gesamten Branch
+> (`a6c6bbb..6ceb286`, 16 Commits). Reviewer-Verdikt dort: **bereit zum Merge mit Fixes**,
+> 0 Critical, 2 Important (beide dokumentarisch, in einer Fix-Welle erledigt), 7 Minor. Die
+> Punkte unten sind die, die der Reviewer ausdrücklich als nicht-blockierend eingestuft hat.
+
+| Befund | Ort | Bewertung |
+|--------|-----|-----------|
+| Leeres `catch {}` um das Cleanup | `scripts/smoke-packaged.mjs:44-47` | Fängt jeden Fehler von `rmSync` ab, nicht nur die dokumentierte ENOTEMPTY-Race beim Teardown. Läuft erst nach `console.log(message)` — das Verdict ist zu diesem Zeitpunkt bereits geschrieben, betroffen ist nur noch das Aufräumen des Temp-Verzeichnisses. Ein verschluckter Fehler bleibt trotzdem unsichtbar, es gibt kein Log nach stderr. |
+| `console.log` unmittelbar vor `process.exit` | `scripts/smoke-packaged.mjs:41,48` | Auf gepipetem, nicht-TTY-stdout kann `process.exit()` den Node-Puffer abschneiden, bevor er geflusht ist. In jedem bisherigen Lauf empirisch nicht aufgetreten — bedroht aber genau das Ziel, für das dieses Skript in Task 2 bereits umgebaut wurde ("das Verdict darf nicht verloren gehen"). **Präzisierte Bedingung:** das muss behoben sein, bevor das Gate je in CI läuft — vorher, nicht als Reaktion auf einen ersten unklaren roten CI-Lauf, dessen Ursache sich dann selbst verschluckt hätte. |
+| `existsSync(APP)` prüft Existenz, nicht Aktualität; `APP` ist ein relativer Pfad | `scripts/smoke-packaged.mjs:19,24` | Der Check bestätigt nur, dass irgendein Paket an dem Pfad liegt — nicht, dass es aus dem aktuellen Checkout stammt. Ein Gate-Lauf ohne vorangehendes `npm run pack` misst still ein veraltetes Artefakt. Zusätzlich ist `APP` relativ; das Skript ist nur korrekt, wenn es aus dem Repo-Root aufgerufen wird. |
+| `make-icon.py` räumt bei `iconutil`-Fehler nicht auf | `scripts/make-icon.py` | `check=True` wirft, bevor das `rmtree` des Iconset-Ordners erreicht wird — `build/icon.iconset` bleibt liegen. Handlauf-Skript (einmalig von einem Menschen ausgeführt), geringe Eintrittswahrscheinlichkeit, bewusst nicht behoben. |
+| `claudeCli` wird einmalig bei Init geprüft, nie erneut | `src/main/service-lifecycle.ts:230-233` (`isCommandOnPath('claude')`) | Konkrete Konsequenz, nicht nur Mechanik: genau der Nutzer, für den diese Diagnose gebaut wurde — ein frischer Mac ohne Toolchain — installiert die CLI auf Anweisung der Meldung, und die StatusBar meldet sie trotzdem weiter als fehlend, bis die App neu gestartet wird. Die Diagnose stimmt also nur einmal pro App-Start. |
+| Asar-Fix beruht auf electron-builders impliziter Auto-Unpack-Heuristik, nicht auf einem `asarUnpack`-Eintrag | `package.json` (`build`-Block, kein `asarUnpack`), `src/main/graph/native-binding.ts` | Für electron-builder 26.8.1 geprüft und wahr. `electron-builder` ist aber mit `^`-Range gepinnt — die Heuristik ist nicht vertraglich zugesichert. Das Einzige, was eine Regression bei einem Minor-Update auffangen würde, ist der Smoke-Test, und der läuft nicht in CI. |
+| `isCommandOnPath` splittet `PATH` auf einem literalen `':'` statt `path.delimiter` | `src/main/util/exec-util.ts:39` | Konsistent mit dem bereits bestehenden `getEnhancedPath()` (Zeile 24), das denselben literalen Trenner verwendet — keine neue Inkonsistenz. Verstößt aber gegen die Regel „plattformneutral, wo es nichts kostet" — relevant, sobald Linux ernsthaft versucht wird. |
+| `tests/packaging-config.test.ts` pinnt den literalen Befehlsstring des Smoke-Skripts | `tests/packaging-config.test.ts:74` | Erwartet `pkg.scripts['smoke:packaged'] === 'node scripts/smoke-packaged.mjs'`. Die naheliegende Reparatur des Staleness-Befunds oben (den Aufruf z. B. an ein vorgeschaltetes `npm run pack` zu koppeln) müsste also auch diesen Test anfassen. |
+| `vite`-Peer-Mismatch (vitest verlangt `^6\|\|^7\|\|^8`, Projekt pinnt `^5.2.0`) + offene `npm audit`-Befunde aus Phase 7 | `package.json`; Abschnitt „Offene Befunde aus Phase 7" oben | **Ändert die Priorität, schließt den Befund aber nicht:** Der Schluss-Review hat das gebaute Archiv inspiziert und 62 Produktions-Pakete in `app.asar` gezählt — `vite` ist nicht darunter. Beide Funde sind reine Build-Zeit-Angelegenheiten und erreichen keinen Nutzer der DMG. Bleibt ein offener Phase-7-Punkt; durch diese Beobachtung nicht erledigt. |
+
+### Nicht Phase 8 zuzurechnen — nur beiläufig und unsauber geprüft
+
+Zwei Beobachtungen aus Task 6, ausdrücklich **nicht verifiziert**, damit niemand sie als
+gesicherten Befund weiterträgt:
+
+- `.claude/skills/run-keel/stop.sh` meldete "tmux sessions removed: 0", während eine von der
+  App erzeugte Session noch lief. Das Cleanup-Versprechen scheint nur das eigene Namensmuster
+  des Skripts abzudecken — von Hand beendet, nicht weiter untersucht.
+- Ein Klick auf eine Projektzeile in der Projektliste navigierte in einem einzelnen Probe-Lauf
+  nicht zu `ProjectView`, und `project:kickoff` außerhalb des Wizards lässt die Liste bis zum
+  Reload veraltet stehen. Beides außerhalb von Phase 8s Scope und nur grob angestoßen, kein
+  systematischer Reproduktionsversuch.
+
+### Abnahmestatus
+
+Phase 8 ist **nicht** vollständig abgenommen im Sinn der Roadmap: Sie verlangt einen
+Erst-Start auf einem zweiten Apple-Silicon-Mac ohne Entwicklungsumgebung, und der hat nicht
+stattgefunden. Ebenso ungeprüft ist der `xattr -cr`-Schritt — eine lokal gebaute DMG trägt kein
+`com.apple.quarantine`-Attribut, nur eine heruntergeladene trägt eines. Ein Release wurde bewusst
+nicht veröffentlicht (menschliche Entscheidung, kein Befund).

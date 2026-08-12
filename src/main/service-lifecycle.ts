@@ -35,6 +35,8 @@ import {
   type SubsystemStatus,
 } from '../shared/service-status'
 import { broadcast } from './event-bus'
+import { isCommandOnPath } from './util/exec-util'
+import { describeToolFailure, describeMissingTool } from './util/missing-tool'
 import { openGraphDb } from './graph/db'
 import { resolveBetterSqliteBinding } from './graph/native-binding'
 import { GraphMcpServer } from './graph/mcp-server'
@@ -202,6 +204,7 @@ async function runInit(
   ctx: ServiceInitContext,
 ): Promise<ServiceStatusMap> {
   await initTmux(services)
+  initClaudeCli()
   initStatusMonitor(services)
   await initNanoClaw(services)
 
@@ -217,6 +220,20 @@ async function runInit(
   return status
 }
 
+/**
+ * Reports whether the Claude Code CLI is reachable, as a subsystem status rather
+ * than a launch-time gate — the app has no production code path that actually
+ * invokes `claude` today (session:create only opens a plain shell), so this is
+ * purely informational: it puts the answer where a user looks, next to tmux.
+ */
+function initClaudeCli(): void {
+  if (isCommandOnPath('claude')) {
+    setStatus('claudeCli', 'ready', null)
+  } else {
+    setStatus('claudeCli', 'degraded', describeMissingTool('claude'))
+  }
+}
+
 async function initTmux(services: AppServices): Promise<void> {
   services.tmux.on('output', (sessionId: string, data: string) => {
     broadcast(SESSION_OUTPUT, sessionId, data)
@@ -226,7 +243,7 @@ async function initTmux(services: AppServices): Promise<void> {
     setStatus('tmux', 'ready', null)
     console.log('[service-lifecycle] tmux control mode connected')
   } catch (err) {
-    setStatus('tmux', 'degraded', reasonOf(err))
+    setStatus('tmux', 'degraded', describeToolFailure('tmux', err))
     console.warn('[service-lifecycle] tmux connect failed (retry on first session create):', err)
   }
 }

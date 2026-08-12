@@ -3,18 +3,18 @@
 **A tmux multiplexer around official coding CLIs, with a knowledge graph as its substrate.**
 
 <p>
-  <img alt="Status" src="https://img.shields.io/badge/status-pre--alpha-orange?style=flat-square&labelColor=000000">
+  <img alt="Status" src="https://img.shields.io/badge/status-0.1%20alpha-orange?style=flat-square&labelColor=000000">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square&labelColor=000000">
   <img alt="CI" src="https://github.com/cmarkus42-rgb/cipher-keel-electron/actions/workflows/ci.yml/badge.svg">
-  <img alt="Platform" src="https://img.shields.io/badge/platform-macOS-lightgrey?style=flat-square&labelColor=000000">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-lightgrey?style=flat-square&labelColor=000000">
 </p>
 
-> **Pre-alpha — source only.** The modules, architecture and test suite exist and are green.
-> There is no packaged build and no release. The click-through path — create a project,
-> open the grid, start a session — is wired end to end, but there is no accompanying
-> product experience beyond it. Read this repository as a working system under
-> construction, not as a product you can install. See [Current state](#current-state)
-> for exactly what is and isn't wired up.
+> **0.1 alpha — installable, unsigned, Apple Silicon only.** `npm run dist` builds a
+> packaged, unsigned DMG from this branch. The click-through path — create a project,
+> open the grid, start a session — is wired end to end, and the knowledge graph is
+> verified to come up inside that packaged build. What is missing is product polish,
+> not a working system. Read this repository as a working system under construction.
+> See [Current state](#current-state) for exactly what is and isn't wired up.
 
 ---
 
@@ -166,7 +166,7 @@ improvising.
 
 ## Current state
 
-All 1511 tests pass across 105 test files (`npm test`, ~5s).
+All 1541 tests pass across 107 test files (`npm test`, ~5s).
 
 | Phase | Content | Status |
 |-------|---------|--------|
@@ -182,6 +182,7 @@ All 1511 tests pass across 105 test files (`npm test`, ~5s).
 | Phase 5 | Stabilisation — Kanban, session snapshots, vault validator, status bar | Done, audited |
 | Phase 6 | Service lifecycle, event bus, degraded-state surfacing, a deterministic kickoff → project window → grid → session path | Done |
 | Phase 7 | CI pipeline — typecheck, lint, test and build gating every push and PR | Done |
+| Phase 8 | Packaging — separate build output, an archive limited to the built app, an Apple-Silicon-only DMG target, a generated app icon, the asar path fix that lets the knowledge graph initialise inside a package, an automated smoke test against the packaged app, and comprehensible messages for missing CLI tools | Done, unreleased |
 
 Phases 3a through 5 each ended in a formal audit with a RELEASE verdict; findings are
 recorded in `docs/superpowers/specs/`. Phase 6 and Phase 7 completed without that same
@@ -189,19 +190,55 @@ formal audit step; their work is tracked in `docs/superpowers/plans/` instead.
 
 ### What is not there yet
 
-- **No packaged build.** `electron-builder` is configured for a macOS DMG, but no release
-  has been produced. Run from source
+- **Unsigned and unnotarised.** The DMG needs a manual `xattr -cr` after install (see
+  [Install](#install)). Signing is a deliberate 0.1 decision, not an oversight —
+  revisit it if the project finds real distribution
 - **Entity prompt assembly is not wired into session launch.** Preset selection determines
   which of the four entities a session represents, and starting one creates a real, project-bound
   tmux session — that path was verified end to end in the running app. What is missing is the
   next step: `assembleEntityClaudeMd`, which would inject the entity's role-specific `CLAUDE.md`
   content into the session, has no production caller yet
-- **macOS only.** tmux plus Unix domain sockets plus keychain. Linux is plausible, Windows is not planned
+- **macOS on Apple Silicon only.** tmux plus Unix domain sockets plus keychain. Linux is
+  an intended later target and nothing in the packaging setup blocks it; Windows is not
+  planned. There is no Intel build
 - **Idle RAM budget and cold-start time unverified.** The <300 MB / <5s targets are
   architecturally supported (lazy init, WAL, no in-memory cache, deferred service start)
   but have not been measured against a production build
 - **Codex and Gemini adapters** are a design target, not implemented — `AdapterRegistry`
   currently has exactly one implementation (`claude-code`)
+
+## Install
+
+Build a DMG from this branch with `npm run dist` — it produces
+`release/cipher keel-0.1.0-arm64.dmg` — or, once one has been published, download the
+same artefact from the
+[latest release](https://github.com/cmarkus42-rgb/cipher-keel-electron/releases/latest).
+Open the DMG and drag the app to `/Applications`.
+
+**The build is not code-signed.** macOS will refuse to open it until you clear the
+quarantine attribute — once, after installing:
+
+```bash
+xattr -cr "/Applications/cipher keel.app"
+```
+
+Without this you get *"cipher keel is damaged and can't be opened"*, which is macOS
+being terse about a missing signature, not a corrupted download.
+
+### Requirements
+
+- **Apple Silicon Mac** (arm64). There is no Intel build: the native modules ship as
+  arm64 binaries, and an x86_64 package would fail at startup rather than degrade
+- **macOS 12 or later** (Electron 42 floor)
+- **tmux** — `brew install tmux`. Without it, sessions cannot start; the status bar
+  says so
+- **[Claude Code CLI](https://claude.com/claude-code)** — required to do anything useful
+  in a session; the app does not launch it for you. A session opens a shell in the
+  project directory and you run `claude` yourself. The status bar reports whether the
+  app can find it on the usual paths (`/opt/homebrew/bin`, `~/.local/bin`,
+  `~/.claude/local`), even when launched from Finder
+
+Everything else — the knowledge graph, notes, kanban — works without those two.
 
 ## Repository layout
 
@@ -225,7 +262,7 @@ src/renderer/      — React 19 UI: SessionGrid, ProjectView, Timeline, KanbanBo
                      KickoffWizard, NotesCell
 src/shared/        — Typed IPC channels and domain types
 src/preload.ts     — contextBridge API (window.cipherKeel)
-tests/             — 1511 Vitest tests
+tests/             — 1541 Vitest tests
 docs/superpowers/  — Implementation plans, design specs and audit reports per phase
 ```
 
