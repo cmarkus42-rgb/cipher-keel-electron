@@ -137,13 +137,14 @@ cyber factory, build package → testing, test findings → fixing, fix report �
 audit summary → release management. Nine REQ-ID prefixes (`SA`, `REQ`, `NFR`, `BUG`, `MFR`,
 `NRF`, `C`, `M`, `N`) are each bound to the phase that may assign them.
 
-### 6. Four entities
+### 6. Five entities
 
 | Preset | Role |
 |--------|------|
 | **Systems Engineer** | Project leadership and gate verdicts. Splits into a lead SE and sub-project SEs when a system is decomposed |
 | **Architect** | Long-running companion: worker supervision, interface coaching, wave coordination |
 | **Cyber Factory** | Lean build master, coordinates worker sessions in parallel |
+| **Testing Assistant** | Checks the suite, judges test quality, documents findings |
 | **Workshop** | Convergence of orchestrator and bugfixer in one pattern, with its own routing authority (internal / debugger / escalation) |
 
 ### 7. Rolling summary instead of compaction
@@ -193,11 +194,18 @@ formal audit step; their work is tracked in `docs/superpowers/plans/` instead.
 - **Unsigned and unnotarised.** The DMG needs a manual `xattr -cr` after install (see
   [Install](#install)). Signing is a deliberate 0.1 decision, not an oversight —
   revisit it if the project finds real distribution
-- **Entity prompt assembly is not wired into session launch.** Preset selection determines
-  which of the four entities a session represents, and starting one creates a real, project-bound
-  tmux session — that path was verified end to end in the running app. What is missing is the
-  next step: `assembleEntityClaudeMd`, which would inject the entity's role-specific `CLAUDE.md`
-  content into the session, has no production caller yet
+- **Preset model tiers are not honoured at launch.** Architect and Systems Engineer request
+  `model: 'heavy'` at Niveau A, and Cyber Factory routes waves across `light` / `standard` /
+  `heavy`, but none of those tier labels map to a Claude model id anywhere in the codebase —
+  `session:create` drops `model` entirely rather than pass through a value that would break the
+  launch, so every session runs on the harness default regardless of what its preset asked for
+- **`agent.skipPermissions` has no settings UI.** Every session the app launches runs `claude`
+  with `--dangerously-skip-permissions` by default — this is a deliberate 0.1 decision
+  (2026-08-10), not an oversight: the app itself launches the agent, so it also owns the
+  decision to skip Claude Code's own permission prompts. The only way to turn it off today is
+  by hand-editing `agent.skipPermissions` to `false` in the config file (`cipher-keel-config.json`
+  under the app's `userData` directory — see `getConfigPath()` in
+  `src/main/config/config-store.ts`); there is no in-app toggle
 - **macOS on Apple Silicon only.** tmux plus Unix domain sockets plus keychain. Linux is
   an intended later target and nothing in the packaging setup blocks it; Windows is not
   planned. There is no Intel build
@@ -233,9 +241,10 @@ being terse about a missing signature, not a corrupted download.
 - **tmux** — `brew install tmux`. Without it, sessions cannot start; the status bar
   says so
 - **[Claude Code CLI](https://claude.com/claude-code)** — required to do anything useful
-  in a session; the app does not launch it for you. A session opens a shell in the
-  project directory and you run `claude` yourself. The status bar reports whether the
-  app can find it on the usual paths (`/opt/homebrew/bin`, `~/.local/bin`,
+  in a session; the app launches it itself, with the entity's assembled system prompt
+  appended. Without it on PATH, `session:create` refuses to start and returns an error
+  naming the missing binary, instead of opening a dead shell. The status bar reports
+  whether the app can find it on the usual paths (`/opt/homebrew/bin`, `~/.local/bin`,
   `~/.claude/local`), even when launched from Finder
 
 Everything else — the knowledge graph, notes, kanban — works without those two.
@@ -246,8 +255,8 @@ Everything else — the knowledge graph, notes, kanban — works without those t
 src/main/          — Electron main process
   graph/           — Knowledge graph: schema, search (FTS5 + vec + RRF), MCP server,
                      vault sync, phase contract, gate cache, maintenance
-  preset/          — Entities: systems-engineer, architect, cyber-factory, workshop,
-                     capability tree, level (niveau) logic
+  preset/          — Entities: systems-engineer, architect, cyber-factory,
+                     testing-assistant, workshop, capability tree, level (niveau) logic
   p1/              — Handover documents: frontmatter schema, body templates,
                      REQ-ID schema, normaliser, versioning
   github/          — gh CLI auth, repo creation, keychain token store, MCP config

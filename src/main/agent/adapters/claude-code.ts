@@ -31,14 +31,6 @@ export interface AgentConfigReader {
   getSkipPermissions(): boolean
 }
 
-/** Default reader — returns true (skip-permissions enabled by default for dev). */
-const defaultConfigReader: AgentConfigReader = {
-  getSkipPermissions(): boolean {
-    // Will be wired to ConfigStore in Phase C
-    return true
-  },
-}
-
 export class ClaudeCodeAdapter implements AgentAdapter {
   readonly id = 'claude-code'
   readonly displayName = 'Claude Code'
@@ -46,8 +38,8 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
   private readonly configReader: AgentConfigReader
 
-  constructor(configReader?: AgentConfigReader) {
-    this.configReader = configReader ?? defaultConfigReader
+  constructor(configReader: AgentConfigReader) {
+    this.configReader = configReader
   }
 
   buildLaunchCommand(opts: LaunchOpts): LaunchCommand {
@@ -63,6 +55,16 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     }
     if (opts.model) {
       args.push('--model', opts.model)
+    }
+    if (opts.appendSystemPromptFile !== undefined) {
+      if (!opts.appendSystemPromptFile) {
+        // Starting without the entity prompt looks like a working session but is not one.
+        throw new Error(
+          '[ClaudeCodeAdapter] --append-system-prompt-file was set but empty — ' +
+          'refusing to launch without the entity prompt'
+        )
+      }
+      args.push('--append-system-prompt-file', opts.appendSystemPromptFile)
     }
     return { cmd: 'claude', args }
   }

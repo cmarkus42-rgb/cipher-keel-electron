@@ -1,16 +1,18 @@
 /**
- * tests/preset-catalog.test.ts — die vier 0.1-Presets als UI-Metadaten.
+ * tests/preset-catalog.test.ts — die 0.1-Presets plus Testing Assistant als UI-Metadaten.
  *
  * M6 Abschnitt 3.1 (BG-1) legt fuer Release 0.1 genau vier Rollen fest.
- * M5 kennt elf — die uebrigen sieben sind post-0.1 und hier bewusst nicht enthalten.
+ * M5 kennt elf — die uebrigen sechs sind post-0.1 und hier bewusst nicht enthalten.
+ * Der Testing Assistant wurde danach nachgezogen und ist jetzt Teil des Katalogs.
  */
 import { describe, it, expect } from 'vitest'
 import { PRESET_CATALOG, isKnownPresetId, defaultPresetId } from '../src/shared/preset-catalog'
+import { listEntityIds } from '../src/main/preset/registry'
 
 describe('PRESET_CATALOG', () => {
-  it('offers exactly the four ratified 0.1 roles', () => {
+  it('offers the four ratified 0.1 roles plus the Testing Assistant', () => {
     expect(PRESET_CATALOG.map(p => p.id)).toEqual([
-      'systems-engineer', 'architect', 'cyber-factory', 'workshop',
+      'systems-engineer', 'architect', 'cyber-factory', 'testing-assistant', 'workshop',
     ])
   })
 
@@ -34,9 +36,32 @@ describe('PRESET_CATALOG', () => {
   })
 
   it('does not offer any post-0.1 role', () => {
-    const postRelease = ['ideation', 'refinement', 'testing', 'audit', 'release-manager', 'companion', 'debugger']
+    const postRelease = ['ideation', 'refinement', 'audit', 'release-manager', 'companion', 'debugger']
     for (const id of postRelease) {
       expect(PRESET_CATALOG.some(p => p.id === id)).toBe(false)
+    }
+  })
+})
+
+describe('preset catalog after the Testing Assistant', () => {
+  it('offers five presets', () => {
+    expect(PRESET_CATALOG).toHaveLength(5)
+  })
+
+  it('knows the testing assistant', () => {
+    expect(isKnownPresetId('testing-assistant')).toBe(true)
+  })
+
+  it('keeps workshop as the default', () => {
+    expect(defaultPresetId()).toBe('workshop')
+  })
+
+  // The catalog already asserts a single default at :28 — this one asserts the
+  // registry can actually build everything the launcher offers, which nothing did before.
+  it('offers nothing the registry cannot build', () => {
+    const buildable = listEntityIds()
+    for (const choice of PRESET_CATALOG) {
+      expect(buildable, choice.id).toContain(choice.id)
     }
   })
 })

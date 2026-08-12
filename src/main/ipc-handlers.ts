@@ -6,7 +6,7 @@
  * CK-INF-009
  */
 
-import { ipcMain, BrowserWindow, dialog } from 'electron'
+import { ipcMain, BrowserWindow, dialog, app } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileAsync } from './util/exec-util'
@@ -108,9 +108,24 @@ import { createMainWindow } from './window-manager'
 import type { AppServices } from './window-manager'
 import { registerWindow, broadcast } from './event-bus'
 import { normalizeToP1Format } from './p1/normalizer'
+import { getEntityDefinition } from './preset/registry'
+import { getGlobalRules } from './preset/global-rules'
+import { assembleEntityClaudeMd } from './session/assemble-entity'
+import { materialiseCapabilities } from './session/materialise-capabilities'
+import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-file'
+import { formatShellCommand } from './util/shell-quote'
+import { AdapterRegistry } from './agent/registry'
+import { describeMissingTool } from './util/missing-tool'
 
 // Tracks the active grid window for focus-or-create logic (CK-UI-002)
 let activeGridWindow: BrowserWindow | null = null
+
+// The registry demands its config reader — see Task 6. This is the one place that has
+// both Electron and the ConfigStore loaded, which is why the reading happens here and
+// not inside the adapter.
+const adapterRegistry = new AdapterRegistry({
+  getSkipPermissions: () => configStore.get('agent').skipPermissions,
+})
 
 export function registerIpcHandlers(services: AppServices): void {
   // Project manager — wired to configStore for persistence (CK-INF-020)
@@ -131,7 +146,6 @@ export function registerIpcHandlers(services: AppServices): void {
     name?: string
     entityId?: string
     cwd?: string
-    command?: string
     env?: Record<string, string>
     width?: number
     height?: number
@@ -156,10 +170,57 @@ export function registerIpcHandlers(services: AppServices): void {
         return { id: null, name: null, error: 'No session name and no active project' }
       }
 
+      // Assemble the entity prompt. The IPC surface takes no caller-supplied command —
+      // it never had a real user, and a generic untyped `invoke` bridge means nothing
+      // stops the renderer from injecting raw keystrokes through such a field. The
+      // composition always runs once a project directory is known.
+      if (!cwd) {
+        return { id: null, name: null, error: 'No project directory (cwd) — cannot start the entity' }
+      }
+
+      const def = getEntityDefinition(entityId)
+      if (!def) {
+        return { id: null, name: null, error: `Unknown entity '${entityId}'` }
+      }
+
+      // Gate before any file is written: a launch that fails here leaves no
+      // orphaned prompt file and no rewritten .claude/capabilities/ tree behind.
+      const adapter = adapterRegistry.getDefault()
+      if (!adapter.isAvailable()) {
+        return { id: null, name: null, error: describeMissingTool('claude') }
+      }
+
+      const materialised = materialiseCapabilities(def.rahmen.capabilityAnbindung, cwd)
+      if (materialised.unknown.length > 0) {
+        console.warn(
+          `[ipc] entity '${entityId}': no SKILL.md asset for ${materialised.unknown.join(', ')}`
+        )
+      }
+
+      const prompt = assembleEntityClaudeMd({
+        body: def.body,
+        persona: def.persona ?? undefined,
+        globalRules: getGlobalRules(def.rahmen.capabilityNiveau),
+        niveau: def.rahmen.capabilityNiveau,
+        capabilities: materialised.written,
+      })
+      const promptPath = writeEntityPromptFile(app.getPath('userData'), name, prompt)
+
+      // def.rahmen.model carries values like 'heavy', which is a CF/architect model
+      // tier label, not a Claude model id — there is no tier-to-id translation
+      // anywhere in the codebase (checked: grep -rn "'heavy'" src/). Passing it
+      // through would break the launch, so model is omitted here entirely.
+      const launch = adapter.buildLaunchCommand({
+        projectPath: cwd,
+        sessionName: name,
+        appendSystemPromptFile: promptPath,
+      })
+      const command = formatShellCommand(launch.cmd, launch.args)
+
       if (!services.tmux.isConnected()) {
         await services.tmux.connect()
       }
-      const sessionId = await services.tmux.createSession(name, { ...opts, cwd })
+      const sessionId = await services.tmux.createSession(name, { ...opts, cwd, command })
       services.tmux.watchSession(name, name)
 
       if (ctx && services.graphWriter) {
@@ -181,6 +242,7 @@ export function registerIpcHandlers(services: AppServices): void {
     try {
       services.tmux.unwatchSession(name)
       await services.tmux.killSession(name)
+      removeEntityPromptFile(app.getPath('userData'), name)
       return { ok: true, error: null }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

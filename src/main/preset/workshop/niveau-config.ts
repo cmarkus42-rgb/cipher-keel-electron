@@ -46,7 +46,7 @@ const CAPABILITIES_NIVEAU_A = [
   'rolling-summary',
 ] as const
 
-/** Niveau B: debugger-beauftragung als reference-material (bleibt in Liste, Mode aendert sich) */
+/** Niveau B: debugger-beauftragung entfaellt vollstaendig (Niveau-A-exklusiv), kein Mode-Wechsel */
 const CAPABILITIES_NIVEAU_B = [
   'findings-lesen',
   'item-dispatch',

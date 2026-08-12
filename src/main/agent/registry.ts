@@ -8,14 +8,14 @@
  */
 
 import type { AgentAdapter } from './agent-adapter'
-import { ClaudeCodeAdapter } from './adapters/claude-code'
+import { ClaudeCodeAdapter, type AgentConfigReader } from './adapters/claude-code'
 
 export class AdapterRegistry {
   private adapters: Map<string, AgentAdapter> = new Map()
   private defaultId = 'claude-code'
 
-  constructor() {
-    const claude = new ClaudeCodeAdapter()
+  constructor(configReader: AgentConfigReader) {
+    const claude = new ClaudeCodeAdapter(configReader)
     this.adapters.set(claude.id, claude)
   }
 
