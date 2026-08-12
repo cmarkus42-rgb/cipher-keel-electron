@@ -76,6 +76,22 @@ Level C is usable as a structured thinking partner, but is deliberately **not** 
 as a full realisation of a role. Level B is the recommended minimum for a role to actually
 carry its own weight.
 
+**The level follows the harness, not the user.** Each adapter declares the level it can
+serve — `claude-code` serves A, the NanoClaw route serves B — and a session inherits the
+level of the adapter that will actually run it. There is no free choice, because the level
+describes a capability of the harness rather than a preference.
+
+What the level changes, concretely, is how the capability layer reaches the agent. At A the
+prompt carries `@`-references and the harness resolves them on demand; **measured on
+2026-08-11, the content behind those references is not in the start context** — inflating
+one referenced file from 4 KB to 271 KB left the token count unchanged to the digit. At B
+the same capabilities arrive as an inventory of name, description and path, because a
+non-Claude harness would not resolve an `@`-line and would lose the whole layer without a
+single error message.
+
+Level B is assembled and inspectable today (see the prompt preview below), but nothing runs
+it yet — the NanoClaw adapter resolves and its launch path is still a no-op.
+
 ### 3. Level service — the granularity obligation
 
 This is the least obvious concept and probably the most consequential one.
@@ -131,6 +147,12 @@ Every phase satisfies the same three-part contract: **input** (resolved as a gra
 not a fixed predecessor pointer — which is what makes lateral entry into a running project
 possible), **artefacts** (accumulated during the phase), and **output** (a handover document).
 
+That input is carried into the session: an entity's prompt ends with the phasenoutput
+artefacts of the preceding phase, named by uid, title and path. They are pointers rather
+than inlined text — the artefacts can be arbitrarily large, and every entity that receives
+them can query the graph. An entity bound to no phase gets no such layer; one bound to
+several (the Workshop, across fixing and development) gets a block per phase.
+
 Seven document types carry the output between phases, each with a default addressee that
 frontmatter can override: requirements → refinement, spec → architect, architecture package →
 cyber factory, build package → testing, test findings → fixing, fix report → audit,
@@ -167,7 +189,7 @@ improvising.
 
 ## Current state
 
-All 1541 tests pass across 107 test files (`npm test`, ~5s).
+All 1829 tests pass across 139 test files (`npm test`, ~5s).
 
 | Phase | Content | Status |
 |-------|---------|--------|
@@ -184,10 +206,25 @@ All 1541 tests pass across 107 test files (`npm test`, ~5s).
 | Phase 6 | Service lifecycle, event bus, degraded-state surfacing, a deterministic kickoff → project window → grid → session path | Done |
 | Phase 7 | CI pipeline — typecheck, lint, test and build gating every push and PR | Done |
 | Phase 8 | Packaging — separate build output, an archive limited to the built app, an Apple-Silicon-only DMG target, a generated app icon, the asar path fix that lets the knowledge graph initialise inside a package, an automated smoke test against the packaged app, and comprehensible messages for missing CLI tools | Done, unreleased |
+| Entity start path | `session:create` assembles the entity prompt and launches the CLI with it — before this, it opened a bare shell | Done |
+| Level and adapter wiring | The level follows the adapter, NanoClaw is registered, model tiers resolve, capability packages are the single source per entity, level B emits an inventory instead of nothing, and a prompt preview shows all of it before anything starts | Done |
+| Phaseninput layer | The fifth assembly layer: the preceding phase's output artefacts, resolved from the graph into the prompt | Done |
 
 Phases 3a through 5 each ended in a formal audit with a RELEASE verdict; findings are
 recorded in `docs/superpowers/specs/`. Phase 6 and Phase 7 completed without that same
 formal audit step; their work is tracked in `docs/superpowers/plans/` instead.
+
+### Seeing what an entity is told
+
+Every preset in the launcher carries an eye button next to it. It assembles that entity's
+full prompt — body, capabilities, persona, global rules, phase input — and shows it without
+starting a session, writing a file or touching the project directory, with a switch for all
+three levels including the ones no adapter serves yet.
+
+The preview is built by the same code path `session:create` uses, and that is checked rather
+than assumed: in the running app the preview text and the file handed to the CLI were
+compared character by character and were identical. A preview that shows something other
+than what is delivered would be worse than none (CK-NFR-012).
 
 ### What is not there yet
 
@@ -217,6 +254,12 @@ formal audit step; their work is tracked in `docs/superpowers/plans/` instead.
 - **Codex and Gemini adapters** are a design target, not implemented. `AdapterRegistry`
   holds two entries: `claude-code`, which launches sessions, and `nanoclaw`, whose
   `buildLaunchCommand` is a no-op — no NanoClaw session has ever run
+- **Level B is assembled but not runnable.** The prompt an entity would receive at level B
+  can be inspected today, and the level is wired to follow the adapter. What is missing is
+  everything that would execute it: the NanoClaw launch path, a grid cell for a channel
+  session, its lifecycle and output events, and a `provider:model` handle — no preset
+  declares one, so a level-B session would start without a model choice at all. Level C is
+  a 0.2 target and untouched
 
 ## Install
 
