@@ -15,6 +15,7 @@
  */
 
 import type { AdapterFeature, AdapterCapabilities, ContextUsage } from '../../shared/types'
+import type { CapabilityNiveau } from '../preset/niveau'
 
 export type { AdapterFeature, AdapterCapabilities }
 
@@ -82,6 +83,16 @@ export interface AgentAdapter {
   readonly id: string
   readonly displayName: string
   readonly tier: 'tier-1' | 'tier-2'
+
+  /**
+   * Capability niveau this adapter can serve (M2 section 11.3).
+   *
+   * Claude Code is the only harness with native SKILL.md lazy-loading, which is what
+   * Niveau A assumes; every other adapter in the garden is B. The niveau is a property
+   * of the harness, not a user preference — a harness that cannot resolve @-references
+   * does not become able to by being asked nicely.
+   */
+  readonly niveau: CapabilityNiveau
 
   // --- lifecycle ---
   /** Build a structured launch command. Never returns a raw shell string. */

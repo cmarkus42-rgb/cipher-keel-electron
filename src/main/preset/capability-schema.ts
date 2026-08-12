@@ -18,8 +18,11 @@ export interface CapabilityPackage {
   beschreibung: string
   /** How this package is loaded at runtime */
   loader: LoaderType
-  /** Path to the package file (or channel route for nanoclaw-skill) */
-  pfad: string
+  /**
+   * Path to the package file, or channel route for nanoclaw-skill.
+   * Optional for skill-md: derived from the name via capabilityPath().
+   */
+  pfad?: string
   /** Minimum capability level required to load this package */
   niveauMinimum?: 'A' | 'B' | 'C'
   /** Inline extract for Level C (≤ 500 tokens). Required when loader is 'inline'. */
@@ -37,6 +40,29 @@ export interface ValidationResult {
 export function estimateTokenCount(text: string): number {
   if (text.length === 0) return 0
   return Math.ceil(text.length / 4)
+}
+
+/**
+ * Filter packages by niveau using their declared niveauMinimum.
+ *
+ * niveauMinimum reads as "the least rich niveau this package survives at": 'A' means
+ * Niveau A only, 'B' means A and B, absent means everywhere. Niveau C is deliberately
+ * not decided here — what survives at C differs per entity and stays in the entity's
+ * own getter, where its reason can be written down next to it.
+ *
+ * Lives here rather than in capabilities.ts because the entity getters need it and
+ * capabilities.ts imports them — putting it there would close an import cycle.
+ */
+export function filterByNiveau<T extends { niveauMinimum?: 'A' | 'B' | 'C' }>(
+  packages: T[],
+  niveau: 'A' | 'B' | 'C',
+): T[] {
+  return packages.filter((pkg) => {
+    if (!pkg.niveauMinimum) return true
+    if (niveau === 'A') return true
+    if (niveau === 'B') return pkg.niveauMinimum !== 'A'
+    return false
+  })
 }
 
 const VALID_LOADER_TYPES = new Set<string>(Object.values(LoaderType))
@@ -66,10 +92,14 @@ export function validateCapabilityPackage(pkg: unknown): ValidationResult {
     errors.push(`loader must be one of: ${Array.from(VALID_LOADER_TYPES).join(', ')}`)
   }
 
-  // pfad can be empty only for inline loader (content comes from niveauCExtrakt)
-  const loaderIsInline = p.loader === LoaderType.Inline
-  if (typeof p.pfad !== 'string' || (!loaderIsInline && p.pfad.trim() === '')) {
-    errors.push('pfad is required and must be a non-empty string (except for inline loader)')
+  // pfad is derivable for skill-md (from the name, see capabilityPath) and meaningless
+  // for inline (content comes from niveauCExtrakt). nanoclaw-skill carries a channel
+  // route and reference-material a file that no convention produces — for those it stays
+  // required.
+  const pfadRequired = p.loader === LoaderType.NanoClawSkill
+    || p.loader === LoaderType.ReferenceMaterial
+  if (pfadRequired && (typeof p.pfad !== 'string' || p.pfad.trim() === '')) {
+    errors.push(`pfad is required for loader '${String(p.loader)}'`)
   }
 
   if (p.niveauMinimum !== undefined) {

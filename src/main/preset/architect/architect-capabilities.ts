@@ -39,49 +39,42 @@ const ALL_PACKAGES: CapabilityPackage[] = [
     name: 'architect-core-identity',
     beschreibung: 'Kern-Identität und Auftrag des Architect-Presets',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/architect-core-identity/SKILL.md',
     niveauCExtrakt: CORE_IDENTITY_C_EXTRAKT,
   },
   {
     name: 'subsystem-zerlegung-guide',
     beschreibung: 'Anleitung zur Subsystem-Zerlegung mit Schnittstellen-Verträgen',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/subsystem-zerlegung-guide/SKILL.md',
     niveauMinimum: 'B',
   },
   {
     name: 'adr-format-guide',
     beschreibung: 'ADR-Format mit Tiefe-Stufen für Niveau-Bedienung',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/adr-format-guide/SKILL.md',
     niveauMinimum: 'B',
   },
   {
     name: 'anforderungspaket-formulierer',
     beschreibung: 'Granulare Anforderungspakete pro Worker formulieren',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/anforderungspaket-formulierer/SKILL.md',
     niveauMinimum: 'B',
   },
   {
     name: 'niveau-c-formulierer',
     beschreibung: 'Outputs auf Niveau-C-taugliche Formen reduzieren (Pflicht)',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/niveau-c-formulierer/SKILL.md',
     niveauMinimum: 'B',
   },
   {
     name: 'coaching-loop-guide',
     beschreibung: 'Frage/Antwort-Coaching-Loop im Graph während des Baus',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/coaching-loop-guide/SKILL.md',
     niveauMinimum: 'A',
   },
   {
     name: 'rolling-summary',
     beschreibung: 'Rolling Summary für Architect-State über Wellen hinweg',
     loader: LoaderType.SkillMd,
-    pfad: '.claude/capabilities/rolling-summary/SKILL.md',
     niveauMinimum: 'A',
   },
 ]
@@ -95,7 +88,6 @@ export function getArchitectCapabilities(niveau: CapabilityNiveau): CapabilityPa
     return [{
       ...ALL_PACKAGES[0],
       loader: LoaderType.Inline,
-      pfad: '',
     }]
   }
 

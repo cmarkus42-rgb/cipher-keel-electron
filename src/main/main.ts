@@ -19,7 +19,7 @@
 import { app, BrowserWindow } from 'electron'
 import { TmuxManager } from './tmux/tmux-manager'
 import { StatusLineMonitor } from './monitoring/statusline-monitor'
-import { NanoClawBridge, NanoClawChannelAdapter } from './nanoclaw'
+import { NanoClawBridge } from './nanoclaw'
 import { patchEnvPath } from './util/exec-util'
 import { createProjectWindow } from './window-manager'
 import type { AppServices } from './window-manager'
@@ -52,8 +52,9 @@ const services: AppServices = {
   kanbanStore: null,
 }
 
-// NanoClawChannelAdapter wraps the bridge — held as module-level ref to prevent GC
-const _nanoClawAdapter = new NanoClawChannelAdapter(services.nanoClawBridge)
+// The NanoClawChannelAdapter is registered in registerIpcHandlers, where both the
+// AdapterRegistry and services.nanoClawBridge exist. It used to be constructed here into
+// a discarded variable, which left the adapter garden with exactly one reachable entry.
 
 // ---------------------------------------------------------------------------
 // App lifecycle

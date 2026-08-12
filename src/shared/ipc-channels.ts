@@ -17,6 +17,12 @@ export const SESSION_STATUS_CHANGED = 'session:status-changed' as const
 export const SESSION_OUTPUT = 'session:output' as const
 
 // ---------------------------------------------------------------------------
+// Preset channels (entity assembly, read-only)
+// ---------------------------------------------------------------------------
+/** Assembles an entity prompt for inspection — starts nothing, writes nothing (CK-NFR-012). */
+export const PRESET_PREVIEW_PROMPT = 'preset:preview-prompt' as const
+
+// ---------------------------------------------------------------------------
 // Terminal channels (tmux pane / xterm.js streaming)
 // ---------------------------------------------------------------------------
 export const TERMINAL_DATA_INBOUND = 'terminal:data-inbound' as const
@@ -197,6 +203,7 @@ export type RendererToMainChannel =
   | typeof SESSION_DESTROY
   | typeof SESSION_LIST
   | typeof SESSION_FOCUS
+  | typeof PRESET_PREVIEW_PROMPT
   | typeof TERMINAL_DATA_OUTBOUND
   | typeof TERMINAL_RESIZE
   | typeof TERMINAL_CLEAR

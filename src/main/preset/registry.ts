@@ -56,6 +56,24 @@ export function listEntityIds(): string[] {
 }
 
 /**
+ * Build only the Rahmen for an entity — no persona resolution, no body.
+ *
+ * session:create needs `runtime` before it can pick an adapter (M2 section 11.4), and it
+ * needs the adapter before it knows the niveau the full definition should be built at
+ * (M2 section 11.3). This is the cheap first half of that two-step resolution.
+ *
+ * @returns null when the id is unknown — same contract as getEntityDefinition.
+ */
+export function getEntityRahmen(
+  entityId: string,
+  niveau: CapabilityNiveau = CapabilityNiveau.A,
+): PresetRahmen | null {
+  const entry = ENTITIES[entityId]
+  if (!entry) return null
+  return entry.rahmen(niveau)
+}
+
+/**
  * Build the full definition for an entity.
  *
  * @param entityId  one of listEntityIds()

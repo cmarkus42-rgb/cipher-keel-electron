@@ -24,6 +24,7 @@ import {
   SESSION_LIST,
   SESSION_CREATE,
   SESSION_DESTROY,
+  PRESET_PREVIEW_PROMPT,
   TERMINAL_DATA_OUTBOUND,
   TERMINAL_RESIZE,
   NANOCLAW_MESSAGE_OUTBOUND,
@@ -108,26 +109,37 @@ import { createMainWindow } from './window-manager'
 import type { AppServices } from './window-manager'
 import { registerWindow, broadcast } from './event-bus'
 import { normalizeToP1Format } from './p1/normalizer'
-import { getEntityDefinition } from './preset/registry'
+import { getEntityDefinition, getEntityRahmen } from './preset/registry'
+import { resolveModel } from './session/model-resolver'
 import { getGlobalRules } from './preset/global-rules'
+import { getCapabilityPackages } from './preset/capabilities'
+import { CapabilityNiveau } from './preset/niveau'
+import { buildPromptPreview } from './session/preview-prompt'
 import { assembleEntityClaudeMd } from './session/assemble-entity'
 import { materialiseCapabilities } from './session/materialise-capabilities'
 import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-file'
 import { formatShellCommand } from './util/shell-quote'
 import { AdapterRegistry } from './agent/registry'
+import { NanoClawChannelAdapter } from './nanoclaw'
 import { describeMissingTool } from './util/missing-tool'
 
 // Tracks the active grid window for focus-or-create logic (CK-UI-002)
 let activeGridWindow: BrowserWindow | null = null
 
-// The registry demands its config reader — see Task 6. This is the one place that has
-// both Electron and the ConfigStore loaded, which is why the reading happens here and
-// not inside the adapter.
-const adapterRegistry = new AdapterRegistry({
-  getSkipPermissions: () => configStore.get('agent').skipPermissions,
-})
-
 export function registerIpcHandlers(services: AppServices): void {
+  // The registry demands its config reader — see Task 6. This is the one place that has
+  // both Electron and the ConfigStore loaded, which is why the reading happens here and
+  // not inside the adapter.
+  //
+  // It is built here rather than at module level because registering the second Schenkel
+  // needs `services.nanoClawBridge`, which only exists once services are handed in.
+  // Before that, main.ts constructed NanoClawChannelAdapter into a discarded variable, so
+  // `runtime: 'nanoclaw-channel-route'` would have silently launched a Claude session.
+  const adapterRegistry = new AdapterRegistry({
+    getSkipPermissions: () => configStore.get('agent').skipPermissions,
+  })
+  adapterRegistry.register(new NanoClawChannelAdapter(services.nanoClawBridge))
+
   // Project manager — wired to configStore for persistence (CK-INF-020)
   const projectManager = new ProjectManager(
     (data) => configStore.set('projects', data),
@@ -178,16 +190,39 @@ export function registerIpcHandlers(services: AppServices): void {
         return { id: null, name: null, error: 'No project directory (cwd) — cannot start the entity' }
       }
 
-      const def = getEntityDefinition(entityId)
-      if (!def) {
+      // Two-step resolution: the Rahmen carries `runtime`, the adapter carries the
+      // niveau, and the full definition depends on the niveau (M2 sections 11.3/11.4).
+      const rahmen = getEntityRahmen(entityId)
+      if (!rahmen) {
         return { id: null, name: null, error: `Unknown entity '${entityId}'` }
+      }
+
+      // An unknown runtime throws rather than falling back — a silent fallback would
+      // start a Claude session for an entity that asked for something else.
+      let adapter
+      try {
+        adapter = adapterRegistry.getForRuntime(rahmen.runtime)
+      } catch (err) {
+        return { id: null, name: null, error: (err as Error).message }
       }
 
       // Gate before any file is written: a launch that fails here leaves no
       // orphaned prompt file and no rewritten .claude/capabilities/ tree behind.
-      const adapter = adapterRegistry.getDefault()
       if (!adapter.isAvailable()) {
-        return { id: null, name: null, error: describeMissingTool('claude') }
+        return {
+          id: null,
+          name: null,
+          error: adapter.id === 'claude-code'
+            ? describeMissingTool('claude')
+            : `Adapter '${adapter.displayName}' is not available — session not started`,
+        }
+      }
+
+      // The niveau comes from the harness that will actually run this session, not from
+      // a default. Every session was Niveau A before this, whatever its adapter could do.
+      const def = getEntityDefinition(entityId, adapter.niveau)
+      if (!def) {
+        return { id: null, name: null, error: `Unknown entity '${entityId}'` }
       }
 
       const materialised = materialiseCapabilities(def.rahmen.capabilityAnbindung, cwd)
@@ -203,17 +238,20 @@ export function registerIpcHandlers(services: AppServices): void {
         globalRules: getGlobalRules(def.rahmen.capabilityNiveau),
         niveau: def.rahmen.capabilityNiveau,
         capabilities: materialised.written,
+        capabilityPackages: getCapabilityPackages(entityId, def.rahmen.capabilityNiveau),
       })
       const promptPath = writeEntityPromptFile(app.getPath('userData'), name, prompt)
 
-      // def.rahmen.model carries values like 'heavy', which is a CF/architect model
-      // tier label, not a Claude model id — there is no tier-to-id translation
-      // anywhere in the codebase (checked: grep -rn "'heavy'" src/). Passing it
-      // through would break the launch, so model is omitted here entirely.
+      // The Rahmen's model is a tier label (Schenkel 1) or a provider:model handle
+      // (Schenkel 2, M2 section 6.3). Unresolvable values omit --model, which is what
+      // every session did before the tier table existed.
+      const model = resolveModel(def.rahmen.model, configStore.get('agent').modelTiers)
+
       const launch = adapter.buildLaunchCommand({
         projectPath: cwd,
         sessionName: name,
         appendSystemPromptFile: promptPath,
+        model,
       })
       const command = formatShellCommand(launch.cmd, launch.args)
 
@@ -248,6 +286,17 @@ export function registerIpcHandlers(services: AppServices): void {
       const msg = err instanceof Error ? err.message : String(err)
       return { ok: false, error: msg }
     }
+  })
+
+  // Read-only counterpart to session:create — assembles the same prompt, starts nothing
+  // and touches no project directory (CK-NFR-012). The niveau is a parameter here rather
+  // than the adapter's, so a level no registered adapter serves can still be inspected.
+  ipcMain.handle(PRESET_PREVIEW_PROMPT, (_e, args: { entityId: string; niveau?: string }) => {
+    const niveau = args?.niveau === 'B' ? CapabilityNiveau.B
+      : args?.niveau === 'C' ? CapabilityNiveau.C
+      : CapabilityNiveau.A
+    const preview = buildPromptPreview(args?.entityId, niveau, configStore.get('agent').modelTiers)
+    return preview ?? { error: `Unknown entity '${args?.entityId}'` }
   })
 
   ipcMain.on(TERMINAL_DATA_OUTBOUND, (_event, sessionName: string, data: string) => {

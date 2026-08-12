@@ -11,7 +11,7 @@ import { RollenTyp } from '../schema'
 import { CapabilityNiveau } from '../niveau'
 import type { PresetRahmen } from '../schema'
 import type { Preset } from '../types'
-import { getSECapabilities } from './se-capabilities'
+import { getSECapabilityPackages } from './se-capabilities'
 
 /**
  * Seven capability packages bound to the SE at Niveau A.
@@ -35,7 +35,7 @@ export const SE_RAHMEN: PresetRahmen = {
   name: 'Systems Engineer',
   rollenTyp: RollenTyp.QuerliegenSE,
   phasenBindung: [],
-  capabilityAnbindung: [...SE_CAPABILITIES],
+  capabilityAnbindung: getSECapabilityPackages(CapabilityNiveau.A).map(p => p.name),
   graphAnbindung: { lesen: true, schreiben: true },
   personaVorgabe: 'cipher',
   runtime: 'claude-cli-tmux',
@@ -53,7 +53,7 @@ export const SE_RAHMEN: PresetRahmen = {
 export function createSERahmen(niveau: CapabilityNiveau): PresetRahmen {
   return {
     ...SE_RAHMEN,
-    capabilityAnbindung: getSECapabilities(niveau),
+    capabilityAnbindung: getSECapabilityPackages(niveau).map(p => p.name),
     model: niveau === CapabilityNiveau.A ? 'heavy' : '',
     capabilityNiveau: niveau,
   }

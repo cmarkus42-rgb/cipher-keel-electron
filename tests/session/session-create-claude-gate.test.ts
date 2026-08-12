@@ -61,8 +61,15 @@ describe('session:create — claude availability gate (F1)', () => {
     // the gate runs before the launch command is built, not just before tmux.
     vi.doMock('../../src/main/agent/registry', () => ({
       AdapterRegistry: class {
-        getDefault() {
+        register() {}
+        // The adapter is now selected by the Rahmen's runtime (M2 section 11.4), not by
+        // getDefault(). The id matters: the unavailability message is only the
+        // claude-specific install hint for the claude-code adapter.
+        getForRuntime() {
           return {
+            id: 'claude-code',
+            displayName: 'Claude Code',
+            niveau: 'A',
             isAvailable: () => false,
             buildLaunchCommand: () => {
               throw new Error('buildLaunchCommand must not run when claude is unavailable')

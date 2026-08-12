@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
-import { getSECapabilities } from '../../../src/main/preset/systems-engineer/se-capabilities'
+import { getSECapabilityPackages } from '../../../src/main/preset/systems-engineer/se-capabilities'
+import { CapabilityNiveau } from '../../../src/main/preset/niveau'
 
 const OWN = path.join(__dirname, '../../../src/main/preset/systems-engineer/capabilities')
 const SHARED = path.join(__dirname, '../../../src/main/preset/shared/capabilities')
@@ -14,7 +15,7 @@ const fileFor = (id: string) =>
     : path.join(OWN, id, 'SKILL.md')
 
 describe('SE capability SKILL.md files', () => {
-  for (const id of getSECapabilities('A')) {
+  for (const id of getSECapabilityPackages(CapabilityNiveau.A).map(p => p.name)) {
     describe(id, () => {
       const file = fileFor(id)
 

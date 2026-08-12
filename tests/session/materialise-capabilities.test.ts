@@ -15,7 +15,10 @@ import { CF_CAPABILITIES } from '../../src/main/preset/cyber-factory/cf-preset'
 // catch a real drift: if SE_CAPABILITIES_A gains an id that SE_CAPABILITIES lacks (or
 // CAPABILITY_SKILLS lacks), materialisation would silently drop it at launch time while
 // a guard keyed on the wrong constant stayed green.
-import { SE_CAPABILITIES_A } from '../../src/main/preset/systems-engineer/se-capabilities'
+import { getSECapabilityPackages } from '../../src/main/preset/systems-engineer/se-capabilities'
+import { CapabilityNiveau } from '../../src/main/preset/niveau'
+
+const SE_CAPABILITIES_A = getSECapabilityPackages(CapabilityNiveau.A).map(p => p.name)
 import { TA_CAPABILITIES } from '../../src/main/preset/testing-assistant/ta-preset'
 import { WORKSHOP_CAPABILITY_PAKETE } from '../../src/main/preset/workshop/workshop-preset'
 
