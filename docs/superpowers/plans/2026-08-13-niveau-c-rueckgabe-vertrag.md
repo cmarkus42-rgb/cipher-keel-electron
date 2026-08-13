@@ -947,3 +947,83 @@ ist unabhängig, steht aber vor 6, weil Task 6 Schritt 1 den neuen Default prüf
 
 **Keine Platzhalter.** Jeder Code-Schritt trägt vollständigen Code; die einzige Stelle ohne
 festen Wortlaut ist das Wegwerf-Skript in Task 6, das ausdrücklich nicht ins Repo gehört.
+
+---
+
+## Messprotokoll Task 6
+
+**Datum:** 2026-08-13 · **Aufbau:** `runCWorker` mit `HttpOllamaClient` gegen das lokale
+Ollama auf `127.0.0.1:11434`, über ein Wegwerf-Skript im Scratchpad (nicht im Repo).
+
+### Der Default ist installiert
+
+`qwen3:30b-a3b-instruct-2507-q4_K_M` steht in `/api/tags`. Task 5 Schritt 1 ist damit nicht
+auf einen leeren Wert gelaufen.
+
+### Läufe gegen den Default (30.5B MoE)
+
+| Lauf | Auftrag | Ergebnis |
+|---|---|---|
+| 1 | Hauptstadt + Begründung, Felder `stadt`, `begruendung` | `ok: true`, `repairs: 0`, 27 s |
+| 2 | Hauptstadt, Felder `stadt`, `einwohnerzahl`, `quellenlage` — im Aufgabentext **nicht** erwähnt | `ok: true`, `repairs: 0`, 1 s |
+| 3 | `endpoint: { model: 'gibtsnicht:1b' }` | `ok: false`, `repairs: 0` |
+
+Rohantwort aus Lauf 1, unverändert:
+
+````
+```keel-ergebnis
+{ "stadt": "Paris", "begruendung": "Ich weiß das, weil Paris seit Jahrhunderten als die Hauptstadt Frankreichs anerkannt ist und dies in allen standardmäßigen geografischen Quellen und Lehrbüchern steht." }
+```
+````
+
+**Lauf 2 ist der interessantere:** Das Modell füllte die drei Felder, obwohl die Aufgabe nur
+nach der Hauptstadt fragte — die Formatanweisung allein genügte, um `einwohnerzahl` und
+`quellenlage` zu erzeugen. 27 s im ersten, 1 s im zweiten Lauf: `keep_alive: -1` hält das
+Modell geladen, wie beabsichtigt.
+
+**Lauf 3 belegt den Fehlerpfad wörtlich:**
+
+```
+Modell 'gibtsnicht:1b' ist auf 127.0.0.1:11434 nicht installiert —
+mit 'ollama pull gibtsnicht:1b' laden
+```
+
+Kein „HTTP 404". `repairs: 0` — ein Transportfehler bekommt keinen Reparaturversuch.
+
+### Der Reparaturpfad, an einem wirklich schwachen Modell
+
+Die Läufe 1–3 lösten **keine** Reparatur aus: Das 30B-Modell formatierte auf Anhieb sauber.
+Ein Beleg, der die Reparatur nicht zeigt, belegt sie nicht. Statt den Fall künstlich zu
+erzwingen, wurde derselbe Auftrag (`stadt`, `einwohner`) gegen zwei kleinere Modelle geführt:
+
+| Modell | `ok` | `repairs` | Befund |
+|---|---|---|---|
+| `mistral-nemo:latest` (12B) | true | 0 | sauberer Block im ersten Anlauf |
+| `moondream:latest` (1B) | **false** | **1** | beide Versuche daneben |
+
+Moondreams letzte Antwort, unverändert:
+
+```
+[
+  "feld": "wert",
+  "kleiner-kennzeichnung": "keel-ergebnis"
+ ]
+```
+
+Weder umzäunter Block noch gültiges JSON — das Modell hat die Formatanweisung als Inhalt
+missverstanden. `note` und `error` lauten beide `kein Block "keel-ergebnis" in der Antwort`,
+die Rohantwort ist erhalten.
+
+**Das ist der Kern des Vertrags, an einem echten Fall:** Dieselbe Antwort hätte
+`parseTagResponse` über seinen Komma-Rückfall stillschweigend in Tags verwandelt. Hier ist
+sie ein gemeldeter Fehlschlag mit `ok: false`, einem benannten Grund und der Rohantwort zur
+Nachschau.
+
+### Was dieser Lauf nicht belegt
+
+- **Kein Auftraggeber.** Es gibt keine Session, die einen C-Worker beauftragt — der Lauf ging
+  über ein Skript. Die Auftrags-Schnittstelle ist ausdrücklich nicht Teil dieses Plans.
+- **Kein mehrzeiliges Nutzlastfeld.** Die Schwäche aus Spec §3 — maskierte Zeilenumbrüche in
+  JSON-Textfeldern — wurde hier nicht ausgereizt. Alle Werte waren einzeilig.
+- **Keine Aussage über Arbeitsqualität.** Gemessen ist Formattreue, nicht ob das Modell die
+  Aufgabe gut löst. Das wäre die Benchmark-Strecke, und die ist nicht gebaut.
