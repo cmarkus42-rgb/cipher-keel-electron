@@ -200,6 +200,15 @@ paaren (iMessage, Telegram, Discord, WhatsApp oder lokale CLI).
 ! git clone https://github.com/nanocoai/nanoclaw.git ~/nanoclaw && cd ~/nanoclaw && ./nanoclaw.sh
 ```
 
+**Und der Einwand, der die ganze NanoClaw-Frage neu aufmacht (Nutzer, 2026-08-13):** keel
+soll herunterladbar und **assistiert einrichtbar** sein — Maßstab ist, dass eine
+Claude-Code-Session die vollständige Einrichtung durchführen kann. Auslieferungsmodalitäten
+zählen zum Ergebnis. Damit steht NanoClaws „nicht aus einer Claude-Session heraus" direkt
+gegen die Anforderung, und Niveau B wäre der einzige Teil des Gefälles, der nicht assistiert
+einzurichten ist. Das ist als **CK-NFR-013** in `docs/anpassbare-flaechen.md` festgehalten,
+samt der Liste aller sieben heute nötigen Handgriffe und drei möglicher Auswege. **Diese
+Frage gehört beantwortet, bevor NanoClaw installiert wird** — nicht danach.
+
 **Ein Hinweis, der vorher bedacht gehört:** NanoClaw nutzt **nativ Claude Code über
 Anthropics Agent SDK**. Sein Standardweg ist also wieder ein starkes Modell. Der Pfad, den
 das Gefälle braucht, ist `/add-ollama-provider` — eine nachinstallierbare Skill. Wer
