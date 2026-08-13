@@ -30,6 +30,13 @@ export interface GenerateRequest {
   /** Overrides parts of the configured endpoint — e.g. a different host or model. */
   endpoint?: Partial<OllamaEndpoint>
   timeoutMs?: number
+  /**
+   * Seconds to keep the model resident after answering. `-1` pins it indefinitely.
+   * Omit to let Ollama apply its own timeout, which is what a worker wants: keel shares
+   * the daemon with whatever else runs on the machine, and a job sweeping five models
+   * must not leave five models resident behind it.
+   */
+  keepAliveSeconds?: number
 }
 
 export interface OllamaClient {
@@ -83,16 +90,29 @@ export function describeTransportFailure(err: unknown, endpoint: OllamaEndpoint)
   return `Ollama auf ${where}: ${msg}`
 }
 
+/**
+ * The request body Ollama receives. Pure so the keep-alive decision is testable without
+ * a daemon — it is the one field with a consequence beyond the call itself.
+ */
+export function buildRequestBody(
+  prompt: string,
+  endpoint: OllamaEndpoint,
+  keepAliveSeconds: number | undefined,
+): string {
+  const body: Record<string, unknown> = {
+    model: endpoint.model,
+    prompt,
+    stream: false,
+  }
+  if (keepAliveSeconds !== undefined) body.keep_alive = keepAliveSeconds
+  return JSON.stringify(body)
+}
+
 export class HttpOllamaClient implements OllamaClient {
   generate(req: GenerateRequest): Promise<string> {
     const endpoint = resolveEndpoint(req.endpoint, configuredEndpoint())
     const timeoutMs = req.timeoutMs ?? WORKER_TIMEOUT_MS
-    const body = JSON.stringify({
-      model: endpoint.model,
-      prompt: req.prompt,
-      stream: false,
-      keep_alive: -1,
-    })
+    const body = buildRequestBody(req.prompt, endpoint, req.keepAliveSeconds)
 
     return new Promise<string>((resolve, reject) => {
       const request = http.request(

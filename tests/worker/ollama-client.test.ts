@@ -4,6 +4,7 @@ import {
   describeHttpFailure,
   describeTransportFailure,
   WORKER_TIMEOUT_MS,
+  buildRequestBody,
 } from '../../src/main/worker/ollama-client'
 
 const BASE = { host: '127.0.0.1', port: 11434, model: 'qwen3:30b' }
@@ -60,5 +61,25 @@ describe('describeTransportFailure', () => {
 describe('WORKER_TIMEOUT_MS', () => {
   it('is longer than the tagging budget — a 30B doing real work is not a tag call', () => {
     expect(WORKER_TIMEOUT_MS).toBe(120_000)
+  })
+})
+
+describe('buildRequestBody', () => {
+  it('omits keep_alive entirely by default — Ollama then applies its own timeout', () => {
+    const body = JSON.parse(buildRequestBody('hallo', BASE, undefined))
+    expect(body.model).toBe('qwen3:30b')
+    expect(body.prompt).toBe('hallo')
+    expect(body.stream).toBe(false)
+    expect('keep_alive' in body).toBe(false)
+  })
+
+  // A worker sweeping several models must not leave each of them resident: pinning is
+  // opt-in, and the tagging path is the only caller that asks for it.
+  it('pins the model only when asked', () => {
+    expect(JSON.parse(buildRequestBody('x', BASE, -1)).keep_alive).toBe(-1)
+  })
+
+  it('passes a finite budget through unchanged', () => {
+    expect(JSON.parse(buildRequestBody('x', BASE, 300)).keep_alive).toBe(300)
   })
 })
