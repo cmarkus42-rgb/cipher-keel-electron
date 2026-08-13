@@ -5,38 +5,17 @@
  * Graceful degradation: returns null when Ollama is unavailable.
  */
 
-import * as http from 'node:http'
+import { HttpOllamaClient } from '../worker/ollama-client'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import matter from 'gray-matter'
-import { configStore } from '../config/config-store'
 import type { TagRepository, TagEntry } from '../../shared/types'
 import type { TagClassRepo } from './tag-repository'
 
-const TIMEOUT_MS = 60_000
+/** Tagging keeps its own 60s budget — a tag is not a work item (see worker/ollama-client). */
+const TAGGING_TIMEOUT_MS = 60_000
+const ollama = new HttpOllamaClient()
 
-/**
- * Ollama connection settings, from CipherKeelConfig's `llm` section
- * (src/main/config/config-store.ts). Corrected finding: an earlier version
- * of this comment claimed `configStore.get('llm')` "always threw" and only
- * compiled because of unrelated `any` casts. Both claims were false —
- * `configStore.get()` is `getConfig()[key]`, a plain property access
- * (config-store.ts) that cannot throw, and it compiled because the
- * typecheck gate checked zero files before this phase, not because of any
- * suppression. A real consequence follows from that: `loadConfig()`
- * deep-merges the on-disk JSON over the defaults and copies every key from
- * the user's file, including ones with no matching type field, so a user
- * who hand-added an `llm` section to their config.json *did* get real
- * overrides back — this was a working, if undocumented, override.
- * Decision: rather than re-deleting that capability, `llm` is now a typed,
- * supported section of CipherKeelConfig with these values as its defaults,
- * so the override is verified by the typecheck gate instead of resting on
- * an untyped pass-through.
- */
-function getLlmConfig() {
-  const llm = configStore.get('llm')
-  return { host: llm.ollamaHost, port: llm.ollamaPort, model: llm.ollamaModel }
-}
 
 export const SEED_TAGS: Record<string, TagEntry> = {
   'kind:bugreport': { count: 0, description: 'Bug report notes' },
@@ -117,42 +96,6 @@ export function parseTagResponse(text: string): string[] {
     .slice(0, 5)
 }
 
-function ollamaPost(body: string): Promise<string> {
-  const cfg = getLlmConfig()
-  return new Promise((resolve, reject) => {
-    const req = http.request(
-      {
-        hostname: cfg.host,
-        port: cfg.port,
-        path: '/api/generate',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(body),
-        },
-        timeout: TIMEOUT_MS,
-      },
-      (res) => {
-        const chunks: Buffer[] = []
-        res.on('data', (chunk: Buffer) => chunks.push(chunk))
-        res.on('end', () => {
-          if (res.statusCode !== 200) {
-            reject(new Error(`Ollama HTTP ${res.statusCode}`))
-            return
-          }
-          resolve(Buffer.concat(chunks).toString('utf-8'))
-        })
-      },
-    )
-    req.on('error', reject)
-    req.on('timeout', () => {
-      req.destroy()
-      reject(new Error('Ollama request timed out'))
-    })
-    req.write(body)
-    req.end()
-  })
-}
 
 export class NoteTagging {
   private notesDir: string
@@ -262,17 +205,7 @@ export class NoteTagging {
   async autoTag(content: string): Promise<string[] | null> {
     try {
       const prompt = buildTaggingPrompt(content, this.repo)
-      const cfg = getLlmConfig()
-      const body = JSON.stringify({
-        model: cfg.model,
-        prompt,
-        stream: false,
-        keep_alive: -1,
-      })
-
-      const raw = await ollamaPost(body)
-      const data = JSON.parse(raw) as Record<string, unknown>
-      const text = (data.response as string | undefined)?.trim()
+      const text = await ollama.generate({ prompt, timeoutMs: TAGGING_TIMEOUT_MS })
       if (!text) return null
 
       return parseTagResponse(text)

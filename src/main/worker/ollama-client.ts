@@ -37,7 +37,15 @@ export interface OllamaClient {
   generate(req: GenerateRequest): Promise<string>
 }
 
-/** The endpoint from config, which is what a caller gets without an override. */
+/**
+ * The endpoint from config, which is what a caller gets without an override.
+ *
+ * `llm` is a typed section of CipherKeelConfig rather than an untyped pass-through, and
+ * that was a deliberate correction carried over from note-tagging: `loadConfig()`
+ * deep-merges the on-disk JSON over the defaults and copies every key from the user's
+ * file, so a hand-added `llm` section always produced real overrides. Typing it kept that
+ * working capability while putting it under the typecheck gate.
+ */
 export function configuredEndpoint(): OllamaEndpoint {
   const llm = configStore.get('llm')
   return { host: llm.ollamaHost, port: llm.ollamaPort, model: llm.ollamaModel }
