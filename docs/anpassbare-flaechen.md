@@ -99,6 +99,54 @@ Ladezeit bezahlen, und die trifft denjenigen, der keel zuerst anspricht. Wer Mod
 durchmisst, ohne sie behalten zu wollen — eine Benchmark-Strecke —, setzt pro Auftrag einen
 endlichen Wert.
 
+---
+
+# Einrichtung ist Teil des Ergebnisses (CK-NFR-013)
+
+> **CK-NFR-013:** cipher keel soll herunterladbar und **assistiert einrichtbar** sein. Ein
+> Maßstab: Eine Claude-Code-Session muss die vollständige Einrichtung durchführen können.
+> Jeder Schritt, der zwingend von Hand am Terminal, in einer fremden Oberfläche oder in
+> einer Konfigurationsdatei erfolgen muss, ist ein Mangel am Ergebnis — nicht bloß eine
+> Unbequemlichkeit. **Auslieferungsmodalitäten zählen zum Ergebnis.**
+>
+> Das ist die Schwester von CK-NFR-012: Dort geht es um Flächen, die man *anpassen* können
+> muss, hier um Schritte, die man *einrichten* muss.
+
+## Was heute von Hand nötig ist — der ehrliche Stand (2026-08-13)
+
+| Schritt | Wo | Automatisierbar? |
+|---|---|---|
+| `xattr -cr` nach der DMG-Installation | Terminal | ja, aber nur weil unsigniert — Signierung würde ihn ganz entfernen |
+| `ollama pull <modell>` auf Mac und Spark | Terminal, zwei Rechner | ja, mit Zugang |
+| `OLLAMA_HOST=0.0.0.0:11434` auf dem Spark + Dienstneustart | systemd auf fremdem Host | ja, mit Zugang |
+| `llm.worker.model` und ggf. Host setzen | Config-Datei | **nein** — keine Oberfläche (CK-NFR-012) |
+| NanoClaw-Socketpfad setzen | **Quelltext** (`main.ts` ruft `new NanoClawBridge()` ohne Pfad) | **nein** — Code-Änderung nötig |
+| NanoClaw installieren (`./nanoclaw.sh`) | Terminal | **nein, ausdrücklich nicht** — siehe unten |
+| NanoClaw: `/add-ollama-provider`, Agent-Group, cipher-keel-Kanal | NanoClaw-CLI | offen |
+
+## Der harte Konflikt: NanoClaws Installer schließt Assistenten aus
+
+NanoClaws README sagt wörtlich: *„Run the script directly, **not from inside a Claude
+session** — the deterministic side needs interactive prompts and real shell I/O for
+Node/pnpm bootstrap, Docker, OneCLI, and the container build."*
+
+Das steht **direkt gegen CK-NFR-013**. Niveau B ist NanoClaw; wenn dessen Einrichtung
+grundsätzlich nicht assistiert laufen kann, dann ist ein Drittel des Leistungsgefälles
+nicht assistiert einrichtbar. Das ist keine Kleinigkeit und gehört in die
+NanoClaw-Entscheidung zurückgetragen, statt als Fußnote mitgeschleppt zu werden.
+
+**Drei Auswege, keiner davon geprüft:**
+
+1. **NanoClaw bleibt optional.** Niveau B ist dann eine Erweiterung für Leute, die NanoClaw
+   ohnehin betreiben, und keel liefert A und C assistiert einrichtbar aus. Ehrlich, aber es
+   verkleinert das ausgelieferte Gefälle auf zwei Stufen.
+2. **Ein Einrichtungs-Assistent in keel**, der alles Deterministische selbst tut und für den
+   einen interaktiven Schritt eine benannte Anweisung ausgibt. Erfüllt CK-NFR-013 nicht
+   vollständig, aber ehrlich und nachvollziehbar.
+3. **Der C-Pfad trägt mehr.** Wenn ein Großteil der billigen Arbeit ohnehin Ein-Schuss ist,
+   verschiebt sich das Gewicht von B nach C — und C ist vollständig assistiert einrichtbar,
+   weil es nur einen Ollama-Endpunkt braucht.
+
 ## Was fehlt
 
 - **Editierbarkeit generell.** Sie braucht ein Overlay-Verzeichnis für nutzereigene
