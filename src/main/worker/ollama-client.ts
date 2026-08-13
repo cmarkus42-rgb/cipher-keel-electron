@@ -5,8 +5,9 @@
  * was fine while tagging was the only caller; the Niveau-C worker is the second, and two
  * HTTP paths to the same daemon would be one too many.
  *
- * The request body is carried over unchanged, `keep_alive: -1` included — it keeps the
- * model resident, which matters when a 30B is asked several things in a row.
+ * Two callers, two endpoints, two profiles: tagging is small and frequent and stays on the
+ * local daemon; a worker job is large and occasional and belongs on the strongest machine
+ * available. `role` picks between them, and either can be overridden per request.
  *
  * Failures are described rather than thrown raw: which model, which host, which port.
  * A `describeMissingTool`-shaped message is the difference between "HTTP 404" and "that
@@ -25,8 +26,16 @@ export interface OllamaEndpoint {
   model: string
 }
 
+/**
+ * Which of the two configured endpoints a request uses. Tagging is small and frequent and
+ * stays local; worker jobs are large and occasional and belong on the strongest machine.
+ */
+export type LlmRole = 'tagging' | 'worker'
+
 export interface GenerateRequest {
   prompt: string
+  /** Picks the configured endpoint. Defaults to the worker's. */
+  role?: LlmRole
   /** Overrides parts of the configured endpoint — e.g. a different host or model. */
   endpoint?: Partial<OllamaEndpoint>
   timeoutMs?: number
@@ -53,9 +62,9 @@ export interface OllamaClient {
  * file, so a hand-added `llm` section always produced real overrides. Typing it kept that
  * working capability while putting it under the typecheck gate.
  */
-export function configuredEndpoint(): OllamaEndpoint {
+export function configuredEndpoint(role: LlmRole = 'worker'): OllamaEndpoint {
   const llm = configStore.get('llm')
-  return { host: llm.ollamaHost, port: llm.ollamaPort, model: llm.ollamaModel }
+  return { ...llm[role] }
 }
 
 export function resolveEndpoint(
@@ -110,7 +119,7 @@ export function buildRequestBody(
 
 export class HttpOllamaClient implements OllamaClient {
   generate(req: GenerateRequest): Promise<string> {
-    const endpoint = resolveEndpoint(req.endpoint, configuredEndpoint())
+    const endpoint = resolveEndpoint(req.endpoint, configuredEndpoint(req.role ?? 'worker'))
     const timeoutMs = req.timeoutMs ?? WORKER_TIMEOUT_MS
     const body = buildRequestBody(req.prompt, endpoint, req.keepAliveSeconds)
 

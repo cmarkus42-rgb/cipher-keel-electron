@@ -22,6 +22,13 @@ export interface ProjectRecord {
   workspaceIds: string[]
 }
 
+/** Where a local-model request goes, and which model answers it. */
+export interface LlmEndpoint {
+  host: string
+  port: number
+  model: string
+}
+
 export interface CipherKeelConfig {
   app: {
     maxSessions: number
@@ -55,10 +62,16 @@ export interface CipherKeelConfig {
     enabled: boolean
     piperVoice: string
   }
+  /**
+   * Two endpoints, because the two callers have opposite profiles. Tagging is small and
+   * frequent and belongs next to the notes it tags; a Niveau-C worker job is large and
+   * occasional and belongs on whichever machine has the memory for a serious model.
+   */
   llm: {
-    ollamaHost: string
-    ollamaPort: number
-    ollamaModel: string
+    /** Note auto-tagging — local by default. */
+    tagging: LlmEndpoint
+    /** Niveau-C worker jobs. Intended for the DGX Spark; see docs/anpassbare-flaechen.md. */
+    worker: LlmEndpoint
   }
   projects: {
     list: ProjectRecord[]
@@ -98,12 +111,25 @@ const defaults: CipherKeelConfig = {
     piperVoice: 'de_DE-cipher_adult-medium',
   },
   llm: {
-    ollamaHost: '127.0.0.1',
-    ollamaPort: 11434,
-    // Placeholder, not a choice: the target is whichever coding flagship runs well on the
-    // hardware. The previous value (gemma3:12b) predates Qwen3 and Gemma4 and is not
-    // installed on the development machine at all, so it failed at the first request.
-    ollamaModel: 'qwen3:30b-a3b-instruct-2507-q4_K_M',
+    tagging: {
+      host: '127.0.0.1',
+      port: 11434,
+      model: 'qwen3:30b-a3b-instruct-2507-q4_K_M',
+    },
+    // Both endpoints default to the local daemon, and the worker's belongs on the DGX
+    // Spark instead — but a default that does not answer is worse than a modest one. The
+    // Spark is on the tailnet (gx10-91a9) and reachable by ping, while nothing listens on
+    // 11434 there, which is Ollama's own default of binding to localhost only. Pointing
+    // this at the Spark before it serves would repeat the mistake this very field just
+    // had, when it named a model that was not installed. docs/anpassbare-flaechen.md
+    // carries the values to paste once it does.
+    worker: {
+      host: '127.0.0.1',
+      port: 11434,
+      // Placeholder, not a choice: the target is whichever coding flagship runs well on
+      // the hardware.
+      model: 'qwen3:30b-a3b-instruct-2507-q4_K_M',
+    },
   },
   projects: {
     list: [],

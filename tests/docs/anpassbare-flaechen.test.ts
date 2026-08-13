@@ -21,9 +21,8 @@ const CONFIG_PATHS = [
   'mcp.apiKey',
   'voice.enabled',
   'voice.piperVoice',
-  'llm.ollamaHost',
-  'llm.ollamaPort',
-  'llm.ollamaModel',
+  'llm.tagging',
+  'llm.worker',
 ]
 
 describe('CK-NFR-012 — the adjustable-surface inventory', () => {

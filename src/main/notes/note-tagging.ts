@@ -209,7 +209,7 @@ export class NoteTagging {
       // and frequent, so a resident model saves a reload each time. The worker deliberately
       // does not pin (see worker/ollama-client).
       const text = await ollama.generate({
-        prompt, timeoutMs: TAGGING_TIMEOUT_MS, keepAliveSeconds: -1,
+        prompt, role: 'tagging', timeoutMs: TAGGING_TIMEOUT_MS, keepAliveSeconds: -1,
       })
       if (!text) return null
 
