@@ -100,7 +100,10 @@ const defaults: CipherKeelConfig = {
   llm: {
     ollamaHost: '127.0.0.1',
     ollamaPort: 11434,
-    ollamaModel: 'gemma3:12b',
+    // Placeholder, not a choice: the target is whichever coding flagship runs well on the
+    // hardware. The previous value (gemma3:12b) predates Qwen3 and Gemma4 and is not
+    // installed on the development machine at all, so it failed at the first request.
+    ollamaModel: 'qwen3:30b-a3b-instruct-2507-q4_K_M',
   },
   projects: {
     list: [],
