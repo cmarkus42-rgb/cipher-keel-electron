@@ -29,7 +29,7 @@ Ablage: `~/.config/cipher-keel/cipher-keel-config.json`
 | `voice.enabled` | Sprachausgabe an/aus | nein | nein — nur Config-Datei |
 | `voice.piperVoice` | Stimme der Sprachausgabe | nein | nein — nur Config-Datei |
 | `llm.tagging` | Endpunkt und Modell für das Notizen-Tagging — klein und häufig, bleibt lokal | nein | nein — nur Config-Datei |
-| `llm.worker` | Endpunkt und Modell für Niveau-C-Worker — groß und gelegentlich. **Zielort ist der DGX Spark**, siehe unten | nein | nein — nur Config-Datei |
+| `llm.worker` | Endpunkt und Modell für Niveau-C-Worker — groß und gelegentlich. Zeigt auf den **DGX Spark**, siehe unten | nein | nein — nur Config-Datei |
 
 Zwei weitere Schlüssel liegen in derselben Datei, sind aber keine anpassbaren Flächen im
 Sinne dieser Anforderung — die App schreibt sie selbst und liest sie nur zurück:
@@ -67,27 +67,37 @@ mehreren (der Workshop: `fixing` und `development`) bekommt einen Block je Phase
 | `runtime` | Preset-Rahmen | nein | nein — Folgephase. M2 §11.4 sieht einen Pro-Session-Override als M3-Arbeit vor |
 | `model` | Preset-Rahmen, aufgelöst über `agent.modelTiers` | ja — Prompt-Vorschau | nur indirekt über `agent.modelTiers` |
 
-## Den Worker auf den DGX Spark zeigen
+## Der Worker zeigt auf den DGX Spark — und was dort noch fehlt
 
-Beide Endpunkte stehen per Default auf dem lokalen Ollama. Der Worker gehört auf den Spark,
-sobald dieser Modelle ausliefert — gemessen am 2026-08-13 tut er das noch nicht: Der Host
-`gx10-91a9` (Tailscale `100.78.7.108`) antwortet auf Ping in rund 6 ms, aber auf Port 11434
-lauscht nichts. Das ist Ollamas Standardverhalten, nur an `127.0.0.1` zu binden.
+Das Tagging bleibt lokal auf dem Mac, der Worker steht auf `100.78.7.108` (`gx10-91a9`, DGX
+Spark, über Tailscale). Diese Trennung ist Absicht: Tagging ist klein und häufig und gehört
+neben die Notizen, ein Worker-Auftrag ist groß und gelegentlich und gehört auf die Maschine
+mit dem Speicher — und dorthin, wo ein dauerhaft geladenes Modell niemanden stört.
 
-**Auf dem Spark nötig:** `OLLAMA_HOST=0.0.0.0:11434` setzen (bei systemd als Override), damit
-der Dienst über das Tailnet erreichbar wird.
+**Auf dem Spark fehlt noch ein Schritt.** Gemessen am 2026-08-13: Der Host antwortet über das
+Tailnet in rund 6 ms auf Ping, aber auf Port 11434 lauscht nichts. Ollama bindet
+standardmäßig nur an `127.0.0.1`. Nötig ist dort:
 
-**Danach in `cipher-keel-config.json`:**
-
-```json
-"llm": {
-  "worker": { "host": "100.78.7.108", "port": 11434, "model": "<modell auf dem spark>" }
-}
+```
+OLLAMA_HOST=0.0.0.0:11434
 ```
 
-Ein Default, der ins Leere zeigt, wäre schlechter als ein bescheidener — dieses Feld trug
-bis zum 2026-08-13 den Modellnamen `gemma3:12b`, der auf keiner Maschine installiert war und
-beim ersten Aufruf scheiterte.
+(als systemd-Override, danach Dienst neu starten.)
+
+Solange das aussteht, scheitern Worker-Aufträge mit `Ollama ist auf 100.78.7.108:11434 nicht
+erreichbar` — die Meldung benennt die Ursache genau. Das ist eine bewusste Entscheidung
+gegen einen lokalen Default, der leise für den falschen Grund funktioniert hätte.
+
+**Ebenfalls zu setzen:** `llm.worker.model` auf ein Modell, das der Spark wirklich ausliefert.
+Der eingetragene Wert ist ein Platzhalter für das jeweilige Coding-Flaggschiff.
+
+## Zum Festhalten geladener Modelle
+
+`keep_alive` steht per Default auf `-1`, hält ein Modell also unbegrenzt geladen. Das ist
+Absicht und dient der Latenzvermeidung: Ein kaltes Modell lässt die erste Anfrage die ganze
+Ladezeit bezahlen, und die trifft denjenigen, der keel zuerst anspricht. Wer Modelle
+durchmisst, ohne sie behalten zu wollen — eine Benchmark-Strecke —, setzt pro Auftrag einen
+endlichen Wert.
 
 ## Was fehlt
 

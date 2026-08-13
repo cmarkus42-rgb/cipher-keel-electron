@@ -205,11 +205,8 @@ export class NoteTagging {
   async autoTag(content: string): Promise<string[] | null> {
     try {
       const prompt = buildTaggingPrompt(content, this.repo)
-      // keep_alive: -1 is carried over from the original implementation — tagging is small
-      // and frequent, so a resident model saves a reload each time. The worker deliberately
-      // does not pin (see worker/ollama-client).
       const text = await ollama.generate({
-        prompt, role: 'tagging', timeoutMs: TAGGING_TIMEOUT_MS, keepAliveSeconds: -1,
+        prompt, role: 'tagging', timeoutMs: TAGGING_TIMEOUT_MS,
       })
       if (!text) return null
 

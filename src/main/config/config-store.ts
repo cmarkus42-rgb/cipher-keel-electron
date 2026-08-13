@@ -116,18 +116,20 @@ const defaults: CipherKeelConfig = {
       port: 11434,
       model: 'qwen3:30b-a3b-instruct-2507-q4_K_M',
     },
-    // Both endpoints default to the local daemon, and the worker's belongs on the DGX
-    // Spark instead — but a default that does not answer is worse than a modest one. The
-    // Spark is on the tailnet (gx10-91a9) and reachable by ping, while nothing listens on
-    // 11434 there, which is Ollama's own default of binding to localhost only. Pointing
-    // this at the Spark before it serves would repeat the mistake this very field just
-    // had, when it named a model that was not installed. docs/anpassbare-flaechen.md
-    // carries the values to paste once it does.
+    // Worker jobs go to the DGX Spark, which is the machine with the memory for a serious
+    // model and the one place where pinning one costs nobody anything.
+    //
+    // Measured 2026-08-13: the host answers ping over the tailnet in ~6ms, but nothing
+    // listens on 11434 — Ollama binds to localhost unless told otherwise. Until
+    // OLLAMA_HOST=0.0.0.0:11434 is set there, worker jobs fail with "Ollama ist auf
+    // 100.78.7.108:11434 nicht erreichbar", which names the cause exactly. That was a
+    // deliberate call: this use is not urgent, and pointing at the intended host states
+    // the intent better than a local default that quietly works for the wrong reason.
     worker: {
-      host: '127.0.0.1',
+      host: '100.78.7.108', // gx10-91a9 (DGX Spark) over Tailscale
       port: 11434,
       // Placeholder, not a choice: the target is whichever coding flagship runs well on
-      // the hardware.
+      // the hardware. Set this to a model the Spark actually serves.
       model: 'qwen3:30b-a3b-instruct-2507-q4_K_M',
     },
   },

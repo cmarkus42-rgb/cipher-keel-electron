@@ -5,6 +5,7 @@ import {
   describeTransportFailure,
   WORKER_TIMEOUT_MS,
   buildRequestBody,
+  DEFAULT_KEEP_ALIVE_SECONDS,
 } from '../../src/main/worker/ollama-client'
 
 const BASE = { host: '127.0.0.1', port: 11434, model: 'qwen3:30b' }
@@ -65,21 +66,23 @@ describe('WORKER_TIMEOUT_MS', () => {
 })
 
 describe('buildRequestBody', () => {
-  it('omits keep_alive entirely by default — Ollama then applies its own timeout', () => {
+  // Pinning by default is deliberate: a cold model makes the first request pay its whole
+  // load time, and that latency lands on whoever addresses keel first.
+  it('pins the model by default', () => {
     const body = JSON.parse(buildRequestBody('hallo', BASE, undefined))
     expect(body.model).toBe('qwen3:30b')
     expect(body.prompt).toBe('hallo')
     expect(body.stream).toBe(false)
-    expect('keep_alive' in body).toBe(false)
+    expect(body.keep_alive).toBe(DEFAULT_KEEP_ALIVE_SECONDS)
+    expect(body.keep_alive).toBe(-1)
   })
 
-  // A worker sweeping several models must not leave each of them resident: pinning is
-  // opt-in, and the tagging path is the only caller that asks for it.
-  it('pins the model only when asked', () => {
-    expect(JSON.parse(buildRequestBody('x', BASE, -1)).keep_alive).toBe(-1)
-  })
-
-  it('passes a finite budget through unchanged', () => {
+  // The one caller that should not pin is a benchmark sweeping models it will not keep.
+  it('accepts a finite budget for callers that must let go', () => {
     expect(JSON.parse(buildRequestBody('x', BASE, 300)).keep_alive).toBe(300)
+  })
+
+  it('accepts zero, which releases the model immediately', () => {
+    expect(JSON.parse(buildRequestBody('x', BASE, 0)).keep_alive).toBe(0)
   })
 })

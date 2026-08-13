@@ -40,10 +40,11 @@ export interface GenerateRequest {
   endpoint?: Partial<OllamaEndpoint>
   timeoutMs?: number
   /**
-   * Seconds to keep the model resident after answering. `-1` pins it indefinitely.
-   * Omit to let Ollama apply its own timeout, which is what a worker wants: keel shares
-   * the daemon with whatever else runs on the machine, and a job sweeping five models
-   * must not leave five models resident behind it.
+   * Seconds to keep the model resident after answering. Defaults to `-1`, which pins it
+   * indefinitely — deliberate, and the reason is latency: the first request against a
+   * cold model pays the whole load time, and OpenClaw addressing keel should not wait for
+   * that. Pass a finite value only where a caller sweeps models it does not intend to
+   * keep, such as a benchmark run.
    */
   keepAliveSeconds?: number
 }
@@ -100,6 +101,13 @@ export function describeTransportFailure(err: unknown, endpoint: OllamaEndpoint)
 }
 
 /**
+ * Seconds a model stays resident when a caller expresses no preference. Pinning is
+ * intentional: a cold model makes the first request pay its whole load time, and that
+ * latency lands on whoever addresses keel first.
+ */
+export const DEFAULT_KEEP_ALIVE_SECONDS = -1
+
+/**
  * The request body Ollama receives. Pure so the keep-alive decision is testable without
  * a daemon — it is the one field with a consequence beyond the call itself.
  */
@@ -108,13 +116,12 @@ export function buildRequestBody(
   endpoint: OllamaEndpoint,
   keepAliveSeconds: number | undefined,
 ): string {
-  const body: Record<string, unknown> = {
+  return JSON.stringify({
     model: endpoint.model,
     prompt,
     stream: false,
-  }
-  if (keepAliveSeconds !== undefined) body.keep_alive = keepAliveSeconds
-  return JSON.stringify(body)
+    keep_alive: keepAliveSeconds ?? DEFAULT_KEEP_ALIVE_SECONDS,
+  })
 }
 
 export class HttpOllamaClient implements OllamaClient {
