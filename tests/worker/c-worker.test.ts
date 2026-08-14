@@ -107,6 +107,29 @@ describe('runCWorker', () => {
       expect(result.error).toContain('nicht erreichbar')
     })
 
+  // Found the hard way: the client documented keepAliveSeconds for callers that sweep
+  // models, WorkerJob had no such field, and a probe setting it was silently ignored —
+  // leaving 83 GB of models pinned "Forever" on a shared machine.
+  it('passes keepAliveSeconds through, so a caller can let the model go', async () => {
+    let seen: GenerateRequest | null = null
+    const client: OllamaClient = { async generate(req) { seen = req; return GOOD } }
+
+    await runCWorker(
+      { prompt: 'x', requiredFields: FIELDS, keepAliveSeconds: 0 },
+      client,
+    )
+    expect(seen).not.toBeNull()
+    expect(seen!.keepAliveSeconds).toBe(0)
+  })
+
+  it('leaves keepAliveSeconds undefined when the caller says nothing', async () => {
+    let seen: GenerateRequest | null = null
+    const client: OllamaClient = { async generate(req) { seen = req; return GOOD } }
+
+    await runCWorker({ prompt: 'x', requiredFields: FIELDS }, client)
+    expect(seen!.keepAliveSeconds).toBeUndefined()
+  })
+
   it('passes the endpoint override through to the client', async () => {
     let seen: GenerateRequest | null = null
     const client: OllamaClient = {

@@ -24,6 +24,12 @@ export interface WorkerJob {
   /** Overrides the configured endpoint — e.g. to reach a second machine. */
   endpoint?: Partial<OllamaEndpoint>
   timeoutMs?: number
+  /**
+   * Seconds to keep the model resident. Omitted, the client pins it, which is right for a
+   * worker asked the same thing repeatedly. A caller sweeping models it will not keep —
+   * a benchmark run — passes `0` so the machine is left as it was found.
+   */
+  keepAliveSeconds?: number
 }
 
 export interface WorkerResult {
@@ -81,7 +87,12 @@ function buildRepairPrompt(job: WorkerJob, badAnswer: string, reason: string): s
 
 export async function runCWorker(job: WorkerJob, client: OllamaClient): Promise<WorkerResult> {
   const ask = (prompt: string): Promise<string> =>
-    client.generate({ prompt, endpoint: job.endpoint, timeoutMs: job.timeoutMs })
+    client.generate({
+      prompt,
+      endpoint: job.endpoint,
+      timeoutMs: job.timeoutMs,
+      keepAliveSeconds: job.keepAliveSeconds,
+    })
 
   // A transport failure is not a format problem: telling an unreachable daemon that a
   // field was missing would waste a call and mislead the caller about the cause.
