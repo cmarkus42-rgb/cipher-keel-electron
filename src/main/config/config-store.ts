@@ -22,6 +22,13 @@ export interface ProjectRecord {
   workspaceIds: string[]
 }
 
+/** Where a local-model request goes, and which model answers it. */
+export interface LlmEndpoint {
+  host: string
+  port: number
+  model: string
+}
+
 export interface CipherKeelConfig {
   app: {
     maxSessions: number
@@ -55,10 +62,16 @@ export interface CipherKeelConfig {
     enabled: boolean
     piperVoice: string
   }
+  /**
+   * Two endpoints, because the two callers have opposite profiles. Tagging is small and
+   * frequent and belongs next to the notes it tags; a Niveau-C worker job is large and
+   * occasional and belongs on whichever machine has the memory for a serious model.
+   */
   llm: {
-    ollamaHost: string
-    ollamaPort: number
-    ollamaModel: string
+    /** Note auto-tagging — local by default. */
+    tagging: LlmEndpoint
+    /** Niveau-C worker jobs. Intended for the DGX Spark; see docs/anpassbare-flaechen.md. */
+    worker: LlmEndpoint
   }
   projects: {
     list: ProjectRecord[]
@@ -98,9 +111,27 @@ const defaults: CipherKeelConfig = {
     piperVoice: 'de_DE-cipher_adult-medium',
   },
   llm: {
-    ollamaHost: '127.0.0.1',
-    ollamaPort: 11434,
-    ollamaModel: 'gemma3:12b',
+    tagging: {
+      host: '127.0.0.1',
+      port: 11434,
+      model: 'qwen3:30b-a3b-instruct-2507-q4_K_M',
+    },
+    // Worker jobs go to the DGX Spark, which is the machine with the memory for a serious
+    // model and the one place where pinning one costs nobody anything.
+    //
+    // Measured 2026-08-14 on the Spark itself: Ollama runs there as a container whose
+    // OLLAMA_HOST is already 0.0.0.0 — it is Docker's host binding, 127.0.0.1:11434, that
+    // closes it. Until that binding is widened, worker jobs fail with "Ollama ist auf
+    // 100.78.7.108:11434 nicht erreichbar", which names the cause exactly. Pointing at the
+    // intended host anyway is deliberate: the failure is honest, a local default would
+    // quietly work for the wrong reason.
+    worker: {
+      host: '100.78.7.108', // gx10-91a9 (DGX Spark) over Tailscale
+      port: 11434,
+      // Verified present on the Spark and answering the return contract on the first try.
+      // The machine also carries gpt-oss:120b and llama4:scout for heavier work.
+      model: 'gemma4:26b',
+    },
   },
   projects: {
     list: [],
