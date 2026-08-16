@@ -10,7 +10,7 @@
  * `tests/model/eignung-einzige-quelle.test.ts` is what keeps that true.
  */
 
-import type { Anbieterart } from './entry'
+import type { Anbieterart, ModellEintrag } from './entry'
 import { CapabilityNiveau } from '../preset/niveau'
 
 /** How work is done. Two of the three are session runtimes; `ein-schuss` is per job. */
@@ -70,4 +70,84 @@ export function laeuferFaehigkeit(laeufer: Laeufer): CapabilityNiveau {
 
 export function laeuferTraegtNiveau(laeufer: Laeufer, niveau: CapabilityNiveau): boolean {
   return RANG[FAEHIGKEIT[laeufer]] >= RANG[niveau]
+}
+
+export interface Warnung {
+  /** Stable key for tests and for a surface that wants to group. */
+  code: string
+  /** German: this text reaches the user. */
+  text: string
+}
+
+export interface WarnKontext {
+  /** Start context of the frame in tokens, when a measurement exists. */
+  startkontextToken?: number
+}
+
+/**
+ * Warnings hang on the pairing of entry, Laeufer and niveau — never on the entry alone.
+ * The same local 7B is harmless on C and a risk on B.
+ *
+ * None of these locks. Locking is `sperrgrund` and nothing else.
+ */
+export function warnungen(
+  eintrag: ModellEintrag,
+  laeufer: Laeufer,
+  niveau: CapabilityNiveau,
+  ctx: WarnKontext = {}
+): Warnung[] {
+  const out: Warnung[] = []
+  const f = eintrag.faehigkeiten
+  const agentisch = laeufer === 'eigene-schleife' || laeufer === 'fremdes-cli'
+
+  if (laeufer === 'eigene-schleife' && (!f || f.werkzeugmodus === 'text')) {
+    out.push({
+      code: 'werkzeugmodus-text',
+      text: 'Dieses Modell hat keinen nativen Werkzeugmodus — die Schleife laeuft ueber das ' +
+        'Text-Protokoll, und das ist die Stelle, an der schwache Modelle zuerst brechen.',
+    })
+  }
+
+  if (agentisch && niveau !== CapabilityNiveau.C && (!f || f.quelle !== 'gemessen')) {
+    out.push({
+      code: 'nicht-gemessen',
+      text: 'Fuer dieses Modell liegt keine eigene Messung vor — die Faehigkeitszeile ist vermutet.',
+    })
+  }
+
+  if (f && ctx.startkontextToken && f.nutzbaresKontextfenster < ctx.startkontextToken) {
+    out.push({
+      code: 'kontext-zu-klein',
+      text: `Der Startkontext dieser Rolle (${ctx.startkontextToken} Token) passt nicht in das ` +
+        `nutzbare Kontextfenster (${f.nutzbaresKontextfenster} Token).`,
+    })
+  }
+
+  if (niveau === CapabilityNiveau.C && eintrag.oertlichkeit === 'fremdes-netz') {
+    out.push({
+      code: 'teure-ebene-fuer-mechanik',
+      text: 'Damit wird die teure Ebene fuer mechanische Arbeit eingespannt — das Gegenteil des Gefaelles.',
+    })
+  }
+
+  // C is the tier the cheap one-shot runner is rated for. When a laeufer rated above C
+  // (an agentic loop) carries C-level work anyway, the loop's own overhead goes unused —
+  // this is a mismatch of runner to work, not a statement about the model's strength, and
+  // it must not fire for any niveau above C (see the counter-proof test: a measured local
+  // model on B, run through its native eigene-schleife, warns about nothing).
+  if (niveau === CapabilityNiveau.C && laeuferFaehigkeit(laeufer) !== CapabilityNiveau.C) {
+    out.push({
+      code: 'unter-faehigkeit',
+      text: 'Das laeuft, nutzt den Laeufer aber nicht aus.',
+    })
+  }
+
+  if (eintrag.oertlichkeit === 'fremdes-netz') {
+    out.push({
+      code: 'verlaesst-netz',
+      text: 'Der Prompt verlaesst das eigene Netz.',
+    })
+  }
+
+  return out
 }
