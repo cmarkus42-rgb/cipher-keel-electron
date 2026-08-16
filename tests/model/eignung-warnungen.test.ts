@@ -31,6 +31,17 @@ describe('warnings sit on the assignment, never on the entry', () => {
     expect(codes(warnungen(vermutet, 'eigene-schleife', CapabilityNiveau.A))).toContain('nicht-gemessen')
   })
 
+  it('does not warn "unmeasured" for a cli-harness entry — measurement does not apply there', () => {
+    const cli = normaliseEintrag({
+      id: 'claude-opus', name: 'Claude Opus', art: 'cli-harness',
+      erreichbarkeit: { art: 'cli-harness', cli: 'claude', handle: 'opus' },
+      oertlichkeit: 'fremdes-netz', erklaertext: 'x', empfehlung: 'x',
+    })
+    const c = codes(warnungen(cli, 'fremdes-cli', CapabilityNiveau.A))
+    expect(c).not.toContain('nicht-gemessen')
+    expect(c).toContain('verlaesst-netz')
+  })
+
   it('warns when the context window is below the frame demand', () => {
     const w = warnungen(lokal({ nutzbaresKontextfenster: 8192 }), 'eigene-schleife',
       CapabilityNiveau.A, { startkontextToken: 40000 })

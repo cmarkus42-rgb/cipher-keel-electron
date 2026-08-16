@@ -108,7 +108,16 @@ export function warnungen(
     })
   }
 
-  if (agentisch && niveau !== CapabilityNiveau.C && (!f || f.quelle !== 'gemessen')) {
+  // A cli-harness entry never carries a faehigkeiten row: Task 1's validator rejects one
+  // that does, since Claude Code owns its own protocol there. "No measurement exists" and
+  // "no measurement applies" are different states -- this rule is about the former, and
+  // the cli path is structurally exempt, not permanently unmeasured.
+  if (
+    agentisch &&
+    niveau !== CapabilityNiveau.C &&
+    eintrag.art !== 'cli-harness' &&
+    (!f || f.quelle !== 'gemessen')
+  ) {
     out.push({
       code: 'nicht-gemessen',
       text: 'Fuer dieses Modell liegt keine eigene Messung vor — die Faehigkeitszeile ist vermutet.',
