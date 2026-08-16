@@ -44,11 +44,19 @@ describe('runtime to adapter resolution', () => {
 
   // NanoClaw was superseded on 2026-08-16; `nanoclaw-channel-route` was the only known
   // runtime whose adapter was not auto-registered by the constructor, so it was the sole
-  // vehicle for the "known runtime, adapter registered externally, resolves" branch of
-  // getForRuntime(). Removing it from RUNTIME_TO_ADAPTER_ID (Task 9 of the model-registry
-  // plan) leaves that branch without a reachable example through the public API —
-  // claude-cli-tmux, the only mapped runtime left, always has its adapter present via the
-  // constructor. Coverage for the sibling "known runtime, adapter never registered"
-  // branch is restored above via keel-harness. Flagged for the later NanoClaw removal /
-  // harness plan rather than papered over with a redundant or misleading test.
+  // vehicle for two branches of getForRuntime() that both require an adapterId *present*
+  // in RUNTIME_TO_ADAPTER_ID: "known runtime, adapter registered externally, resolves"
+  // and "known runtime, adapter object never registered, throws 'not registered'".
+  // Removing it (Task 9 of the model-registry plan) leaves both branches without a
+  // reachable example through the public API — claude-cli-tmux, the only mapped runtime
+  // left, always has its adapter present via the constructor.
+  //
+  // The `keel-harness` test above does NOT restore either of those two branches: it has
+  // no RUNTIME_TO_ADAPTER_ID entry at all, so it takes the adapterId === undefined path
+  // (a third, different branch — the KNOWN_RUNTIMES / "not built yet" distinction added
+  // in the fix round) rather than the "adapterId found but adapter missing" path. Both
+  // original branches remain genuinely uncovered and stay unreachable until some future
+  // runtime gets a RUNTIME_TO_ADAPTER_ID mapping whose adapter is not auto-registered by
+  // the constructor. Flagged for the later NanoClaw removal / harness plan rather than
+  // papered over with a redundant or misleading test.
 })

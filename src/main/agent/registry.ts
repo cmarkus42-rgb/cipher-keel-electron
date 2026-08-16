@@ -96,7 +96,11 @@ export class AdapterRegistry {
       }
       throw new Error(
         `[AdapterRegistry] Unknown runtime value '${runtime}'. ` +
-        `Known runtimes: ${[...RUNTIME_TO_ADAPTER_ID.keys()].join(', ')}`
+        // Sourced from KNOWN_RUNTIMES, not RUNTIME_TO_ADAPTER_ID.keys() — a mistyping
+        // user needs every schema-valid value here, including ones without an adapter
+        // yet (those still resolve to the clearer "not built yet" branch above; this
+        // list only exists to help someone who typed something not on it at all).
+        `Known runtimes: ${[...KNOWN_RUNTIMES].join(', ')}`
       )
     }
 
