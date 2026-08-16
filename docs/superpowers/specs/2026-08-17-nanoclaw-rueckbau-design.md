@@ -41,7 +41,19 @@ dritte Klasse.
 | `src/main/main.ts` | `NanoClawBridge`-Import und das Feld im Dienste-Objekt |
 | `src/main/window-manager.ts` | `nanoClawBridge` im `AppServices`-Typ |
 | `src/main/ipc-handlers.ts` | Adapter-Registrierung und drei IPC-Handler |
+
+**Dokumentation gehört ebenfalls zu A, wird aber getrennt ausgeführt** — sie hängt an keinem
+Typprüfer und würde den atomaren Code-Schnitt nur aufblähen:
+
+| Ort | Was |
+|---|---|
 | `docs/anpassbare-flaechen.md` | drei Inventar-Zeilen und der CK-NFR-013-Abschnitt |
+| `README.md` | beschreibt `src/main/nanoclaw/` als vorhandenes Verzeichnis |
+| `.claude/skills/run-keel/SKILL.md` | weist einen Prüfer an, `nanoclaw` **neben** `voice` als degradiert zu erwarten |
+
+Die letzte Zeile ist keine Kosmetik, sondern eine **Reihenfolge-Bedingung**: Sie beschreibt
+genau den Zustand, den dieser Rückbau beseitigt. Wer den Beleg (§5) fährt, ohne sie vorher zu
+korrigieren, misst gegen eine Erwartung, die den Erfolg als Fehler ausweist.
 
 ### B — Bleibt, nur die Beschriftung ist falsch
 

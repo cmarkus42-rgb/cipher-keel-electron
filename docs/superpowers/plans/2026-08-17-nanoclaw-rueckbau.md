@@ -156,6 +156,22 @@ Drei Inventar-Zeilen und der Abschnitt zum CK-NFR-013-Konflikt. Der Konflikt ist
 nicht verschwunden: Das Dokument soll festhalten, dass er der Anlass war, das Harness selbst zu
 bauen. Ein Konflikt, dessen Auflösung man löscht, wird in einem halben Jahr neu entdeckt.
 
+- [ ] **Step 3b: `.claude/skills/run-keel/SKILL.md` — vor Task 3, nicht danach**
+
+Die Skill-Anleitung sagt einem Prüfer, er solle `nanoclaw` **neben** `voice` als degradiert
+erwarten. Das beschreibt genau den Zustand, den dieser Rückbau beseitigt.
+
+**Das ist eine Reihenfolge-Bedingung, keine Kosmetik.** Bleibt der Satz stehen, misst der Beleg
+in Task 3 gegen eine Erwartung, die den Erfolg als Fehler ausweist — und ein Prüfer, der der
+Anleitung glaubt, meldet einen Defekt, wo keiner ist. Korrigieren auf: nur `voice` ist
+degradiert; `nanoclaw` gibt es nicht mehr.
+
+- [ ] **Step 3c: `README.md`**
+
+Beschreibt `src/main/nanoclaw/` als vorhandenes Verzeichnis und die NanoClaw-Registrierung als
+erledigt. Beides auf den Stand bringen — ohne die Ablösung zu verschweigen: Das Verzeichnis ist
+weg, weil das Harness selbst gebaut wird.
+
 - [ ] **Step 4: Prüfen und committen**
 
 ```bash
