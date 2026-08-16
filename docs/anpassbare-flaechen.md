@@ -67,29 +67,38 @@ mehreren (der Workshop: `fixing` und `development`) bekommt einen Block je Phase
 | `runtime` | Preset-Rahmen | nein | nein — Folgephase. M2 §11.4 sieht einen Pro-Session-Override als M3-Arbeit vor |
 | `model` | Preset-Rahmen, aufgelöst über `agent.modelTiers` | ja — Prompt-Vorschau | nur indirekt über `agent.modelTiers` |
 
-## Der Worker zeigt auf den DGX Spark — und was dort noch fehlt
+## Der Worker zeigt auf den DGX Spark — Stand 2026-08-14
 
 Das Tagging bleibt lokal auf dem Mac, der Worker steht auf `100.78.7.108` (`gx10-91a9`, DGX
 Spark, über Tailscale). Diese Trennung ist Absicht: Tagging ist klein und häufig und gehört
 neben die Notizen, ein Worker-Auftrag ist groß und gelegentlich und gehört auf die Maschine
 mit dem Speicher — und dorthin, wo ein dauerhaft geladenes Modell niemanden stört.
 
-**Auf dem Spark fehlt noch ein Schritt.** Gemessen am 2026-08-13: Der Host antwortet über das
-Tailnet in rund 6 ms auf Ping, aber auf Port 11434 lauscht nichts. Ollama bindet
-standardmäßig nur an `127.0.0.1`. Nötig ist dort:
+**Die Strecke läuft.** `gemma4:26b` beantwortete den Rückgabe-Vertrag über Tailscale beim
+ersten Versuch, ohne Reparatur. Der Default in `llm.worker.model` ist deshalb ein real
+vorhandenes Modell, kein Platzhalter mehr.
+
+Die Diagnose war dabei zunächst falsch: Vermutet wurde ein fehlendes `OLLAMA_HOST`. In
+Wahrheit läuft Ollama dort **im Container**, wo `OLLAMA_HOST=0.0.0.0` längst gesetzt war —
+verschlossen war allein Dockers Host-Bindung auf `127.0.0.1`. Portbindungen sind bei Docker
+unveränderlich, der Container musste also neu angelegt werden.
+
+Gebunden ist er jetzt auf die **Tailscale-Adresse allein**, nicht auf `0.0.0.0`: über das
+Tailnet erreichbar, über die LAN-Adresse geschlossen. Beides geprüft, und die Enge ist
+gewollt.
+
+**Was dort noch offen ist:** `docker.service` hat keine Abhängigkeit auf
+`tailscaled.service`. Startet Docker beim Kaltstart zuerst, findet der Container seine IP
+nicht — und ein Bindungsfehler ist ein *Start*-Fehler, den die Restart-Politik schlecht
+auffängt. Der Drop-in dagegen braucht root, und auf dem Spark gibt es kein passwortloses
+`sudo`:
 
 ```
-OLLAMA_HOST=0.0.0.0:11434
+sudo mkdir -p /etc/systemd/system/docker.service.d
+printf "[Unit]\nAfter=tailscaled.service\nWants=tailscaled.service\n" \
+  | sudo tee /etc/systemd/system/docker.service.d/after-tailscaled.conf
+sudo systemctl daemon-reload
 ```
-
-(als systemd-Override, danach Dienst neu starten.)
-
-Solange das aussteht, scheitern Worker-Aufträge mit `Ollama ist auf 100.78.7.108:11434 nicht
-erreichbar` — die Meldung benennt die Ursache genau. Das ist eine bewusste Entscheidung
-gegen einen lokalen Default, der leise für den falschen Grund funktioniert hätte.
-
-**Ebenfalls zu setzen:** `llm.worker.model` auf ein Modell, das der Spark wirklich ausliefert.
-Der eingetragene Wert ist ein Platzhalter für das jeweilige Coding-Flaggschiff.
 
 ## Zum Festhalten geladener Modelle
 
@@ -118,7 +127,8 @@ endlichen Wert.
 |---|---|---|
 | `xattr -cr` nach der DMG-Installation | Terminal | ja, aber nur weil unsigniert — Signierung würde ihn ganz entfernen |
 | `ollama pull <modell>` auf Mac und Spark | Terminal, zwei Rechner | ja, mit Zugang |
-| `OLLAMA_HOST=0.0.0.0:11434` auf dem Spark + Dienstneustart | systemd auf fremdem Host | ja, mit Zugang |
+| ~~`OLLAMA_HOST` auf dem Spark~~ — **erledigt 2026-08-14**, und anders als hier beschrieben: Ollama läuft dort im Container mit `OLLAMA_HOST=0.0.0.0`, zu war allein Dockers Host-Bindung. Der Container ist jetzt auf die Tailscale-Adresse gebunden | Docker auf fremdem Host | ja, mit Zugang — **war es** |
+| systemd-Drop-in `After=tailscaled.service` auf dem Spark | systemd, **braucht root** | nein — kein passwortloses `sudo` dort |
 | `llm.worker.model` und ggf. Host setzen | Config-Datei | **nein** — keine Oberfläche (CK-NFR-012) |
 | NanoClaw-Socketpfad setzen | **Quelltext** (`main.ts` ruft `new NanoClawBridge()` ohne Pfad) | **nein** — Code-Änderung nötig |
 | NanoClaw installieren (`./nanoclaw.sh`) | Terminal | **nein, ausdrücklich nicht** — siehe unten |

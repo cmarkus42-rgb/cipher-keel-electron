@@ -217,6 +217,58 @@ ein zweites A statt eines B.
 
 ---
 
+## 5b. Der DGX Spark — Zugang, Stand, Fallen
+
+Der Worker-Endpunkt von Niveau C zeigt auf den Spark. Was eine neue Session darüber wissen
+muss, ist am 2026-08-14 an der Maschine selbst geprüft:
+
+| | |
+|---|---|
+| **Zugang** | `ssh DGX` — der Alias trägt alles |
+| **Schlüssel** | `~/Library/Application Support/NVIDIA/Sync/config/nvsync.key` |
+| **User / IP** | `crimak` · `192.168.178.198` (LAN) · `100.78.7.108` (Tailscale, `gx10-91a9`) |
+| **Hardware** | GB10 Grace-Blackwell, 20 Kerne **aarch64**, 128 GB Unified Memory, Ubuntu 24.04 |
+
+**Korrektur zu einer verbreiteten Annahme:** Der Spark nimmt **nicht** den OpenClaw-Key. Die
+explizite Form `ssh -i ~/.ssh/id_rsa_openclaw crimak@192.168.178.198` wird abgewiesen; drei
+lokale Schlüssel gegen vier Benutzernamen liefen alle in `Permission denied`. Nur der Alias
+funktioniert, weil er den `nvsync.key` benutzt. Wer die explizite Form aus einer älteren
+Notiz übernimmt, sucht den Fehler an der falschen Stelle.
+
+**Ollama läuft dort als Container**, nicht als systemd-Dienst — `OLLAMA_HOST=0.0.0.0` ist
+darin längst gesetzt. Was den Zugriff bis zum 2026-08-14 verschloss, war allein Dockers
+Host-Bindung auf `127.0.0.1`. Ein systemd-Rezept für `OLLAMA_HOST` geht an der Sache vorbei.
+
+Der Container ist seither auf die **Tailscale-Adresse** gebunden (`100.78.7.108:11434`), auf
+ausdrücklichen Wunsch als Sicherheitsmaßnahme: Über das Tailnet erreichbar, über die
+LAN-Adresse geschlossen. Beides geprüft.
+
+**Offene Falle:** `docker.service` hat **keine** Abhängigkeit auf `tailscaled.service`.
+Startet Docker beim Kaltstart zuerst, findet der Container seine IP nicht — und ein
+Bindungsfehler ist ein *Start*-Fehler, nicht ein Exit, wird also von der Restart-Politik
+schlecht aufgefangen. Ein systemd-Drop-in (`After=tailscaled.service`) beseitigt das,
+braucht aber root; auf dem Spark gibt es kein passwortloses `sudo`.
+
+**Modelle dort:** `gemma4:26b` (Default für `llm.worker`), `mistral-small3.2:24b`,
+`qwen3-vl:30b-a3b`, `gpt-oss:120b`, `llama4:scout`. Alle im Bind-Mount
+`/home/crimak/ollama` (173 GB), der ein Neuanlegen des Containers übersteht.
+
+**Nicht anfassen:** `~/cedric-build` (Cedrics Trainingsdaten und v01-Checkpoint) und die vier
+vorhandenen Images, darunter `cedric-train:latest` — teuer gebaut, weil für **aarch64** viele
+Pakete kein Wheel haben. `piper_phonemize` musste aus dem Quelltext gebaut werden; Details in
+`ADR-005-dgx-spark-local-training.md` im cipher-voice-Repo.
+
+**GPU-Absprache:** Für cipher-voice ist ein Trainingslauf über rund 28 Stunden geplant, der
+die Karte durchgehend belegt. Wer für keel längere Läufe vorhat — die Benchmark-Strecke —,
+stimmt das ab, sonst konkurrieren zwei Sessions um dieselbe Karte.
+
+**Und die Lektion, die zweimal Geld gekostet hat:** Ein Auftrag ohne `keepAliveSeconds` nagelt
+das Modell dauerhaft fest. Auf dem Spark waren das einmal 83 von 128 GB. Für Läufe, die
+Modelle nicht behalten sollen, gehört `keepAliveSeconds: 0` in den Auftrag — und `ollama ps`
+danach angesehen, statt es zu glauben.
+
+---
+
 ## 6. Fallen
 
 **Die alten gelten unverändert:** native ABI (`npm run rebuild-native`, **nie** eine
