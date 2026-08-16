@@ -108,9 +108,11 @@ and did not run is not.
 - **Service init is deferred** behind `setImmediate` so the window paints first. Querying
   immediately returns a misleading all-degraded snapshot; `launch.sh` waits
   (`KEEL_INIT_WAIT`, default 9s).
-- **`nanoclaw` and `voice` legitimately report `degraded`** on a normal dev machine — no
-  NanoClaw socket, no Whisper model. That is expected, not a failure. `tmux`, `graph`,
-  `kanban` and `notes` should be `ready`.
+- **`voice` legitimately reports `degraded`** on a normal dev machine — no Whisper model.
+  That is expected, not a failure. It should be the *only* degraded subsystem: the
+  NanoClaw subsystem was removed on 2026-08-17 (superseded by keel's own harness), so
+  there is no `nanoclaw` subsystem id left to expect. `tmux`, `graph`, `kanban` and
+  `notes` should be `ready`.
 - **`window.cipherKeel` is frozen by contextBridge.** You cannot monkey-patch it to
   inject failures; break the underlying subsystem instead (see above).
 - **Cross-window events** need listeners registered in both windows before you trigger

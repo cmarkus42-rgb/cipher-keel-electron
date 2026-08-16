@@ -1,7 +1,16 @@
 /**
- * Plausibility Inference — local model assessment via NanoClaw.
- * Signal: 'traegt' | 'fraglich' | null. Never combined with structural befund.
- * CK-PROC-006
+ * Plausibility Inference — the content half of the process gates (CK-PROC-006): a local
+ * model judges whether an Umsetzung plausibly carries its Anforderung, alongside (never
+ * combined with) the structural Befund. Signal: 'traegt' | 'fraglich' | null.
+ *
+ * `BridgeLike` below is duck-typed to the shape of NanoClaw's message channel, the
+ * carrier this module was written against before NanoClaw was superseded on 2026-08-16.
+ * There are zero imports here, so nothing broke when that carrier was removed — but
+ * nothing was rewired either. This module has no production caller.
+ *
+ * Rewiring it onto today's model layer (the one-shot worker and its return contract,
+ * see c-worker.ts) is an open design question, not decided here: which runner serves the
+ * call, what contract replaces `BridgeLike`, and who invokes this in the gate pipeline.
  */
 
 export type PlausibilitySignal = 'traegt' | 'fraglich'

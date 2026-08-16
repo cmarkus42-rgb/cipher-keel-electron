@@ -6,6 +6,12 @@
 
 export enum LoaderType {
   SkillMd = 'skill-md',
+  /**
+   * The loader path for Niveau B (M2 §6.4). Named after NanoClaw, its original carrier,
+   * which was superseded on 2026-08-16 by keel's own harness — the path is still needed,
+   * only the name is stale. Renaming the value is a data migration (it appears in stored
+   * capability declarations), not a refactor, so it stays and belongs to the harness build.
+   */
   NanoClawSkill = 'nanoclaw-skill',
   ReferenceMaterial = 'reference-material',
   Inline = 'inline',
