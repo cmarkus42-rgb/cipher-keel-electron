@@ -1482,6 +1482,25 @@ Die beiden Posten, die der M6-Nachtrag ausdrücklich in diese Strecke legt. **Ni
 **Interfaces:**
 - Produces: `keel-harness` als gültiger `runtime`-Wert
 
+> **Nachtrag aus der Umsetzung (2026-08-16, gebaut in `23728f0`, `67ad315`, `ae47a50`).** Der
+> Auszug unten erzeugt einen Fehler, den er nicht nennt: `keel-harness` wird in
+> `KNOWN_RUNTIMES` gültig, hat aber keine Zuordnung in `RUNTIME_TO_ADAPTER_ID`. Ein Preset
+> damit **validiert sauber und scheitert dann am Start** mit `Unknown runtime value
+> 'keel-harness'` — einer Meldung, die in die Irre führt: Der Wert ist nicht unbekannt,
+> sondern ratifiziert und noch nicht gebaut.
+>
+> Nachgezogen wurde deshalb: `getForRuntime` unterscheidet beide Fälle und meldet den zweiten
+> auf Deutsch; eine **benannte** Liste `RUNTIMES_WITHOUT_ADAPTER` erklärt die Lücke, statt sie
+> zufällig zu lassen; ein Wächtertest bindet `KNOWN_RUNTIMES`, die Adapter-Zuordnung und diese
+> Liste in allen vier Drift-Richtungen aneinander; und die Meldung „Known runtimes: …" nennt
+> jetzt die schema-gültigen Werte statt nur der mit lebendem Adapter.
+>
+> **Zwei Tests fielen dabei ersatzlos weg** — ihr Gegenstand *war* die NanoClaw-Route. Genau
+> **ein** Zweig von `getForRuntime` bleibt dadurch ungedeckt: Zuordnung vorhanden, Adapter-Objekt
+> fehlt. Er wird wieder erreichbar, sobald ein Laufzeitwert eine Zuordnung bekommt, deren
+> Adapter nicht vom Konstruktor registriert wird. Diese Aussage brauchte drei Anläufe — erst zu
+> optimistisch, dann zu pessimistisch. Wer sie anfasst, zählt vorher nach.
+
 - [ ] **Step 1: Write the failing test**
 
 `tests/preset/known-runtimes.test.ts`:
