@@ -42,6 +42,7 @@ describe('endpointForRole', () => {
       modelle: { zuordnung: { rollen: { tagging: '', worker: 'spark-gemma4-26b' } } },
     })
     const ep = endpointForRole('worker')
+    expect(ep.kind).toBe('ollama')
     if (ep.kind === 'ollama') {
       expect(ep.host).toBe('100.78.7.108')
       expect(ep.model).toBe('gemma4:26b')
