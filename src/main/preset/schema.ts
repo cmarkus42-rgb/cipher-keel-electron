@@ -76,7 +76,9 @@ const VALID_NIVEAUS = new Set<string>(Object.values(CapabilityNiveau))
  */
 const KNOWN_RUNTIMES = new Set<string>([
   'claude-cli-tmux',
-  'nanoclaw-channel-route',
+  // The own agent loop (M8). Third value, added when NanoClaw was superseded on
+  // 2026-08-16 — `nanoclaw-channel-route` was removed in the same change.
+  'keel-harness',
 ])
 
 /**

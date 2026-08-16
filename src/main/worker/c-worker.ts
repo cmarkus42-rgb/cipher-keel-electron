@@ -1,9 +1,14 @@
 /**
  * c-worker — Niveau C: one prompt in, one checked answer out.
  *
- * The three niveaus are three runtimes. A is Claude Code, B is NanoClaw, and C is keel
- * itself: a small model with no tools, no state and no conversation, whose single
- * obligation is to answer in an agreed shape. Iterations are new calls, not turns.
+ * Niveau is a capability filter over a role and says nothing about the model; the runtime
+ * is a separate choice (M8 section 6, decision E19). This runner is the one-shot Laeufer:
+ * a model with no tools, no state and no conversation, whose single obligation is to
+ * answer in an agreed shape. Iterations are new calls, not turns.
+ *
+ * The earlier comment here read "the three niveaus are three runtimes. A is Claude Code,
+ * B is NanoClaw, and C is keel itself". That described the build of August 2026, not the
+ * model, and NanoClaw was superseded on 2026-08-16.
  *
  * keel appends the format instruction rather than leaving it to the caller — a model
  * cannot meet a format nobody told it about, so the instruction belongs to the contract.

@@ -132,8 +132,8 @@ describe('ENT-025: runtime check', () => {
     expect(result.errors.some(e => e.field === 'runtime')).toBe(false)
   })
 
-  it('nanoclaw-channel-route is a valid runtime', () => {
-    const rahmen = { ...validRahmen(), runtime: 'nanoclaw-channel-route' }
+  it('keel-harness is a valid runtime', () => {
+    const rahmen = { ...validRahmen(), runtime: 'keel-harness' }
     const result = validatePresetRahmen(rahmen)
     expect(result.errors.some(e => e.field === 'runtime')).toBe(false)
   })

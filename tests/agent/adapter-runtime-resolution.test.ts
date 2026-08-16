@@ -18,10 +18,6 @@ describe('runtime to adapter resolution', () => {
     expect(makeRegistry().getForRuntime('claude-cli-tmux').id).toBe('claude-code')
   })
 
-  it('resolves nanoclaw-channel-route to the NanoClaw adapter once registered', () => {
-    expect(makeRegistry().getForRuntime('nanoclaw-channel-route').id).toBe('nanoclaw-channel')
-  })
-
   it('falls back to the default adapter when runtime is empty (M2 section 11.4)', () => {
     expect(makeRegistry().getForRuntime('').id).toBe('claude-code')
   })
@@ -30,8 +26,14 @@ describe('runtime to adapter resolution', () => {
     expect(() => makeRegistry().getForRuntime('made-up-runtime')).toThrow(/made-up-runtime/)
   })
 
-  it('throws when the runtime is known but its adapter was never registered', () => {
-    const bare = new AdapterRegistry({ getSkipPermissions: () => true })
-    expect(() => bare.getForRuntime('nanoclaw-channel-route')).toThrow(/not registered/)
-  })
+  // NanoClaw was superseded on 2026-08-16; `nanoclaw-channel-route` was the only known
+  // runtime whose adapter was not auto-registered by the constructor, so it was the sole
+  // vehicle for two branches of getForRuntime(): "known runtime, adapter registered
+  // externally" and "known runtime, adapter never registered". Removing it from
+  // RUNTIME_TO_ADAPTER_ID (Task 9 of the model-registry plan) leaves both branches without
+  // a reachable example through the public API — claude-cli-tmux, the only runtime left,
+  // always has its adapter present. Coverage for those two branches is gone until a
+  // replacement runtime (e.g. keel-harness, once it gets an adapter mapping) restores a
+  // known-but-not-always-registered case. Flagged for the later NanoClaw removal / harness
+  // plan rather than papered over with a redundant or misleading test.
 })

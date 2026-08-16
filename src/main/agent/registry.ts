@@ -48,7 +48,6 @@ export class AdapterRegistry {
    */
   private static readonly RUNTIME_TO_ADAPTER_ID: ReadonlyMap<string, string> = new Map([
     ['claude-cli-tmux', 'claude-code'],
-    ['nanoclaw-channel-route', 'nanoclaw-channel'],
   ])
 
   /**
