@@ -69,4 +69,23 @@ describe('registry resolution', () => {
     expect(eintragNachId('kaputt')).toBeNull()
     expect(alleEintraege().length).toBeGreaterThan(0)
   })
+
+  it('behaves exactly as before for a config file written before this feature existed', async () => {
+    // withConfig(null) writes no file at all, which takes the readFileSync-fails/catch
+    // path in config-store's loadConfig() and never runs deepMerge. That proves only
+    // "no config file exists -> defaults", not the promise this task makes.
+    //
+    // The actual promise is about a config file that already exists — written before
+    // `modelle` was a key — and does go through deepMerge. So this file carries an
+    // unrelated, already-existing key (`llm.tagging`) and deliberately omits `modelle`
+    // entirely, forcing deepMerge to run and merge a source object that has no
+    // `modelle` property, which must leave the store's own default in place.
+    const { alleEintraege, eintragNachId, eintragFuerTier, eintragFuerRolle } = await withConfig({
+      llm: { tagging: { host: '127.0.0.1', port: 11434, model: 'altwert' } },
+    })
+    expect(alleEintraege().length).toBeGreaterThan(0)
+    expect(eintragNachId('spark-gemma4-26b')?.name).toBe('Gemma4 26B (DGX Spark)')
+    expect(eintragFuerTier('heavy')).toBeNull()
+    expect(eintragFuerRolle('worker')).toBeNull()
+  })
 })
