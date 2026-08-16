@@ -14,15 +14,15 @@
  */
 
 import { checkWorkerAnswer, RESULT_MARKER } from './result-contract'
-import type { OllamaClient, OllamaEndpoint } from './ollama-client'
+import type { ModelClient, ModelEndpoint } from './model-client'
 
 export interface WorkerJob {
   /** The task itself, formulated by the dispatching entity. */
   prompt: string
   /** Field names the answer must carry. Presence is checked, content is not. */
   requiredFields: readonly string[]
-  /** Overrides the configured endpoint — e.g. to reach a second machine. */
-  endpoint?: Partial<OllamaEndpoint>
+  /** Where the job runs — a local daemon or an API provider. Already normalised. */
+  endpoint: ModelEndpoint
   timeoutMs?: number
   /**
    * Seconds to keep the model resident. Omitted, the client pins it, which is right for a
@@ -85,7 +85,7 @@ function buildRepairPrompt(job: WorkerJob, badAnswer: string, reason: string): s
   ].join('\n')
 }
 
-export async function runCWorker(job: WorkerJob, client: OllamaClient): Promise<WorkerResult> {
+export async function runCWorker(job: WorkerJob, client: ModelClient): Promise<WorkerResult> {
   const ask = (prompt: string): Promise<string> =>
     client.generate({
       prompt,

@@ -76,9 +76,17 @@ erzwingt.
 
 |  | `cli-harness` | `local-http` | `api` |
 |---|---|---|---|
-| **A** (fremdes Harness) | ja | nein | nein |
+| **A** (Voll-Fähigkeit) | ja | nein | **ja, sobald das eigene Harness trägt** |
 | **B** (eigene Schleife) | nein | **mit Warnung** | ja |
 | **C** (Ein-Schuss) | nein | ja | ja |
+
+**Korrektur vom 2026-08-16, Nutzer-Vorgabe.** Eine frühere Fassung dieser Matrix sperrte A
+für alles außer dem CLI-Harness. Das war zu eng gedacht: Das eigene Harness soll **der eine
+Entrypoint für API-Modelle** sein und im Anspruch auch A-würdige Arbeit tragen — API-Modelle
+sind der *Normalfall*, nicht der Sonderfall. Damit ist Niveau A keine Eigenschaft des
+CLI-Wegs mehr, sondern eine Fähigkeitsstufe, die zwei Läufer bedienen können. Was das für
+die `runtime`-Deklarationen der Presets bedeutet, ist Gegenstand der Harness-Ideation
+(`/Users/Shared/Nextcloud/Claude/cipher-keel-harness-ideation/`).
 
 Daraus folgen die Hinweise, die der Nutzer auf der Settings-Seite sehen will:
 
