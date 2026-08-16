@@ -79,6 +79,22 @@ beim Lesen anfällt, nicht in einer Liste daneben.
 - Consumes: `normaliseEndpoint`, `ModelEndpoint` aus `src/main/worker/model-client.ts`
 - Produces: `Anbieterart`, `Erreichbarkeit`, `Faehigkeiten`, `ModellEintrag`, `normaliseEintrag(raw: unknown): ModellEintrag`, `toModelEndpoint(e: Erreichbarkeit): ModelEndpoint`
 
+> **Nachtrag aus dem Review (2026-08-16, gebaut in `16fec22`).** Der Validator unten prüft zwei
+> Zusicherungen nicht, die der Entwurf nennt. Beide sind nachgezogen:
+>
+> 1. Ein `cli-harness`-Eintrag **mit** `faehigkeiten` wird abgelehnt statt stillschweigend
+>    angenommen: `Eintrag '<id>': cli-harness kennt keine faehigkeiten — das CLI besitzt sein
+>    Protokoll selbst`.
+> 2. `quelle` wird auf **Stimmigkeit** geprüft, nicht auf einen festen Wert: `gemessen` verlangt
+>    `gemessenAm` und `gemessenMit`, alles andere verlangt beide `null`, und ein unbekannter
+>    Wert wird abgelehnt.
+>
+> **Punkt 2 ist ausdrücklich *nicht* als Wert-Zwang gebaut**, obwohl der erste Review das
+> vorschlug. Die Registry liegt in der Config, und der Kanarienauftrag schreibt seine Messungen
+> genau dorthin zurück — ein Validator, der jedes `gemessen` überschreibt, machte die
+> Fähigkeitstabelle dauerhaft unlesbar. Die Zusicherung „nichts wird als `gemessen`
+> ausgeliefert" gilt den **Voreinstellungen** und wird in Task 2 geprüft, nicht hier.
+
 - [ ] **Step 1: Write the failing test**
 
 `tests/model/entry.test.ts`:
