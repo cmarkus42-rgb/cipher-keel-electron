@@ -88,4 +88,42 @@ describe('registry resolution', () => {
     expect(eintragFuerTier('heavy')).toBeNull()
     expect(eintragFuerRolle('worker')).toBeNull()
   })
+
+  describe('cliHandleFuerTier', () => {
+    it('returns the handle for a tier assigned to a cli-harness entry', async () => {
+      const { cliHandleFuerTier } = await withConfig({
+        modelle: { zuordnung: { tiers: { light: '', standard: '', heavy: 'claude-opus-cli' } } },
+      })
+      expect(cliHandleFuerTier('heavy')).toBe('opus')
+    })
+
+    it('warns and returns undefined when the tier names a non-cli-harness entry', async () => {
+      const { cliHandleFuerTier } = await withConfig({
+        modelle: { zuordnung: { tiers: { light: '', standard: '', heavy: 'spark-gemma4-26b' } } },
+      })
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        expect(cliHandleFuerTier('heavy')).toBeUndefined()
+        expect(warn).toHaveBeenCalledTimes(1)
+        const message = warn.mock.calls[0].join(' ')
+        expect(message).toContain('heavy')
+        expect(message).toContain('spark-gemma4-26b')
+      } finally {
+        warn.mockRestore()
+      }
+    })
+
+    it('stays silent for a tier with no assignment at all', async () => {
+      const { cliHandleFuerTier } = await withConfig({
+        modelle: { zuordnung: { tiers: { light: '', standard: '', heavy: '' } } },
+      })
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        expect(cliHandleFuerTier('heavy')).toBeUndefined()
+        expect(warn).not.toHaveBeenCalled()
+      } finally {
+        warn.mockRestore()
+      }
+    })
+  })
 })

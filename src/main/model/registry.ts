@@ -52,8 +52,22 @@ export function eintragFuerRolle(rolle: Rolle): ModellEintrag | null {
  * The CLI handle a tier assignment points at, or undefined when nothing is assigned.
  * Only a cli-harness entry has a handle; anything else means "no assignment for this tier"
  * rather than an error, because a session must still start.
+ *
+ * Two different "nothing" cases, and only one of them is quiet: an unassigned tier is the
+ * normal, expected state for every tier that has not been configured — no warning. A tier
+ * that names an entry which exists but is not a cli-harness is a wrong-shaped assignment
+ * the user actually made, so it is skipped loudly, the same way alleEintraege() skips a
+ * broken config entry loudly rather than losing it without a trace.
  */
 export function cliHandleFuerTier(tier: Tier): string | undefined {
   const e = eintragFuerTier(tier)
-  return e?.erreichbarkeit.art === 'cli-harness' ? e.erreichbarkeit.handle : undefined
+  if (!e) return undefined
+  if (e.erreichbarkeit.art === 'cli-harness') return e.erreichbarkeit.handle
+
+  console.warn(
+    `[model-registry] Tier '${tier}' zeigt auf den Eintrag '${e.id}', der kein CLI-Harness ` +
+      'ist — ein CLI-Harness bringt sein Modell selbst mit. ' +
+      'Es gilt weiterhin der Wert aus agent.modelTiers.'
+  )
+  return undefined
 }
