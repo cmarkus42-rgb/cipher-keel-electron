@@ -1842,6 +1842,14 @@ Das ist mit einem sofortigen Abbruch vor dem Transport vereinbar — also damit,
 `toModelEndpoint` den cli-harness-Eintrag zurückweist. **Der wörtliche Fehlertext war nirgends
 sichtbar.**
 
+**Die zweite Hälfte dieses Belegs wurde nicht versucht und war nicht versuchbar.** Spec §12
+Punkt 4 verlangt zweierlei: eine Zuordnung, die §7.1 verletzt, wird abgelehnt und benennt die
+Zelle — *und* eine, die nur §7.3 auslöst, läuft und meldet die Warnung. Nur die erste Hälfte
+ist oben geprüft. Die zweite konnte nicht geprüft werden, weil in diesem Zweig **nichts
+`warnungen()` aufruft**: Die Regeln sind gebaut und getestet, aber kein Konsument reicht sie an
+einen Menschen weiter. Das ist keine Auslassung der Messung, sondern der Stand des Baus — und
+es gehört benannt, statt den Leser schließen zu lassen, eine ganze Anforderung sei belegt.
+
 ### Der Befund, der zwei Belege halbiert hat
 
 `NoteTagging.autoTag()` fängt **jeden** Fehler und gibt still `null` zurück. Beide Aufrufe
