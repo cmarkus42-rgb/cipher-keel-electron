@@ -1780,6 +1780,102 @@ git commit -m "docs(model): measurement log for the registry wiring in the runni
 - **Keine Änderung am Rückgabe-Vertrag.**
 - **Keine Auftrags-Schnittstelle für C.**
 
+## Messprotokoll — 2026-08-16, laufende App
+
+Durchgeführt über `.claude/skills/run-keel/`. Rohbelege unter
+`.superpowers/sdd/2026-08-16-modell-registry/beleg/`. Config vorher gesichert, hinterher
+MD5-identisch wiederhergestellt und funktional nachgeprüft.
+
+### Beleg 1 — Rückwärtsverträglichkeit · **belegt**
+
+Config **ohne** `modelle`-Block. Kommandozeile der tmux-Pane, wörtlich:
+
+```
+claude --model opus --append-system-prompt-file /Users/cipher/Library/Application Support/cipher-keel-electron/entity-prompts/keel-test-architect-usvp.md
+```
+
+Prompt-Vorschau derselben Session: `… — Modell: opus — 453 Wörter`.
+
+**Das ist der wichtigste der vier Belege:** Eine bestehende Installation verhält sich
+unverändert, obwohl die Registry im Bau ist.
+
+### Beleg 2 — Die Registry trägt · **belegt**
+
+`modelle.zuordnung.tiers.heavy = "claude-haiku-cli"`, sonst nichts geändert.
+`agent.modelTiers.heavy` blieb nachweislich auf `opus`.
+
+```
+claude --model haiku --append-system-prompt-file /Users/cipher/Library/Application Support/cipher-keel-electron/entity-prompts/keel-test-architect-dhda.md
+```
+
+Prompt-Vorschau: `… — Modell: haiku — 453 Wörter` — Vorschau und Start stimmen überein.
+
+Der Wechsel auf `haiku` ist der Beleg. Eine Zuordnung auf `claude-opus-cli` hätte dieselbe
+Kommandozeile erzeugt wie der Altwert und nichts gezeigt.
+
+### Beleg 3 — Rollen-Auflösung · **belegt über die Netzverbindung, nicht über den Fehlertext**
+
+`modelle.zuordnung.rollen.tagging = "spark-gemma4-26b"`. Über 60 Sekunden durchgehend:
+
+```
+[23:10:27] Electron 19643 cipher 57u IPv4 … TCP 100.119.62.113:53450->100.78.7.108:11434 (ESTABLISHED)
+```
+
+Die Anfrage geht an den Spark statt an den Altwert `127.0.0.1:11434`. **Die Auflösung ist
+damit belegt.** Eine Antwort kam nicht — die GPU des Spark ist durch den
+cipher-voice-Trainingslauf belegt, Ollama weicht auf CPU aus, ein 26B läuft dort ins Timeout.
+Das war erwartet und ist kein Defekt.
+
+Der geforderte Fehlertext war **nicht** zu sehen. Grund siehe unten.
+
+### Beleg 4 — Gesperrte Zuordnung · **teilweise belegt**
+
+`modelle.zuordnung.rollen.tagging = "claude-opus-cli"`. `autoTag` kehrte nach **0,1 s** zurück
+statt nach 60 s, und es entstand **keine** Netzverbindung:
+
+```
+[23:12:57.166737000] <no matching connection>
+… (15 Messpunkte über 5 s, durchgehend ohne Verbindung)
+```
+
+Das ist mit einem sofortigen Abbruch vor dem Transport vereinbar — also damit, dass
+`toModelEndpoint` den cli-harness-Eintrag zurückweist. **Der wörtliche Fehlertext war nirgends
+sichtbar.**
+
+### Der Befund, der zwei Belege halbiert hat
+
+`NoteTagging.autoTag()` fängt **jeden** Fehler und gibt still `null` zurück. Beide Aufrufe
+lieferten identisch:
+
+```json
+{ "type": "object", "subtype": "null", "value": null }
+```
+
+Ein nicht erreichbarer Spark und eine strukturell verbotene Zuordnung sehen von außen
+**gleich** aus. Das ist genau die Fehlerform, die dieses Projekt als die teuerste führt — und
+sie steht in Produktivcode, nicht im Bau dieser Strecke.
+
+**Nicht hier zu beheben:** Der C-Entwurf führt „keine Änderung am Tagging-Verhalten"
+ausdrücklich unter *Nicht dabei*, und diese Strecke wiederholt das. Es ist ein eigener
+Auftrag — aber einer mit Gewicht: Die Laut-Scheitern-Arbeit aus Task 7 wirkt für die
+Rollen-Zuordnung nur bis zu diesem Catch-Block.
+
+### Zwei Befunde nebenbei
+
+- **Es gibt keinen Klickpfad in der Oberfläche, der eine Notiz anlegt und das Tagging
+  auslöst.** Der Beleg musste den IPC-Kanal direkt aufrufen. Damit ist die Rollen-Auflösung
+  für `tagging` heute für einen Nutzer gar nicht erreichbar.
+- **Eine bereits laufende, installierte App-Instanz teilte sich denselben Config- und
+  DB-Pfad** und wurde vor der Messung beendet. Wer misst, ohne das zu prüfen, misst
+  möglicherweise gegen einen zweiten Schreiber.
+- Die StatusBar meldet weiterhin `⚠ 2 Subsysteme degradiert: nanoclaw, voice`. Erwartet — der
+  NanoClaw-Rückbau über `KNOWN_RUNTIMES` hinaus gehört in den Harness-Plan.
+
+### Rücksetzung · **belegt**
+
+Config MD5-identisch mit dem Backup. Zusätzlich funktional geprüft: Tagging lief danach
+wieder gegen `127.0.0.1:11434` und lieferte echte Tags.
+
 ## Offene Punkte nach dieser Strecke
 
 - Die Schwelle „nutzbares Kontextfenster gegen Startkontext des Rahmens" greift nur, wo eine Zahl vorliegt. Für Niveau A ist sie gemessen (~37 900 Token beim Architect), für die eigene Schleife noch nicht.
