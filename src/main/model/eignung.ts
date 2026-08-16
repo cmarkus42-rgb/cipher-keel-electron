@@ -33,9 +33,11 @@ export function sperrgrund(laeufer: Laeufer, art: Anbieterart): string | null {
   if (laeufer === 'fremdes-cli') {
     return 'Ein CLI-Harness bringt sein Modell selbst mit — ein anderes dort einzutragen waere eine stille Falle.'
   }
+  // Any keel-driven runner against a cli-harness (eigene-schleife or ein-schuss)
   return (
-    'Ein Abo-Kontingent wird nie durch die eigene Schleife gefahren: Das hiesse, ein ' +
-    'Abo-OAuth-Token durch eine eigene API-Schleife zu schicken. Das ist eine ' +
-    'Nutzungsbedingung, keine Faehigkeitsfrage.'
+    'Ein CLI-Harness ist kein Endpunkt, sondern ein eigener Prozess mit eigener Sitzung — ' +
+    'keel kann es nicht direkt ansprechen. Und ein Abo-Kontingent wird nie durch eine eigene ' +
+    'Schleife gefahren: Das hiesse, ein Abo-OAuth-Token durch eine eigene API-Schleife zu ' +
+    'schicken. Das ist eine Nutzungsbedingung, keine Faehigkeitsfrage.'
   )
 }

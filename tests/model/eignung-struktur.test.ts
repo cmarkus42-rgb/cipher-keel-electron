@@ -38,4 +38,23 @@ describe('structural matrix: Laeufer x Anbieterart', () => {
     expect(sperrgrund('eigene-schleife', 'cli-harness')).toMatch(/Abo-Kontingent/)
     expect(sperrgrund('eigene-schleife', 'cli-harness')).toMatch(/Nutzungsbedingung/)
   })
+
+  it('explains that one-shot runner cannot drive a cli harness (not an endpoint, and ToS)', () => {
+    const reason = sperrgrund('ein-schuss', 'cli-harness')
+    expect(reason).not.toBeNull()
+    expect(reason).toMatch(/kein Endpunkt/)
+    expect(reason).toMatch(/Nutzungsbedingung/)
+  })
+
+  it('binds sperrgrund to laeuferKannArt: null iff open, non-null iff locked', () => {
+    for (const l of LAEUFER) {
+      for (const a of ARTEN) {
+        const kannArt = laeuferKannArt(l, a)
+        const grund = sperrgrund(l, a)
+        const isOpen = kannArt === true
+        const hasReason = grund !== null
+        expect(isOpen).toBe(!hasReason)
+      }
+    }
+  })
 })
