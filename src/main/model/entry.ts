@@ -51,6 +51,7 @@ export interface ModellEintrag {
 
 const ARTEN = new Set<string>(['cli-harness', 'local-http', 'api'])
 const OERTLICHKEITEN = new Set<string>(['lokal', 'eigenes-netz', 'fremdes-netz'])
+const QUELLEN = new Set<string>(['gemessen', 'vermutet', 'herstellerangabe'])
 
 /** Everything a capability row does not state. Never `gemessen` — that is the canary's word. */
 const FAEHIGKEITEN_RUECKFALL: Faehigkeiten = {
@@ -99,10 +100,39 @@ export function normaliseEintrag(raw: unknown): ModellEintrag {
       if (!err.cli || !err.handle) {
         throw new Error(`Eintrag '${r.id}': cli-harness braucht cli und handle`)
       }
+      if (r.faehigkeiten) {
+        throw new Error(
+          `Eintrag '${r.id}': cli-harness kennt keine faehigkeiten — das CLI besitzt sein Protokoll selbst`
+        )
+      }
       break
     default:
       // Reachability is checked by building the endpoint: one validation, not two.
       toModelEndpoint(err)
+  }
+
+  // faehigkeiten is defaulted-then-merged, so consistency between quelle and the
+  // measurement fields has to be checked on the merged result, not on raw input alone.
+  let faehigkeiten: Faehigkeiten | undefined
+  if (r.faehigkeiten) {
+    faehigkeiten = { ...FAEHIGKEITEN_RUECKFALL, ...r.faehigkeiten }
+    if (!QUELLEN.has(faehigkeiten.quelle)) {
+      throw new Error(
+        `Eintrag '${r.id}': unbekannte quelle '${faehigkeiten.quelle}' — ` +
+          'bekannt sind gemessen, vermutet, herstellerangabe'
+      )
+    }
+    if (faehigkeiten.quelle === 'gemessen') {
+      if (!faehigkeiten.gemessenAm || !faehigkeiten.gemessenMit) {
+        throw new Error(
+          `Eintrag '${r.id}': quelle ist 'gemessen', aber gemessenAm oder gemessenMit fehlt`
+        )
+      }
+    } else if (faehigkeiten.gemessenAm !== null || faehigkeiten.gemessenMit !== null) {
+      throw new Error(
+        `Eintrag '${r.id}': quelle ist '${faehigkeiten.quelle}', darf dann aber keine Messdaten tragen`
+      )
+    }
   }
 
   return {
@@ -113,9 +143,7 @@ export function normaliseEintrag(raw: unknown): ModellEintrag {
     oertlichkeit: r.oertlichkeit,
     erklaertext: r.erklaertext ?? '',
     empfehlung: r.empfehlung ?? '',
-    faehigkeiten: r.faehigkeiten
-      ? { ...FAEHIGKEITEN_RUECKFALL, ...r.faehigkeiten }
-      : undefined,
+    faehigkeiten,
   }
 }
 

@@ -8,6 +8,12 @@ const CLI = {
   empfehlung: 'Fuer Niveau A ueber den CLI-Weg.',
 }
 
+const LOCAL = {
+  id: 'spark-gemma', name: 'Gemma4 26B (Spark)', art: 'local-http',
+  erreichbarkeit: { art: 'local-http', host: '100.78.7.108', port: 11434, model: 'gemma4:26b' },
+  oertlichkeit: 'eigenes-netz', erklaertext: 'Laeuft auf dem Spark.', empfehlung: 'Fuer Niveau C.',
+}
+
 describe('normaliseEintrag', () => {
   it('accepts a cli-harness entry without capabilities', () => {
     const e = normaliseEintrag(CLI)
@@ -40,6 +46,49 @@ describe('normaliseEintrag', () => {
     expect(e.faehigkeiten?.quelle).toBe('vermutet')
     expect(e.faehigkeiten?.gemessenAm).toBeNull()
     expect(e.faehigkeiten?.gemessenMit).toBeNull()
+  })
+
+  it('rejects a cli-harness entry that carries faehigkeiten', () => {
+    expect(() => normaliseEintrag({
+      ...CLI, faehigkeiten: { codec: 'anthropic', werkzeugmodus: 'nativ' },
+    })).toThrow('cli-harness kennt keine faehigkeiten')
+  })
+
+  it('accepts a gemessen row with both measurement fields set', () => {
+    const e = normaliseEintrag({
+      ...LOCAL,
+      faehigkeiten: {
+        codec: 'ollama-native', werkzeugmodus: 'text', quelle: 'gemessen',
+        gemessenAm: '2026-08-01', gemessenMit: 'canary-v1',
+      },
+    })
+    expect(e.faehigkeiten?.quelle).toBe('gemessen')
+    expect(e.faehigkeiten?.gemessenAm).toBe('2026-08-01')
+    expect(e.faehigkeiten?.gemessenMit).toBe('canary-v1')
+  })
+
+  it('rejects gemessen without gemessenAm and gemessenMit', () => {
+    expect(() => normaliseEintrag({
+      ...LOCAL,
+      faehigkeiten: { codec: 'ollama-native', werkzeugmodus: 'text', quelle: 'gemessen' },
+    })).toThrow("quelle ist 'gemessen', aber gemessenAm oder gemessenMit fehlt")
+  })
+
+  it('rejects vermutet carrying measurement data', () => {
+    expect(() => normaliseEintrag({
+      ...LOCAL,
+      faehigkeiten: {
+        codec: 'ollama-native', werkzeugmodus: 'text', quelle: 'vermutet',
+        gemessenAm: '2026-08-01', gemessenMit: 'canary-v1',
+      },
+    })).toThrow("quelle ist 'vermutet', darf dann aber keine Messdaten tragen")
+  })
+
+  it('rejects an unknown quelle', () => {
+    expect(() => normaliseEintrag({
+      ...LOCAL,
+      faehigkeiten: { codec: 'ollama-native', werkzeugmodus: 'text', quelle: 'geraten' },
+    })).toThrow("unbekannte quelle 'geraten'")
   })
 })
 
