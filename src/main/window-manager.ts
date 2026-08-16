@@ -24,7 +24,6 @@ import { NoteWatcher } from './notes/note-watcher'
 import { KanbanStore } from './kanban/kanban-store'
 import type { TmuxManager } from './tmux/tmux-manager'
 import type { StatusLineMonitor } from './monitoring/statusline-monitor'
-import type { NanoClawBridge } from './nanoclaw'
 import type Database from 'better-sqlite3'
 
 // ---------------------------------------------------------------------------
@@ -34,7 +33,6 @@ import type Database from 'better-sqlite3'
 export interface AppServices {
   tmux: TmuxManager
   statusMonitor: StatusLineMonitor
-  nanoClawBridge: NanoClawBridge
   voiceManager: VoiceManager | null
   graphDb: Database.Database | null
   graphWriter: GraphWriter | null

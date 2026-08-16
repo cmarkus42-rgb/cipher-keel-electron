@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import { ClaudeCodeAdapter } from '../../src/main/agent/adapters/claude-code'
-import { NanoClawChannelAdapter } from '../../src/main/nanoclaw/adapter'
-import { NanoClawBridge } from '../../src/main/nanoclaw/bridge'
 import { CapabilityNiveau } from '../../src/main/preset/niveau'
 
 // M2 section 11.3 assigns a niveau per adapter: Claude Code is the only harness with
@@ -14,8 +12,8 @@ describe('adapter niveau declaration (M2 section 11.3)', () => {
     expect(adapter.niveau).toBe(CapabilityNiveau.A)
   })
 
-  it('NanoClawChannelAdapter runs at Niveau B', () => {
-    const adapter = new NanoClawChannelAdapter(new NanoClawBridge('/tmp/does-not-exist.sock'))
-    expect(adapter.niveau).toBe(CapabilityNiveau.B)
-  })
+  // 'NanoClawChannelAdapter runs at Niveau B' removed with the NanoClaw subsystem
+  // (2026-08-17): NanoClawChannelAdapter is gone. This coverage — a non-Claude adapter
+  // declaring niveau B — returns once keel's own harness (the successor announced in
+  // model-resolver.ts and c-worker.ts) ships an AgentAdapter of its own.
 })

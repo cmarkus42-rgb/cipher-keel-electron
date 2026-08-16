@@ -2,20 +2,9 @@
  * StatusBar.tsx — Untere Leiste mit Basis-System-Zustand.
  *
  * CK-INF-019: Aktives Projekt, Anzahl aktiver Sessions.
- * Erweiterbar fuer NanoClaw-Status und Cost (Phase 5).
  */
 
 import { SUBSYSTEM_IDS, type ServiceStatusMap, type SubsystemStatus } from '../../shared/service-status'
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-export const STATUS_COLORS: Record<string, string> = {
-  connected:    '#22c55e',
-  disconnected: '#ef4444',
-  connecting:   '#eab308',
-}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -24,8 +13,6 @@ export const STATUS_COLORS: Record<string, string> = {
 export interface StatusBarProps {
   activeProject?: string
   sessionCount: number
-  /** NanoClaw-Verbindungsstatus (Schenkel 2, Phase 5) */
-  nanoClawStatus?: 'connected' | 'disconnected' | 'connecting'
   /** Subsystem-Status (CK-NFR-010). null = noch nicht geladen. */
   serviceStatus?: ServiceStatusMap | null
 }
@@ -69,7 +56,7 @@ export function summarizeDegradation(status: ServiceStatusMap | null): Degradati
 // StatusBar
 // ---------------------------------------------------------------------------
 
-export function StatusBar({ activeProject, sessionCount, nanoClawStatus, serviceStatus }: StatusBarProps) {
+export function StatusBar({ activeProject, sessionCount, serviceStatus }: StatusBarProps) {
   return (
     <div style={{
       display: 'flex',
@@ -97,13 +84,6 @@ export function StatusBar({ activeProject, sessionCount, nanoClawStatus, service
         {sessionCount} {sessionCount === 1 ? 'Session' : 'Sessions'}
       </span>
 
-      {nanoClawStatus && (
-        <>
-          <span style={{ color: '#555' }}>|</span>
-          <NanoClawIndicator status={nanoClawStatus} />
-        </>
-      )}
-
       {(() => {
         const summary = summarizeDegradation(serviceStatus ?? null)
         if (summary.healthy) return null
@@ -117,29 +97,5 @@ export function StatusBar({ activeProject, sessionCount, nanoClawStatus, service
         )
       })()}
     </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// NanoClawIndicator (erweiterbar fuer Phase 5)
-// ---------------------------------------------------------------------------
-
-function NanoClawIndicator({ status }: { status: NonNullable<StatusBarProps['nanoClawStatus']> }) {
-  const colors = STATUS_COLORS
-  const labels = {
-    connected:    'NC verbunden',
-    disconnected: 'NC getrennt',
-    connecting:   'NC verbindet…',
-  }
-  return (
-    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-      <span style={{
-        width: '5px',
-        height: '5px',
-        borderRadius: '50%',
-        background: colors[status],
-      }} />
-      <span>{labels[status]}</span>
-    </span>
   )
 }

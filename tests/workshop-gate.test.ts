@@ -446,15 +446,11 @@ describe('StatusBar — exported component and props interface', () => {
     expect(props.sessionCount).toBe(3)
   })
 
-  it('StatusBarProps nanoClawStatus accepts all three valid values', () => {
-    const statuses: NonNullable<StatusBarProps['nanoClawStatus']>[] = [
-      'connected', 'disconnected', 'connecting'
-    ]
-    statuses.forEach(s => {
-      const props: StatusBarProps = { sessionCount: 0, nanoClawStatus: s }
-      expect(props.nanoClawStatus).toBe(s)
-    })
-  })
+  // 'StatusBarProps nanoClawStatus accepts all three valid values' removed with the
+  // NanoClaw subsystem (2026-08-17): the nanoClawStatus prop and its
+  // connected/disconnected/connecting union are gone from StatusBarProps. This coverage
+  // returns only if a future subsystem indicator adds a comparable tri-state connection
+  // prop to StatusBar.
 })
 
 // ---------------------------------------------------------------------------

@@ -1,18 +1,18 @@
 import { describe, it, expect } from 'vitest'
 import { AdapterRegistry } from '../../src/main/agent/registry'
-import { NanoClawChannelAdapter } from '../../src/main/nanoclaw/adapter'
-import { NanoClawBridge } from '../../src/main/nanoclaw/bridge'
 
+// makeRegistry() used to also register NanoClawChannelAdapter as a second Schenkel, but
+// none of the tests below asserted anything about it — it only made the registry
+// non-trivial. Removed with the NanoClaw subsystem (2026-08-17); the plain
+// constructor-only registry below is behaviorally equivalent for every test here.
 function makeRegistry(): AdapterRegistry {
-  const registry = new AdapterRegistry({ getSkipPermissions: () => true })
-  registry.register(new NanoClawChannelAdapter(new NanoClawBridge('/tmp/nope.sock')))
-  return registry
+  return new AdapterRegistry({ getSkipPermissions: () => true })
 }
 
 // The Rahmen's `runtime` field declares which harness an entity runs on (M2 section
 // 11.4). Until this was wired, session:create called getDefault() and ignored the field
-// entirely — a preset asking for NanoClaw would have started a Claude session with no
-// error at all.
+// entirely — a preset asking for a non-default runtime would have started a Claude
+// session with no error at all.
 describe('runtime to adapter resolution', () => {
   it('resolves claude-cli-tmux to the Claude adapter', () => {
     expect(makeRegistry().getForRuntime('claude-cli-tmux').id).toBe('claude-code')

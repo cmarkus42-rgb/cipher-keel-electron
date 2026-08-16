@@ -27,9 +27,6 @@ import {
   PRESET_PREVIEW_PROMPT,
   TERMINAL_DATA_OUTBOUND,
   TERMINAL_RESIZE,
-  NANOCLAW_MESSAGE_OUTBOUND,
-  NANOCLAW_CONNECT,
-  NANOCLAW_DISCONNECT,
   GRAPH_SEARCH,
   GRAPH_READ,
   GRAPH_WRITE,
@@ -122,7 +119,6 @@ import { materialiseCapabilities } from './session/materialise-capabilities'
 import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-file'
 import { formatShellCommand } from './util/shell-quote'
 import { AdapterRegistry } from './agent/registry'
-import { NanoClawChannelAdapter } from './nanoclaw'
 import { describeMissingTool } from './util/missing-tool'
 
 // Tracks the active grid window for focus-or-create logic (CK-UI-002)
@@ -132,15 +128,9 @@ export function registerIpcHandlers(services: AppServices): void {
   // The registry demands its config reader — see Task 6. This is the one place that has
   // both Electron and the ConfigStore loaded, which is why the reading happens here and
   // not inside the adapter.
-  //
-  // It is built here rather than at module level because registering the second Schenkel
-  // needs `services.nanoClawBridge`, which only exists once services are handed in.
-  // Before that, main.ts constructed NanoClawChannelAdapter into a discarded variable, so
-  // `runtime: 'nanoclaw-channel-route'` would have silently launched a Claude session.
   const adapterRegistry = new AdapterRegistry({
     getSkipPermissions: () => configStore.get('agent').skipPermissions,
   })
-  adapterRegistry.register(new NanoClawChannelAdapter(services.nanoClawBridge))
 
   // Project manager — wired to configStore for persistence (CK-INF-020)
   const projectManager = new ProjectManager(
@@ -331,29 +321,6 @@ export function registerIpcHandlers(services: AppServices): void {
     services.tmux.resizePane(sessionName, cols, rows).catch((err) => {
       console.error('[ipc-handlers] resizePane failed:', err)
     })
-  })
-
-  // ---------------------------------------------------------------------------
-  // NanoClaw handlers (CK-S2-012)
-  // ---------------------------------------------------------------------------
-
-  ipcMain.on(NANOCLAW_MESSAGE_OUTBOUND, (_event, payload: { threadId: string | null; text: string }) => {
-    services.nanoClawBridge.sendMessage(payload.text, payload.threadId)
-  })
-
-  ipcMain.handle(NANOCLAW_CONNECT, async () => {
-    try {
-      await services.nanoClawBridge.reconnect()
-      return { ok: true, error: null }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      return { ok: false, error: msg }
-    }
-  })
-
-  ipcMain.handle(NANOCLAW_DISCONNECT, async () => {
-    services.nanoClawBridge.disconnect()
-    return { ok: true, error: null }
   })
 
   // ---------------------------------------------------------------------------
