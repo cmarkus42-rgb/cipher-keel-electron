@@ -21,6 +21,7 @@ import { CapabilityNiveau } from '../preset/niveau'
 import { assembleEntityClaudeMd } from './assemble-entity'
 import { buildPhaseInputSection } from './phase-input'
 import { resolveModel, type ModelTiers } from './model-resolver'
+import { cliHandleFuerTier } from '../model/registry'
 
 export interface PromptPreview {
   prompt: string
@@ -67,7 +68,7 @@ export async function buildPromptPreview(
     prompt,
     schichten,
     capabilities,
-    modelResolved: resolveModel(def.rahmen.model, tiers) ?? null,
+    modelResolved: resolveModel(def.rahmen.model, tiers, cliHandleFuerTier) ?? null,
     niveau,
     wortZahl: prompt.split(/\s+/).filter(Boolean).length,
   }

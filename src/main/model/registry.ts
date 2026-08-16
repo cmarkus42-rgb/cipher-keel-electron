@@ -47,3 +47,13 @@ export function eintragFuerTier(tier: Tier): ModellEintrag | null {
 export function eintragFuerRolle(rolle: Rolle): ModellEintrag | null {
   return eintragNachId(configStore.get('modelle').zuordnung.rollen[rolle])
 }
+
+/**
+ * The CLI handle a tier assignment points at, or undefined when nothing is assigned.
+ * Only a cli-harness entry has a handle; anything else means "no assignment for this tier"
+ * rather than an error, because a session must still start.
+ */
+export function cliHandleFuerTier(tier: Tier): string | undefined {
+  const e = eintragFuerTier(tier)
+  return e?.erreichbarkeit.art === 'cli-harness' ? e.erreichbarkeit.handle : undefined
+}

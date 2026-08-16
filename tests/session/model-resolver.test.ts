@@ -31,3 +31,23 @@ describe('resolveModel', () => {
     expect(resolveModel('gigantic', TIERS)).toBeUndefined()
   })
 })
+
+describe('resolveModel with a registry lookup', () => {
+  it('prefers the registry handle over the configured tier value', () => {
+    const lookup = (t: string) => (t === 'heavy' ? 'opus-aus-registry' : undefined)
+    expect(resolveModel('heavy', TIERS, lookup)).toBe('opus-aus-registry')
+  })
+
+  it('falls back to the tier value when the registry has no assignment', () => {
+    expect(resolveModel('heavy', TIERS, () => undefined)).toBe('opus')
+  })
+
+  it('behaves exactly as before when no lookup is passed', () => {
+    expect(resolveModel('heavy', TIERS)).toBe('opus')
+  })
+
+  it('never consults the registry for a provider-qualified handle', () => {
+    const lookup = () => { throw new Error('lookup must not be called') }
+    expect(resolveModel('ollama:gemma4:26b', TIERS, lookup)).toBe('ollama:gemma4:26b')
+  })
+})

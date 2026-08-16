@@ -111,6 +111,7 @@ import { registerWindow, broadcast } from './event-bus'
 import { normalizeToP1Format } from './p1/normalizer'
 import { getEntityDefinition, getEntityRahmen } from './preset/registry'
 import { resolveModel } from './session/model-resolver'
+import { cliHandleFuerTier } from './model/registry'
 import { getGlobalRules } from './preset/global-rules'
 import { getCapabilityPackages } from './preset/capabilities'
 import { CapabilityNiveau } from './preset/niveau'
@@ -249,7 +250,11 @@ export function registerIpcHandlers(services: AppServices): void {
       // The Rahmen's model is a tier label (Schenkel 1) or a provider:model handle
       // (Schenkel 2, M2 section 6.3). Unresolvable values omit --model, which is what
       // every session did before the tier table existed.
-      const model = resolveModel(def.rahmen.model, configStore.get('agent').modelTiers)
+      const model = resolveModel(
+        def.rahmen.model,
+        configStore.get('agent').modelTiers,
+        cliHandleFuerTier
+      )
 
       const launch = adapter.buildLaunchCommand({
         projectPath: cwd,
