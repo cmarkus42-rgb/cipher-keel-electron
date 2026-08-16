@@ -1023,6 +1023,20 @@ describe('registry resolution', () => {
     expect(eintragFuerRolle('worker')).toBeNull()
   })
 
+  // The unrelated `llm` key is the point: it forces the file to exist, so loadConfig takes
+  // the deepMerge branch instead of the no-file catch that returns defaults directly. That
+  // merge branch is where the promise "an existing installation is unaffected" actually
+  // lives. Do not simplify this back to an empty file — the coverage would vanish silently.
+  it('behaves exactly as before for a config file written before this feature existed', async () => {
+    const { alleEintraege, eintragNachId, eintragFuerTier, eintragFuerRolle } = await withConfig({
+      llm: { tagging: { host: '127.0.0.1', port: 11434, model: 'altwert' } },
+    })
+    expect(alleEintraege().length).toBeGreaterThan(0)
+    expect(eintragNachId('spark-gemma4-26b')?.name).toBe('Gemma4 26B (DGX Spark)')
+    expect(eintragFuerTier('heavy')).toBeNull()
+    expect(eintragFuerRolle('worker')).toBeNull()
+  })
+
   it('lets a config entry override a bundled one of the same id', async () => {
     const { eintragNachId } = await withConfig({
       modelle: { eintraege: [{
