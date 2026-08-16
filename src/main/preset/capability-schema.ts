@@ -9,8 +9,12 @@ export enum LoaderType {
   /**
    * The loader path for Niveau B (M2 §6.4). Named after NanoClaw, its original carrier,
    * which was superseded on 2026-08-16 by keel's own harness — the path is still needed,
-   * only the name is stale. Renaming the value is a data migration (it appears in stored
-   * capability declarations), not a refactor, so it stays and belongs to the harness build.
+   * only the name is stale. The rename stays deferred, but not because it is a data
+   * migration: every CapabilityPackage in this repo is code-defined, and nothing
+   * serialises a loader value. It belongs with the harness build instead, where the
+   * path gets its new carrier, so the name can be chosen once with knowledge of what
+   * it becomes rather than twice in ignorance — renaming it here would mean choosing a
+   * name for something whose replacement does not exist yet.
    */
   NanoClawSkill = 'nanoclaw-skill',
   ReferenceMaterial = 'reference-material',

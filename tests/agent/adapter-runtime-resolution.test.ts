@@ -57,6 +57,6 @@ describe('runtime to adapter resolution', () => {
   // unreachable through the public API, since claude-cli-tmux — the only mapping left —
   // always has its adapter present via the constructor. It becomes reachable again once
   // some future runtime gets a RUNTIME_TO_ADAPTER_ID mapping whose adapter is not
-  // auto-registered by the constructor. Flagged for the later NanoClaw removal / harness
-  // plan rather than papered over with a redundant or misleading test.
+  // auto-registered by the constructor. Flagged for the harness plan rather than papered
+  // over with a redundant or misleading test.
 })

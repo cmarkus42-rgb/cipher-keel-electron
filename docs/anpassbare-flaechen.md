@@ -199,6 +199,10 @@ Harness ist eigener, noch offener Bau-Strang (siehe „Was fehlt" unten).
 
 ## Was fehlt
 
+- **Das Niveau-B-Harness und sein Einrichtungspfad.** Ersetzt NanoClaw als Träger (siehe
+  CK-NFR-013 oben); der `nanoclaw-skill`-Ladeweg bleibt bestehen, aber das eigene Harness
+  selbst — wie es eingerichtet und ohne Fremdinstallation betrieben wird — ist noch nicht
+  gebaut. Eigener Bau-Strang.
 - **Editierbarkeit generell.** Sie braucht ein Overlay-Verzeichnis für nutzereigene
   Fassungen, eine Vorrangregel gegenüber den gebündelten Inhalten und eine Validierung.
   Eigene Phase.

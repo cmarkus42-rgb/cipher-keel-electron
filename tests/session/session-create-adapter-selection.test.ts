@@ -14,7 +14,7 @@
  * NanoClaw adapter as a second Schenkel (main.ts used to construct
  * NanoClawChannelAdapter into `const _nanoClawAdapter` and drop it, leaving that second
  * Schenkel built and unreachable). Removed with the NanoClaw subsystem (2026-08-17) —
- * see the 'registers the NanoClaw adapter' test below for the coverage that fell away.
+ * see the note at the former test site (below) for the coverage that fell away.
  */
 
 import * as fs from 'fs'
@@ -69,9 +69,12 @@ describe('session:create — adapter selection', () => {
       dialog: {},
     }))
 
-    // Records what the production code registers and asks for. isAvailable() is pinned
-    // to false so the handler short-circuits before touching tmux or the filesystem —
-    // this test is about adapter selection, not about launching.
+    // getForRuntime() records what production code asks for (requestedRuntimes).
+    // register() still writes to registeredAdapterIds, but nothing reads it today —
+    // production no longer calls register() at all. The spy stays as the hook the
+    // coverage described in the note at lines 120-126 below will use once it returns.
+    // isAvailable() is pinned to false so the handler short-circuits before touching
+    // tmux or the filesystem — this test is about adapter selection, not about launching.
     vi.doMock('../../src/main/agent/registry', () => ({
       AdapterRegistry: class {
         register(adapter: { id: string }) {

@@ -194,7 +194,7 @@ improvising.
 
 ## Current state
 
-All 1829 tests pass across 139 test files (`npm test`, ~5s).
+All 1905 tests pass across 150 test files (`npm test`, ~5s).
 
 | Phase | Content | Status |
 |-------|---------|--------|

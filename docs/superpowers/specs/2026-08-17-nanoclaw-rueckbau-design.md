@@ -100,11 +100,13 @@ keine Entfernung. Hier wird allein der Docblock ehrlich gemacht.
 
 Zwei Entscheidungen, beide **nicht** blockierend für den Rückbau:
 
-**Umbenennung von `LoaderType.NanoClawSkill`.** Der Wert `'nanoclaw-skill'` steht in
-Capability-Deklarationen; ihn umzubenennen ist eine Datenmigration, kein Refactoring. Der Name
-verweist auf etwas Abgelöstes, der Ladeweg bleibt aber gebraucht. Vorschlag zur späteren
-Entscheidung: `HarnessSkill` mit dem Wert `'harness-skill'`, zusammen mit dem Harness-Bau, wo
-der neue Träger ohnehin entsteht.
+**Umbenennung von `LoaderType.NanoClawSkill`.** Der Name verweist auf etwas Abgelöstes, der
+Ladeweg bleibt aber gebraucht. Aufgeschoben bleibt die Umbenennung trotzdem — nicht weil sie
+eine Datenmigration wäre: Jedes `CapabilityPackage` im Repo ist code-definiert, nichts
+serialisiert einen Loader-Wert. Sie gehört zum Harness-Bau, wo der Ladeweg seinen neuen
+Träger bekommt, damit der Name einmal in Kenntnis dessen gewählt wird, was er wird, statt
+zweimal in Unkenntnis. Vorschlag zur späteren Entscheidung: `HarnessSkill` mit dem Wert
+`'harness-skill'`, zusammen mit dem Harness-Bau.
 
 **Rewiring der Plausibilitäts-Inferenz** auf die Modell-Schicht (§3). Eigener Strang.
 

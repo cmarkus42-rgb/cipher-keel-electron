@@ -16,7 +16,7 @@
 - **Zweig:** `nanoclaw-rueckbau`. Vor jedem Commit `git branch --show-current` prüfen.
 - **Sprache:** Code und Kommentare **englisch**; Nutzer-sichtbare Texte und alles unter `docs/superpowers/` **deutsch**.
 - **Drei Dinge bleiben unangetastet** — wer sie anfasst, hat den Zuschnitt verlassen:
-  1. `LoaderType.NanoClawSkill` in `src/main/preset/capability-schema.ts` — der Ladeweg für Niveau B (M2 §6.4). Nur der Kommentar daneben wird ehrlich gemacht.
+  1. `LoaderType.NanoClawSkill` in `src/main/preset/capability-schema.ts` — der Ladeweg für Niveau B (M2 §6.4). Nur der Kommentar daneben wird ehrlich gemacht: Die Umbenennung bleibt aufgeschoben, aber nicht als Datenmigration — kein `CapabilityPackage` im Repo wird serialisiert. Sie gehört zum Harness-Bau, wo der Ladeweg seinen neuen Träger bekommt.
   2. Die historischen Notizen in `src/main/session/model-resolver.ts` und `src/main/worker/c-worker.ts` — sie halten die Ablösung fest und wurden dafür geschrieben.
   3. Das `voice`-Subsystem. Seine Degradation ist echt.
 - **Test anpassen, Wert nicht zurückholen.** Ein Test, der NanoClaw als lebend voraussetzt, behauptet etwas Falsches. Wo der Gegenstand eines Tests *war* NanoClaw, fällt er weg — und der Verlust wird im Testfile vermerkt, nicht stillschweigend vollzogen.
@@ -135,7 +135,7 @@ Jeweils so, dass die Aussage **wahr** wird, nicht so, dass das Wort verschwindet
 - `kanban-types.ts:38` — die Schenkel-Achse bleibt; der zweite Schenkel ist heute das eigene Harness.
 - `phase-contract.ts:9` — dasselbe.
 - `capabilities.ts:8` — verweist auf die Kanalroute des `nanoclaw-skill`-Ladewegs. Der Ladeweg bleibt (siehe unten), die Formulierung soll nicht suggerieren, dass dahinter ein laufendes NanoClaw steht.
-- `capability-schema.ts` — **den Enum-Wert nicht anfassen.** Nur der Kommentar wird ehrlich: Dies ist der Ladeweg für Niveau B, sein ursprünglicher Träger ist abgelöst, eine Umbenennung ist eine Datenmigration und gehört zum Harness-Bau.
+- `capability-schema.ts` — **den Enum-Wert nicht anfassen.** Nur der Kommentar wird ehrlich: Dies ist der Ladeweg für Niveau B, sein ursprünglicher Träger ist abgelöst. Umbenennen bleibt aufgeschoben, aber nicht wegen einer Datenmigration — kein `CapabilityPackage` im Repo wird serialisiert, jedes ist code-definiert. Die Umbenennung gehört zum Harness-Bau, wo der Ladeweg seinen neuen Träger bekommt, damit der Name einmal in Kenntnis dessen gewählt wird, was er wird, statt zweimal in Unkenntnis.
 
 - [ ] **Step 2: Den Docblock der Plausibilitäts-Inferenz ehrlich machen**
 
@@ -216,6 +216,8 @@ wird als nicht gezeigt notiert.
 
 Durchgeführt über `.claude/skills/run-keel/`. Aufnahme unter
 `.superpowers/sdd/2026-08-17-nanoclaw-rueckbau/beleg/status-bar-capture.txt`.
+Gemessener Stand: HEAD `94647d7` (siehe Kopf der Aufnahme-Datei); `4aaf55d` ist der Stand
+dieses Protokolltexts selbst, nicht der gemessene Zustand.
 
 **Die Statuszeile, wörtlich:**
 
@@ -229,9 +231,18 @@ Durchgeführt über `.claude/skills/run-keel/`. Aufnahme unter
 | `voice` wird weiterhin genannt | **erfüllt** |
 
 Die zweite ist die wichtigere. Wäre die Warnung ganz verschwunden, wäre nicht der Rückbau
-gelungen, sondern der Indikator kaputt — und kein Test hätte es bemerkt, weil keiner den
-Renderer-Statuspfad erreicht. Der Vorher-Zustand war `⚠ 2 Subsysteme degradiert: nanoclaw,
-voice`; die Zahl ist von zwei auf eins gegangen, nicht auf null.
+gelungen, sondern der Indikator kaputt. `tests/status-bar-degradation.test.ts` deckt
+`summarizeDegradation` direkt als reine Funktion ab und hätte einen Bruch dort gefangen —
+die Lücke liegt in der Verdrahtung darüber, die kein Test erreicht: `ipcMain`/`services:status`
+→ Props → Render. Der Vorher-Zustand war `⚠ 2 Subsysteme degradiert: nanoclaw, voice`; die
+Zahl ist von zwei auf eins gegangen, nicht auf null.
+
+Die per IPC abgefragte Gegenprobe (`services:status`, in der Aufnahme-Datei protokolliert)
+liefert eine Map mit genau sechs Schlüsseln (`tmux`, `claudeCli`, `voice`, `graph`, `kanban`,
+`notes`) — **ohne** einen `nanoclaw`-Schlüssel. Das ist der Unterschied, auf dem der ganze
+Rückbau beruht: Die ID fehlt, sie wird nicht nur nicht angezeigt. Die sichtbare Zeile allein
+wäre auch mit einer unterdrückten Anzeige verträglich gewesen; erst die IPC-Antwort belegt,
+dass `nanoclaw` aus dem Status-Modell selbst verschwunden ist.
 
 **Zwei Randbeobachtungen aus dem Lauf:**
 
@@ -248,7 +259,7 @@ Repo nach dem Lauf unverändert, App über `stop.sh` beendet.
 ## Was diese Strecke nicht tut
 
 - **Kein Ersatz für Niveau B.** Das eigene Harness ist ein anderer Strang.
-- **Keine Umbenennung von `LoaderType.NanoClawSkill`** — Datenmigration, gehört zum Harness-Bau.
+- **Keine Umbenennung von `LoaderType.NanoClawSkill`** — keine Datenmigration (kein `CapabilityPackage` wird serialisiert), sondern aufgeschoben, weil sie zum Harness-Bau gehört, wo der Ladeweg seinen neuen Träger bekommt.
 - **Keine Umverdrahtung der Plausibilitäts-Inferenz** — Entwurfsfrage, eigener Strang.
 - **Keine Änderung an den historischen Notizen** in `model-resolver.ts` und `c-worker.ts`.
 - **Kein Anfassen von `voice`.**
