@@ -90,7 +90,7 @@ export function cliHandleFuerTier(tier: Tier): CliHandleErgebnis {
   // The rule that a fremdes-cli laeufer cannot drive this art of entry lives in eignung.ts;
   // this only adds the context (which tier, which entry, what happens instead).
   const hinweis =
-    `Tier '${tier}' zeigt auf den Eintrag '${e.id}', der kein CLI-Harness ist — ` +
+    `Tier '${tier}' zeigt auf den Eintrag '${e.id}'. ` +
     `${sperrgrund('fremdes-cli', e.art)} Es gilt weiterhin der Wert aus agent.modelTiers.`
   console.warn(`[model-registry] ${hinweis}`)
   return { hinweis }
