@@ -1391,6 +1391,10 @@ describe('endpointForRole', () => {
       modelle: { zuordnung: { rollen: { tagging: '', worker: 'spark-gemma4-26b' } } },
     })
     const ep = endpointForRole('worker')
+    // Unconditional first. The narrowing `if` below exists only for the type checker — it
+    // must never be the thing that decides whether an assertion runs, or a regression
+    // returning the wrong kind would skip the block and report green.
+    expect(ep.kind).toBe('ollama')
     if (ep.kind === 'ollama') {
       expect(ep.host).toBe('100.78.7.108')
       expect(ep.model).toBe('gemma4:26b')
