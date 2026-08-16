@@ -28,16 +28,41 @@ describe('the suitability rules have exactly one home', () => {
   })
 
   it('states the runner capability level only in eignung.ts', () => {
+    // Name-based checks (laeuferFaehigkeit / FAEHIGKEIT) catch the obvious copy-paste.
+    // Record<Laeufer, ...> catches the same table under any other name — a rename must
+    // not be enough to slip a second table (capability or structural) past this guard.
     const treffer = alleQuelldateien(SRC)
       .filter(f => !erlaubt.includes(f))
-      .filter(f => /laeuferFaehigkeit\s*[:=]\s*\{|FAEHIGKEIT\s*:\s*Record/.test(fs.readFileSync(f, 'utf8')))
+      .filter(f =>
+        /laeuferFaehigkeit\s*[:=]\s*\{|FAEHIGKEIT\s*:\s*Record|Record<\s*Laeufer\s*,/.test(
+          fs.readFileSync(f, 'utf8')
+        )
+      )
     expect(treffer, `zweite Faehigkeitstabelle: ${treffer.join(', ')}`).toEqual([])
   })
 
-  it('keeps every warning text in eignung.ts, so no surface writes its own', () => {
+  // Every German string eignung.ts hands to a user, one distinctive substring each, taken
+  // verbatim from the source. Long enough not to match by accident, short enough to
+  // survive a comma moving. This list is meant to be the full set -- if warnungen() or
+  // sperrgrund() grows a new user-facing string, it belongs here too.
+  const NUTZERTEXTE = [
+    'waere eine stille Falle', // sperrgrund: fremdes-cli locked against a foreign model
+    'eine Nutzungsbedingung, keine Faehigkeitsfrage', // sperrgrund: agentic vs. cli-harness
+    'schwache Modelle zuerst brechen', // warnungen: werkzeugmodus-text
+    'die Faehigkeitszeile ist vermutet', // warnungen: nicht-gemessen
+    'passt nicht in das', // warnungen: kontext-zu-klein
+    'Gegenteil des Gefaelles', // warnungen: teure-ebene-fuer-mechanik
+    'nutzt den Laeufer aber nicht aus', // warnungen: unter-faehigkeit
+    'verlaesst das eigene Netz', // warnungen: verlaesst-netz
+  ]
+
+  it('keeps every warning and lock text in eignung.ts, so no surface writes its own', () => {
     const treffer = alleQuelldateien(SRC)
       .filter(f => !erlaubt.includes(f))
-      .filter(f => /Gegenteil des Gefaelles|verlaesst das eigene Netz/.test(fs.readFileSync(f, 'utf8')))
-    expect(treffer, `Warntext ausserhalb von eignung.ts: ${treffer.join(', ')}`).toEqual([])
+      .filter(f => {
+        const inhalt = fs.readFileSync(f, 'utf8')
+        return NUTZERTEXTE.some(text => inhalt.includes(text))
+      })
+    expect(treffer, `Nutzertext ausserhalb von eignung.ts: ${treffer.join(', ')}`).toEqual([])
   })
 })

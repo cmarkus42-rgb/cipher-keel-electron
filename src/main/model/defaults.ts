@@ -64,7 +64,7 @@ export const DEFAULT_EINTRAEGE: ModellEintrag[] = [
       art: 'api', baseUrl: 'https://openrouter.ai/api/v1', model: 'qwen/qwen3-coder', keyRef: 'openrouter',
     },
     oertlichkeit: 'fremdes-netz',
-    erklaertext: 'Ein OSS-Flaggschiff ueber einen fremden Hoster. Der Prompt verlaesst das eigene Netz.',
+    erklaertext: 'Ein OSS-Flaggschiff ueber einen fremden Hoster — erreichbar ueber OpenRouter mit eigenem Schluessel.',
     empfehlung: 'Wenn die eigene Maschine belegt ist — ein Anbieter haelt Niveau C am Leben.',
     faehigkeiten: { codec: 'openai-chat', werkzeugmodus: 'nativ', nutzbaresKontextfenster: 131072 },
   },
