@@ -29,7 +29,8 @@ Ablage: `~/.config/cipher-keel/cipher-keel-config.json`
 | `voice.enabled` | Sprachausgabe an/aus | nein | nein — nur Config-Datei |
 | `voice.piperVoice` | Stimme der Sprachausgabe | nein | nein — nur Config-Datei |
 | `llm.tagging` | Endpunkt und Modell für das Notizen-Tagging — klein und häufig, bleibt lokal | nein | nein — nur Config-Datei |
-| `llm.worker` | Endpunkt und Modell für Niveau-C-Worker — groß und gelegentlich. Zeigt auf den **DGX Spark**, siehe unten | nein | nein — nur Config-Datei |
+| `llm.worker` | Endpunkt und Modell für Niveau-C-Worker — groß und gelegentlich. Zeigt auf den **DGX Spark**, siehe unten. Kann seit 2026-08-16 auch ein **API-Anbieter** sein | nein | nein — nur Config-Datei |
+| API-Schlüssel | **nicht** in der Config: Keychain (`cipher-keel-api-<ref>`) oder Umgebung (`CIPHER_KEEL_API_<REF>`). Die Config nennt nur den Namen (`keyRef`) | nein | nein — Keychain oder Umgebung |
 
 Zwei weitere Schlüssel liegen in derselben Datei, sind aber keine anpassbaren Flächen im
 Sinne dieser Anforderung — die App schreibt sie selbst und liest sie nur zurück:
@@ -98,6 +99,48 @@ sudo mkdir -p /etc/systemd/system/docker.service.d
 printf "[Unit]\nAfter=tailscaled.service\nWants=tailscaled.service\n" \
   | sudo tee /etc/systemd/system/docker.service.d/after-tailscaled.conf
 sudo systemctl daemon-reload
+```
+
+## API-Anbieter statt lokalem Modell
+
+Seit dem 2026-08-16 kann jeder der beiden Endpunkte auch ein API-Anbieter sein. Ein Eintrag
+sieht dann so aus:
+
+```json
+"llm": {
+  "worker": {
+    "kind": "openai-compatible",
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "model": "qwen/qwen3-coder",
+    "keyRef": "openrouter"
+  }
+}
+```
+
+Der Dialekt `openai-compatible` erreicht weit mehr als OpenAI — DeepSeek, OpenRouter,
+Together, Fireworks, Groq, Mistral, xAI und vLLM sprechen ihn, und Ollamas eigene
+`/v1`-Oberfläche ebenfalls. Anbieter mit eigener Form (Anthropics Messages-API, Googles
+generateContent) kommen als Geschwister-Module dazu; an der Config ändert das nichts außer
+einem neuen `kind`.
+
+**Schlüssel gehören nicht hierher.** `cipher-keel-config.json` wird zwar mit `0600`
+geschrieben, ist aber Klartext, landet in Backups und ist genau die Datei, die jemand beim
+Hilfesuchen weiterreicht. Die Config nennt deshalb nur einen **Namen**, und der Schlüssel
+liegt woanders:
+
+| Quelle | Wo | Wann |
+|---|---|---|
+| macOS-Keychain | Dienst `cipher-keel-api-<ref>`, Konto `key` | bevorzugt |
+| Umgebung | `CIPHER_KEEL_API_<REF>` | Rückfall, für kopflose Läufe |
+
+Die Reihenfolge ist Absicht: Gewänne die Umgebung, würde eine vergessene Variable im
+Shell-Profil stillschweigend den Schlüssel überstimmen, den ein Nutzer hinterlegt zu haben
+glaubt — und der Fehler sähe aus wie ein Anbieter-Problem.
+
+Hinterlegen von Hand:
+
+```
+security add-generic-password -s cipher-keel-api-openrouter -a key -w '<schlüssel>' -U
 ```
 
 ## Zum Festhalten geladener Modelle

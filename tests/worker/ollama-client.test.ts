@@ -1,30 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import {
-  resolveEndpoint,
   describeHttpFailure,
   describeTransportFailure,
   WORKER_TIMEOUT_MS,
   buildRequestBody,
   DEFAULT_KEEP_ALIVE_SECONDS,
 } from '../../src/main/worker/ollama-client'
+import { normaliseEndpoint } from '../../src/main/worker/model-client'
 
-const BASE = { host: '127.0.0.1', port: 11434, model: 'qwen3:30b' }
-
-describe('resolveEndpoint', () => {
-  it('returns the base when nothing is overridden', () => {
-    expect(resolveEndpoint(undefined, BASE)).toEqual(BASE)
-  })
-
-  it('overrides only what is given — a second machine is a host, not a new config', () => {
-    expect(resolveEndpoint({ host: '100.64.0.5' }, BASE)).toEqual({
-      host: '100.64.0.5', port: 11434, model: 'qwen3:30b',
-    })
-  })
-
-  it('overrides the model alone, which is what a benchmark run needs', () => {
-    expect(resolveEndpoint({ model: 'gemma4:26b' }, BASE).model).toBe('gemma4:26b')
-  })
-})
+const BASE = normaliseEndpoint({ host: '127.0.0.1', port: 11434, model: 'qwen3:30b' })
+if (BASE.kind !== 'ollama') throw new Error('unerwartete Endpunkt-Art im Test')
 
 describe('describeHttpFailure', () => {
   it('names the model and the pull command on 404 — the usual cause is a missing model', () => {

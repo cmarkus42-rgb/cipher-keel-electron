@@ -5,7 +5,7 @@
  * Graceful degradation: returns null when Ollama is unavailable.
  */
 
-import { HttpOllamaClient } from '../worker/ollama-client'
+import { endpointForRole, clientForEndpoint } from '../worker/model-client'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import matter from 'gray-matter'
@@ -14,7 +14,7 @@ import type { TagClassRepo } from './tag-repository'
 
 /** Tagging keeps its own 60s budget — a tag is not a work item (see worker/ollama-client). */
 const TAGGING_TIMEOUT_MS = 60_000
-const ollama = new HttpOllamaClient()
+
 
 
 export const SEED_TAGS: Record<string, TagEntry> = {
@@ -205,8 +205,9 @@ export class NoteTagging {
   async autoTag(content: string): Promise<string[] | null> {
     try {
       const prompt = buildTaggingPrompt(content, this.repo)
-      const text = await ollama.generate({
-        prompt, role: 'tagging', timeoutMs: TAGGING_TIMEOUT_MS,
+      const endpoint = endpointForRole('tagging')
+      const text = await clientForEndpoint(endpoint).generate({
+        prompt, endpoint, timeoutMs: TAGGING_TIMEOUT_MS,
       })
       if (!text) return null
 

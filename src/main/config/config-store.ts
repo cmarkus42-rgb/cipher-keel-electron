@@ -22,10 +22,20 @@ export interface ProjectRecord {
   workspaceIds: string[]
 }
 
-/** Where a local-model request goes, and which model answers it. */
+/**
+ * Where a model request goes. Loose on purpose — `worker/model-client.ts` normalises it
+ * into a discriminated union, so an existing config file keeps working and a new provider
+ * needs no migration. Never holds a key: `keyRef` names where the key is stored.
+ */
 export interface LlmEndpoint {
-  host: string
-  port: number
+  /** 'ollama' (default) or 'openai-compatible'. */
+  kind?: 'ollama' | 'openai-compatible'
+  host?: string
+  port?: number
+  /** For openai-compatible: e.g. https://openrouter.ai/api/v1 */
+  baseUrl?: string
+  /** For openai-compatible: the name the key is stored under, never the key. */
+  keyRef?: string
   model: string
 }
 
