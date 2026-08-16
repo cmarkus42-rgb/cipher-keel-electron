@@ -212,6 +212,39 @@ wird als nicht gezeigt notiert.
 
 ---
 
+## Messprotokoll — 2026-08-17, laufende App
+
+Durchgeführt über `.claude/skills/run-keel/`. Aufnahme unter
+`.superpowers/sdd/2026-08-17-nanoclaw-rueckbau/beleg/status-bar-capture.txt`.
+
+**Die Statuszeile, wörtlich:**
+
+```
+⚠ 1 Subsystem degradiert: voice
+```
+
+| Beobachtung | Ergebnis |
+|---|---|
+| `nanoclaw` wird nicht mehr genannt | **erfüllt** |
+| `voice` wird weiterhin genannt | **erfüllt** |
+
+Die zweite ist die wichtigere. Wäre die Warnung ganz verschwunden, wäre nicht der Rückbau
+gelungen, sondern der Indikator kaputt — und kein Test hätte es bemerkt, weil keiner den
+Renderer-Statuspfad erreicht. Der Vorher-Zustand war `⚠ 2 Subsysteme degradiert: nanoclaw,
+voice`; die Zahl ist von zwei auf eins gegangen, nicht auf null.
+
+**Zwei Randbeobachtungen aus dem Lauf:**
+
+- **Das Grid-Fenster mit der StatusBar öffnet beim Start nicht von selbst.** Es kam erst über
+  `window:open-grid` — denselben IPC-Kanal, den auch ein Button benutzen würde. Auf einer
+  frischen Installation ohne Projekt gibt es kein Klickziel dorthin. Das ist kein Befund dieses
+  Rückbaus, aber es heißt: Die Statuszeile ist der Ort, an dem Degradation gemeldet wird, und
+  sie ist im Auslieferungszustand nicht ohne Weiteres zu sehen.
+- Keine zweite App-Instanz lief mit — anders als beim Messlauf der Registry-Strecke. Geprüft,
+  nicht angenommen.
+
+Repo nach dem Lauf unverändert, App über `stop.sh` beendet.
+
 ## Was diese Strecke nicht tut
 
 - **Kein Ersatz für Niveau B.** Das eigene Harness ist ein anderer Strang.
