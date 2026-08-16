@@ -895,7 +895,10 @@ export function warnungen(
     })
   }
 
-  if (!laeuferTraegtNiveauExakt(laeufer, niveau)) {
+  // Only a C job on a runner that carries more is under-use worth naming. Anything below
+  // the runner's capability would fire on niveau B over the own loop — the designed normal
+  // case — and become the noise this section exists to avoid. Ruled by the user 2026-08-16.
+  if (niveau === CapabilityNiveau.C && laeuferFaehigkeit(laeufer) !== CapabilityNiveau.C) {
     out.push({
       code: 'unter-faehigkeit',
       text: 'Das laeuft, nutzt den Laeufer aber nicht aus.',
@@ -911,12 +914,19 @@ export function warnungen(
 
   return out
 }
-
-/** True when the niveau matches the runner exactly — anything lower is under-use. */
-function laeuferTraegtNiveauExakt(laeufer: Laeufer, niveau: CapabilityNiveau): boolean {
-  return RANG[FAEHIGKEIT[laeufer]] === RANG[niveau]
-}
 ```
+
+> **Korrigiert während der Umsetzung (2026-08-16, Nutzer-Entscheidung, gebaut in `7d55774`).**
+> Die erste Fassung dieses Auszugs hatte einen Hilfsbegriff `laeuferTraegtNiveauExakt` und
+> warnte bei **jedem** Niveau unterhalb der Läufer-Stufe. Das widersprach dem Gegenbeleg-Test
+> im selben Task: `eigene-schleife` steht auf A, also hätte jede B-Zuordnung gewarnt — und B
+> auf der eigenen Schleife ist der Normalfall, für den das Gefälle gebaut wird. Die Warnung
+> hätte damit auf nahezu jeder Konfiguration gefeuert und wäre binnen einer Woche das Rauschen
+> geworden, das dieser Abschnitt gerade vermeiden will.
+>
+> Es warnt jetzt allein **Niveau C auf einem Läufer, der mehr trägt** — der Fall, in dem
+> wirklich eine Agentenschleife für Ein-Schuss-Arbeit verbraucht wird. Spec §7.3 ist
+> entsprechend nachgezogen.
 
 - [ ] **Step 4: Run test to verify it passes**
 

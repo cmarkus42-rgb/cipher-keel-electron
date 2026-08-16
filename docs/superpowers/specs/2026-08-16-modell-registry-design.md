@@ -225,7 +225,7 @@ Die Warnungen hängen deshalb an den **Fähigkeiten**, mit der Örtlichkeit als 
 | Niveau A oder B und `quelle !== 'gemessen'` | Für dieses Modell liegt keine eigene Messung vor; die Zeile ist vermutet |
 | Niveau A oder B und `nutzbaresKontextfenster` unter der Schwelle des Rahmens | Der Startkontext dieser Rolle passt nicht |
 | Niveau C und `oertlichkeit: 'fremdes-netz'` bei starkem Modell | Teure Ebene für mechanische Arbeit — das Gegenteil des Gefälles |
-| Niveau unter der Fähigkeitsstufe des Läufers | Läuft, nutzt den Läufer aber nicht aus |
+| Niveau **C** auf einem Läufer, der mehr trägt | Läuft, nutzt den Läufer aber nicht aus |
 | `oertlichkeit: 'fremdes-netz'` | Der Prompt verlässt das eigene Netz |
 
 **Keine dieser Zeilen sperrt.** Sperren tut ausschließlich §7.1.
