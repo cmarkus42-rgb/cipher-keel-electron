@@ -55,8 +55,15 @@ function App() {
       id: string | null
       name: string | null
       error: string | null
+      /** F2: set when a tier assignment named a non-cli-harness entry and the session
+       *  fell back to agent.modelTiers — surfaced here for now as a console warning
+       *  rather than a UI banner, which is beyond this fix's scope. */
+      hinweis?: string | null
     }
     if (result?.id && result.name) {
+      if (result.hinweis) {
+        console.warn('[renderer] session create used a fallback model:', result.hinweis)
+      }
       setSlots((prev) => [
         ...prev,
         { type: 'session', sessionId: result.name!, sessionName: result.name!, status: 'active' }

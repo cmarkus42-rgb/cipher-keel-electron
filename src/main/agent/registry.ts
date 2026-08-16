@@ -9,6 +9,31 @@
 
 import type { AgentAdapter } from './agent-adapter'
 import { ClaudeCodeAdapter, type AgentConfigReader } from './adapters/claude-code'
+import { KNOWN_RUNTIMES } from '../preset/schema'
+
+/**
+ * Known runtime values from PresetRahmen and their corresponding adapter IDs.
+ * Exported (not a class member) so the guard test in
+ * tests/agent/runtime-registry-completeness.test.ts can check it against KNOWN_RUNTIMES
+ * and RUNTIMES_WITHOUT_ADAPTER without reaching into class internals.
+ * CK-ENT-010, CK-ENT-028
+ */
+export const RUNTIME_TO_ADAPTER_ID: ReadonlyMap<string, string> = new Map([
+  ['claude-cli-tmux', 'claude-code'],
+])
+
+/**
+ * Runtime values that KNOWN_RUNTIMES (src/main/preset/schema.ts) accepts as valid but
+ * that have no entry in RUNTIME_TO_ADAPTER_ID yet — the harness behind them has not been
+ * built. Declared explicitly so the gap between "valid preset value" and "resolvable
+ * adapter" is an intentional, named fact rather than an accident that getForRuntime
+ * would otherwise mask with a false "unknown runtime" error.
+ *
+ * When an adapter for one of these lands, add it to RUNTIME_TO_ADAPTER_ID and remove it
+ * from here — the guard test in tests/agent/runtime-registry-completeness.test.ts fails
+ * if a value is in both, or in neither, of RUNTIME_TO_ADAPTER_ID and this list.
+ */
+export const RUNTIMES_WITHOUT_ADAPTER: ReadonlySet<string> = new Set(['keel-harness'])
 
 export class AdapterRegistry {
   private adapters: Map<string, AgentAdapter> = new Map()
@@ -43,19 +68,12 @@ export class AdapterRegistry {
   }
 
   /**
-   * Known runtime values from PresetRahmen and their corresponding adapter IDs.
-   * CK-ENT-010, CK-ENT-028
-   */
-  private static readonly RUNTIME_TO_ADAPTER_ID: ReadonlyMap<string, string> = new Map([
-    ['claude-cli-tmux', 'claude-code'],
-    ['nanoclaw-channel-route', 'nanoclaw-channel'],
-  ])
-
-  /**
    * Look up an adapter by the `runtime` field from a PresetRahmen.
    *
    * - Empty / undefined → returns the default adapter (ClaudeCodeAdapter)
    * - Known runtime value → returns the corresponding registered adapter
+   * - Known runtime value with no adapter yet (RUNTIMES_WITHOUT_ADAPTER) → throws a
+   *   German, user-facing error saying so — this is not the same as "unknown"
    * - Unknown runtime value → throws Error with the value; no silent fallback
    *
    * CK-ENT-010, CK-ENT-028
@@ -65,11 +83,24 @@ export class AdapterRegistry {
       return this.getDefault()
     }
 
-    const adapterId = AdapterRegistry.RUNTIME_TO_ADAPTER_ID.get(runtime)
+    const adapterId = RUNTIME_TO_ADAPTER_ID.get(runtime)
     if (adapterId === undefined) {
+      // Known to the schema but not yet in RUNTIME_TO_ADAPTER_ID — the guard test keeps
+      // this equivalent to RUNTIMES_WITHOUT_ADAPTER.has(runtime); KNOWN_RUNTIMES is the
+      // one checked here since it is the authoritative "is this a real runtime" answer.
+      if (KNOWN_RUNTIMES.has(runtime)) {
+        throw new Error(
+          `Die Laufzeit '${runtime}' ist gültig, aber ihr Adapter ist noch nicht gebaut — ` +
+          `das eigene Harness kommt in einem späteren Schritt.`
+        )
+      }
       throw new Error(
         `[AdapterRegistry] Unknown runtime value '${runtime}'. ` +
-        `Known runtimes: ${[...AdapterRegistry.RUNTIME_TO_ADAPTER_ID.keys()].join(', ')}`
+        // Sourced from KNOWN_RUNTIMES, not RUNTIME_TO_ADAPTER_ID.keys() — a mistyping
+        // user needs every schema-valid value here, including ones without an adapter
+        // yet (those still resolve to the clearer "not built yet" branch above; this
+        // list only exists to help someone who typed something not on it at all).
+        `Known runtimes: ${[...KNOWN_RUNTIMES].join(', ')}`
       )
     }
 

@@ -90,8 +90,13 @@ die `runtime`-Deklarationen der Presets bedeutet, ist Gegenstand der Harness-Ide
 
 Daraus folgen die Hinweise, die der Nutzer auf der Settings-Seite sehen will:
 
-- **A mit lokalem Modell:** nicht anbietbar. Das CLI-Harness bringt sein Modell mit; ein
-  lokales Modell dort einzutragen ergibt keinen Sinn und wäre eine stille Falle.
+- **A mit lokalem Modell:** hängt am Läufer. Über den CLI-Weg **nicht anbietbar** — das
+  CLI-Harness bringt sein Modell mit, und ein lokales Modell dort einzutragen wäre eine
+  stille Falle. Über das eigene Harness **erlaubt, mit der stärksten Warnung**: Es ist
+  genau der Fall, für den das Gefälle gebaut wird, und zugleich die Stelle mit dem
+  höchsten Ausfallrisiko. *(Präzisiert am 2026-08-16, siehe
+  `2026-08-16-modell-registry-design.md` §7.4 — die frühere Fassung stammte aus der Zeit
+  vor der Korrektur direkt darüber.)*
 - **B mit lokalem Modell: Warnung, keine Sperre.** Es *funktioniert* — und es ist genau der
   Fall, für den das Gefälle gebaut wird. Aber eine Agentenschleife mit Werkzeugen ist die
   Stelle, an der schwache Modelle zuerst zusammenbrechen: Sie verfehlen das

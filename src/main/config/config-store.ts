@@ -2,7 +2,8 @@
  * ConfigStore — persistent JSON-File-Store for app configuration.
  *
  * Simplified port from cipher-mux 0.9.x (CK-INF-008).
- * Stores config at ~/.config/cipher-keel/cipher-keel-config.json.
+ * Stores config at ~/Library/Application Support/cipher-keel-electron/cipher-keel-config.json
+ * (verified by measurement; `app.getPath('userData')` is the actual source of truth).
  *
  * cipher-keel-specific: stripped down to essential fields.
  * 0.9.x-era fields (personas, characters, workshop, etc.) will be
@@ -83,6 +84,18 @@ export interface CipherKeelConfig {
     /** Niveau-C worker jobs. Intended for the DGX Spark; see docs/anpassbare-flaechen.md. */
     worker: LlmEndpoint
   }
+  /**
+   * The model registry. Bundled defaults live in `model/defaults.ts`; entries here
+   * override them by id. Assignments are empty by default, which is what keeps a config
+   * file written before this feature behaving exactly as it did.
+   */
+  modelle: {
+    eintraege: unknown[]
+    zuordnung: {
+      tiers: { light: string; standard: string; heavy: string }
+      rollen: { tagging: string; worker: string }
+    }
+  }
   projects: {
     list: ProjectRecord[]
     activeId: string | null
@@ -141,6 +154,13 @@ const defaults: CipherKeelConfig = {
       // Verified present on the Spark and answering the return contract on the first try.
       // The machine also carries gpt-oss:120b and llama4:scout for heavier work.
       model: 'gemma4:26b',
+    },
+  },
+  modelle: {
+    eintraege: [],
+    zuordnung: {
+      tiers: { light: '', standard: '', heavy: '' },
+      rollen: { tagging: '', worker: '' },
     },
   },
   projects: {

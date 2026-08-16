@@ -20,7 +20,8 @@ import { getGlobalRules } from '../preset/global-rules'
 import { CapabilityNiveau } from '../preset/niveau'
 import { assembleEntityClaudeMd } from './assemble-entity'
 import { buildPhaseInputSection } from './phase-input'
-import { resolveModel, type ModelTiers } from './model-resolver'
+import { resolveModel, tierAus, type ModelTiers } from './model-resolver'
+import { cliHandleFuerTier } from '../model/registry'
 
 export interface PromptPreview {
   prompt: string
@@ -30,6 +31,14 @@ export interface PromptPreview {
   capabilities: string[]
   /** The model handle that would be passed to the harness, or null for its default. */
   modelResolved: string | null
+  /**
+   * German: why the tier assignment was not usable and the legacy `agent.modelTiers`
+   * value was used instead — null when the assignment resolved cleanly or nothing was
+   * assigned. The preview is a surface the user opens deliberately before a session
+   * starts, so this is where a wrong-shaped tier assignment (F2) becomes visible instead
+   * of vanishing into a main-process console.warn.
+   */
+  modelHinweis: string | null
   niveau: CapabilityNiveau
   /** Rough size signal — whitespace words, not a tokenizer. */
   wortZahl: number
@@ -63,11 +72,17 @@ export async function buildPromptPreview(
   if (prompt.includes('<!-- BEGIN:GlobalRules -->')) schichten.push('GlobalRules')
   if (prompt.includes('<!-- BEGIN:PhaseInput -->')) schichten.push('PhaseInput')
 
+  // Resolved once, outside resolveModel's own lookup call, so a wrong-shaped tier
+  // assignment is reported (console.warn) exactly once rather than once per lookup site.
+  const tier = tierAus(def.rahmen.model)
+  const cliErgebnis = tier ? cliHandleFuerTier(tier) : undefined
+
   return {
     prompt,
     schichten,
     capabilities,
-    modelResolved: resolveModel(def.rahmen.model, tiers) ?? null,
+    modelResolved: resolveModel(def.rahmen.model, tiers, () => cliErgebnis?.handle) ?? null,
+    modelHinweis: cliErgebnis?.hinweis ?? null,
     niveau,
     wortZahl: prompt.split(/\s+/).filter(Boolean).length,
   }

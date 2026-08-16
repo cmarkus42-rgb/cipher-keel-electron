@@ -110,7 +110,8 @@ import type { AppServices } from './window-manager'
 import { registerWindow, broadcast } from './event-bus'
 import { normalizeToP1Format } from './p1/normalizer'
 import { getEntityDefinition, getEntityRahmen } from './preset/registry'
-import { resolveModel } from './session/model-resolver'
+import { resolveModel, tierAus } from './session/model-resolver'
+import { cliHandleFuerTier } from './model/registry'
 import { getGlobalRules } from './preset/global-rules'
 import { getCapabilityPackages } from './preset/capabilities'
 import { CapabilityNiveau } from './preset/niveau'
@@ -249,7 +250,17 @@ export function registerIpcHandlers(services: AppServices): void {
       // The Rahmen's model is a tier label (Schenkel 1) or a provider:model handle
       // (Schenkel 2, M2 section 6.3). Unresolvable values omit --model, which is what
       // every session did before the tier table existed.
-      const model = resolveModel(def.rahmen.model, configStore.get('agent').modelTiers)
+      //
+      // Resolved once outside resolveModel's own lookup call (same reasoning as
+      // preview-prompt.ts) so a wrong-shaped tier assignment warns exactly once, and so
+      // the reason it fell back to agent.modelTiers is available for the result below.
+      const tier = tierAus(def.rahmen.model)
+      const cliErgebnis = tier ? cliHandleFuerTier(tier) : undefined
+      const model = resolveModel(
+        def.rahmen.model,
+        configStore.get('agent').modelTiers,
+        () => cliErgebnis?.handle
+      )
 
       const launch = adapter.buildLaunchCommand({
         projectPath: cwd,
@@ -273,7 +284,10 @@ export function registerIpcHandlers(services: AppServices): void {
         }
       }
 
-      return { id: sessionId, name, error: null }
+      // Surfaced to the renderer so a wrong-shaped tier assignment (F2) is visible
+      // somewhere a user might see it, not only in a main-process console.warn. An extra
+      // field on an already-untyped IPC result — no contract redesign.
+      return { id: sessionId, name, error: null, hinweis: cliErgebnis?.hinweis ?? null }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       return { id: null, name: null, error: msg }
