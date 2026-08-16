@@ -873,7 +873,11 @@ export function warnungen(
     })
   }
 
-  if (agentisch && niveau !== CapabilityNiveau.C && (!f || f.quelle !== 'gemessen')) {
+  // A cli-harness entry carries no capability row by construction — entry.ts rejects one
+  // that does. That is "no measurement applies", not "no measurement exists". Without this
+  // guard the warning would fire on every Claude Code pairing, i.e. on the normal case.
+  const messbar = eintrag.art !== 'cli-harness'
+  if (agentisch && messbar && niveau !== CapabilityNiveau.C && (!f || f.quelle !== 'gemessen')) {
     out.push({
       code: 'nicht-gemessen',
       text: 'Fuer dieses Modell liegt keine eigene Messung vor — die Faehigkeitszeile ist vermutet.',
