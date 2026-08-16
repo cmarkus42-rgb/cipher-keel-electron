@@ -587,13 +587,24 @@ export function sperrgrund(laeufer: Laeufer, art: Anbieterart): string | null {
   if (laeufer === 'fremdes-cli') {
     return 'Ein CLI-Harness bringt sein Modell selbst mit — ein anderes dort einzutragen waere eine stille Falle.'
   }
+  // Every keel-driven runner is locked against a cli-harness model, and for two grounds at
+  // once. Naming one runner here would be wrong: both `eigene-schleife` and `ein-schuss`
+  // land in this branch.
   return (
-    'Ein Abo-Kontingent wird nie durch die eigene Schleife gefahren: Das hiesse, ein ' +
-    'Abo-OAuth-Token durch eine eigene API-Schleife zu schicken. Das ist eine ' +
-    'Nutzungsbedingung, keine Faehigkeitsfrage.'
+    'Ein CLI-Harness ist kein Endpunkt, sondern ein eigener Prozess mit eigener Sitzung — ' +
+    'keel kann es nicht direkt ansprechen. Und ein Abo-Kontingent wird nie durch eine eigene ' +
+    'Schleife gefahren: Das hiesse, ein Abo-OAuth-Token durch eine eigene API-Schleife zu ' +
+    'schicken. Das ist eine Nutzungsbedingung, keine Faehigkeitsfrage.'
   )
 }
 ```
+
+> **Korrigiert nach dem Review (2026-08-16, gebaut in `46ded27`).** Die erste Fassung dieses
+> Auszugs schob alles außer `fremdes-cli` in einen `else`-Zweig mit der Abo-Begründung. Die
+> Matrix sperrt aber **vier** Zellen: `ein-schuss × cli-harness` fiel ebenfalls dorthin und
+> meldete dem Nutzer, seine *eigene Schleife* sei gesperrt. Dazu gehört ein Test, der
+> `sperrgrund` und `laeuferKannArt` aneinander bindet — genau dann eine Begründung, wenn
+> gesperrt —, damit keine künftige Zelle die Begründung einer anderen erbt.
 
 - [ ] **Step 4: Run test to verify it passes**
 
