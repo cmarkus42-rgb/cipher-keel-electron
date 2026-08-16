@@ -19,6 +19,7 @@ interface Preview {
   schichten: string[]
   capabilities: string[]
   modelResolved: string | null
+  modelHinweis: string | null
   wortZahl: number
 }
 
@@ -77,6 +78,11 @@ export function PromptPreview({ entityId, label, onClose }: PromptPreviewProps) 
             Schichten: {preview.schichten.join(' · ')} — {preview.capabilities.length} Capabilities
             — Modell: {preview.modelResolved ?? 'Harness-Default'} — {preview.wortZahl} Wörter
           </div>
+          {preview.modelHinweis && (
+            <div style={{ color: '#e0a0a0', fontSize: '10px' }}>
+              ⚠ {preview.modelHinweis}
+            </div>
+          )}
           <pre style={{
             flex: 1, overflow: 'auto', margin: 0, padding: '8px', background: '#050505',
             border: '1px solid #222', borderRadius: '3px', color: '#bbb',
