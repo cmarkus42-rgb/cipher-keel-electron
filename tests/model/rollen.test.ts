@@ -53,6 +53,6 @@ describe('endpointForRole', () => {
     const { endpointForRole } = await withConfig({
       modelle: { zuordnung: { rollen: { tagging: '', worker: 'claude-opus-cli' } } },
     })
-    expect(() => endpointForRole('worker')).toThrow('bringt sein Modell selbst mit')
+    expect(() => endpointForRole('worker')).toThrow('hat keinen Endpunkt')
   })
 })

@@ -70,6 +70,20 @@ describe('registry resolution', () => {
     expect(alleEintraege().length).toBeGreaterThan(0)
   })
 
+  it('treats a non-array eintraege as empty instead of crashing on "is not iterable"', async () => {
+    const { alleEintraege } = await withConfig({
+      modelle: { eintraege: {} },
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(() => alleEintraege()).not.toThrow()
+      expect(alleEintraege().length).toBeGreaterThan(0)
+      expect(warn).toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('behaves exactly as before for a config file written before this feature existed', async () => {
     // withConfig(null) writes no file at all, which takes the readFileSync-fails/catch
     // path in config-store's loadConfig() and never runs deepMerge. That proves only
@@ -90,20 +104,25 @@ describe('registry resolution', () => {
   })
 
   describe('cliHandleFuerTier', () => {
-    it('returns the handle for a tier assigned to a cli-harness entry', async () => {
+    it('returns the handle for a tier assigned to a cli-harness entry, and no hinweis', async () => {
       const { cliHandleFuerTier } = await withConfig({
         modelle: { zuordnung: { tiers: { light: '', standard: '', heavy: 'claude-opus-cli' } } },
       })
-      expect(cliHandleFuerTier('heavy')).toBe('opus')
+      const ergebnis = cliHandleFuerTier('heavy')
+      expect(ergebnis.handle).toBe('opus')
+      expect(ergebnis.hinweis).toBeUndefined()
     })
 
-    it('warns and returns undefined when the tier names a non-cli-harness entry', async () => {
+    it('warns and returns a hinweis naming tier and entry, no handle, for a non-cli-harness entry', async () => {
       const { cliHandleFuerTier } = await withConfig({
         modelle: { zuordnung: { tiers: { light: '', standard: '', heavy: 'spark-gemma4-26b' } } },
       })
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
       try {
-        expect(cliHandleFuerTier('heavy')).toBeUndefined()
+        const ergebnis = cliHandleFuerTier('heavy')
+        expect(ergebnis.handle).toBeUndefined()
+        expect(ergebnis.hinweis).toContain('heavy')
+        expect(ergebnis.hinweis).toContain('spark-gemma4-26b')
         expect(warn).toHaveBeenCalledTimes(1)
         const message = warn.mock.calls[0].join(' ')
         expect(message).toContain('heavy')
@@ -113,13 +132,15 @@ describe('registry resolution', () => {
       }
     })
 
-    it('stays silent for a tier with no assignment at all', async () => {
+    it('stays silent and returns neither handle nor hinweis for a tier with no assignment at all', async () => {
       const { cliHandleFuerTier } = await withConfig({
         modelle: { zuordnung: { tiers: { light: '', standard: '', heavy: '' } } },
       })
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
       try {
-        expect(cliHandleFuerTier('heavy')).toBeUndefined()
+        const ergebnis = cliHandleFuerTier('heavy')
+        expect(ergebnis.handle).toBeUndefined()
+        expect(ergebnis.hinweis).toBeUndefined()
         expect(warn).not.toHaveBeenCalled()
       } finally {
         warn.mockRestore()

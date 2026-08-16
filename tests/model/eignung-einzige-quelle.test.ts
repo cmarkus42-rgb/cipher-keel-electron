@@ -46,6 +46,7 @@ describe('the suitability rules have exactly one home', () => {
   // survive a comma moving. This list is meant to be the full set -- if warnungen() or
   // sperrgrund() grows a new user-facing string, it belongs here too.
   const NUTZERTEXTE = [
+    'bringt sein Modell selbst mit', // sperrgrund: what a cli-harness is, structurally
     'waere eine stille Falle', // sperrgrund: fremdes-cli locked against a foreign model
     'eine Nutzungsbedingung, keine Faehigkeitsfrage', // sperrgrund: agentic vs. cli-harness
     'schwache Modelle zuerst brechen', // warnungen: werkzeugmodus-text

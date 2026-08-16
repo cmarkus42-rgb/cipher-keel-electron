@@ -2,7 +2,8 @@
  * ConfigStore — persistent JSON-File-Store for app configuration.
  *
  * Simplified port from cipher-mux 0.9.x (CK-INF-008).
- * Stores config at ~/.config/cipher-keel/cipher-keel-config.json.
+ * Stores config at ~/Library/Application Support/cipher-keel-electron/cipher-keel-config.json
+ * (verified by measurement; `app.getPath('userData')` is the actual source of truth).
  *
  * cipher-keel-specific: stripped down to essential fields.
  * 0.9.x-era fields (personas, characters, workshop, etc.) will be

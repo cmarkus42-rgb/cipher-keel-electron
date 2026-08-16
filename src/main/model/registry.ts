@@ -15,6 +15,7 @@
 import { configStore } from '../config/config-store'
 import { DEFAULT_EINTRAEGE } from './defaults'
 import { normaliseEintrag, type ModellEintrag } from './entry'
+import { sperrgrund } from './eignung'
 
 export type Tier = 'light' | 'standard' | 'heavy'
 export type Rolle = 'tagging' | 'worker'
@@ -23,7 +24,16 @@ export function alleEintraege(): ModellEintrag[] {
   const byId = new Map<string, ModellEintrag>()
   for (const e of DEFAULT_EINTRAEGE) byId.set(e.id, e)
 
-  for (const raw of configStore.get('modelle').eintraege) {
+  const eintraege = configStore.get('modelle').eintraege
+  if (!Array.isArray(eintraege)) {
+    // Same posture as the per-entry skip below: a hand-edited config that broke the shape
+    // of the whole list is treated as empty, not as a crash — the docblock above promises
+    // exactly that.
+    console.warn('[model-registry] modelle.eintraege ist kein Array — wird als leer behandelt.')
+    return [...byId.values()]
+  }
+
+  for (const raw of eintraege) {
     try {
       const e = normaliseEintrag(raw)
       byId.set(e.id, e)
@@ -48,26 +58,40 @@ export function eintragFuerRolle(rolle: Rolle): ModellEintrag | null {
   return eintragNachId(configStore.get('modelle').zuordnung.rollen[rolle])
 }
 
+/** What resolving a tier's CLI handle produced. Never both fields absent and set at once. */
+export interface CliHandleErgebnis {
+  /** Only a cli-harness entry has a handle. */
+  handle?: string
+  /**
+   * German: reaches the user, e.g. via the prompt preview. Set exactly when a tier names
+   * an entry that exists but is not a cli-harness — the caller degrades to the legacy
+   * `agent.modelTiers` value, and this says why, so the degradation is not silent.
+   */
+  hinweis?: string
+}
+
 /**
- * The CLI handle a tier assignment points at, or undefined when nothing is assigned.
- * Only a cli-harness entry has a handle; anything else means "no assignment for this tier"
- * rather than an error, because a session must still start.
+ * The CLI handle a tier assignment points at, or a hinweis when nothing usable is
+ * assigned. Only a cli-harness entry has a handle; anything else means "no assignment for
+ * this tier" rather than an error, because a session must still start.
  *
  * Two different "nothing" cases, and only one of them is quiet: an unassigned tier is the
- * normal, expected state for every tier that has not been configured — no warning. A tier
- * that names an entry which exists but is not a cli-harness is a wrong-shaped assignment
- * the user actually made, so it is skipped loudly, the same way alleEintraege() skips a
- * broken config entry loudly rather than losing it without a trace.
+ * normal, expected state for every tier that has not been configured — no warning, no
+ * hinweis. A tier that names an entry which exists but is not a cli-harness is a
+ * wrong-shaped assignment the user actually made, so it is reported loudly (console.warn
+ * for a developer, hinweis for a surface the user actually looks at), the same way
+ * alleEintraege() skips a broken config entry loudly rather than losing it without a trace.
  */
-export function cliHandleFuerTier(tier: Tier): string | undefined {
+export function cliHandleFuerTier(tier: Tier): CliHandleErgebnis {
   const e = eintragFuerTier(tier)
-  if (!e) return undefined
-  if (e.erreichbarkeit.art === 'cli-harness') return e.erreichbarkeit.handle
+  if (!e) return {}
+  if (e.erreichbarkeit.art === 'cli-harness') return { handle: e.erreichbarkeit.handle }
 
-  console.warn(
-    `[model-registry] Tier '${tier}' zeigt auf den Eintrag '${e.id}', der kein CLI-Harness ` +
-      'ist — ein CLI-Harness bringt sein Modell selbst mit. ' +
-      'Es gilt weiterhin der Wert aus agent.modelTiers.'
-  )
-  return undefined
+  // The rule that a fremdes-cli laeufer cannot drive this art of entry lives in eignung.ts;
+  // this only adds the context (which tier, which entry, what happens instead).
+  const hinweis =
+    `Tier '${tier}' zeigt auf den Eintrag '${e.id}', der kein CLI-Harness ist — ` +
+    `${sperrgrund('fremdes-cli', e.art)} Es gilt weiterhin der Wert aus agent.modelTiers.`
+  console.warn(`[model-registry] ${hinweis}`)
+  return { hinweis }
 }

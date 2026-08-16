@@ -110,6 +110,6 @@ describe('toModelEndpoint', () => {
 
   it('refuses to build an endpoint for a cli-harness entry', () => {
     expect(() => toModelEndpoint({ art: 'cli-harness', cli: 'claude', handle: 'opus' }))
-      .toThrow('bringt sein Modell selbst mit')
+      .toThrow('hat keinen Endpunkt')
   })
 })

@@ -150,9 +150,9 @@ export function normaliseEintrag(raw: unknown): ModellEintrag {
 export function toModelEndpoint(e: Erreichbarkeit): ModelEndpoint {
   switch (e.art) {
     case 'cli-harness':
-      throw new Error(
-        `Ein cli-harness-Eintrag hat keinen Endpunkt — das CLI bringt sein Modell selbst mit`
-      )
+      // The reason a cli-harness entry is different lives in eignung.ts (sperrgrund) —
+      // this is the transport fact only, not a restatement of the rule.
+      throw new Error(`Ein cli-harness-Eintrag hat keinen Endpunkt`)
     case 'local-http':
       return normaliseEndpoint({ kind: 'ollama', host: e.host, port: e.port, model: e.model })
     case 'api':

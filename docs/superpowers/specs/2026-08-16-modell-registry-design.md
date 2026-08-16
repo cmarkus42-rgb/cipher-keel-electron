@@ -224,11 +224,16 @@ Die Warnungen hängen deshalb an den **Fähigkeiten**, mit der Örtlichkeit als 
 | Läufer `eigene-schleife` und `werkzeugmodus: 'text'` | Die Schleife läuft über das Text-Protokoll — die Stelle, an der schwache Modelle zuerst brechen |
 | Niveau A oder B und `quelle !== 'gemessen'` | Für dieses Modell liegt keine eigene Messung vor; die Zeile ist vermutet |
 | Niveau A oder B und `nutzbaresKontextfenster` unter der Schwelle des Rahmens | Der Startkontext dieser Rolle passt nicht |
-| Niveau C und `oertlichkeit: 'fremdes-netz'` bei starkem Modell | Teure Ebene für mechanische Arbeit — das Gegenteil des Gefälles |
+| Niveau C und `oertlichkeit: 'fremdes-netz'` | Teure Ebene für mechanische Arbeit — das Gegenteil des Gefälles |
 | Niveau **C** auf einem Läufer, der mehr trägt | Läuft, nutzt den Läufer aber nicht aus |
 | `oertlichkeit: 'fremdes-netz'` | Der Prompt verlässt das eigene Netz |
 
 **Keine dieser Zeilen sperrt.** Sperren tut ausschließlich §7.1.
+
+*(Der Zusatz „bei starkem Modell" zur ersten Zeile wurde gestrichen: `Faehigkeiten` trägt kein
+Feld, das Modellgröße oder -kosten ausdrückt, also feuert die Regel im Code für jeden
+fremdes-netz-Eintrag auf C, stark oder nicht — der Qualifier war nicht implementierbar. Er
+kann zurückkehren, sobald ein solches Feld existiert.)*
 
 ### 7.4 Eine Korrektur am Basiskonzept
 

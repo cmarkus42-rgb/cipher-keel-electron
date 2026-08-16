@@ -69,6 +69,22 @@ describe('warnings sit on the assignment, never on the entry', () => {
     expect(c).toContain('teure-ebene-fuer-mechanik')
   })
 
+  // Spec §7.3 struck the qualifier "bei starkem Modell" from this row: `Faehigkeiten`
+  // carries no field for model size or cost, so the rule cannot be conditioned on it and
+  // must fire only for niveau C, never for B — a cheap API model on B must not draw this
+  // warning just for being on a foreign net (it still gets 'verlaesst-netz').
+  it('does NOT warn "teure-ebene-fuer-mechanik" for a foreign-net entry on niveau B', () => {
+    const fremd = normaliseEintrag({
+      id: 'or-x', name: 'X', art: 'api',
+      erreichbarkeit: { art: 'api', baseUrl: 'https://openrouter.ai/api/v1', model: 'x', keyRef: 'openrouter' },
+      oertlichkeit: 'fremdes-netz', erklaertext: 'x', empfehlung: 'x',
+      faehigkeiten: { codec: 'openai-chat', werkzeugmodus: 'nativ', quelle: 'gemessen',
+        gemessenAm: '2026-08-16', gemessenMit: 'kanarie-1' },
+    })
+    const c = codes(warnungen(fremd, 'eigene-schleife', CapabilityNiveau.B))
+    expect(c).not.toContain('teure-ebene-fuer-mechanik')
+  })
+
   // The counter-proof. moondream (1B) failed the C contract twice while gemma4:26b,
   // qwen3-vl:30b and gpt-oss:120b passed first try — all four local. Keying the warning on
   // locality would shout at the 120B as loudly as at the 1B and become noise within a week.
