@@ -15,7 +15,6 @@
  * environment.
  */
 
-import { configStore } from '../config/config-store'
 import { HttpOllamaClient } from './ollama-client'
 import { OpenAiCompatibleClient } from './api-client'
 
@@ -125,11 +124,6 @@ export function describeEndpoint(endpoint: ModelEndpoint): string {
  * strongest machine — or on a vendor.
  */
 export type LlmRole = 'tagging' | 'worker'
-
-/** The endpoint a role points at, straight from config and already normalised. */
-export function endpointForRole(role: LlmRole): ModelEndpoint {
-  return normaliseEndpoint(configStore.get('llm')[role])
-}
 
 /**
  * The transport that serves this endpoint.

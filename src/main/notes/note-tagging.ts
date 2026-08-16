@@ -5,7 +5,8 @@
  * Graceful degradation: returns null when Ollama is unavailable.
  */
 
-import { endpointForRole, clientForEndpoint } from '../worker/model-client'
+import { clientForEndpoint } from '../worker/model-client'
+import { endpointForRole } from '../model/rollen'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import matter from 'gray-matter'
