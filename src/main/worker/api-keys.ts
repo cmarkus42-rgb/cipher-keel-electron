@@ -44,10 +44,36 @@ export async function readFromKeychain(ref: string): Promise<string | null> {
   }
 }
 
+/**
+ * The cause of a keychain failure, with the secret guaranteed absent.
+ *
+ * `execFile` puts the whole argv into `err.message`, and this argv carries the key — so
+ * the message itself is unusable. `stderr` is what the tool actually said, and the
+ * containment check below is belt and braces: this is the one module that can be sure,
+ * so it makes sure rather than assuming.
+ */
+function ursacheOhneArgv(err: unknown, geheimnis: string): string {
+  const stderr = (err as { stderr?: unknown })?.stderr
+  const text = typeof stderr === 'string' && stderr.trim() ? stderr.trim() : ''
+  if (!text) return 'kein Fehlertext vom security-Aufruf'
+  if (geheimnis && text.includes(geheimnis)) {
+    return 'Fehlertext unterdrueckt — er enthielt den Schluessel'
+  }
+  return text
+}
+
 export async function storeInKeychain(ref: string, key: string): Promise<void> {
-  await execFileAsync('security', [
-    'add-generic-password', '-s', keychainService(ref), '-a', 'key', '-w', key, '-U',
-  ])
+  try {
+    await execFileAsync('security', [
+      'add-generic-password', '-s', keychainService(ref), '-a', 'key', '-w', key, '-U',
+    ])
+  } catch (err) {
+    // Never rethrow the original: its message contains the key. See ursacheOhneArgv.
+    throw new Error(
+      `Der Schluesselbund hat den Eintrag '${keychainService(ref)}' nicht angenommen. ` +
+      `Ist er entsperrt? (${ursacheOhneArgv(err, key)})`
+    )
+  }
 }
 
 export function readFromEnv(ref: string): string | null {

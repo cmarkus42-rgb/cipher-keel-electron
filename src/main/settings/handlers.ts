@@ -105,9 +105,11 @@ export function registerSettingsHandlers(): void {
     if (!ref) return { ok: false, fehler: 'Ohne Schluesselnamen laesst sich nichts hinterlegen.' }
     if (!geheimnis) return { ok: false, fehler: 'Ein leeres Geheimnis wird nicht gespeichert — zum Entfernen bitte loeschen.' }
     try {
+      // storeInKeychain redigiert seine eigene Ursache — siehe api-keys.ts. Die Meldung
+      // hier weiterzureichen ist deshalb sicher, und nur deshalb.
       await storeInKeychain(ref, geheimnis)
     } catch (err) {
-      return { ok: false, fehler: `Der Schluesselbund hat das Speichern abgelehnt: ${err instanceof Error ? err.message : String(err)}` }
+      return { ok: false, fehler: err instanceof Error ? err.message : String(err) }
     }
     return mitAnsicht(() => {})
   })
