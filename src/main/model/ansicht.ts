@@ -76,6 +76,19 @@ function endpunktAnsicht(e: { kind?: string; host?: string; port?: number; baseU
   }
 }
 
+/**
+ * Enough of a rejected config entry to recognise it, and no more.
+ *
+ * The raw value comes from a hand-edited file and is displayed to a user, so it is bounded
+ * here rather than in the renderer — the main process is where the value is known to be
+ * arbitrary. The ellipsis matters: without it a clipped blob reads as malformed JSON
+ * rather than as an excerpt, which would blame the wrong thing.
+ */
+function kurzfassung(roh: unknown): string {
+  const text = JSON.stringify(roh) ?? String(roh)
+  return text.length > 120 ? `Eintrag ${text.slice(0, 120)}…` : `Eintrag ${text}`
+}
+
 function rueckfallText(slot: Slot): string {
   if (slot.art === 'tier') {
     const handle = configStore.get('agent').modelTiers[slot.schluessel as 'light' | 'standard' | 'heavy']
@@ -99,10 +112,28 @@ function slotAnsicht(slot: Slot, eintraege: ModellEintrag[]): SlotAnsicht {
   }))
 
   const eintrag = eintraege.find(e => e.id === gewaehlt)
+
+  // An assignment is only worth warning about if it actually holds. Two ways it does not:
+  // it names an id nothing defines, or it names an entry this slot's runner cannot drive.
+  // Both mean the fallback runs, so warnings about the named entry would describe
+  // something that never happens — and the lock reason is the message that matters.
+  let gewaehltHinweis: string | null = null
+  if (gewaehlt && !eintrag) {
+    gewaehltHinweis =
+      `Die Zuordnung nennt den Eintrag '${gewaehlt}', den es nicht gibt. Es gilt der Rueckfall.`
+  } else if (eintrag) {
+    const grund = sperrgrund(slot.laeufer, eintrag.art)
+    if (grund) {
+      gewaehltHinweis = `Diese Zuordnung ist nicht benutzbar. ${grund} Es gilt der Rueckfall.`
+    }
+  }
+
   // No WarnKontext is passed: nothing in the project supplies a start context yet, so
   // `kontext-zu-klein` cannot fire. Spec section 5.5 states that, and
   // tests/model/ansicht.test.ts holds the counter-proof.
-  const warnListe = eintrag ? warnungen(eintrag, slot.laeufer, slot.niveau) : []
+  const warnListe = eintrag && !gewaehltHinweis
+    ? warnungen(eintrag, slot.laeufer, slot.niveau)
+    : []
 
   return {
     id: slot.id,
@@ -110,6 +141,7 @@ function slotAnsicht(slot: Slot, eintraege: ModellEintrag[]): SlotAnsicht {
     gewaehlt: gewaehlt ?? '',
     optionen,
     warnungen: warnListe,
+    gewaehltHinweis,
     rueckfallText: rueckfallText(slot),
     wirkung: slot.wirkung,
   }
@@ -136,26 +168,29 @@ function adapterAnsichten(): AdapterAnsicht[] {
     const adapter = registry.get(id)!
     const text = startArgs[id] ?? ''
     const appGesteuert = [...(adapter.appGesteuerteParameter ?? [])]
-    const warnungen: WarnungAnsicht[] = []
+    // Not named `warnungen`: that name belongs to the eignung function this module is the
+    // one caller of, and shadowing it here would make a reader check whether one is the
+    // other. Neither is.
+    const warnListe: WarnungAnsicht[] = []
     let getippt: string[] = []
 
     try {
       getippt = splitShellArgs(text)
     } catch (err) {
       // An unreadable line cannot be judged further, so no other rule runs on it.
-      warnungen.push({
+      warnListe.push({
         code: 'unlesbare-parameter',
         text: err instanceof Error ? err.message : String(err),
       })
       return {
         id, name: adapter.displayName, startArgs: text,
-        appGesteuerteParameter: appGesteuert, warnungen,
+        appGesteuerteParameter: appGesteuert, warnungen: warnListe,
       }
     }
 
     const doppelt = appGesteuert.filter(p => getippt.includes(p))
     if (doppelt.length > 0) {
-      warnungen.push({
+      warnListe.push({
         code: 'doppelter-parameter',
         text: `${doppelt.join(', ')} wird von der App selbst angehaengt — hier eingetragen ` +
           'steht der Parameter zweimal in der Kommandozeile.',
@@ -163,7 +198,7 @@ function adapterAnsichten(): AdapterAnsicht[] {
     }
 
     if (getippt.includes(BERECHTIGUNGS_FLAGGE)) {
-      warnungen.push({
+      warnListe.push({
         code: 'berechtigungen-uebersprungen',
         text: 'Dieser Parameter schaltet die Rueckfrage vor jedem Werkzeugaufruf ab. Er ist ' +
           'die Vorgabe, weil die App ihre Sitzungen selbst in einen tmux-Pane startet, in dem ' +
@@ -174,7 +209,7 @@ function adapterAnsichten(): AdapterAnsicht[] {
 
     return {
       id, name: adapter.displayName, startArgs: text,
-      appGesteuerteParameter: appGesteuert, warnungen,
+      appGesteuerteParameter: appGesteuert, warnungen: warnListe,
     }
   })
 }
@@ -208,7 +243,7 @@ export async function baueAnsicht(quellen: GeheimnisQuellen = {}): Promise<Setti
   return {
     eintraege: eintragsAnsichten,
     uebersprungen: uebersprungen.map(u => ({
-      beschreibung: `Eintrag ${JSON.stringify(u.roh).slice(0, 120)}`,
+      beschreibung: kurzfassung(u.roh),
       fehler: u.fehler,
     })),
     slots: SLOTS.map(s => slotAnsicht(s, eintraege)),

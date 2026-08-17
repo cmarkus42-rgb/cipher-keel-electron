@@ -92,11 +92,33 @@ describe('Ansichtsmodell', () => {
     expect(codes(a, 'rolle:tagging')).not.toContain('werkzeugmodus-text')
   })
 
-  it('erreicht nicht-gemessen nicht: ein Tier haelt strukturell nur cli-harness', async () => {
+  it('erreicht nicht-gemessen nicht: die Paarung, die es braeuchte, ist gesperrt', async () => {
+    // Die Regel verlangt einen agentischen Laeufer auf einem Nicht-CLI-Eintrag. Genau
+    // diese Paarung sperrt sperrgrund fuer jeden Tier-Slot — und eine gesperrte
+    // Zuordnung traegt keine Warnungen, weil sie nicht laeuft. Der Eintrag ist bewusst
+    // ein local-http-Eintrag: waere hier ein cli-harness-Eintrag verankert, wuerde die
+    // Gegenprobe vom Eintrag blockiert statt von der Slot-Tabelle und koennte nie
+    // fallen, wenn das Harness einen eigene-schleife-Slot einfuehrt.
+    const a = await ansichtMit({
+      modelle: { zuordnung: { tiers: { light: '', standard: '', heavy: 'spark-gemma4-26b' } } },
+    })
+    expect(slot(a, 'tier:heavy').gewaehltHinweis).toContain('CLI-Harness')
+    expect(codes(a, 'tier:heavy')).toEqual([])
+  })
+
+  it('sagt es, wenn eine Zuordnung einen Eintrag nennt, den es nicht gibt', async () => {
+    const a = await ansichtMit({
+      modelle: { zuordnung: { rollen: { tagging: '', worker: 'gibt-es-nicht' } } },
+    })
+    expect(slot(a, 'rolle:worker').gewaehltHinweis).toContain('gibt-es-nicht')
+    expect(codes(a, 'rolle:worker')).toEqual([])
+  })
+
+  it('laesst gewaehltHinweis leer, solange die Zuordnung benutzbar ist', async () => {
     const a = await ansichtMit({
       modelle: { zuordnung: { tiers: { light: '', standard: '', heavy: 'claude-opus-cli' } } },
     })
-    expect(codes(a, 'tier:heavy')).not.toContain('nicht-gemessen')
+    expect(slot(a, 'tier:heavy').gewaehltHinweis).toBeNull()
   })
 
   it('erreicht unter-faehigkeit nicht: die C-Slots fahren ein-schuss, der auf C steht', async () => {
@@ -143,7 +165,7 @@ describe('Ansichtsmodell', () => {
     expect(e.geheimnisStatus).toBe('schluesselbund')
   })
 
-  it('meldet ein fehlendes Geheimnis und nennt die geprueft Umgebungsvariable', async () => {
+  it('meldet ein fehlendes Geheimnis und nennt die gepruefte Umgebungsvariable', async () => {
     const a = await ansichtMit(null)
     const e = a.eintraege.find(x => x.id === 'openrouter-qwen3-coder')!
     expect(e.geheimnisStatus).toBe('fehlt')
@@ -153,6 +175,33 @@ describe('Ansichtsmodell', () => {
   it('gibt einem Eintrag ohne keyRef gar keinen Geheimnis-Status', async () => {
     const a = await ansichtMit(null)
     expect(a.eintraege.find(x => x.id === 'mac-qwen3-30b')!.geheimnisStatus).toBeNull()
+  })
+
+  // --- die Felder, die sonst niemand anfasst ---
+  // Ohne diese drei koennte man tagging und worker vertauschen oder die Sprachausgabe
+  // invertieren, und die Suite bliebe gruen.
+
+  it('reicht die Modell-Tiers als Rueckfall durch', async () => {
+    const a = await ansichtMit(null)
+    expect(a.modellTiers).toEqual({ light: 'haiku', standard: 'sonnet', heavy: 'opus' })
+  })
+
+  it('ordnet die Rueckfall-Endpunkte der richtigen Rolle zu', async () => {
+    const a = await ansichtMit({
+      llm: {
+        tagging: { host: '10.0.0.1', port: 11434, model: 'tagger' },
+        worker: { host: '10.0.0.2', port: 11434, model: 'arbeiter' },
+      },
+    })
+    expect(a.rueckfallEndpunkte.tagging.model).toBe('tagger')
+    expect(a.rueckfallEndpunkte.tagging.host).toBe('10.0.0.1')
+    expect(a.rueckfallEndpunkte.worker.model).toBe('arbeiter')
+    expect(a.rueckfallEndpunkte.worker.host).toBe('10.0.0.2')
+  })
+
+  it('gibt die Sprachausgabe unveraendert weiter', async () => {
+    const a = await ansichtMit({ voice: { enabled: false, piperVoice: 'de_DE-probe' } })
+    expect(a.sprachausgabe).toEqual({ aktiv: false, stimme: 'de_DE-probe' })
   })
 
   it('markiert gebuendelte Eintraege als nicht loeschbar', async () => {

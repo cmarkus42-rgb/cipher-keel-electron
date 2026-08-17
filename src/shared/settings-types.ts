@@ -48,8 +48,20 @@ export interface SlotAnsicht {
   /** Empty string means no assignment. */
   gewaehlt: string
   optionen: SlotOptionAnsicht[]
+  /**
+   * Warnings about the assignment that is actually in effect. Empty when the assignment
+   * does not hold — a warning about a pairing that never runs is noise, not information.
+   */
   warnungen: WarnungAnsicht[]
-  /** German: what applies while nothing is assigned. */
+  /**
+   * German, non-null when the current assignment cannot be used: the entry is locked for
+   * this slot, or it names an id nothing defines. In both cases the fallback applies.
+   *
+   * The renderer displays this instead of reconciling `gewaehlt` against `optionen`
+   * itself. Reconciling is a rule, and rules do not cross this boundary.
+   */
+  gewaehltHinweis: string | null
+  /** German: what applies while nothing usable is assigned. */
   rueckfallText: string
   wirkung: Wirkung
 }
