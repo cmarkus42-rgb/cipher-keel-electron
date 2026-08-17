@@ -4,10 +4,12 @@
  * Every locked option and every warning is text the main process computed. This file
  * decides layout, never eligibility.
  */
+import { useState } from 'react'
 import type { SettingsAnsicht, SlotAnsicht } from '../../../shared/settings-types'
 import { Warnliste } from './Warnliste'
 import { WirkungVermerk } from './WirkungVermerk'
 import { GeheimnisFeld } from './GeheimnisFeld'
+import { EintragFormular } from './EintragFormular'
 
 const ART_TITEL: Record<string, string> = {
   'cli-harness': 'Ueber ein CLI-Harness',
@@ -37,6 +39,12 @@ export function ModelleReiter({
   ansicht: SettingsAnsicht
   schreibe: (kanal: string, ...args: unknown[]) => Promise<void>
 }) {
+  // null = kein Formular offen; 'neu' = leeres Formular; sonst die Kennung des Eintrags
+  const [formular, setFormular] = useState<string | null>(null)
+  const vorlage = formular && formular !== 'neu'
+    ? ansicht.eintraege.find(e => e.id === formular) ?? null
+    : null
+
   const arten = ['cli-harness', 'local-http', 'api'] as const
 
   return (
@@ -111,7 +119,17 @@ export function ModelleReiter({
         </div>
       ))}
 
-      <h2 style={styles.ueberschrift}>Eintraege</h2>
+      <div style={styles.eintraegeKopf}>
+        <h2 style={styles.ueberschrift}>Eintraege</h2>
+        <button onClick={() => setFormular('neu')} style={styles.neuKnopf}>Neuer Eintrag</button>
+      </div>
+      {formular && (
+        <EintragFormular
+          vorlage={vorlage}
+          schreibe={schreibe}
+          onFertig={() => setFormular(null)}
+        />
+      )}
       {arten.map(art => {
         const gruppe = ansicht.eintraege.filter(e => e.art === art)
         if (gruppe.length === 0) return null
@@ -130,14 +148,19 @@ export function ModelleReiter({
                 <div style={styles.erklaertext}>{e.erklaertext}</div>
                 <div style={styles.empfehlung}>{e.empfehlung}</div>
                 <GeheimnisFeld eintrag={e} schreibe={schreibe} />
-                {e.loeschbar && (
-                  <button
-                    onClick={() => schreibe('settings:eintrag-loeschen', e.id)}
-                    style={styles.loeschen}
-                  >
-                    Eintrag loeschen
+                <div style={styles.eintragKnoepfe}>
+                  <button onClick={() => setFormular(e.id)} style={styles.bearbeiten}>
+                    Bearbeiten
                   </button>
-                )}
+                  {e.loeschbar && (
+                    <button
+                      onClick={() => schreibe('settings:eintrag-loeschen', e.id)}
+                      style={styles.loeschen}
+                    >
+                      Eintrag loeschen
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -148,7 +171,7 @@ export function ModelleReiter({
 }
 
 const styles = {
-  ueberschrift: { color: '#e0e0e0', fontSize: 14, margin: '0 0 12px' },
+  ueberschrift: { color: '#e0e0e0', fontSize: 14, margin: 0 },
   gruppe: { color: '#888', fontSize: 12, margin: '16px 0 8px', fontWeight: 500 as const },
   slot: { marginBottom: 16, padding: 10, background: '#111', border: '1px solid #1e1e1e', borderRadius: 3 },
   slotKopf: { display: 'flex' as const, alignItems: 'baseline' as const, marginBottom: 6 },
@@ -165,6 +188,16 @@ const styles = {
   eingabe: {
     background: '#0d0d0d', border: '1px solid #333', borderRadius: 3,
     color: '#ddd', padding: '3px 6px', fontSize: 12, width: 160,
+  },
+  eintraegeKopf: { display: 'flex' as const, alignItems: 'center' as const, justifyContent: 'space-between' as const, marginBottom: 12 },
+  neuKnopf: {
+    background: '#1a1a1a', color: '#ddd', border: '1px solid #333',
+    borderRadius: 3, padding: '4px 10px', cursor: 'pointer' as const, fontSize: 12,
+  },
+  eintragKnoepfe: { display: 'flex' as const, gap: 6, marginTop: 8 },
+  bearbeiten: {
+    background: '#1a1a1a', color: '#ddd', border: '1px solid #333',
+    borderRadius: 3, padding: '3px 8px', cursor: 'pointer' as const, fontSize: 11,
   },
   eintrag: { marginBottom: 10, padding: 10, background: '#111', border: '1px solid #1e1e1e', borderRadius: 3 },
   eintragKopf: { display: 'flex' as const, gap: 10, alignItems: 'baseline' as const },
