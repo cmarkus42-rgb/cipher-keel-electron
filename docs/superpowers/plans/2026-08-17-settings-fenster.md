@@ -393,6 +393,23 @@ describe('splitShellArgs', () => {
     expect(splitShellArgs(`--text "Kenos' Rezept"`)).toEqual(['--text', "Kenos' Rezept"])
   })
 
+  it('laesst den Rueckstrich in doppelten Anfuehrungszeichen das Anfuehrungszeichen schuetzen', () => {
+    expect(splitShellArgs('--text "Use \\"careful\\" quoting"'))
+      .toEqual(['--text', 'Use "careful" quoting'])
+  })
+
+  it('schuetzt in doppelten Anfuehrungszeichen auch den Rueckstrich selbst', () => {
+    expect(splitShellArgs('--text "a\\\\b"')).toEqual(['--text', 'a\\b'])
+  })
+
+  it('laesst den Rueckstrich in einfachen Anfuehrungszeichen literal, wie POSIX es will', () => {
+    expect(splitShellArgs("--text 'a\\b'")).toEqual(['--text', 'a\\b'])
+  })
+
+  it('laesst einen Rueckstrich vor einem harmlosen Zeichen in Anfuehrungszeichen stehen', () => {
+    expect(splitShellArgs('--text "a\\zb"')).toEqual(['--text', 'a\\zb'])
+  })
+
   it('erlaubt ein leeres Argument als ausdrueckliches Paar Anfuehrungszeichen', () => {
     expect(splitShellArgs(`--leer ""`)).toEqual(['--leer', ''])
   })
@@ -422,27 +439,53 @@ Erwartet: FAIL, `splitShellArgs is not a function` bzw. kein Export.
 An `src/main/util/shell-quote.ts` anhängen:
 
 ```ts
+/** Inside double quotes a backslash protects only these — POSIX, and nothing invented. */
+const GESCHUETZT_IN_DOPPELTEN = '"\\$`'
+
 /**
  * Split a free-text command line into argv, the inverse of formatShellCommand.
  *
  * Users type start parameters into the settings window as one line. Splitting on
  * whitespace alone would break `--append-system-prompt-file "/pfad mit leerzeichen"`, so
- * both quoting forms and the backslash escape are honoured. An unbalanced quote is an
- * error rather than a best-effort guess: a silently mangled launch command is the
- * expensive kind of failure.
+ * both quoting forms are honoured — and they are honoured *differently*, the way a shell
+ * does it:
+ *
+ *   - outside quotes, a backslash escapes whatever follows it
+ *   - inside single quotes nothing is special, not even a backslash
+ *   - inside double quotes a backslash protects " \ $ and ` and nothing else; before any
+ *     other character it stays a literal backslash
+ *
+ * That asymmetry is not an oversight to be tidied away later. Treating both quote forms
+ * alike would reject `--text "Use \"careful\" quoting"`, which is ordinary input.
+ *
+ * An unbalanced quote is an error rather than a best-effort guess: this argv becomes a
+ * real launch command, and a silently mangled one is the expensive kind of failure.
  */
 export function splitShellArgs(text: string): string[] {
   const args: string[] = []
   let current = ''
   let hasCurrent = false
-  let quote: "'" | '"' | null = null
+  // Named for what it holds, and not `quote` — that name belongs to the escaping
+  // helper above, and shadowing it here would make a reader check whether one calls
+  // the other. Neither does.
+  let openQuote: "'" | '"' | null = null
 
   for (let i = 0; i < text.length; i++) {
     const ch = text[i]
 
-    if (quote) {
-      if (ch === quote) {
-        quote = null
+    if (openQuote) {
+      if (
+        openQuote === '"' &&
+        ch === '\\' &&
+        i + 1 < text.length &&
+        GESCHUETZT_IN_DOPPELTEN.includes(text[i + 1])
+      ) {
+        current += text[i + 1]
+        i++
+        continue
+      }
+      if (ch === openQuote) {
+        openQuote = null
       } else {
         current += ch
       }
@@ -450,7 +493,7 @@ export function splitShellArgs(text: string): string[] {
     }
 
     if (ch === "'" || ch === '"') {
-      quote = ch
+      openQuote = ch
       hasCurrent = true
       continue
     }
@@ -475,9 +518,9 @@ export function splitShellArgs(text: string): string[] {
     hasCurrent = true
   }
 
-  if (quote) {
+  if (openQuote) {
     throw new Error(
-      `[shell-quote] Unbalanciertes Anfuehrungszeichen (${quote}) in den Startparametern — ` +
+      `[shell-quote] Unbalanciertes Anfuehrungszeichen (${openQuote}) in den Startparametern — ` +
       'jedes geoeffnete Anfuehrungszeichen braucht ein schliessendes.'
     )
   }
