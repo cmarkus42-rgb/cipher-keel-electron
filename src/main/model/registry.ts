@@ -20,17 +20,29 @@ import { slotFuerTier, type Tier, type Rolle } from './slots'
 
 export type { Tier, Rolle } from './slots'
 
-export function alleEintraege(): ModellEintrag[] {
+/** One config entry that did not survive validation, with the reason it did not. */
+export interface EintragsBefund {
+  roh: unknown
+  fehler: string
+}
+
+/**
+ * The entries plus what was dropped getting there.
+ *
+ * Skipping a broken entry loudly on the console is right for a developer and invisible to
+ * a user. The settings surface shows `uebersprungen`, so a hand-edited line that broke
+ * stops being a silent loss.
+ */
+export function ladeEintraege(): { eintraege: ModellEintrag[]; uebersprungen: EintragsBefund[] } {
   const byId = new Map<string, ModellEintrag>()
   for (const e of DEFAULT_EINTRAEGE) byId.set(e.id, e)
+  const uebersprungen: EintragsBefund[] = []
 
   const eintraege = configStore.get('modelle').eintraege
   if (!Array.isArray(eintraege)) {
-    // Same posture as the per-entry skip below: a hand-edited config that broke the shape
-    // of the whole list is treated as empty, not as a crash — the docblock above promises
-    // exactly that.
-    console.warn('[model-registry] modelle.eintraege ist kein Array — wird als leer behandelt.')
-    return [...byId.values()]
+    const fehler = 'modelle.eintraege ist kein Array — die Liste wird als leer behandelt.'
+    console.warn(`[model-registry] ${fehler}`)
+    return { eintraege: [...byId.values()], uebersprungen: [{ roh: eintraege, fehler }] }
   }
 
   for (const raw of eintraege) {
@@ -38,11 +50,17 @@ export function alleEintraege(): ModellEintrag[] {
       const e = normaliseEintrag(raw)
       byId.set(e.id, e)
     } catch (err) {
+      const fehler = err instanceof Error ? err.message : String(err)
       // Loud, not silent — a skipped entry that says nothing is the expensive kind of failure.
-      console.warn('[model-registry] Eintrag aus der Konfiguration uebersprungen:', err)
+      console.warn('[model-registry] Eintrag aus der Konfiguration uebersprungen:', fehler)
+      uebersprungen.push({ roh: raw, fehler })
     }
   }
-  return [...byId.values()]
+  return { eintraege: [...byId.values()], uebersprungen }
+}
+
+export function alleEintraege(): ModellEintrag[] {
+  return ladeEintraege().eintraege
 }
 
 export function eintragNachId(id: string): ModellEintrag | null {

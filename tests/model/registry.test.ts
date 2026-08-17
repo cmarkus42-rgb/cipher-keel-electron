@@ -103,6 +103,44 @@ describe('registry resolution', () => {
     expect(eintragFuerRolle('worker')).toBeNull()
   })
 
+  describe('ladeEintraege', () => {
+    it('liefert den kaputten Eintrag samt Fehlertext statt ihn nur zu loggen', async () => {
+      const { ladeEintraege } = await withConfig({
+        // `name` ist gesetzt, damit die Validierung bis zur Anbieterart kommt:
+        // normaliseEintrag prueft name vor art, und der Fehlertext soll den
+        // tatsaechlichen Grund tragen, nicht den erstbesten.
+        modelle: { eintraege: [{ id: 'kaputt', name: 'Kaputt', art: 'telepathie' }] },
+      })
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const { eintraege, uebersprungen } = ladeEintraege()
+        expect(eintraege.length).toBeGreaterThan(0)
+        expect(uebersprungen).toHaveLength(1)
+        expect(uebersprungen[0].fehler).toContain('telepathie')
+        expect((uebersprungen[0].roh as { id: string }).id).toBe('kaputt')
+      } finally {
+        warn.mockRestore()
+      }
+    })
+
+    it('meldet nichts uebersprungen, wenn alles in Ordnung ist', async () => {
+      const { ladeEintraege } = await withConfig(null)
+      expect(ladeEintraege().uebersprungen).toEqual([])
+    })
+
+    it('meldet eine nicht-Array-Liste als einen einzigen Befund', async () => {
+      const { ladeEintraege } = await withConfig({ modelle: { eintraege: {} } })
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const { uebersprungen } = ladeEintraege()
+        expect(uebersprungen).toHaveLength(1)
+        expect(uebersprungen[0].fehler).toContain('Array')
+      } finally {
+        warn.mockRestore()
+      }
+    })
+  })
+
   describe('cliHandleFuerTier', () => {
     it('returns the handle for a tier assigned to a cli-harness entry, and no hinweis', async () => {
       const { cliHandleFuerTier } = await withConfig({
