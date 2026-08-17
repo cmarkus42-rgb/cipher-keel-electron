@@ -1249,10 +1249,30 @@ export interface WarnungAnsicht {
   text: string
 }
 
+/**
+ * How an entry is reached, mirrored for the settings form.
+ *
+ * Carries no secret: `keyRef` is the *name* a key is stored under, never the key. The
+ * form needs these fields to show an existing entry's current values — without them
+ * "edit" would silently rewrite an endpoint from blanks.
+ */
+export type ErreichbarkeitAnsicht =
+  | { art: 'cli-harness'; cli: string; handle: string }
+  | { art: 'local-http'; host: string; port: number; model: string }
+  | { art: 'api'; baseUrl: string; model: string; keyRef: string }
+
+/**
+ * How the renderer writes. Returns whether the write succeeded, so a form can stay open
+ * on failure instead of closing as though it had worked — the shell owns the error
+ * banner, but only the caller knows whether it still has something to show.
+ */
+export type Schreiber = (kanal: string, ...args: unknown[]) => Promise<boolean>
+
 export interface EintragAnsicht {
   id: string
   name: string
   art: 'cli-harness' | 'local-http' | 'api'
+  erreichbarkeit: ErreichbarkeitAnsicht
   oertlichkeit: 'lokal' | 'eigenes-netz' | 'fremdes-netz'
   erklaertext: string
   empfehlung: string
@@ -1549,6 +1569,16 @@ describe('Ansichtsmodell', () => {
   it('gibt die Sprachausgabe unveraendert weiter', async () => {
     const a = await ansichtMit({ voice: { enabled: false, piperVoice: 'de_DE-probe' } })
     expect(a.sprachausgabe).toEqual({ aktiv: false, stimme: 'de_DE-probe' })
+  })
+
+  it('reicht die Erreichbarkeit durch, damit das Formular sie zeigen kann', async () => {
+    const a = await ansichtMit(null)
+    const e = a.eintraege.find(x => x.id === 'spark-gemma4-26b')!
+    expect(e.erreichbarkeit).toEqual({
+      art: 'local-http', host: '100.78.7.108', port: 11434, model: 'gemma4:26b',
+    })
+    const cli = a.eintraege.find(x => x.id === 'claude-opus-cli')!
+    expect(cli.erreichbarkeit).toEqual({ art: 'cli-harness', cli: 'claude', handle: 'opus' })
   })
 
   it('markiert gebuendelte Eintraege als nicht loeschbar', async () => {
@@ -1877,6 +1907,7 @@ export async function baueAnsicht(quellen: GeheimnisQuellen = {}): Promise<Setti
         id: e.id,
         name: e.name,
         art: e.art,
+        erreichbarkeit: e.erreichbarkeit,
         oertlichkeit: e.oertlichkeit,
         erklaertext: e.erklaertext,
         empfehlung: e.empfehlung,
@@ -2574,7 +2605,7 @@ Create `src/renderer/windows/settings-window.tsx`:
  */
 import { StrictMode, useState, useEffect, useCallback } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { SettingsAnsicht, SettingsAntwort } from '../../shared/settings-types'
+import type { SettingsAnsicht, SettingsAntwort, Schreiber } from '../../shared/settings-types'
 import { ModelleReiter } from '../components/settings/ModelleReiter'
 
 const api = () => window.cipherKeel
@@ -2604,17 +2635,21 @@ function SettingsApp() {
     void laden()
   }, [laden])
 
-  const schreibe = useCallback(async (kanal: string, ...args: unknown[]) => {
+  // Returns whether the write landed. The shell owns the error banner either way, but a
+  // form that closes on failure would look exactly like a form that succeeded.
+  const schreibe = useCallback<Schreiber>(async (kanal, ...args) => {
     try {
       const antwort = (await api().invoke(kanal as never, ...args)) as SettingsAntwort
       if (antwort.ok) {
         setAnsicht(antwort.ansicht)
         setFehler(null)
-      } else {
-        setFehler(antwort.fehler)
+        return true
       }
+      setFehler(antwort.fehler)
+      return false
     } catch (err) {
       setFehler(String(err))
+      return false
     }
   }, [])
 
@@ -2754,7 +2789,7 @@ Create `src/renderer/components/settings/GeheimnisFeld.tsx`:
  * a key, because nothing here ever receives one.
  */
 import { useState } from 'react'
-import type { EintragAnsicht } from '../../../shared/settings-types'
+import type { EintragAnsicht, Schreiber } from '../../../shared/settings-types'
 
 const STATUS_TEXT: Record<string, string> = {
   schluesselbund: 'hinterlegt',
@@ -2775,7 +2810,7 @@ export function GeheimnisFeld({
   schreibe,
 }: {
   eintrag: EintragAnsicht
-  schreibe: (kanal: string, ...args: unknown[]) => Promise<void>
+  schreibe: Schreiber
 }) {
   const [wert, setWert] = useState('')
   if (!eintrag.keyRef || !eintrag.geheimnisStatus) return null
@@ -2848,7 +2883,7 @@ Create `src/renderer/components/settings/ModelleReiter.tsx`:
  * Every locked option and every warning is text the main process computed. This file
  * decides layout, never eligibility.
  */
-import type { SettingsAnsicht, SlotAnsicht } from '../../../shared/settings-types'
+import type { SettingsAnsicht, SlotAnsicht, Schreiber } from '../../../shared/settings-types'
 import { Warnliste } from './Warnliste'
 import { WirkungVermerk } from './WirkungVermerk'
 import { GeheimnisFeld } from './GeheimnisFeld'
@@ -2879,7 +2914,7 @@ export function ModelleReiter({
   schreibe,
 }: {
   ansicht: SettingsAnsicht
-  schreibe: (kanal: string, ...args: unknown[]) => Promise<void>
+  schreibe: Schreiber
 }) {
   const arten = ['cli-harness', 'local-http', 'api'] as const
 
@@ -3068,7 +3103,7 @@ Create `src/renderer/components/settings/CliStartReiter.tsx`:
  * adapter appears here without this file knowing it exists. The warning about a duplicated
  * parameter is computed in main from the adapter's own appGesteuerteParameter.
  */
-import type { SettingsAnsicht } from '../../../shared/settings-types'
+import type { SettingsAnsicht, Schreiber } from '../../../shared/settings-types'
 import { WirkungVermerk } from './WirkungVermerk'
 import { Warnliste } from './Warnliste'
 
@@ -3077,7 +3112,7 @@ export function CliStartReiter({
   schreibe,
 }: {
   ansicht: SettingsAnsicht
-  schreibe: (kanal: string, ...args: unknown[]) => Promise<void>
+  schreibe: Schreiber
 }) {
   return (
     <div>
@@ -3140,7 +3175,7 @@ Create `src/renderer/components/settings/SprachausgabeReiter.tsx`:
  * `enabled` is read once at service start (main.ts), `piperVoice` on every utterance
  * (tts-piper.ts). Showing them side by side without saying so would be a lie by layout.
  */
-import type { SettingsAnsicht } from '../../../shared/settings-types'
+import type { SettingsAnsicht, Schreiber } from '../../../shared/settings-types'
 import { WirkungVermerk } from './WirkungVermerk'
 
 export function SprachausgabeReiter({
@@ -3148,7 +3183,7 @@ export function SprachausgabeReiter({
   schreibe,
 }: {
   ansicht: SettingsAnsicht
-  schreibe: (kanal: string, ...args: unknown[]) => Promise<void>
+  schreibe: Schreiber
 }) {
   return (
     <div>
@@ -3283,11 +3318,10 @@ Create `src/renderer/components/settings/EintragFormular.tsx`:
  * second validator here would be a second truth.
  */
 import { useState } from 'react'
-import type { EintragAnsicht } from '../../../shared/settings-types'
+import type { EintragAnsicht, Schreiber } from '../../../shared/settings-types'
 
 type Art = 'cli-harness' | 'local-http' | 'api'
 type Oertlichkeit = 'lokal' | 'eigenes-netz' | 'fremdes-netz'
-type Schreiber = (kanal: string, ...args: unknown[]) => Promise<void>
 
 interface Felder {
   id: string
@@ -3311,6 +3345,35 @@ const LEER: Felder = {
   cli: 'claude', handle: '', host: '', port: '11434', model: '', baseUrl: '', keyRef: '',
 }
 
+/**
+ * An existing entry's fields, including the transport ones.
+ *
+ * Reading `erreichbarkeit` is the point: without it an edit would start from blanks and
+ * either fail validation or, once the blocking field was filled in, quietly overwrite the
+ * untouched ones with defaults. The view model carries these precisely so the form can
+ * show what is actually configured.
+ */
+function ausVorlage(v: EintragAnsicht): Felder {
+  const basis: Felder = {
+    ...LEER,
+    id: v.id,
+    name: v.name,
+    art: v.art,
+    oertlichkeit: v.oertlichkeit,
+    erklaertext: v.erklaertext,
+    empfehlung: v.empfehlung,
+  }
+  const e = v.erreichbarkeit
+  switch (e.art) {
+    case 'cli-harness':
+      return { ...basis, cli: e.cli, handle: e.handle }
+    case 'local-http':
+      return { ...basis, host: e.host, port: String(e.port), model: e.model }
+    case 'api':
+      return { ...basis, baseUrl: e.baseUrl, model: e.model, keyRef: e.keyRef }
+  }
+}
+
 export function EintragFormular({
   vorlage,
   schreibe,
@@ -3320,20 +3383,7 @@ export function EintragFormular({
   schreibe: Schreiber
   onFertig: () => void
 }) {
-  const [f, setF] = useState<Felder>(() =>
-    vorlage
-      ? {
-          ...LEER,
-          id: vorlage.id,
-          name: vorlage.name,
-          art: vorlage.art,
-          oertlichkeit: vorlage.oertlichkeit,
-          erklaertext: vorlage.erklaertext,
-          empfehlung: vorlage.empfehlung,
-          keyRef: vorlage.keyRef ?? '',
-        }
-      : LEER
-  )
+  const [f, setF] = useState<Felder>(() => (vorlage ? ausVorlage(vorlage) : LEER))
 
   const setze = (k: keyof Felder) => (e: { target: { value: string } }) =>
     setF(alt => ({ ...alt, [k]: e.target.value }))
@@ -3347,7 +3397,7 @@ export function EintragFormular({
   }
 
   const speichern = async () => {
-    await schreibe('settings:eintrag-speichern', {
+    const geschafft = await schreibe('settings:eintrag-speichern', {
       id: f.id,
       name: f.name,
       art: f.art,
@@ -3356,7 +3406,9 @@ export function EintragFormular({
       erklaertext: f.erklaertext,
       empfehlung: f.empfehlung,
     })
-    onFertig()
+    // Only on success. Closing after a rejected write would look exactly like a saved
+    // one, and the only sign of trouble would be a banner above the tab.
+    if (geschafft) onFertig()
   }
 
   const istUeberschreibung = vorlage !== null && !vorlage.loeschbar
@@ -3489,7 +3541,12 @@ Direkt vor `<h2 style={styles.ueberschrift}>Eintraege</h2>` die Zeile ersetzen d
         <button onClick={() => setFormular('neu')} style={styles.neuKnopf}>Neuer Eintrag</button>
       </div>
       {formular && (
+        // Keyed on which entry is open: without it, switching straight from one entry's
+        // form to another reuses the mounted instance, and useState's initialiser does
+        // not run again. The heading would change while the fields kept the first
+        // entry's values -- and Speichern would write them under the second entry's id.
         <EintragFormular
+          key={formular}
           vorlage={vorlage}
           schreibe={schreibe}
           onFertig={() => setFormular(null)}
