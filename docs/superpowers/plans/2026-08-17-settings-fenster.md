@@ -1223,8 +1223,11 @@ export interface AdapterAnsicht {
   name: string
   startArgs: string
   appGesteuerteParameter: string[]
-  /** German: set when startArgs names a parameter the app already adds. Never locks. */
-  warnung: string | null
+  /**
+   * German, already-finished text. Same shape and same posture as a slot's warnings:
+   * these never lock anything, they only say what the line means.
+   */
+  warnungen: WarnungAnsicht[]
 }
 
 export interface UebersprungenAnsicht {
@@ -1455,15 +1458,40 @@ describe('Ansichtsmodell', () => {
 
   it('warnt, wenn ein Startparameter etwas nennt, das die App selbst anhaengt', async () => {
     const a = await ansichtMit({ agent: { startArgs: { 'claude-code': '--resume' } } })
-    const adapter = a.adapter.find(x => x.id === 'claude-code')!
-    expect(adapter.warnung).toContain('--resume')
+    const w = a.adapter.find(x => x.id === 'claude-code')!.warnungen
+    expect(w.map(x => x.code)).toEqual(['doppelter-parameter'])
+    expect(w[0].text).toContain('--resume')
   })
 
-  it('warnt nicht bei einem harmlosen Startparameter', async () => {
+  it('benennt das Ueberspringen der Berechtigungsrueckfrage, ohne es zu sperren', async () => {
     const a = await ansichtMit({
       agent: { startArgs: { 'claude-code': '--dangerously-skip-permissions' } },
     })
-    expect(a.adapter.find(x => x.id === 'claude-code')!.warnung).toBeNull()
+    const w = a.adapter.find(x => x.id === 'claude-code')!.warnungen
+    expect(w.map(x => x.code)).toEqual(['berechtigungen-uebersprungen'])
+    // Sperren waere falsch: es ist die Vorgabe, und ohne sie haengt eine Sitzung.
+    expect(w[0].text).toContain('Werkzeugaufruf')
+  })
+
+  it('nennt beide Gruende, wenn beide zutreffen', async () => {
+    const a = await ansichtMit({
+      agent: { startArgs: { 'claude-code': '--dangerously-skip-permissions --resume' } },
+    })
+    const codes = a.adapter.find(x => x.id === 'claude-code')!.warnungen.map(x => x.code)
+    expect(codes.sort()).toEqual(['berechtigungen-uebersprungen', 'doppelter-parameter'])
+  })
+
+  it('warnt nicht bei einem harmlosen Startparameter', async () => {
+    const a = await ansichtMit({ agent: { startArgs: { 'claude-code': '--verbose' } } })
+    expect(a.adapter.find(x => x.id === 'claude-code')!.warnungen).toEqual([])
+  })
+
+  it('meldet eine unlesbare Parameterzeile und urteilt dann nicht weiter', async () => {
+    const a = await ansichtMit({
+      agent: { startArgs: { 'claude-code': '--datei "ohne Ende' } },
+    })
+    const w = a.adapter.find(x => x.id === 'claude-code')!.warnungen
+    expect(w.map(x => x.code)).toEqual(['unlesbare-parameter'])
   })
 })
 ```
@@ -1597,6 +1625,15 @@ function slotAnsicht(slot: Slot, eintraege: ModellEintrag[]): SlotAnsicht {
   }
 }
 
+/**
+ * The flag that turns off Claude Code's per-tool confirmation. It is the shipped default
+ * and stays that way — the app starts its sessions into a tmux pane it drives, where no
+ * one could answer a prompt. Until this window existed the setting was reachable only by
+ * editing a file outside the app (CK-NFR-012), so it was not merely unexplained, it was
+ * invisible. Naming it here is what turns a silent default into a stated one.
+ */
+const BERECHTIGUNGS_FLAGGE = '--dangerously-skip-permissions'
+
 function adapterAnsichten(): AdapterAnsicht[] {
   // The registry needs a config reader; the view model only reads names and parameters,
   // so a reader that answers from the same config is enough.
@@ -1609,22 +1646,46 @@ function adapterAnsichten(): AdapterAnsicht[] {
     const adapter = registry.get(id)!
     const text = startArgs[id] ?? ''
     const appGesteuert = [...(adapter.appGesteuerteParameter ?? [])]
+    const warnungen: WarnungAnsicht[] = []
     let getippt: string[] = []
-    let warnung: string | null = null
+
     try {
       getippt = splitShellArgs(text)
     } catch (err) {
-      warnung = err instanceof Error ? err.message : String(err)
-    }
-    if (!warnung) {
-      const doppelt = appGesteuert.filter(p => getippt.includes(p))
-      if (doppelt.length > 0) {
-        warnung =
-          `${doppelt.join(', ')} wird von der App selbst angehaengt — hier eingetragen ` +
-          'steht der Parameter zweimal in der Kommandozeile.'
+      // An unreadable line cannot be judged further, so no other rule runs on it.
+      warnungen.push({
+        code: 'unlesbare-parameter',
+        text: err instanceof Error ? err.message : String(err),
+      })
+      return {
+        id, name: adapter.displayName, startArgs: text,
+        appGesteuerteParameter: appGesteuert, warnungen,
       }
     }
-    return { id, name: adapter.displayName, startArgs: text, appGesteuerteParameter: appGesteuert, warnung }
+
+    const doppelt = appGesteuert.filter(p => getippt.includes(p))
+    if (doppelt.length > 0) {
+      warnungen.push({
+        code: 'doppelter-parameter',
+        text: `${doppelt.join(', ')} wird von der App selbst angehaengt — hier eingetragen ` +
+          'steht der Parameter zweimal in der Kommandozeile.',
+      })
+    }
+
+    if (getippt.includes(BERECHTIGUNGS_FLAGGE)) {
+      warnungen.push({
+        code: 'berechtigungen-uebersprungen',
+        text: 'Dieser Parameter schaltet die Rueckfrage vor jedem Werkzeugaufruf ab. Er ist ' +
+          'die Vorgabe, weil die App ihre Sitzungen selbst in einen tmux-Pane startet, in dem ' +
+          'niemand antworten koennte — er bedeutet aber, dass eine Sitzung in diesem Projekt ' +
+          'ohne weiteres Nachfragen schreibt und Befehle ausfuehrt.',
+      })
+    }
+
+    return {
+      id, name: adapter.displayName, startArgs: text,
+      appGesteuerteParameter: appGesteuert, warnungen,
+    }
   })
 }
 
@@ -2715,6 +2776,7 @@ Create `src/renderer/components/settings/CliStartReiter.tsx`:
  */
 import type { SettingsAnsicht } from '../../../shared/settings-types'
 import { WirkungVermerk } from './WirkungVermerk'
+import { Warnliste } from './Warnliste'
 
 export function CliStartReiter({
   ansicht,
@@ -2743,7 +2805,7 @@ export function CliStartReiter({
             onBlur={e => schreibe('settings:startargs-setzen', a.id, e.target.value)}
             style={styles.eingabe}
           />
-          {a.warnung && <div style={styles.warnung}>{a.warnung}</div>}
+          <Warnliste warnungen={a.warnungen} />
           {a.appGesteuerteParameter.length > 0 && (
             <div style={styles.appGesteuert}>
               Von der App selbst gesetzt: {a.appGesteuerteParameter.join(' · ')}
@@ -2766,7 +2828,6 @@ const styles = {
     width: '100%', background: '#0d0d0d', border: '1px solid #333', borderRadius: 3,
     color: '#ddd', padding: '4px 6px', fontSize: 12, fontFamily: "'JetBrains Mono', monospace",
   },
-  warnung: { color: '#d9b25f', fontSize: 12, marginTop: 6 },
   appGesteuert: { color: '#666', fontSize: 11, marginTop: 6, fontFamily: "'JetBrains Mono', monospace" },
 }
 ```
