@@ -1,6 +1,7 @@
 # Anpassbare Flächen — Inventar (CK-NFR-012)
 
-**Stand:** 2026-08-11
+**Stand:** 2026-08-17 — Settings-Fenster nachgeführt (siehe
+`docs/superpowers/specs/2026-08-17-settings-fenster-design.md`)
 
 > **CK-NFR-012:** Jede Fläche, die ein Nutzer sinnvoll anpassen kann — Einstellung,
 > Prompt, Persona, Regel, Parameter —, ist in der App auffindbar, in ihrer Herkunft
@@ -15,29 +16,28 @@
 
 Ablage: `~/.config/cipher-keel/cipher-keel-config.json`
 
-| Fläche | Wirkung | In der App sichtbar | Editierbar |
-|---|---|---|---|
-| `app.maxSessions` | Obergrenze gleichzeitiger Sessions | nein | nein — nur Config-Datei |
-| `agent.skipPermissions` | `--dangerously-skip-permissions` beim Start; Default `true` | nein | nein — nur Config-Datei. **Sicherheitsrelevant**, im README dokumentiert |
-| `agent.modelTiers` | Tier → Modell-Handle (`light`/`standard`/`heavy`) | in der Prompt-Vorschau als aufgelöstes Modell | nein — nur Config-Datei |
-| `ui.theme` | Farbschema | ja | ja |
-| `ui.language` | Sprache | ja | ja |
-| `ui.grid` | Spalten und Zeilen des Grids | ja | ja |
-| `mcp.port` | Port des Graph-MCP-Servers | nein | nein — nur Config-Datei |
-| `mcp.host` | Host des Graph-MCP-Servers | nein | nein — nur Config-Datei |
-| `mcp.apiKey` | Auth-Schlüssel des MCP-Servers | nein | nein — nur Config-Datei |
-| `voice.enabled` | Sprachausgabe an/aus | nein | nein — nur Config-Datei |
-| `voice.piperVoice` | Stimme der Sprachausgabe | nein | nein — nur Config-Datei |
-| `llm.tagging` | Endpunkt und Modell für das Notizen-Tagging — klein und häufig, bleibt lokal | nein | nein — nur Config-Datei |
-| `llm.worker` | Endpunkt und Modell für Niveau-C-Worker — groß und gelegentlich. Zeigt auf den **DGX Spark**, siehe unten. Kann seit 2026-08-16 auch ein **API-Anbieter** sein | nein | nein — nur Config-Datei |
-| API-Schlüssel | **nicht** in der Config: Keychain (`cipher-keel-api-<ref>`) oder Umgebung (`CIPHER_KEEL_API_<REF>`). Die Config nennt nur den Namen (`keyRef`) | nein | nein — Keychain oder Umgebung |
-
-Zwei weitere Schlüssel liegen in derselben Datei, sind aber keine anpassbaren Flächen im
-Sinne dieser Anforderung — die App schreibt sie selbst und liest sie nur zurück:
+Seit dem Settings-Fenster (2026-08-17, Projektfenster-Kopfbereich → „Einstellungen") ist
+der Grossteil dieser Tabelle **in der App erreichbar**. Die vier Blöcke ohne jeden Leser im
+Quelltext (`app`, `ui`, `mcp`, `windows`) wurden im selben Zug **aus dem Schema entfernt**,
+nicht nur ausgeblendet — eine Attrappen-Oberfläche für Werte, die niemand liest, hätte
+dasselbe Muster fortgesetzt, gegen das diese Strecke antritt.
 
 | Fläche | Wirkung | In der App sichtbar | Editierbar |
 |---|---|---|---|
-| `windows.main` | zuletzt genutzte Fenstergeometrie | mittelbar — das Fenster steht da, wo es stand | nein — von der App geschrieben, keine Nutzerfläche |
+| `agent.startArgs` | Freitext-Startparameter je CLI-Adapter (ersetzt das frühere `agent.skipPermissions`); Vorgabe `--dangerously-skip-permissions` für `claude-code` | ja — Settings-Fenster, Reiter „CLI-Start" | ja — Settings-Fenster |
+| `agent.modelTiers` | Tier → Modell-Handle (`light`/`standard`/`heavy`), Rückfall für einen leeren `tier:*`-Slot | ja — Settings-Fenster, Reiter „Modelle" (Rückfall-Handle je Tier), auch in der Prompt-Vorschau als aufgelöstes Modell | ja — Settings-Fenster |
+| `modelle.eintraege` / `modelle.zuordnung` | Der Modell-Registry: eigene und überschreibende Einträge, die fünf Zuordnungsslots | ja — Settings-Fenster, Reiter „Modelle" | ja — Settings-Fenster (anlegen, bearbeiten, löschen, zuordnen) |
+| `voice.enabled` | Sprachausgabe an/aus | ja — Settings-Fenster, Reiter „Sprachausgabe" | ja — Settings-Fenster |
+| `voice.piperVoice` | Stimme der Sprachausgabe | ja — Settings-Fenster, Reiter „Sprachausgabe" | ja — Settings-Fenster |
+| `llm.tagging` | Endpunkt und Modell für das Notizen-Tagging — klein und häufig, bleibt lokal. Zugleich Rückfall für einen leeren `rolle:tagging`-Slot | ja — Settings-Fenster, Reiter „Modelle" (Rückfall-Endpunkt-Editor) | ja — Settings-Fenster |
+| `llm.worker` | Endpunkt und Modell für Niveau-C-Worker — groß und gelegentlich. Zeigt auf den **DGX Spark**, siehe unten. Kann seit 2026-08-16 auch ein **API-Anbieter** sein. Zugleich Rückfall für einen leeren `rolle:worker`-Slot | ja — Settings-Fenster, Reiter „Modelle" (Rückfall-Endpunkt-Editor) | ja — Settings-Fenster |
+| API-Schlüssel | **nicht** in der Config: Keychain (`cipher-keel-api-<ref>`) oder Umgebung (`CIPHER_KEEL_API_<REF>`). Die Config nennt nur den Namen (`keyRef`) | ja — Settings-Fenster zeigt den Status (`im Schlüsselbund` / `aus Umgebung` / `fehlt` / `unbekannt`) am jeweiligen Eintrag | ja, aber nur schreibend — Settings-Fenster kann setzen und löschen, das Geheimnis selbst geht nie an den Renderer zurück |
+
+Ein weiterer Schlüssel liegt in derselben Datei, ist aber keine anpassbare Fläche im Sinne
+dieser Anforderung — die App schreibt ihn selbst und liest ihn nur zurück:
+
+| Fläche | Wirkung | In der App sichtbar | Editierbar |
+|---|---|---|---|
 | `projects` | Projektliste und aktives Projekt | ja — Projektauswahl | ja — über die Projektauswahl, nicht über die Datei |
 
 ## Prompt-Schichten
@@ -206,5 +206,7 @@ Harness ist eigener, noch offener Bau-Strang (siehe „Was fehlt" unten).
 - **Editierbarkeit generell.** Sie braucht ein Overlay-Verzeichnis für nutzereigene
   Fassungen, eine Vorrangregel gegenüber den gebündelten Inhalten und eine Validierung.
   Eigene Phase.
-- **Eine Einstellungsoberfläche.** Der Renderer hat heute keine; `ui.*` ist über die
-  jeweiligen Bedienelemente erreichbar, alles andere gar nicht.
+- ~~Eine Einstellungsoberfläche.~~ — **erledigt 2026-08-17.** Das Settings-Fenster deckt die
+  Einstellungen-Tabelle oben ab. Weiterhin nicht editierbar: die Prompt-Schichten und
+  Preset-Eigenschaften (siehe die Tabellen dort) und das Niveau-B-Harness, das es noch
+  nicht gibt.

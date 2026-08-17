@@ -212,8 +212,20 @@ macOS-gebunden; die Umgebungsvariable bleibt der Weg für alles andere.
 Sie ist das Revier des Kanarienauftrags; `quelle: 'gemessen'` ist dessen Wort, und
 `normaliseEintrag` erzwingt bereits, dass `gemessen` ohne `gemessenAm`/`gemessenMit` scheitert.
 Fünfzehn Felder von Hand zu füllen erzeugt genau das falsche Zutrauen, gegen das `quelle`
-erfunden wurde. Neue Einträge tragen keine Fähigkeitszeile und fallen auf
-`FAEHIGKEITEN_RUECKFALL` zurück — das ist ehrlich, weil es `vermutet` bleibt.
+erfunden wurde. Neue Einträge tragen keine Fähigkeitszeile.
+
+**Korrektur, gefunden beim Fix-Wave-Review vom selben Tag:** Ein neuer Eintrag fällt *nicht*
+auf `FAEHIGKEITEN_RUECKFALL` zurück — `FAEHIGKEITEN_RUECKFALL` ist ausschliesslich eine
+Merge-Basis für einen Eintrag, der bereits eine `faehigkeiten`-Zeile trägt
+(`entry.ts:normaliseEintrag`: `{ ...FAEHIGKEITEN_RUECKFALL, ...r.faehigkeiten }`, nur betreten,
+wenn `r.faehigkeiten` gesetzt ist). Fehlt die Zeile ganz, bleibt `faehigkeiten` `undefined`.
+Tatsächlich zeigt ein neu angelegter Eintrag also **gar keine** Herkunftsangabe, nicht
+`vermutet` — was ebenfalls ehrlich ist, aber ein anderer Satz. Belegt in
+`tests/model/ansicht.test.ts` durch die Gegenprobe auf `openrouter-qwen3-coder`: Bearbeiten und
+Speichern ohne Änderung an der Fähigkeitszeile musste weiterhin `codec: 'openai-chat'`,
+`werkzeugmodus: 'nativ'` und `nutzbaresKontextfenster: 131072` tragen, statt beim Speichern auf
+den Rückfall zu fallen — das wäre sonst eine still falsche Warnung gewesen
+(`werkzeugmodus-text` auf einem Eintrag, der nativen Werkzeugmodus hat).
 
 ### 5.5 Die Zählung: vier von sechs Warnregeln bleiben unerreichbar
 
@@ -252,8 +264,16 @@ weiterhin keinen Menschen.** Das ist kein Versäumnis dieser Strecke: Alle vier 
 `eigene-schleife` oder an Niveau B — dem Läufer des Harness, das es noch nicht gibt.
 
 Slots zu erfinden, damit Regeln feuern, wäre derselbe Fehler in neuem Gewand: Config bauen, die
-niemand liest. Wenn das Harness kommt, ist ein B-Slot **eine Zeile in `slots.ts`**; vier Regeln
-werden dann gleichzeitig sichtbar, ohne dass die Oberfläche angefasst wird.
+niemand liest. Wenn das Harness kommt, ist ein B-Slot **eine Zeile in `slots.ts`** — und das
+reicht für **drei** der vier Regeln (`werkzeugmodus-text`, `nicht-gemessen`,
+`unter-faehigkeit`), die dann ohne weitere Änderung an der Oberfläche sichtbar werden.
+
+**Korrektur, gefunden beim Fix-Wave-Review vom selben Tag:** Für die vierte, `kontext-zu-klein`,
+stimmt das nicht. Diese Regel braucht `startkontextToken`, und der kommt aus einem
+`WarnKontext`, den `slotAnsicht` in `ansicht.ts` explizit an `warnungen()` übergeben muss (siehe
+§12) — ein reiner Eintrag in `slots.ts` liefert diesen Kontext nicht mit. Ein B-Slot allein
+macht `kontext-zu-klein` also nicht erreichbar; dafür braucht es zusätzlich die
+View-Model-Änderung aus §12, wenn das Harness kommt.
 
 ## 6. Der CLI-Start-Reiter
 
@@ -285,12 +305,27 @@ Claude-Adapter nennt seine vier. Steht einer davon im Freitext, **warnt** die Se
 nicht. Dieselbe Haltung wie in `eignung.ts`: strukturell sperren, sonst warnen. Und die Liste hat
 eine Quelle: der Adapter, der die Parameter anhängt, benennt sie auch.
 
-### 6.3 Eine Doppelung, die mitfällt
+### 6.3 Eine Doppelung, die mitfällt — und eine zweite, die es nicht tat
 
 `claude-code.ts` schreibt `claude --dangerously-skip-permissions` in vier Prompt-Fragmente
 (Zeilen 235, 242, 256, 262) — Anweisungen an eine Sitzung, wie sie Worker startet. Nimmt der
 Nutzer das Flag aus den Startparametern, sagt der Prompt weiter das Gegenteil. Die Fragmente
 bauen den Befehl künftig aus `formatShellCommand('claude', getStartArgs(this.id))`.
+
+**Nachtrag aus dem Fix-Wave-Review vom selben Tag:** Diese vier Fragmente haben in der
+ausgelieferten App **keinen produktiven Aufrufer** — sie stehen nur im `AgentAdapter`-Interface
+und in `tests/agent/start-args.test.ts`. Der Pfad, der tatsächlich eine laufende Sitzung
+erreicht, ist ein anderer: `src/main/preset/cyber-factory/capabilities/worker-startup-protokoll/SKILL.md`
+wird per `?raw` ins Bundle gezogen und in jede Cyber-Factory-Sitzung materialisiert; die Zeile
+dort hardcodete bis zum selben Fix-Wave ebenfalls `claude --dangerously-skip-permissions`. Die
+Doppelung, die dieser Paragraph beheben wollte, war damit auf dem einzigen Pfad, der einen
+Menschen erreicht, weiterhin lebendig — behoben in derselben Welle durch eine Umformulierung,
+die kein Flag mehr nennt, sondern auf die im Settings-Fenster hinterlegten Startparameter
+verweist. Ein `?raw`-Bundle-Asset kann zur Bauzeit nichts aus der Laufzeit-Config interpolieren,
+also blieb dort ein Mechanismus wie `formatShellCommand(getStartArgs(...))` ausdrücklich aus dem
+Umfang dieser Korrektur — das ist eine eigene Design-Entscheidung, keine Nebensache dieser
+Welle. Wer als Nächstes an dieser Stelle arbeitet, sollte also nicht annehmen, dass die vier
+Adapter-Fragmente der lebendige Pfad sind, nur weil sie es dem Namen nach sein sollten.
 
 ## 7. Der Sprachausgabe-Reiter
 
@@ -370,6 +405,27 @@ Verdrahtung nichts. Zu belegen in der laufenden App, wörtlich im Plan:
 7. Kaputter Eintrag in der Config → erscheint als „übersprungen" in der Oberfläche.
 8. Config mit `skipPermissions: true` → App-Start → Datei trägt `startArgs`, kein
    `skipPermissions`.
+
+**Nachtrag — beim Abnahmelauf sind drei weitere Belege entstanden, die zur Abnahme gehören,
+auch wenn sie hier ursprünglich nicht einzeln benannt waren (protokolliert im Plan unter
+„Messprotokoll 2026-08-17"):**
+
+9. Ein neuer, eigener Eintrag entsteht über `settings:eintrag-speichern` ohne Datei-Edit; ein
+   inkonsistenter Eintrag (`art` widerspricht `erreichbarkeit.art`) wird mit der wörtlichen
+   `normaliseEintrag`-Meldung abgelehnt statt still korrigiert; Löschen liefert `true`.
+10. Die drei sonst unbelegten Kanäle — `settings:einfachfeld-setzen` (Modell-Tier und
+    Sprachausgabe), `settings:rueckfall-endpunkt-setzen`, `settings:geheimnis-loeschen` — liefern
+    bei gültigem Aufruf den geänderten Wert in der Ansicht und bei ungültigem eine deutsche
+    Meldung ohne stille Änderung.
+11. Der Adapter-Schlüssel bleibt nach Leeren des Freitextfelds mit **leerem Wert** in der Datei
+    stehen statt zu fehlen — belegt die Warnung im Docblock von `agent.startArgs`
+    (`config-store.ts`), dass ein leeres Feld immer geschrieben werden muss, nie gelöscht.
+
+Der spätere Fix-Wave-Review vom selben Tag ergänzt zwei weitere Belege: eine diskriminierende
+Neufassung von Beleg 6 (Zuordnung auf einen Endpunkt, der sich vom Rückfall unterscheidet — die
+ursprüngliche Fassung bewies nichts, weil Zuordnung und Rückfall identisch waren) und ein Beleg
+für den nachgerüsteten Rückfall-Endpunkt-Editor der `rolle:*`-Slots. Beide ebenfalls im
+Messprotokoll.
 
 Vor jedem Messlauf prüfen, dass keine zweite App-Instanz dieselbe Config und DB teilt
 (Handover §6).

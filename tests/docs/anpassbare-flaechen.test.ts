@@ -10,15 +10,8 @@ const INVENTORY = readFileSync(
 // Binding the test to the config keys is what keeps this from being a document that
 // quietly falls behind the code.
 const CONFIG_PATHS = [
-  'app.maxSessions',
-  'agent.skipPermissions',
+  'agent.startArgs',
   'agent.modelTiers',
-  'ui.theme',
-  'ui.language',
-  'ui.grid',
-  'mcp.port',
-  'mcp.host',
-  'mcp.apiKey',
   'voice.enabled',
   'voice.piperVoice',
   'llm.tagging',
