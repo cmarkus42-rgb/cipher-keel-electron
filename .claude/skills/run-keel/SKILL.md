@@ -5,7 +5,7 @@ description: Launch and drive the cipher keel Electron app to check that a chang
 
 # Running cipher keel
 
-cipher keel is an Electron app with two windows. Almost everything interesting happens
+cipher keel is an Electron app with three windows. Almost everything interesting happens
 behind IPC (`window.cipherKeel.invoke(...)`), and **no test in this repo reaches an
 `ipcMain` handler** — there is no electron mock, and vitest runs under plain Node. The
 suite can be entirely green while the app is broken. That actually happened: the
@@ -39,7 +39,15 @@ node .claude/skills/run-keel/driver.mjs <urlPart> '<js expression>'
 
 `<urlPart>` picks the window: `project-window` for the project window (project list,
 kickoff wizard, ProjectView with Timeline + Kanban), `index.html` for the grid window
-(SessionGrid, StatusBar). The expression is evaluated with `awaitPromise`, so an
+(SessionGrid, StatusBar), `settings-window` for the settings window (model registry,
+assignments, CLI start parameters, speech output).
+
+The settings window does not open on start. Open it first, then drive it:
+
+    node $D project-window "window.cipherKeel.invoke('window:open-settings')"
+    node $D settings-window "window.cipherKeel.invoke('settings:ansicht')"
+
+The expression is evaluated with `awaitPromise`, so an
 `invoke(...)` promise can be passed directly and its resolved value is printed as JSON.
 
 ```bash
