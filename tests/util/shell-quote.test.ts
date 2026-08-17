@@ -1,6 +1,6 @@
 // tests/util/shell-quote.test.ts
 import { describe, it, expect } from 'vitest'
-import { formatShellCommand } from '../../src/main/util/shell-quote'
+import { formatShellCommand, splitShellArgs } from '../../src/main/util/shell-quote'
 
 describe('formatShellCommand', () => {
   it('leaves a plain command untouched', () => {
@@ -37,8 +37,6 @@ describe('formatShellCommand', () => {
   })
 })
 
-import { splitShellArgs } from '../../src/main/util/shell-quote'
-
 describe('splitShellArgs', () => {
   it('gibt eine leere Liste fuer leeren Text und fuer reinen Leerraum', () => {
     expect(splitShellArgs('')).toEqual([])
@@ -65,6 +63,23 @@ describe('splitShellArgs', () => {
 
   it('behandelt ein Anfuehrungszeichen innerhalb der anderen Sorte als Zeichen', () => {
     expect(splitShellArgs(`--text "Kenos' Rezept"`)).toEqual(['--text', "Kenos' Rezept"])
+  })
+
+  it('laesst den Rueckstrich in doppelten Anfuehrungszeichen das Anfuehrungszeichen schuetzen', () => {
+    expect(splitShellArgs('--text "Use \\"careful\\" quoting"'))
+      .toEqual(['--text', 'Use "careful" quoting'])
+  })
+
+  it('schuetzt in doppelten Anfuehrungszeichen auch den Rueckstrich selbst', () => {
+    expect(splitShellArgs('--text "a\\\\b"')).toEqual(['--text', 'a\\b'])
+  })
+
+  it('laesst den Rueckstrich in einfachen Anfuehrungszeichen literal, wie POSIX es will', () => {
+    expect(splitShellArgs("--text 'a\\b'")).toEqual(['--text', 'a\\b'])
+  })
+
+  it('laesst einen Rueckstrich vor einem harmlosen Zeichen in Anfuehrungszeichen stehen', () => {
+    expect(splitShellArgs('--text "a\\zb"')).toEqual(['--text', 'a\\zb'])
   })
 
   it('erlaubt ein leeres Argument als ausdrueckliches Paar Anfuehrungszeichen', () => {
