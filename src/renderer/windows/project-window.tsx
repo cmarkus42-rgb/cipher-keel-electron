@@ -204,8 +204,6 @@ const styles = {
     gap: 8,
   },
   settingsBtn: {
-    // marginLeft only when the grid button is absent; it carries its own marginLeft:'auto'
-    marginLeft: 8,
     padding: '4px 10px',
     background: '#1a1a1a',
     color: '#ddd',

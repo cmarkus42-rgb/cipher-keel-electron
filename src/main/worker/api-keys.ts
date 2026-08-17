@@ -51,8 +51,11 @@ export async function readFromKeychain(ref: string): Promise<string | null> {
  * the message itself is unusable. `stderr` is what the tool actually said, and the
  * containment check below is belt and braces: this is the one module that can be sure,
  * so it makes sure rather than assuming.
+ *
+ * Exported so `github/token-store.ts` can reuse it for the identical shape of leak on
+ * `storePat` — one implementation rather than two idioms for the same redaction.
  */
-function ursacheOhneArgv(err: unknown, geheimnis: string): string {
+export function ursacheOhneArgv(err: unknown, geheimnis: string): string {
   const stderr = (err as { stderr?: unknown })?.stderr
   const text = typeof stderr === 'string' && stderr.trim() ? stderr.trim() : ''
   if (!text) return 'kein Fehlertext vom security-Aufruf'

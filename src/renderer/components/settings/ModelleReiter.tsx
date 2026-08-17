@@ -10,6 +10,7 @@ import { Warnliste } from './Warnliste'
 import { WirkungVermerk } from './WirkungVermerk'
 import { GeheimnisFeld } from './GeheimnisFeld'
 import { EintragFormular } from './EintragFormular'
+import { RueckfallEndpunkt } from './RueckfallEndpunkt'
 
 const ART_TITEL: Record<string, string> = {
   'cli-harness': 'Ueber ein CLI-Harness',
@@ -116,6 +117,21 @@ export function ModelleReiter({
               />
             </div>
           )}
+          {slot.id.startsWith('rolle:') && (() => {
+            const rolle = slot.id.slice(6) as 'tagging' | 'worker'
+            const endpunkt = ansicht.rueckfallEndpunkte[rolle]
+            return (
+              // Keyed on the endpoint's own values, same discipline as the tier field
+              // above: without it the form would keep showing what it was mounted with
+              // after a write elsewhere replaces the view model.
+              <RueckfallEndpunkt
+                key={JSON.stringify(endpunkt)}
+                rolle={rolle}
+                endpunkt={endpunkt}
+                schreibe={schreibe}
+              />
+            )
+          })()}
         </div>
       ))}
 

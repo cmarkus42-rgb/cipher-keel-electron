@@ -2,7 +2,9 @@
  * EintragFormular — create or edit one registry entry.
  *
  * No capability row here: that is the canary job's territory, and a hand-filled row would
- * carry `vermutet` anyway, which is exactly what the fallback already gives.
+ * carry `vermutet` anyway, which is exactly what the fallback already gives. The form does
+ * not read or edit `vorlage.faehigkeiten` either -- it only echoes it back unchanged on
+ * save, so editing an entry cannot destroy a capability row that was already there.
  *
  * Validation is not repeated on this side. The form assembles a raw object and lets
  * normaliseEintrag in main reject it — that function's German messages are precise, and a
@@ -96,6 +98,10 @@ export function EintragFormular({
       oertlichkeit: f.oertlichkeit,
       erklaertext: f.erklaertext,
       empfehlung: f.empfehlung,
+      // Opaque passthrough, not a field this form edits: without it, saving an edit would
+      // send no faehigkeiten at all and erase whatever capability row the entry already
+      // had. Undefined for a new entry, same as before this passthrough existed.
+      faehigkeiten: vorlage?.faehigkeiten,
     })
     // Only on success. Closing after a rejected write would look exactly like a saved
     // one, and the only sign of trouble would be a banner above the tab.

@@ -173,6 +173,16 @@ describe('Ansichtsmodell', () => {
     expect(e.erreichbarkeit).toEqual({ art: 'cli-harness', cli: 'claude', handle: 'opus' })
   })
 
+  it('reicht die Faehigkeitszeile eines Eintrags durch, statt sie zu verlieren', async () => {
+    // Regression: EintragFormular.speichern sandte frueher kein faehigkeiten mit, sodass
+    // Bearbeiten -> Speichern die gemessene Zeile dieses Eintrags stillschweigend loeschte.
+    const a = await ansichtMit(null)
+    const e = a.eintraege.find(x => x.id === 'openrouter-qwen3-coder')!
+    expect(e.faehigkeiten).toMatchObject({
+      codec: 'openai-chat', werkzeugmodus: 'nativ', nutzbaresKontextfenster: 131072,
+    })
+  })
+
   it('meldet ein hinterlegtes Geheimnis als schluesselbund', async () => {
     const a = await ansichtMit(null, { openrouter: 'sk-test' })
     const e = a.eintraege.find(x => x.id === 'openrouter-qwen3-coder')!

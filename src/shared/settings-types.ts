@@ -47,6 +47,14 @@ export interface EintragAnsicht {
   /** False for a bundled entry: those cannot be deleted, only overridden. */
   loeschbar: boolean
   /**
+   * The measured capability row, opaque and untyped on purpose. The form never edits it
+   * (Kanarienauftrag territory, spec 5.4) -- it only has to echo this back unmodified when
+   * saving an edit, so an unrelated field change stops erasing a row that was already
+   * there. `unknown` rather than `Faehigkeiten` keeps that boundary honest: nothing on this
+   * side is meant to read it, only carry it.
+   */
+  faehigkeiten: unknown
+  /**
    * What is actually configured, so an edit form can start from the real values instead
    * of blanks. Without this an edit either fails validation for fields the user never
    * touched, or — once the blocking field is filled in — silently overwrites the

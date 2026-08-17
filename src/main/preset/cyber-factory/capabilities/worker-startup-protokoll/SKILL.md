@@ -28,8 +28,11 @@ keinen Schritt und tausche die Reihenfolge nicht.
 - Erreicht die Context-Nutzung eines Workers `CONTEXT_ROTATION_THRESHOLD` (80 %), leite proaktiv
   eine Rotation ein, statt auf ein Context-Limit zu warten.
 
-**Session-Aufbau (Claude Code):** Starte den Worker mit `claude --dangerously-skip-permissions`.
-MCP-Tools stehen automatisch zur Verfügung, wenn die Session über cipher-keel erstellt wurde —
+**Session-Aufbau (Claude Code):** Starte den Worker mit `claude` und den Startparametern, die
+im Settings-Fenster unter „CLI-Start" für diesen Adapter hinterlegt sind — die Vorgabe schliesst
+die Berechtigungsrückfrage vor jedem Werkzeugaufruf aus, weil sonst niemand im tmux-Pane
+antworten könnte, den die App selbst treibt. MCP-Tools stehen automatisch zur Verfügung, wenn
+die Session über cipher-keel erstellt wurde —
 kein separates Tool-Setup nötig. Instruktionen gehen direkt per tmux `send-keys` in den Pane,
 nicht über einen anderen Kanal. Cyber-Factory-Worker-Sessions tragen das Session-Präfix
 `ckeel-cf-`, damit sie im Session-Overview eindeutig als CF-Worker erkennbar sind.

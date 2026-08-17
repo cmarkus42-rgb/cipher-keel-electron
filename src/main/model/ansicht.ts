@@ -234,6 +234,8 @@ export async function baueAnsicht(quellen: GeheimnisQuellen = {}): Promise<Setti
         geheimnisHinweis: geheim ? geheim.hinweis : null,
         loeschbar: !GEBUENDELTE_IDS.has(e.id),
         erreichbarkeit: e.erreichbarkeit,
+        // Carried opaquely so an edit round-trip does not erase it. See settings-types.ts.
+        faehigkeiten: e.faehigkeiten,
       }
     })
   )
