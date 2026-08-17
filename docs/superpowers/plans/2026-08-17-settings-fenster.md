@@ -2282,9 +2282,9 @@ Ohne diese Aufgabe ist alles Vorige unerreichbar — genau der Fall, den Handove
 **Files:**
 - Modify: `src/main/window-manager.ts`
 - Modify: `src/main/ipc-handlers.ts`
-- Modify: `electron.vite.config.ts`
-- Create: `src/renderer/windows/settings-window.html`
 - Modify: `src/renderer/windows/project-window.tsx`
+
+`electron.vite.config.ts` und `settings-window.html` gehoeren zu **Aufgabe 10**: beide zeigen auf `settings-window.tsx`, und ein Bündel-Einstiegspunkt auf eine fehlende Datei laesst `npm run build` scheitern.
 
 **Interfaces:**
 - Consumes: `AppServices` aus `window-manager.ts`; `registerSettingsHandlers` aus Aufgabe 8; `WINDOW_OPEN_SETTINGS` aus Aufgabe 8
@@ -2380,72 +2380,7 @@ In `registerIpcHandlers`, direkt nach dem `WINDOW_OPEN_GRID`-Handler, einfügen:
   registerSettingsHandlers()
 ```
 
-- [ ] **Step 2: Bündel-Einstiegspunkt ergänzen**
-
-In `electron.vite.config.ts`, in `renderer.build.rollupOptions.input`, ergänzen:
-
-```ts
-          'settings-window': resolve(__dirname, 'src/renderer/windows/settings-window.html')
-```
-
-- [ ] **Step 3: Das HTML-Dokument anlegen**
-
-Create `src/renderer/windows/settings-window.html`. Die Inhaltssicherheitsrichtlinie ist wörtlich die des Projektfensters — sie verbietet fremde Skripte und ist Teil der Sicherheitsgrundlage, nicht Formsache. Einziger Unterschied zum Projektfenster: `overflow` bleibt zugelassen, weil die Reiter scrollen müssen.
-
-```html
-<!DOCTYPE html>
-<html lang="de">
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
-    />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>cipher keel — Einstellungen</title>
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-
-      html,
-      body {
-        width: 100%;
-        height: 100%;
-        background: #0d0d0d;
-        color: #e0e0e0;
-        font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
-        font-size: 13px;
-        overflow: hidden;
-        user-select: none;
-      }
-
-      #app {
-        width: 100%;
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-      }
-
-      /* The settings tabs scroll; inputs need selectable text. */
-      input,
-      select,
-      textarea {
-        user-select: text;
-        font-family: inherit;
-      }
-    </style>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="./settings-window.tsx"></script>
-  </body>
-</html>
-```
-
-- [ ] **Step 4: Den Knopf ins Projektfenster setzen**
+- [ ] **Step 2: Den Knopf ins Projektfenster setzen**
 
 In `src/renderer/windows/project-window.tsx`:
 
@@ -2519,16 +2454,19 @@ mit
 ```
 und `styles.gridBtn.marginLeft` von `'auto'` auf `0` ändern.
 
-- [ ] **Step 5: Typecheck und Bündelbau**
+- [ ] **Step 3: Die volle Pruefkette**
 
 ```bash
-npm run typecheck > /tmp/tc.log 2>&1; echo "EXIT=$?"; tail -20 /tmp/tc.log
-npm run build > /tmp/b.log 2>&1; echo "EXIT=$?"; tail -20 /tmp/b.log
-ls dist/renderer/windows/
+npm run typecheck > /tmp/tc.log 2>&1; echo "TYPECHECK=$?"; tail -20 /tmp/tc.log
+npm run lint > /tmp/l.log 2>&1; echo "LINT=$?"; tail -20 /tmp/l.log
+npm test > /tmp/t.log 2>&1; echo "TEST=$?"; tail -10 /tmp/t.log
+npm run build > /tmp/b.log 2>&1; echo "BUILD=$?"; tail -20 /tmp/b.log
 ```
-Erwartet: Typecheck EXIT=0 (Aufgabe 8s offenes Ende ist geschlossen), Build EXIT=0, und `settings-window.html` liegt im Ausgabeverzeichnis. Fehlt sie, ist Schritt 2 nicht angekommen.
+Erwartet: alle vier EXIT=0.
 
-- [ ] **Step 6: Commit**
+**Das Fenster laesst sich nach dieser Aufgabe noch nicht oeffnen** — sein Dokument entsteht erst in Aufgabe 10, zusammen mit der React-Wurzel, auf die es verweist. Der Knopf ist da, der Kanal ist da, der Fensterbauer ist da; ein Klick fuehrt bis zum Ladeversuch und meldet ihn auf der Konsole. Das ist der Preis dafuer, dass jede Aufgabe uebersetzt: Bündel-Einstiegspunkt und Dokument koennen nicht vor der Datei existieren, auf die sie zeigen.
+
+- [ ] **Step 4: Commit**
 
 ```bash
 git branch --show-current
@@ -2555,6 +2493,71 @@ git commit -m "feat(ui): Settings-Fenster und der Klickpfad aus dem Projektfenst
   - `function WirkungVermerk(props: { wirkung: Wirkung })`
   - `function GeheimnisFeld(props: { eintrag: EintragAnsicht; schreibe: Schreiber })`
   - wobei `Schreiber = (kanal: string, ...args: unknown[]) => Promise<void>` — die Fehleranzeige liegt beim Rahmen, nicht bei den Reitern, damit es genau eine Fehlerfläche gibt
+
+- [ ] **Step 0a: Bündel-Einstiegspunkt ergänzen**
+
+In `electron.vite.config.ts`, in `renderer.build.rollupOptions.input`, ergänzen:
+
+```ts
+          'settings-window': resolve(__dirname, 'src/renderer/windows/settings-window.html')
+```
+
+- [ ] **Step 0b: Das HTML-Dokument anlegen**
+
+Create `src/renderer/windows/settings-window.html`. Die Inhaltssicherheitsrichtlinie ist wörtlich die des Projektfensters — sie verbietet fremde Skripte und ist Teil der Sicherheitsgrundlage, nicht Formsache. Einziger Unterschied zum Projektfenster: `overflow` bleibt zugelassen, weil die Reiter scrollen müssen.
+
+```html
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cipher keel — Einstellungen</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        background: #0d0d0d;
+        color: #e0e0e0;
+        font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+        font-size: 13px;
+        overflow: hidden;
+        user-select: none;
+      }
+
+      #app {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* The settings tabs scroll; inputs need selectable text. */
+      input,
+      select,
+      textarea {
+        user-select: text;
+        font-family: inherit;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./settings-window.tsx"></script>
+  </body>
+</html>
+```
 
 - [ ] **Step 1: Den Rahmen schreiben**
 
