@@ -3861,6 +3861,282 @@ EOF
 
 ---
 
-## Messprotokoll
+## Messprotokoll 2026-08-17
 
-*(Wird in Aufgabe 13, Schritt 11 gefüllt — wörtliche Kernzeilen aller neun Belege.)*
+Aufgabe 13, Abnahme in der laufenden App. Profil `/tmp/keel-verify` (Ausnahme: Beleg 8,
+eigenes Profil `/tmp/keel-migration`). Alle elf Belege durchlaufen; neun trafen die
+Erwartung, zwei nicht — beide werden hier gemeldet, nicht nachgebessert.
+
+### Beleg 1 — der Klickpfad
+
+```
+$ node $D project-window "document.body.innerText" | grep -i einstellungen
+"cipher keel\nProjekte\nEinstellungen\nNeues Projekt anlegen\nNoch keine Projekte — jetzt anlegen."
+
+$ node $D project-window "window.cipherKeel.invoke('window:open-settings')"
+{ "ok": true }
+
+$ node $D settings-window "document.body.innerText.slice(0, 400)"
+"cipher keel\nEinstellungen\nModelle\nCLI-Start\nSprachausgabe\nZuordnungen\nTier „light\" — mechanische Arbeit\n..."
+```
+Trifft die Erwartung: Knopftext im Projektfenster, `{ok:true}`, Reiterleiste im Settings-Fenster.
+
+### Beleg 2 — Sperrgrund
+
+```
+$ node $D settings-window "window.cipherKeel.invoke('settings:zuordnung-setzen','tier:heavy','mac-qwen3-30b')
+  .then(a => a.ansicht.slots.find(s=>s.id==='tier:heavy').optionen.find(o=>o.eintragId==='mac-qwen3-30b'))"
+{
+  "eintragId": "mac-qwen3-30b",
+  "name": "Qwen3 30B A3B (Mac Mini)",
+  "sperrgrund": "Ein CLI-Harness bringt sein Modell selbst mit — ein anderes dort einzutragen waere eine stille Falle."
+}
+```
+Trifft die Erwartung: Sperrgrund im Klartext.
+
+### Beleg 3 — die zwei erreichbaren Warnungen
+
+```
+$ node $D settings-window "window.cipherKeel.invoke('settings:zuordnung-setzen','rolle:worker','openrouter-qwen3-coder')
+  .then(a => a.ansicht.slots.find(s=>s.id==='rolle:worker').warnungen.map(w=>w.code))"
+[
+  "teure-ebene-fuer-mechanik",
+  "verlaesst-netz"
+]
+```
+Trifft die Erwartung exakt: `["teure-ebene-fuer-mechanik","verlaesst-netz"]`. Spec §5.5 bestaetigt.
+
+### Beleg 4 — das Geheimnis liegt im Schluesselbund, nicht in der Datei
+
+```
+$ node $D settings-window "window.cipherKeel.invoke('settings:geheimnis-setzen','probe-ref','sk-probe-12345')
+  .then(a => a.ok)"
+true
+
+$ security find-generic-password -s cipher-keel-api-probe-ref -a key -w
+sk-probe-12345
+
+$ grep -c "sk-probe-12345" /tmp/keel-verify/cipher-keel-config.json
+0
+```
+Trifft die Erwartung: `true`, Geheimnis im Schluesselbund, kein Treffer in der Config
+(`grep -c` liefert 0 Treffer, nicht "Datei fehlt"). Schluesselbundeintrag danach geloescht
+(`security delete-generic-password -s cipher-keel-api-probe-ref -a key` → "password has been
+deleted").
+
+### Beleg 5 — die Kommandozeile aendert sich, und die Vorgabe ist zeichengleich
+
+`session:create` scheiterte zunaechst mit `"No project directory (cwd) — cannot start the
+entity"`, weil im frischen Profil noch kein Projekt aktiv war. Kein in der Brief-Erwartung
+genannter Fall — daher ein Projekt per `project:kickoff` angelegt und aktiviert
+(`{name:'ProtokollProbe',rootPath:'/tmp/keel-probe-project',initGit:true,github:{action:'skip'}}`,
+Ergebnis `ok:true`), danach fortgesetzt.
+
+```
+$ node $D settings-window "window.cipherKeel.invoke('settings:startargs-setzen','claude-code','--dangerously-skip-permissions --verbose')
+  .then(a => a.ansicht.adapter[0].startArgs)"
+"--dangerously-skip-permissions --verbose"
+
+$ node $D project-window "window.cipherKeel.invoke('session:create',{name:'protokoll-probe'})"
+{ "id": "$18", "name": "protokoll-probe", "error": null, "hinweis": null }
+
+$ tmux list-panes -a -F "#{session_name} pid=#{pane_pid}"
+protokoll-probe pid=4995
+
+$ pgrep -P 4995 | ... ps -o pid=,args= -p
+5011 claude --dangerously-skip-permissions --verbose --append-system-prompt-file /private/tmp/keel-verify/entity-prompts/protokoll-probe.md
+```
+Tatsaechliche Kommandozeile traegt `--verbose`. Danach zurueckgesetzt:
+
+```
+$ node $D settings-window "window.cipherKeel.invoke('settings:startargs-setzen','claude-code','--dangerously-skip-permissions')
+  .then(a => a.ansicht.adapter[0].startArgs)"
+"--dangerously-skip-permissions"
+
+$ node $D project-window "window.cipherKeel.invoke('session:create',{name:'protokoll-probe-2'})"
+{ "id": "$19", "name": "protokoll-probe-2", "error": null, "hinweis": null }
+
+$ pgrep -P 5146 | ... ps -o pid=,args= -p
+5162 claude --dangerously-skip-permissions --append-system-prompt-file /private/tmp/keel-verify/entity-prompts/protokoll-probe-2.md
+```
+Trifft die Erwartung: Kommandozeile nach Reset zeichengleich zur Vorgabe
+`--dangerously-skip-permissions`, kein `--verbose` mehr.
+
+**Nebenbefund (nicht Teil des Belegs):** `session:create` mit explizitem `name:`-Feld
+uebernimmt diesen Namen woertlich statt `deriveSessionName` zu durchlaufen — die tmux-Session
+heisst `protokoll-probe`, nicht `keel-...-...-...`. `stop.sh` filtert nur auf das Praefix
+`keel-` (`session-context.ts:deriveSessionName`) und liess diese zwei Sessions beim Aufraeumen
+stehen (`tmux sessions removed: 0`); sie wurden von Hand mit `tmux kill-session` entfernt. Kein
+Beleg dieser Aufgabe pruefte diesen Pfad, daher hier nur vermerkt.
+
+### Beleg 6 — eine Zuordnung wirkt ohne Neustart
+
+```
+$ node $D settings-window "window.cipherKeel.invoke('settings:zuordnung-setzen','rolle:tagging','mac-qwen3-30b').then(a=>a.ok)"
+true
+
+$ node $D project-window "window.cipherKeel.invoke('notes:auto-tag','Ein Text ueber Elektronenmikroskopie.')"
+[ "domain:infra", "kind:reference", "tech:electron" ]
+```
+Trifft die Erwartung: Aufruf ging ohne Neustart der App durch den frisch zugeordneten
+Endpunkt und lieferte Tags statt eines Fehlers.
+
+### Beleg 7 — ein kaputter Eintrag erreicht die Oberflaeche — TRAF DIE ERWARTUNG NICHT
+
+```
+$ .claude/skills/run-keel/stop.sh
+[stop] app killed
+[stop] tmux sessions removed: 0
+
+$ python3 - <<'PY'
+... c.setdefault('modelle', {}).setdefault('eintraege', []).append({'id': 'kaputt', 'art': 'telepathie'}) ...
+PY
+# Datei enthaelt danach den kaputten Eintrag, verifiziert:
+$ python3 -c "... print(...eintraege[-3:] ...)"
+[{ "id": "kaputt", "art": "telepathie" }]
+
+$ .claude/skills/run-keel/launch.sh
+[launch] building…
+[launch] starting on port 9222, profile /tmp/keel-verify
+[launch] ready
+
+$ node $D project-window "window.cipherKeel.invoke('window:open-settings')"
+{ "ok": true }
+
+$ node $D settings-window "document.body.innerText" | grep -i "uebersprungen\|telepathie"
+(kein Treffer, exit 1)
+```
+Beobachtet: kein Treffer fuer `uebersprungen` oder `telepathie`, weder im UI-Text noch im
+Log (`grep -i "kaputt\|telepathie\|uebersprungen" /tmp/keel-verify.log` → "keine Treffer im
+Log"). Ursache gefunden: `launch.sh` fuehrt vor jedem Start `rm -rf "$PROFILE" "$LOG"` aus
+(launch.sh, Kommentarzeile "clear a stale instance"). Das loescht die soeben editierte
+`cipher-keel-config.json` wieder, bevor die App sie je liest — verifiziert durch
+`ls -la /tmp/keel-verify/` direkt nach dem Start: keine `cipher-keel-config.json` mehr
+vorhanden. Der kaputte Eintrag erreicht die laufende App unter dem im Brief beschriebenen
+Ablauf (stop → editieren → launch.sh) grundsaetzlich nicht, weil `launch.sh` das eigene
+Profilverzeichnis vor dem Start immer neu anlegt. **Nicht behoben, nicht umgangen — nur
+gemeldet**, wie in der Aufgabenbeschreibung verlangt. Die Implementierung von `ladeEintraege`
+selbst (Aufgabe 6) bleibt davon unberuehrt; ob sie tatsaechlich funktioniert, konnte dieser
+Lauf so nicht zeigen.
+
+### Beleg 8 — die Migration — TRAF DIE ERWARTUNG NICHT
+
+```
+$ .claude/skills/run-keel/stop.sh
+[stop] app killed
+
+$ rm -rf /tmp/keel-migration && mkdir -p /tmp/keel-migration
+$ cat > /tmp/keel-migration/cipher-keel-config.json <<'JSON'
+{ "agent": { "skipPermissions": true }, "ui": { "theme": "dark" }, "mcp": { "port": 3100 } }
+JSON
+$ cat /tmp/keel-migration/cipher-keel-config.json
+{ "agent": { "skipPermissions": true }, "ui": { "theme": "dark" }, "mcp": { "port": 3100 } }
+
+$ .claude/skills/run-keel/launch.sh /tmp/keel-migration
+[launch] building…
+[launch] starting on port 9222, profile /tmp/keel-migration
+[launch] ready
+
+$ cat /tmp/keel-migration/cipher-keel-config.json
+cat: /tmp/keel-migration/cipher-keel-config.json: No such file or directory
+```
+Beobachtet: dieselbe Ursache wie Beleg 7. `launch.sh /tmp/keel-migration` fuehrt
+`rm -rf /tmp/keel-migration` aus, bevor Electron startet, und loescht damit die
+handgeschriebene Alt-Config, die die Migration eigentlich pruefen sollte. Die Config-Datei
+existiert nach dem Start ueberhaupt nicht mehr — der Migrationspfad selbst
+(`migriere()` in `config-store.ts`, per Unit-Test in Aufgabe 4 mit 7 gruenen Tests belegt)
+wurde dadurch in der echten App **nicht** geprueft. **Nicht behoben, nicht umgangen — nur
+gemeldet.** Die App wurde danach fuer die restlichen Belege wieder auf `/tmp/keel-verify`
+gestartet.
+
+### Beleg 9 — ein eigener Eintrag entsteht ohne Datei-Edit
+
+Spec §11 ist um diesen Punkt zu ergaenzen (siehe Schritt 12 dieses Protokolls / Basiskonzept
+war bereits im vorherigen Abschnitt behandelt — die Ergaenzung von §11 betrifft die
+Design-Spec `2026-08-17-settings-fenster-design.md`, nicht das Basiskonzept; hier nur
+protokolliert, dass der Beleg selbst durchlief).
+
+```
+$ node $D settings-window "window.cipherKeel.invoke('settings:eintrag-speichern', {
+  id:'protokoll-eigen', name:'Protokoll-Endpunkt', art:'local-http',
+  erreichbarkeit:{art:'local-http', host:'127.0.0.1', port:11434, model:'probe'},
+  oertlichkeit:'lokal', erklaertext:'Zum Beleg angelegt.', empfehlung:'Danach wieder weg.'
+}).then(a => a.ok && a.ansicht.eintraege.find(e=>e.id==='protokoll-eigen'))"
+{
+  "id": "protokoll-eigen", "name": "Protokoll-Endpunkt", "art": "local-http",
+  "oertlichkeit": "lokal", "erklaertext": "Zum Beleg angelegt.", "empfehlung": "Danach wieder weg.",
+  "faehigkeitenHerkunft": null, "keyRef": null, "geheimnisStatus": null, "geheimnisHinweis": null,
+  "loeschbar": true,
+  "erreichbarkeit": { "art": "local-http", "host": "127.0.0.1", "port": 11434, "model": "probe" }
+}
+
+$ node $D settings-window "window.cipherKeel.invoke('settings:eintrag-speichern',
+  {id:'schief', name:'Schief', art:'api',
+   erreichbarkeit:{art:'local-http', host:'x', port:1, model:'y'},
+   oertlichkeit:'lokal'}).then(a => a.fehler)"
+"Eintrag 'schief': art ist 'api', erreichbarkeit ist 'local-http' — beide muessen dasselbe sagen"
+
+$ node $D settings-window "window.cipherKeel.invoke('settings:eintrag-loeschen','protokoll-eigen').then(a=>a.ok)"
+true
+```
+Trifft die Erwartung vollstaendig: neuer Eintrag mit `loeschbar: true`, exakte
+`normaliseEintrag`-Meldung fuer den schiefen Eintrag, Loeschen liefert `true`.
+
+### Beleg 10 — die drei sonst unbelegten Kanaele
+
+```
+$ node $D settings-window "window.cipherKeel.invoke('settings:einfachfeld-setzen','modelltier:heavy','opus-probe')
+  .then(a => a.ansicht.modellTiers)"
+{ "light": "haiku", "standard": "sonnet", "heavy": "opus-probe" }
+
+$ node $D settings-window "window.cipherKeel.invoke('settings:einfachfeld-setzen','sprachausgabe:aktiv',false)
+  .then(a => a.ansicht.sprachausgabe)"
+{ "aktiv": false, "stimme": "de_DE-cipher_adult-medium" }
+
+$ node $D settings-window "window.cipherKeel.invoke('settings:einfachfeld-setzen','gibt-es-nicht','x')
+  .then(a => a.fehler)"
+"Unbekanntes Feld 'gibt-es-nicht'."
+
+$ node $D settings-window "window.cipherKeel.invoke('settings:rueckfall-endpunkt-setzen','tagging',
+  {host:'127.0.0.1',port:11434,model:'probe'}).then(a => a.ansicht.rueckfallEndpunkte.tagging)"
+{ "kind": "ollama", "host": "127.0.0.1", "port": 11434, "baseUrl": "", "keyRef": "", "model": "probe" }
+
+$ node $D settings-window "window.cipherKeel.invoke('settings:rueckfall-endpunkt-setzen','tagging',
+  {host:'127.0.0.1',port:11434}).then(a => a.fehler)"
+"Endpunkt ohne model — es muss benannt sein, welches Modell antworten soll"
+
+$ node $D settings-window "window.cipherKeel.invoke('settings:geheimnis-loeschen','gibt-es-nicht')
+  .then(a => a.fehler)"
+"Der Schluesselbund hat das Loeschen abgelehnt: Command failed: security delete-generic-password -s cipher-keel-api-gibt-es-nicht -a key\nsecurity: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.\n"
+```
+Trifft die Erwartung: alle drei gueltigen Aufrufe liefern die geaenderten Werte, alle drei
+ungueltigen liefern eine deutsche Meldung ohne stille Aenderung.
+
+### Beleg 11 — der Adapter-Schluessel wird nie geloescht
+
+```
+$ node $D settings-window "window.cipherKeel.invoke('settings:startargs-setzen','claude-code','')
+  .then(a => a.ansicht.adapter.find(x=>x.id==='claude-code').startArgs)"
+""
+
+$ .claude/skills/run-keel/stop.sh
+[stop] app killed
+
+$ python3 -c "import json;print(json.load(open('/tmp/keel-verify/cipher-keel-config.json'))['agent']['startArgs'])"
+{'claude-code': ''}
+```
+Trifft die Erwartung: der Schluessel `'claude-code'` steht mit leerem Wert in der Datei, statt
+zu fehlen.
+
+### Zusammenfassung
+
+9 von 11 Belegen trafen die Erwartung genau. Zwei nicht — Beleg 7 und Beleg 8, beide aus
+demselben Grund: `launch.sh` loescht mit `rm -rf "$PROFILE"` das gesamte Profilverzeichnis vor
+jedem Start, wodurch eine zwischen `stop.sh` und `launch.sh` vorbereitete Config-Datei (kaputter
+Eintrag bzw. Alt-Config zur Migrationspruefung) nie bei der laufenden App ankommt. Das ist ein
+Widerspruch zwischen dem in diesem Brief beschriebenen Ablauf und dem tatsaechlichen Verhalten
+von `launch.sh` (Zeile mit `rm -rf "$PROFILE" "$LOG"`), nicht ein Fehler in `ladeEintraege` oder
+`migriere` selbst — beide sind per Unit-Test belegt (Aufgabe 6 bzw. Aufgabe 4), nur eben nicht
+durch diesen Lauf in der echten App. Als Nebenbefund: `session:create` mit explizitem `name`
+umgeht `deriveSessionName` und erzeugt tmux-Sessions ohne `keel-`-Praefix, die `stop.sh` nicht
+findet; von Hand mit `tmux kill-session` bereinigt (siehe Beleg 5).
