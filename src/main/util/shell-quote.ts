@@ -23,3 +23,67 @@ function quote(arg: string): string {
 export function formatShellCommand(cmd: string, args: string[]): string {
   return [quote(cmd), ...args.map(quote)].join(' ')
 }
+
+/**
+ * Split a free-text command line into argv, the inverse of formatShellCommand.
+ *
+ * Users type start parameters into the settings window as one line. Splitting on
+ * whitespace alone would break `--append-system-prompt-file "/pfad mit leerzeichen"`, so
+ * both quoting forms and the backslash escape are honoured. An unbalanced quote is an
+ * error rather than a best-effort guess: a silently mangled launch command is the
+ * expensive kind of failure.
+ */
+export function splitShellArgs(text: string): string[] {
+  const args: string[] = []
+  let current = ''
+  let hasCurrent = false
+  let quote: "'" | '"' | null = null
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+
+    if (quote) {
+      if (ch === quote) {
+        quote = null
+      } else {
+        current += ch
+      }
+      continue
+    }
+
+    if (ch === "'" || ch === '"') {
+      quote = ch
+      hasCurrent = true
+      continue
+    }
+
+    if (ch === '\\' && i + 1 < text.length) {
+      current += text[i + 1]
+      hasCurrent = true
+      i++
+      continue
+    }
+
+    if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') {
+      if (hasCurrent) {
+        args.push(current)
+        current = ''
+        hasCurrent = false
+      }
+      continue
+    }
+
+    current += ch
+    hasCurrent = true
+  }
+
+  if (quote) {
+    throw new Error(
+      `[shell-quote] Unbalanciertes Anfuehrungszeichen (${quote}) in den Startparametern — ` +
+      'jedes geoeffnete Anfuehrungszeichen braucht ein schliessendes.'
+    )
+  }
+
+  if (hasCurrent) args.push(current)
+  return args
+}

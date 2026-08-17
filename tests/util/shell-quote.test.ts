@@ -36,3 +36,49 @@ describe('formatShellCommand', () => {
     expect(() => formatShellCommand('claude', ['a\nb'])).toThrow()
   })
 })
+
+import { splitShellArgs } from '../../src/main/util/shell-quote'
+
+describe('splitShellArgs', () => {
+  it('gibt eine leere Liste fuer leeren Text und fuer reinen Leerraum', () => {
+    expect(splitShellArgs('')).toEqual([])
+    expect(splitShellArgs('   \t ')).toEqual([])
+  })
+
+  it('trennt an Leerraum', () => {
+    expect(splitShellArgs('--resume --model opus')).toEqual(['--resume', '--model', 'opus'])
+  })
+
+  it('haelt einfache Anfuehrungszeichen zusammen und entfernt sie', () => {
+    expect(splitShellArgs("--datei '/pfad mit leerzeichen/x.md'"))
+      .toEqual(['--datei', '/pfad mit leerzeichen/x.md'])
+  })
+
+  it('haelt doppelte Anfuehrungszeichen zusammen und entfernt sie', () => {
+    expect(splitShellArgs('--datei "/pfad mit leerzeichen/x.md"'))
+      .toEqual(['--datei', '/pfad mit leerzeichen/x.md'])
+  })
+
+  it('maskiert ein Leerzeichen per Rueckstrich ausserhalb von Anfuehrungszeichen', () => {
+    expect(splitShellArgs('--datei /pfad\\ mit/x.md')).toEqual(['--datei', '/pfad mit/x.md'])
+  })
+
+  it('behandelt ein Anfuehrungszeichen innerhalb der anderen Sorte als Zeichen', () => {
+    expect(splitShellArgs(`--text "Kenos' Rezept"`)).toEqual(['--text', "Kenos' Rezept"])
+  })
+
+  it('erlaubt ein leeres Argument als ausdrueckliches Paar Anfuehrungszeichen', () => {
+    expect(splitShellArgs(`--leer ""`)).toEqual(['--leer', ''])
+  })
+
+  it('wirft mit deutscher Meldung bei unbalanciertem Anfuehrungszeichen', () => {
+    expect(() => splitShellArgs('--datei "/pfad ohne Ende'))
+      .toThrow(/Anfuehrungszeichen/)
+  })
+
+  it('ist die Umkehrung von formatShellCommand fuer sichere und unsichere Argumente', () => {
+    const args = ['--dangerously-skip-permissions', '/pfad mit leerzeichen/x.md', "Kenos' Rezept"]
+    const zeile = formatShellCommand('claude', args)
+    expect(splitShellArgs(zeile)).toEqual(['claude', ...args])
+  })
+})
