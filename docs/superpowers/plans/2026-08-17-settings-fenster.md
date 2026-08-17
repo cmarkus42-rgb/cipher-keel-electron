@@ -107,9 +107,12 @@ assignments, CLI start parameters, speech output).
 
 The settings window does not open on start. Open it first, then drive it:
 
+    D=".claude/skills/run-keel/driver.mjs"
     node $D project-window "window.cipherKeel.invoke('window:open-settings')"
     node $D settings-window "window.cipherKeel.invoke('settings:ansicht')"
 ```
+
+Dieser Block steht **vor** der Stelle, an der die Datei `D` bisher zum ersten Mal setzt — er definiert die Variable daher selbst. Wer die zwei Zeilen von oben nach unten kopiert, bekommt einen funktionierenden Aufruf und kein leeres `$D`.
 
 - [ ] **Step 2: Zweig prüfen und committen**
 
