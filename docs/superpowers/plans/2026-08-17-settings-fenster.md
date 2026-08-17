@@ -1100,7 +1100,10 @@ An `tests/model/registry.test.ts` innerhalb des äußeren `describe` anhängen:
   describe('ladeEintraege', () => {
     it('liefert den kaputten Eintrag samt Fehlertext statt ihn nur zu loggen', async () => {
       const { ladeEintraege } = await withConfig({
-        modelle: { eintraege: [{ id: 'kaputt', art: 'telepathie' }] },
+        // `name` ist gesetzt, damit die Validierung bis zur Anbieterart kommt:
+        // normaliseEintrag prueft name vor art, und der Fehlertext soll den
+        // tatsaechlichen Grund tragen, nicht den erstbesten.
+        modelle: { eintraege: [{ id: 'kaputt', name: 'Kaputt', art: 'telepathie' }] },
       })
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
       try {
@@ -1506,7 +1509,11 @@ describe('Ansichtsmodell', () => {
   it('reicht uebersprungene Eintraege mit Fehlertext durch', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      const a = await ansichtMit({ modelle: { eintraege: [{ id: 'kaputt', art: 'telepathie' }] } })
+      // name gesetzt, damit die Validierung bis zur Anbieterart kommt — siehe
+      // tests/model/registry.test.ts, wo dieselbe Reihenfolge zaehlt.
+      const a = await ansichtMit({
+        modelle: { eintraege: [{ id: 'kaputt', name: 'Kaputt', art: 'telepathie' }] },
+      })
       expect(a.uebersprungen).toHaveLength(1)
       expect(a.uebersprungen[0].beschreibung).toContain('kaputt')
       expect(a.uebersprungen[0].fehler).toContain('telepathie')
