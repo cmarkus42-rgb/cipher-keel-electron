@@ -3864,8 +3864,12 @@ EOF
 ## Messprotokoll 2026-08-17
 
 Aufgabe 13, Abnahme in der laufenden App. Profil `/tmp/keel-verify` (Ausnahme: Beleg 8,
-eigenes Profil `/tmp/keel-migration`). Alle elf Belege durchlaufen; neun trafen die
-Erwartung, zwei nicht — beide werden hier gemeldet, nicht nachgebessert.
+eigenes Profil `/tmp/keel-migration`). Alle elf Belege durchlaufen. Im ersten Lauf trafen
+neun die Erwartung, zwei nicht (Beleg 7, Beleg 8) — beide wurden gemeldet, nicht
+nachgebessert. Die Ursache war dieselbe in beiden Faellen und lag im Testwerkzeug
+(`launch.sh` loeschte das Profil vor jedem Start bedingungslos), nicht im gepruefeten Code.
+Nach einem Opt-out in `launch.sh` (`KEEL_KEEP_PROFILE=1`, siehe unten) liefen beide Belege
+ein zweites Mal und trafen die Erwartung. Alle elf Belege treffen die Erwartung.
 
 ### Beleg 1 — der Klickpfad
 
@@ -3981,7 +3985,10 @@ $ node $D project-window "window.cipherKeel.invoke('notes:auto-tag','Ein Text ue
 Trifft die Erwartung: Aufruf ging ohne Neustart der App durch den frisch zugeordneten
 Endpunkt und lieferte Tags statt eines Fehlers.
 
-### Beleg 7 — ein kaputter Eintrag erreicht die Oberflaeche — TRAF DIE ERWARTUNG NICHT
+### Beleg 7 — ein kaputter Eintrag erreicht die Oberflaeche
+
+**Erster Versuch, unter dem Ablauf, wie ihn Aufgabe 13 zuerst beschrieb — TRAF DIE
+ERWARTUNG NICHT:**
 
 ```
 $ .claude/skills/run-keel/stop.sh
@@ -4007,19 +4014,63 @@ $ node $D settings-window "document.body.innerText" | grep -i "uebersprungen\|te
 (kein Treffer, exit 1)
 ```
 Beobachtet: kein Treffer fuer `uebersprungen` oder `telepathie`, weder im UI-Text noch im
-Log (`grep -i "kaputt\|telepathie\|uebersprungen" /tmp/keel-verify.log` → "keine Treffer im
-Log"). Ursache gefunden: `launch.sh` fuehrt vor jedem Start `rm -rf "$PROFILE" "$LOG"` aus
-(launch.sh, Kommentarzeile "clear a stale instance"). Das loescht die soeben editierte
-`cipher-keel-config.json` wieder, bevor die App sie je liest — verifiziert durch
-`ls -la /tmp/keel-verify/` direkt nach dem Start: keine `cipher-keel-config.json` mehr
-vorhanden. Der kaputte Eintrag erreicht die laufende App unter dem im Brief beschriebenen
-Ablauf (stop → editieren → launch.sh) grundsaetzlich nicht, weil `launch.sh` das eigene
-Profilverzeichnis vor dem Start immer neu anlegt. **Nicht behoben, nicht umgangen — nur
-gemeldet**, wie in der Aufgabenbeschreibung verlangt. Die Implementierung von `ladeEintraege`
-selbst (Aufgabe 6) bleibt davon unberuehrt; ob sie tatsaechlich funktioniert, konnte dieser
-Lauf so nicht zeigen.
+Log. Ursache gefunden: `launch.sh` fuehrte vor jedem Start bedingungslos
+`rm -rf "$PROFILE" "$LOG"` aus. Das loeschte die soeben editierte `cipher-keel-config.json`
+wieder, bevor die App sie je las — verifiziert durch `ls -la /tmp/keel-verify/` direkt nach
+dem Start: keine `cipher-keel-config.json` mehr vorhanden. Ein Config-Datei-Praeparat vor
+`launch.sh` konnte unter dem urspruenglichen Skript grundsaetzlich nie an die laufende App
+weitergereicht werden. Das ist ein Fehler im geplanten Beleg-Ablauf (der Plan pruefte nicht,
+was `launch.sh` beim Start tut), nicht in `ladeEintraege` selbst. **Nicht behoben, nicht
+umgangen — gemeldet**, und daraufhin `.claude/skills/run-keel/launch.sh` um einen Opt-out
+ergaenzt: `KEEL_KEEP_PROFILE=1` ueberspringt den `rm -rf` des Profils (das Log wird weiterhin
+geleert), Vorgabeverhalten unveraendert. Dokumentiert in `SKILL.md` unter "## Run it".
 
-### Beleg 8 — die Migration — TRAF DIE ERWARTUNG NICHT
+**Zweiter Versuch, mit `KEEL_KEEP_PROFILE=1` — TRIFFT:**
+
+```
+$ rm -rf /tmp/keel-verify /tmp/keel-verify.log
+$ .claude/skills/run-keel/launch.sh
+[launch] ready
+  profile: /tmp/keel-verify
+
+# Ein frisches Profil hat noch keine Config-Datei -- erst ein Schreibvorgang legt sie an:
+$ node $D project-window "window.cipherKeel.invoke('window:open-settings')"
+{ "ok": true }
+$ node $D settings-window "window.cipherKeel.invoke('settings:einfachfeld-setzen','sprachausgabe:aktiv',true).then(a=>a.ok)"
+true
+$ ls -la /tmp/keel-verify/cipher-keel-config.json
+-rw-------@ 1 cipher wheel 811 ... cipher-keel-config.json
+
+$ .claude/skills/run-keel/stop.sh
+[stop] app killed
+
+$ python3 - <<'PY'
+... c.setdefault('modelle', {}).setdefault('eintraege', []).append({'id': 'kaputt', 'name': 'Kaputt', 'art': 'telepathie'}) ...
+PY
+$ python3 -c "... print([e for e in ...eintraege if e['id']=='kaputt']) ..."
+[{'id': 'kaputt', 'name': 'Kaputt', 'art': 'telepathie'}]
+
+$ KEEL_KEEP_PROFILE=1 .claude/skills/run-keel/launch.sh
+[launch] KEEL_KEEP_PROFILE=1 — profile kept: /tmp/keel-verify
+[launch] starting on port 9222, profile /tmp/keel-verify
+[launch] ready
+
+$ python3 -c "... print([e for e in ...eintraege if e['id']=='kaputt']) ..."
+[{'id': 'kaputt', 'name': 'Kaputt', 'art': 'telepathie'}]   # ueberlebt den Start
+
+$ node $D project-window "window.cipherKeel.invoke('window:open-settings')"
+{ "ok": true }
+$ node $D settings-window "document.body.innerText" | grep -i "uebersprungen\|telepathie\|kaputt"
+"...Uebersprungene Eintraege aus der Konfiguration\nEintrag {\"id\":\"kaputt\",\"name\":\"Kaputt\",\"art\":\"telepathie\"} — Unbekannte Anbieterart 'telepathie' — bekannt sind cli-harness, local-http, api\n..."
+```
+Trifft die Erwartung: der kaputte Eintrag steht sichtbar unter der Ueberschrift
+"Uebersprungene Eintraege aus der Konfiguration" mit Rohdaten und Fehlertext, nicht nur in
+der Konsole. `ladeEintraege` (Aufgabe 6) ist damit auch in der echten App belegt, nicht nur
+im Unit-Test.
+
+### Beleg 8 — die Migration
+
+**Erster Versuch, unter dem urspruenglichen Ablauf — TRAF DIE ERWARTUNG NICHT:**
 
 ```
 $ .claude/skills/run-keel/stop.sh
@@ -4040,14 +4091,53 @@ $ .claude/skills/run-keel/launch.sh /tmp/keel-migration
 $ cat /tmp/keel-migration/cipher-keel-config.json
 cat: /tmp/keel-migration/cipher-keel-config.json: No such file or directory
 ```
-Beobachtet: dieselbe Ursache wie Beleg 7. `launch.sh /tmp/keel-migration` fuehrt
-`rm -rf /tmp/keel-migration` aus, bevor Electron startet, und loescht damit die
-handgeschriebene Alt-Config, die die Migration eigentlich pruefen sollte. Die Config-Datei
-existiert nach dem Start ueberhaupt nicht mehr — der Migrationspfad selbst
-(`migriere()` in `config-store.ts`, per Unit-Test in Aufgabe 4 mit 7 gruenen Tests belegt)
-wurde dadurch in der echten App **nicht** geprueft. **Nicht behoben, nicht umgangen — nur
-gemeldet.** Die App wurde danach fuer die restlichen Belege wieder auf `/tmp/keel-verify`
-gestartet.
+Beobachtet: dieselbe Ursache wie Beleg 7 — `launch.sh /tmp/keel-migration` fuehrte
+`rm -rf /tmp/keel-migration` aus und loeschte die handgeschriebene Alt-Config vor dem Start.
+Der Migrationspfad (`migriere()` in `config-store.ts`, per Unit-Test in Aufgabe 4 mit 7
+gruenen Tests belegt) wurde dadurch in der echten App **nicht** geprueft. **Nicht behoben,
+nicht umgangen — gemeldet**, derselbe Opt-out wie bei Beleg 7 behebt den Ablauf.
+
+**Zweiter Versuch, mit `KEEL_KEEP_PROFILE=1` — TRIFFT:**
+
+```
+$ .claude/skills/run-keel/stop.sh
+[stop] app killed
+
+$ rm -rf /tmp/keel-migration /tmp/keel-migration.log && mkdir -p /tmp/keel-migration
+$ cat > /tmp/keel-migration/cipher-keel-config.json <<'JSON'
+{ "agent": { "skipPermissions": true }, "ui": { "theme": "dark" }, "mcp": { "port": 3100 } }
+JSON
+
+$ KEEL_KEEP_PROFILE=1 .claude/skills/run-keel/launch.sh /tmp/keel-migration
+[launch] KEEL_KEEP_PROFILE=1 — profile kept: /tmp/keel-migration
+[launch] starting on port 9222, profile /tmp/keel-migration
+[launch] ready
+
+$ cat /tmp/keel-migration/cipher-keel-config.json
+{
+  "agent": {
+    "startArgs": { "claude-code": "--dangerously-skip-permissions" },
+    "modelTiers": { "light": "haiku", "standard": "sonnet", "heavy": "opus" }
+  },
+  "voice": { "enabled": true, "piperVoice": "de_DE-cipher_adult-medium" },
+  "llm": {
+    "tagging": { "host": "127.0.0.1", "port": 11434, "model": "qwen3:30b-a3b-instruct-2507-q4_K_M" },
+    "worker": { "host": "100.78.7.108", "port": 11434, "model": "gemma4:26b" }
+  },
+  "modelle": { "eintraege": [], "zuordnung": { "tiers": {...}, "rollen": {...} } },
+  "projects": { "list": [], "activeId": null }
+}
+
+$ python3 -c "c=json.load(open('/tmp/keel-migration/cipher-keel-config.json'));
+  print(c['agent']['startArgs']['claude-code'], 'skipPermissions' in c['agent'], 'ui' in c, 'mcp' in c)"
+--dangerously-skip-permissions False False False
+```
+Trifft die Erwartung: `agent.startArgs['claude-code'] === '--dangerously-skip-permissions'`,
+kein `skipPermissions`, kein `ui`, kein `mcp`. `migriere()` (Aufgabe 4) ist damit auch in der
+echten App belegt.
+
+App danach fuer die restlichen Belege wieder auf `/tmp/keel-verify` gestartet (ohne
+`KEEL_KEEP_PROFILE`, Vorgabeverhalten).
 
 ### Beleg 9 — ein eigener Eintrag entsteht ohne Datei-Edit
 
@@ -4130,13 +4220,30 @@ zu fehlen.
 
 ### Zusammenfassung
 
-9 von 11 Belegen trafen die Erwartung genau. Zwei nicht — Beleg 7 und Beleg 8, beide aus
-demselben Grund: `launch.sh` loescht mit `rm -rf "$PROFILE"` das gesamte Profilverzeichnis vor
-jedem Start, wodurch eine zwischen `stop.sh` und `launch.sh` vorbereitete Config-Datei (kaputter
-Eintrag bzw. Alt-Config zur Migrationspruefung) nie bei der laufenden App ankommt. Das ist ein
-Widerspruch zwischen dem in diesem Brief beschriebenen Ablauf und dem tatsaechlichen Verhalten
-von `launch.sh` (Zeile mit `rm -rf "$PROFILE" "$LOG"`), nicht ein Fehler in `ladeEintraege` oder
-`migriere` selbst — beide sind per Unit-Test belegt (Aufgabe 6 bzw. Aufgabe 4), nur eben nicht
-durch diesen Lauf in der echten App. Als Nebenbefund: `session:create` mit explizitem `name`
-umgeht `deriveSessionName` und erzeugt tmux-Sessions ohne `keel-`-Praefix, die `stop.sh` nicht
-findet; von Hand mit `tmux kill-session` bereinigt (siehe Beleg 5).
+Alle elf Belege treffen inzwischen die Erwartung genau — neun im ersten Lauf, Beleg 7 und
+Beleg 8 erst im zweiten, nach einer Korrektur am Testwerkzeug statt am gepruefeten Code.
+
+Beide scheiterten im ersten Lauf am selben Grund: `launch.sh` loeschte mit
+`rm -rf "$PROFILE"` bedingungslos das gesamte Profilverzeichnis vor jedem Start, wodurch
+eine zwischen `stop.sh` und `launch.sh` vorbereitete Config-Datei (kaputter Eintrag bzw.
+Alt-Config zur Migrationspruefung) nie bei der laufenden App ankam. Das war ein Fehler im
+geplanten Beleg-Ablauf dieser Aufgabe — nicht in `ladeEintraege` oder `migriere` selbst,
+beide waren bereits per Unit-Test belegt (Aufgabe 6 bzw. Aufgabe 4). Handover §6 zufolge ist
+eine Datei unter `.claude/skills/` Teil des Pruefstands: `launch.sh` bekam einen Opt-out
+(`KEEL_KEEP_PROFILE=1`, Vorgabeverhalten unveraendert), `SKILL.md` wurde im selben Commit
+nachgefuehrt, und beide Belege liefen danach ein zweites Mal — diesmal gegen eine
+vorbereitete, ueberlebende Config. Beide trafen die Erwartung exakt (Beleg 7: der kaputte
+Eintrag erscheint unter "Uebersprungene Eintraege aus der Konfiguration" mit Fehlertext;
+Beleg 8: `agent.startArgs['claude-code'] === '--dangerously-skip-permissions'`, kein
+`skipPermissions`, kein `ui`, kein `mcp`).
+
+**Nebenbefund, ausserhalb des Scopes dieser Aufgabe, nicht behoben:** `session:create` mit
+explizitem `name`-Feld uebernimmt diesen Namen woertlich statt durch `deriveSessionName`
+(`src/main/session/session-context.ts`) zu laufen. Bei Beleg 5 entstanden dadurch zwei
+tmux-Sessions namens `protokoll-probe` und `protokoll-probe-2` statt mit dem erwarteten
+Praefix `keel-...`. `stop.sh` filtert beim Aufraeumen nur auf `^keel-` und liess beide
+stehen (`tmux sessions removed: 0`); von Hand mit `tmux kill-session -t protokoll-probe`
+und `-t protokoll-probe-2` entfernt. Das ist reproduzierbar und nicht auf diesen Lauf
+beschraenkt — jeder Aufrufer von `session:create` mit eigenem `name` erzeugt eine
+tmux-Session, die `stop.sh` nicht findet. Ein echter Defekt im Zusammenspiel von App und
+Testwerkzeug, gehoert vor die naechste Review, nicht in diese Aufgabe.

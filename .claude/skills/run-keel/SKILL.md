@@ -28,6 +28,12 @@ node .claude/skills/run-keel/driver.mjs --list
 profile stays untouched and "fresh start" behaviour is reproducible. Pass a different
 path as the first argument if you need two profiles in one session.
 
+The throwaway profile is wiped on every launch by default — that is what makes "fresh
+start" reproducible. Set `KEEL_KEEP_PROFILE=1` to skip the wipe and keep whatever is
+already at the profile path. That is how you drive the app against a config written
+beforehand: it is the only way a migration or a hand-broken config entry gets verified
+against the running app at all, rather than against a unit test.
+
 **Always finish with `stop.sh`.** The app creates real tmux sessions; leaving them
 behind pollutes the machine and corrupts the next run's `tmux list-sessions` check.
 
