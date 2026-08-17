@@ -48,8 +48,6 @@ export const GRAPH_MAINTAIN = 'graph:maintain' as const
 // ---------------------------------------------------------------------------
 export const CONFIG_GET = 'config:get' as const
 export const CONFIG_SET = 'config:set' as const
-export const CONFIG_DELETE = 'config:delete' as const
-export const CONFIG_CHANGED = 'config:changed' as const
 
 // ---------------------------------------------------------------------------
 // Status-Line / monitoring channels
@@ -143,6 +141,20 @@ export const P1_NORMALIZE = 'p1:normalize' as const
 // Window management channels (Drei-Fenster-Modell, CK-UI-002)
 // ---------------------------------------------------------------------------
 export const WINDOW_OPEN_GRID = 'window:open-grid' as const
+export const WINDOW_OPEN_SETTINGS = 'window:open-settings' as const
+
+// ---------------------------------------------------------------------------
+// Settings channels — the settings window is the only writer of config
+// ---------------------------------------------------------------------------
+export const SETTINGS_ANSICHT = 'settings:ansicht' as const
+export const SETTINGS_ZUORDNUNG_SETZEN = 'settings:zuordnung-setzen' as const
+export const SETTINGS_EINTRAG_SPEICHERN = 'settings:eintrag-speichern' as const
+export const SETTINGS_EINTRAG_LOESCHEN = 'settings:eintrag-loeschen' as const
+export const SETTINGS_GEHEIMNIS_SETZEN = 'settings:geheimnis-setzen' as const
+export const SETTINGS_GEHEIMNIS_LOESCHEN = 'settings:geheimnis-loeschen' as const
+export const SETTINGS_STARTARGS_SETZEN = 'settings:startargs-setzen' as const
+export const SETTINGS_EINFACHFELD_SETZEN = 'settings:einfachfeld-setzen' as const
+export const SETTINGS_RUECKFALL_ENDPUNKT_SETZEN = 'settings:rueckfall-endpunkt-setzen' as const
 
 // ---------------------------------------------------------------------------
 // App lifecycle channels
@@ -172,7 +184,6 @@ export type MainToRendererChannel =
   | typeof SESSION_OUTPUT
   | typeof TERMINAL_DATA_INBOUND
   | typeof TERMINAL_SCROLL_MARKER
-  | typeof CONFIG_CHANGED
   | typeof STATUSLINE_CTX_UPDATE
   | typeof STATUSLINE_HOOK_DATA
   | typeof VOICE_STATE
@@ -210,7 +221,6 @@ export type RendererToMainChannel =
   | typeof PROJECT_GET_CURRENT
   | typeof CONFIG_GET
   | typeof CONFIG_SET
-  | typeof CONFIG_DELETE
   | typeof VOICE_AVAILABLE
   | typeof VOICE_START_SESSION
   | typeof VOICE_STOP_SESSION
@@ -241,6 +251,16 @@ export type RendererToMainChannel =
   | typeof KANBAN_HYGIENE
   | typeof P1_NORMALIZE
   | typeof WINDOW_OPEN_GRID
+  | typeof WINDOW_OPEN_SETTINGS
+  | typeof SETTINGS_ANSICHT
+  | typeof SETTINGS_ZUORDNUNG_SETZEN
+  | typeof SETTINGS_EINTRAG_SPEICHERN
+  | typeof SETTINGS_EINTRAG_LOESCHEN
+  | typeof SETTINGS_GEHEIMNIS_SETZEN
+  | typeof SETTINGS_GEHEIMNIS_LOESCHEN
+  | typeof SETTINGS_STARTARGS_SETZEN
+  | typeof SETTINGS_EINFACHFELD_SETZEN
+  | typeof SETTINGS_RUECKFALL_ENDPUNKT_SETZEN
   | typeof APP_BEFORE_QUIT
   | typeof GITHUB_CHECK_AUTH
   | typeof GITHUB_GET_TOKEN
