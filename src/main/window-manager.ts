@@ -129,3 +129,49 @@ export function createProjectWindow(_services: AppServices): BrowserWindow {
 
   return win
 }
+
+/**
+ * Creates the Settings Window — the third window.
+ *
+ * Opens only on explicit user action via window:open-settings. The project window opens on
+ * start and carries the button, so the path is reachable from a cold start — which is the
+ * point: a surface nobody can get to is a surface that does not exist.
+ */
+export function createSettingsWindow(_services: AppServices): BrowserWindow {
+  const win = new BrowserWindow({
+    width: 1000,
+    height: 760,
+    minWidth: 720,
+    minHeight: 520,
+    show: false,
+    backgroundColor: '#0d0d0d',
+    webPreferences: {
+      // Security baseline — NON-NEGOTIABLE (CK-NFR-004, CK-INF-022)
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: join(__dirname, '../preload/index.js'),
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+    },
+  })
+
+  win.once('ready-to-show', () => {
+    win.show()
+  })
+
+  const url = process.env.ELECTRON_RENDERER_URL
+  if (url) {
+    // electron-vite dev: same subdirectory-then-root fallback as the project window
+    win.loadURL(`${url}/windows/settings-window.html`).catch(() => {
+      console.warn('[window-manager] /windows/ path failed, trying root-level')
+      win.loadURL(`${url}/settings-window.html`).catch((err: Error) =>
+        console.error('[window-manager] settings-window load failed:', err.message)
+      )
+    })
+  } else {
+    win.loadFile(join(__dirname, '../renderer/windows/settings-window.html'))
+  }
+
+  return win
+}

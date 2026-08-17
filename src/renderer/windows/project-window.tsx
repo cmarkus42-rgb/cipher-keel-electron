@@ -78,6 +78,14 @@ function ProjectApp() {
     }
   }, [activeProjectId])
 
+  const handleOpenSettings = useCallback(async () => {
+    try {
+      await api().invoke('window:open-settings')
+    } catch (err) {
+      console.error('[project-window] window:open-settings failed:', err)
+    }
+  }, [])
+
   if (loading) {
     return (
       <div style={styles.loading}>
@@ -99,15 +107,24 @@ function ProjectApp() {
         )}
         <span style={styles.logo}>cipher keel</span>
         <span style={styles.subtitle}>Projekte</span>
-        {view === 'project' && (
+        <div style={styles.kopfKnoepfe}>
+          {view === 'project' && (
+            <button
+              style={styles.gridBtn}
+              onClick={handleOpenGrid}
+              title="Grid-Fenster mit den Sessions dieses Projekts oeffnen"
+            >
+              Grid oeffnen
+            </button>
+          )}
           <button
-            style={styles.gridBtn}
-            onClick={handleOpenGrid}
-            title="Grid-Fenster mit den Sessions dieses Projekts oeffnen"
+            style={styles.settingsBtn}
+            onClick={handleOpenSettings}
+            title="Einstellungen oeffnen — Modelle, Zuordnungen, Startparameter"
           >
-            Grid oeffnen
+            Einstellungen
           </button>
-        )}
+        </div>
       </div>
       {view === 'project' ? (
         <ProjectView projectPath={projects.find(p => p.id === activeProjectId)?.rootPath} />
@@ -172,7 +189,23 @@ const styles = {
     lineHeight: 1,
   },
   gridBtn: {
+    marginLeft: 0,
+    padding: '4px 10px',
+    background: '#1a1a1a',
+    color: '#ddd',
+    border: '1px solid #333',
+    borderRadius: 3,
+    cursor: 'pointer' as const,
+    fontSize: 12,
+  },
+  kopfKnoepfe: {
     marginLeft: 'auto' as const,
+    display: 'flex' as const,
+    gap: 8,
+  },
+  settingsBtn: {
+    // marginLeft only when the grid button is absent; it carries its own marginLeft:'auto'
+    marginLeft: 8,
     padding: '4px 10px',
     background: '#1a1a1a',
     color: '#ddd',
