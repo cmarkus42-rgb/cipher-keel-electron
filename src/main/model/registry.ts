@@ -16,9 +16,9 @@ import { configStore } from '../config/config-store'
 import { DEFAULT_EINTRAEGE } from './defaults'
 import { normaliseEintrag, type ModellEintrag } from './entry'
 import { sperrgrund } from './eignung'
+import { slotFuerTier, type Tier, type Rolle } from './slots'
 
-export type Tier = 'light' | 'standard' | 'heavy'
-export type Rolle = 'tagging' | 'worker'
+export type { Tier, Rolle } from './slots'
 
 export function alleEintraege(): ModellEintrag[] {
   const byId = new Map<string, ModellEintrag>()
@@ -89,9 +89,10 @@ export function cliHandleFuerTier(tier: Tier): CliHandleErgebnis {
 
   // The rule that a fremdes-cli laeufer cannot drive this art of entry lives in eignung.ts;
   // this only adds the context (which tier, which entry, what happens instead).
+  // The runner is a property of the slot, stated once in slots.ts — not restated here.
   const hinweis =
     `Tier '${tier}' zeigt auf den Eintrag '${e.id}'. ` +
-    `${sperrgrund('fremdes-cli', e.art)} Es gilt weiterhin der Wert aus agent.modelTiers.`
+    `${sperrgrund(slotFuerTier(tier).laeufer, e.art)} Es gilt weiterhin der Wert aus agent.modelTiers.`
   console.warn(`[model-registry] ${hinweis}`)
   return { hinweis }
 }
