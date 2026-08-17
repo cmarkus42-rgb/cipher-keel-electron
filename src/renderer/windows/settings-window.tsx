@@ -10,14 +10,17 @@ import { StrictMode, useState, useEffect, useCallback } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { SettingsAnsicht, SettingsAntwort } from '../../shared/settings-types'
 import { ModelleReiter } from '../components/settings/ModelleReiter'
+import { CliStartReiter } from '../components/settings/CliStartReiter'
+import { SprachausgabeReiter } from '../components/settings/SprachausgabeReiter'
 
 const api = () => window.cipherKeel
 
-// The other two tabs arrive in the next task; this list is the only place to extend.
-type ReiterId = 'modelle'
+type ReiterId = 'modelle' | 'cli' | 'sprache'
 
 const REITER: { id: ReiterId; titel: string }[] = [
   { id: 'modelle', titel: 'Modelle' },
+  { id: 'cli', titel: 'CLI-Start' },
+  { id: 'sprache', titel: 'Sprachausgabe' },
 ]
 
 function SettingsApp() {
@@ -80,6 +83,8 @@ function SettingsApp() {
       {fehler && <div style={styles.fehler}>{fehler}</div>}
       <div style={styles.inhalt}>
         {reiter === 'modelle' && <ModelleReiter ansicht={ansicht} schreibe={schreibe} />}
+        {reiter === 'cli' && <CliStartReiter ansicht={ansicht} schreibe={schreibe} />}
+        {reiter === 'sprache' && <SprachausgabeReiter ansicht={ansicht} schreibe={schreibe} />}
       </div>
     </div>
   )
