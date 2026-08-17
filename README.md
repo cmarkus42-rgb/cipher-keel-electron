@@ -54,9 +54,12 @@ that survive an app restart or a crash. Using the vendor's own CLI keeps the set
 the vendor's terms of service, and it inherits whatever the CLI can do — `CLAUDE.md`,
 skills, MCP servers.
 
-**Leg 2** is NanoClaw as a peer runtime for the API and multi-model path (Ollama, OpenAI,
-DeepSeek). It is connected through a channel skill over a Unix domain socket with
-JSON-Lines framing — local trust, no port management, bidirectional.
+**Leg 2** is the API and multi-model path (Ollama, OpenAI, DeepSeek). It was originally
+planned around NanoClaw as a third-party peer runtime, connected through a channel skill
+over a Unix domain socket; NanoClaw was superseded on 2026-08-16 in favour of a harness
+keel builds itself, for the reason recorded in
+[`docs/anpassbare-flaechen.md`](docs/anpassbare-flaechen.md). The runtime value
+`keel-harness` is known to the preset schema; no adapter serves it yet.
 
 The two legs run *next to* each other, not inside each other. Cross-runtime orchestration
 — one leg spawning a sub-session on the other — is explicitly deferred to a later version.
@@ -69,7 +72,7 @@ Every preset runs at one of three levels, which describes how much of the harnes
 | Level | Name | Target harness | Capability depth |
 |-------|------|----------------|------------------|
 | **A** | Full | Claude Code (CLAUDE.md, skills, MCP) | Full capability palette |
-| **B** | Portable | NanoClaw path, OpenCode, Codex, Gemini | Core capabilities, API-compatible |
+| **B** | Portable | keel's own harness, OpenCode, Codex, Gemini | Core capabilities, API-compatible |
 | **C** | Minimal | "Configured folder" for pi and local models | Basic structure, assistive mode |
 
 Level C is usable as a structured thinking partner, but is deliberately **not** recommended
@@ -77,9 +80,11 @@ as a full realisation of a role. Level B is the recommended minimum for a role t
 carry its own weight.
 
 **The level follows the harness, not the user.** Each adapter declares the level it can
-serve — `claude-code` serves A, the NanoClaw route serves B — and a session inherits the
-level of the adapter that will actually run it. There is no free choice, because the level
-describes a capability of the harness rather than a preference.
+serve — `claude-code` serves A. No adapter serves B yet: the `keel-harness` runtime is
+known to the preset schema but unbacked (`RUNTIMES_WITHOUT_ADAPTER` in
+`src/main/agent/registry.ts`). A session inherits the level of the adapter that will
+actually run it; there is no free choice, because the level describes a capability of the
+harness rather than a preference.
 
 What the level changes, concretely, is how the capability layer reaches the agent. At A the
 prompt carries `@`-references and the harness resolves them on demand; **measured on
@@ -90,7 +95,7 @@ non-Claude harness would not resolve an `@`-line and would lose the whole layer 
 single error message.
 
 Level B is assembled and inspectable today (see the prompt preview below), but nothing runs
-it yet — the NanoClaw adapter resolves and its launch path is still a no-op.
+it yet — there is no adapter for `keel-harness` at all, let alone a launch path.
 
 ### 3. Level service — the granularity obligation
 
@@ -189,13 +194,13 @@ improvising.
 
 ## Current state
 
-All 1829 tests pass across 139 test files (`npm test`, ~5s).
+All 1905 tests pass across 150 test files (`npm test`, ~5s).
 
 | Phase | Content | Status |
 |-------|---------|--------|
 | BT-1a | Knowledge graph foundation — schema, node/edge types, writer | Done |
 | BT-1bc | MCP tools, Obsidian vault integration, chunking and embeddings | Done |
-| BT-2b | NanoClaw bridge and channel adapter | Done |
+| BT-2b | NanoClaw bridge and channel adapter | Superseded — removed 2026-08-17, see below |
 | BT-3d | Voice pipeline (Whisper STT, Piper/macOS TTS) and notes system | Done |
 | Wave 4 | Graph wired into the Electron main process, NFR checks | Done |
 | Phase 3a | Process completion — phase contract, gates, subsystem cycle | Done, audited |
@@ -207,7 +212,7 @@ All 1829 tests pass across 139 test files (`npm test`, ~5s).
 | Phase 7 | CI pipeline — typecheck, lint, test and build gating every push and PR | Done |
 | Phase 8 | Packaging — separate build output, an archive limited to the built app, an Apple-Silicon-only DMG target, a generated app icon, the asar path fix that lets the knowledge graph initialise inside a package, an automated smoke test against the packaged app, and comprehensible messages for missing CLI tools | Done, unreleased |
 | Entity start path | `session:create` assembles the entity prompt and launches the CLI with it — before this, it opened a bare shell | Done |
-| Level and adapter wiring | The level follows the adapter, NanoClaw is registered, model tiers resolve, capability packages are the single source per entity, level B emits an inventory instead of nothing, and a prompt preview shows all of it before anything starts | Done |
+| Level and adapter wiring | The level follows the adapter, model tiers resolve, capability packages are the single source per entity, level B emits an inventory instead of nothing, and a prompt preview shows all of it before anything starts | Done — the NanoClaw adapter this phase originally registered was removed 2026-08-17 with the rest of the subsystem; level B has no adapter again until keel's own harness lands |
 | Phaseninput layer | The fifth assembly layer: the preceding phase's output artefacts, resolved from the graph into the prompt | Done |
 
 Phases 3a through 5 each ended in a formal audit with a RELEASE verdict; findings are
@@ -251,12 +256,15 @@ than what is delivered would be worse than none (CK-NFR-012).
 - **Idle RAM budget and cold-start time unverified.** The <300 MB / <5s targets are
   architecturally supported (lazy init, WAL, no in-memory cache, deferred service start)
   but have not been measured against a production build
-- **Codex and Gemini adapters** are a design target, not implemented. `AdapterRegistry`
-  holds two entries: `claude-code`, which launches sessions, and `nanoclaw`, whose
-  `buildLaunchCommand` is a no-op — no NanoClaw session has ever run
+- **keel's own Niveau-B harness, and Codex and Gemini adapters,** are a design target, not
+  implemented. `AdapterRegistry` holds one entry, `claude-code`, which launches sessions.
+  The `keel-harness` runtime is known to the preset schema but unbacked — no adapter
+  claims it, so a level-B session cannot start yet. (An earlier NanoClaw bridge and channel
+  adapter served this role until it was superseded on 2026-08-16 and removed 2026-08-17;
+  see [`docs/anpassbare-flaechen.md`](docs/anpassbare-flaechen.md) for why.)
 - **Level B is assembled but not runnable.** The prompt an entity would receive at level B
   can be inspected today, and the level is wired to follow the adapter. What is missing is
-  everything that would execute it: the NanoClaw launch path, a grid cell for a channel
+  everything that would execute it: a harness and its launch path, a grid cell for a
   session, its lifecycle and output events, and a `provider:model` handle — no preset
   declares one, so a level-B session would start without a model choice at all. Level C is
   a 0.2 target and untouched
@@ -306,7 +314,6 @@ src/main/          — Electron main process
   p1/              — Handover documents: frontmatter schema, body templates,
                      REQ-ID schema, normaliser, versioning
   github/          — gh CLI auth, repo creation, keychain token store, MCP config
-  nanoclaw/        — Peer-runtime bridge, channel adapter, container env
   tmux/            — TmuxManager, control-mode parser, output batcher
   session/         — Entity assembly, orchestrator template, keep-working snapshots
   notes/           — Note manager, tagging, Obsidian compatibility, vault watcher
@@ -388,7 +395,8 @@ Implementation plans, design specs and audit reports per phase live in `docs/sup
 - Not a commercial product — an open-source project built out of personal need
 - Not a replacement for the Claude Code CLI — an orchestration layer on top of it
 - Not a way to stretch or work around provider quotas — leg 1 runs the vendor's own CLI
-  under the vendor's own terms, and the NanoClaw path uses provider keys you bring yourself
+  under the vendor's own terms, and leg 2 (the API and multi-model path) uses provider keys
+  you bring yourself
 - Not a magic wand for vague ideas — being able to state a precise specification stays essential
 - Single-developer project; expect the pace and the gaps that come with that
 

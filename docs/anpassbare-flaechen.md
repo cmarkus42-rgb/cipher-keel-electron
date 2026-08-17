@@ -173,35 +173,36 @@ endlichen Wert.
 | ~~`OLLAMA_HOST` auf dem Spark~~ — **erledigt 2026-08-14**, und anders als hier beschrieben: Ollama läuft dort im Container mit `OLLAMA_HOST=0.0.0.0`, zu war allein Dockers Host-Bindung. Der Container ist jetzt auf die Tailscale-Adresse gebunden | Docker auf fremdem Host | ja, mit Zugang — **war es** |
 | systemd-Drop-in `After=tailscaled.service` auf dem Spark | systemd, **braucht root** | nein — kein passwortloses `sudo` dort |
 | `llm.worker.model` und ggf. Host setzen | Config-Datei | **nein** — keine Oberfläche (CK-NFR-012) |
-| NanoClaw-Socketpfad setzen | **Quelltext** (`main.ts` ruft `new NanoClawBridge()` ohne Pfad) | **nein** — Code-Änderung nötig |
-| NanoClaw installieren (`./nanoclaw.sh`) | Terminal | **nein, ausdrücklich nicht** — siehe unten |
-| NanoClaw: `/add-ollama-provider`, Agent-Group, cipher-keel-Kanal | NanoClaw-CLI | offen |
+| Niveau-B-Harness einrichten | noch kein Trägercode — keel baut sein eigenes Harness erst noch (siehe unten) | **offen** — es gibt noch nichts, das man einrichten müsste |
 
-## Der harte Konflikt: NanoClaws Installer schließt Assistenten aus
+## Der Konflikt, der die Harness-Entscheidung ausgelöst hat — gelöst, nicht verschwunden (CK-NFR-013)
 
-NanoClaws README sagt wörtlich: *„Run the script directly, **not from inside a Claude
-session** — the deterministic side needs interactive prompts and real shell I/O for
-Node/pnpm bootstrap, Docker, OneCLI, and the container build."*
+Bis 2026-08-16 war NanoClaw als Träger für Niveau B vorgesehen. Sein README sagte wörtlich:
+*„Run the script directly, **not from inside a Claude session** — the deterministic side
+needs interactive prompts and real shell I/O for Node/pnpm bootstrap, Docker, OneCLI, and
+the container build."*
 
-Das steht **direkt gegen CK-NFR-013**. Niveau B ist NanoClaw; wenn dessen Einrichtung
-grundsätzlich nicht assistiert laufen kann, dann ist ein Drittel des Leistungsgefälles
-nicht assistiert einrichtbar. Das ist keine Kleinigkeit und gehört in die
-NanoClaw-Entscheidung zurückgetragen, statt als Fußnote mitgeschleppt zu werden.
+Das stand **direkt gegen CK-NFR-013**: Wenn die Einrichtung von Niveau B grundsätzlich nicht
+assistiert laufen kann, ist ein Drittel des Leistungsgefälles nicht assistiert einrichtbar.
+Zur Wahl standen drei Auswege — NanoClaw bleibt optional und Niveau B verkleinert sich,
+keel bekommt einen eigenen Einrichtungs-Assistenten um NanoClaw herum, oder Niveau C trägt
+mehr Gewicht.
 
-**Drei Auswege, keiner davon geprüft:**
-
-1. **NanoClaw bleibt optional.** Niveau B ist dann eine Erweiterung für Leute, die NanoClaw
-   ohnehin betreiben, und keel liefert A und C assistiert einrichtbar aus. Ehrlich, aber es
-   verkleinert das ausgelieferte Gefälle auf zwei Stufen.
-2. **Ein Einrichtungs-Assistent in keel**, der alles Deterministische selbst tut und für den
-   einen interaktiven Schritt eine benannte Anweisung ausgibt. Erfüllt CK-NFR-013 nicht
-   vollständig, aber ehrlich und nachvollziehbar.
-3. **Der C-Pfad trägt mehr.** Wenn ein Großteil der billigen Arbeit ohnehin Ein-Schuss ist,
-   verschiebt sich das Gewicht von B nach C — und C ist vollständig assistiert einrichtbar,
-   weil es nur einen Ollama-Endpunkt braucht.
+**Aufgelöst am 2026-08-16 (M6-Nachtrag):** keiner der drei Auswege wurde gewählt. Statt
+NanoClaw einzurichten, baut keel sein Harness für Niveau B selbst — ein eigenes Harness hat
+keine Fremdinstallation, die einer Claude-Code-Session grundsätzlich verboten wäre, und der
+Konflikt mit CK-NFR-013 entfällt damit strukturell statt durch einen Kompromiss. Das ist der
+Grund, warum es dieses Harness gibt, nicht nur eine Umbenennung des Trägers. Der NanoClaw-
+Bestand selbst ist am 2026-08-17 aus dem Repo entfernt worden (Rückbau, siehe
+`docs/superpowers/specs/2026-08-17-nanoclaw-rueckbau-design.md`); die Einrichtung des neuen
+Harness ist eigener, noch offener Bau-Strang (siehe „Was fehlt" unten).
 
 ## Was fehlt
 
+- **Das Niveau-B-Harness und sein Einrichtungspfad.** Ersetzt NanoClaw als Träger (siehe
+  CK-NFR-013 oben); der `nanoclaw-skill`-Ladeweg bleibt bestehen, aber das eigene Harness
+  selbst — wie es eingerichtet und ohne Fremdinstallation betrieben wird — ist noch nicht
+  gebaut. Eigener Bau-Strang.
 - **Editierbarkeit generell.** Sie braucht ein Overlay-Verzeichnis für nutzereigene
   Fassungen, eine Vorrangregel gegenüber den gebündelten Inhalten und eine Validierung.
   Eigene Phase.

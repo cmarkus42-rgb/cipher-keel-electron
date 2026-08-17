@@ -19,7 +19,6 @@
 import { app, BrowserWindow } from 'electron'
 import { TmuxManager } from './tmux/tmux-manager'
 import { StatusLineMonitor } from './monitoring/statusline-monitor'
-import { NanoClawBridge } from './nanoclaw'
 import { patchEnvPath } from './util/exec-util'
 import { createProjectWindow } from './window-manager'
 import type { AppServices } from './window-manager'
@@ -39,7 +38,6 @@ patchEnvPath()
 const services: AppServices = {
   tmux: new TmuxManager(),
   statusMonitor: new StatusLineMonitor(),
-  nanoClawBridge: new NanoClawBridge(),
   voiceManager: null,
   graphDb: null,
   graphWriter: null,
@@ -51,10 +49,6 @@ const services: AppServices = {
   noteWatcher: null,
   kanbanStore: null,
 }
-
-// The NanoClawChannelAdapter is registered in registerIpcHandlers, where both the
-// AdapterRegistry and services.nanoClawBridge exist. It used to be constructed here into
-// a discarded variable, which left the adapter garden with exactly one reachable entry.
 
 // ---------------------------------------------------------------------------
 // App lifecycle
@@ -107,7 +101,7 @@ process.on('unhandledRejection', (reason: unknown) => {
   console.error('[main] Unhandled rejection:', reason)
 })
 
-// Graceful shutdown — tear down every background service (tmux, NanoClaw, voice,
+// Graceful shutdown — tear down every background service (tmux, voice,
 // note watcher, graph DB) so nothing is left connected or holding a file handle
 // (CK-GRAPH-028). See service-lifecycle.ts for the per-disposer failure isolation.
 app.on('before-quit', () => {

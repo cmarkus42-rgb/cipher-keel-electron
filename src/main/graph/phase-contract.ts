@@ -6,7 +6,8 @@
  * CK-PROC-013: Kontrakt runtime-agnostisch — kein Schenkel-1/2-spezifischer Code
  *
  * The contract is harness-agnostic by design: it contains no imports or
- * references to Claude Code (Schenkel 1) or NanoClaw (Schenkel 2). Runtime
+ * references to Claude Code (Schenkel 1) or keel's own harness for Niveau B
+ * (Schenkel 2 — carrier changed 2026-08-16, the axis did not). Runtime
  * assignment (which harness executes a phase) is external configuration.
  */
 

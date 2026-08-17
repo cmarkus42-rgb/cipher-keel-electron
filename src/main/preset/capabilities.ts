@@ -5,8 +5,9 @@
  * (.claude/capabilities/<id>/SKILL.md) that capabilityRefPath already owns. Packages
  * used to repeat it by hand, which made it the third of three encodings of the same
  * string with nothing keeping them in step. It is derived here instead — except where
- * no convention can produce it, which is the nanoclaw-skill channel route (M2 6.4)
- * and reference material that lives wherever it lives.
+ * no convention can produce it, which is the Niveau-B loader's channel route (the
+ * `nanoclaw-skill` LoaderType, M2 6.4 — a loader path, not a running system; its carrier
+ * changed 2026-08-16) and reference material that lives wherever it lives.
  */
 
 import type { CapabilityPackage } from './capability-schema'

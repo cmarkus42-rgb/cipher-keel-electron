@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { inferPlausibility, buildInferencePrompt } from '../../src/main/graph/plausibility-inference'
 
-// Mock NanoClaw bridge
+// Shape follows the superseded NanoClaw channel; rewiring onto today's model layer is an open question (see plausibility-inference.ts docblock).
 function mockBridge(response: string) {
   return {
     isConnected: () => true,

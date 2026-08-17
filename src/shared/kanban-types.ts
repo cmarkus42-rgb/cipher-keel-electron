@@ -35,7 +35,7 @@ export interface KanbanItem {
   column: KanbanColumn
   /** Phase 1-8 (M4 Phasenkette) */
   phase: number
-  /** Schenkel 1 = Claude Code, 2 = NanoClaw */
+  /** Schenkel 1 = Claude Code, 2 = keel's own harness (Niveau B, carrier changed 2026-08-16) */
   schenkel: 1 | 2
   /** Node kind from graph (anforderung, artefakt, ...) */
   typ: string

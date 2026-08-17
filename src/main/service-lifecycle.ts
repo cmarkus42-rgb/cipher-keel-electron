@@ -15,8 +15,6 @@ import { join } from 'node:path'
 import {
   SESSION_OUTPUT,
   STATUSLINE_CTX_UPDATE,
-  NANOCLAW_MESSAGE_INBOUND,
-  NANOCLAW_STATUS_CHANGED,
   NOTES_CHANGED,
   APP_READY,
   VOICE_STATE,
@@ -139,12 +137,6 @@ export function shutdownServices(services: AppServices): void {
   }
 
   try {
-    services.nanoClawBridge.disconnect()
-  } catch (err) {
-    console.warn('[service-lifecycle] nanoClawBridge.disconnect() failed:', err)
-  }
-
-  try {
     services.voiceManager?.stopSession()
   } catch (err) {
     console.warn('[service-lifecycle] voiceManager.stopSession() failed:', err)
@@ -181,7 +173,7 @@ export function shutdownServices(services: AppServices): void {
  * gate the two UI-critical subsystems (graph, notes) behind the least UI-critical
  * one. Voice reports its own status via setStatus once it settles, which reaches
  * every window through services:status-changed (Befund 3). The promise this
- * function returns still resolves only once tmux, nanoclaw, graph and notes have
+ * function returns still resolves only once tmux, graph and notes have
  * settled — the ordering guarantee it promises for those subsystems holds.
  */
 export function initializeServices(
@@ -206,7 +198,6 @@ async function runInit(
   await initTmux(services)
   initClaudeCli()
   initStatusMonitor(services)
-  await initNanoClaw(services)
 
   // Fire-and-forget — see the doc comment on initializeServices. Errors are
   // handled inside initVoice itself (setStatus + console.warn), so a rejection
@@ -261,23 +252,6 @@ function initStatusMonitor(services: AppServices): void {
     // No tracked SubsystemId for the status-line monitor (not in SUBSYSTEM_IDS) — just
     // log and continue so a filesystem error here can't block the rest of runInit.
     console.warn('[service-lifecycle] StatusLine monitor start failed:', err)
-  }
-}
-
-async function initNanoClaw(services: AppServices): Promise<void> {
-  services.nanoClawBridge.on('message-inbound', (threadId: string | null, text: string) => {
-    broadcast(NANOCLAW_MESSAGE_INBOUND, { threadId, text })
-  })
-  services.nanoClawBridge.on('status-changed', (s: string) => {
-    broadcast(NANOCLAW_STATUS_CHANGED, { status: s })
-  })
-  try {
-    await services.nanoClawBridge.connect()
-    setStatus('nanoclaw', 'ready', null)
-    console.log('[service-lifecycle] NanoClaw bridge connected')
-  } catch (err) {
-    setStatus('nanoclaw', 'degraded', reasonOf(err))
-    console.warn('[service-lifecycle] NanoClaw not reachable — Schenkel 2 unavailable')
   }
 }
 

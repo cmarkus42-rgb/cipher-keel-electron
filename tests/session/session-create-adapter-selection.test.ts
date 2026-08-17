@@ -1,17 +1,20 @@
 /**
  * session-create-adapter-selection.test.ts
  *
- * Two production facts that unit tests on AdapterRegistry alone cannot establish,
- * because both are about the caller rather than the registry:
+ * A production fact that unit tests on AdapterRegistry alone cannot establish, because
+ * it is about the caller rather than the registry:
  *
- *   1. registerIpcHandlers registers the NanoClaw adapter. main.ts used to construct
- *      NanoClawChannelAdapter into `const _nanoClawAdapter` and drop it, so the second
- *      Schenkel was built and unreachable.
- *   2. session:create picks the adapter by the Rahmen's `runtime` (M2 section 11.4)
- *      rather than by getDefault(), which ignored the field entirely.
+ *   session:create picks the adapter by the Rahmen's `runtime` (M2 section 11.4) rather
+ *   than by getDefault(), which ignored the field entirely.
  *
  * Uses the vi.doMock('electron') pattern from session-create-claude-gate.test.ts to
  * reach the real SESSION_CREATE handler body.
+ *
+ * This file used to establish a second fact too: registerIpcHandlers registered the
+ * NanoClaw adapter as a second Schenkel (main.ts used to construct
+ * NanoClawChannelAdapter into `const _nanoClawAdapter` and drop it, leaving that second
+ * Schenkel built and unreachable). Removed with the NanoClaw subsystem (2026-08-17) —
+ * see the note at the former test site (below) for the coverage that fell away.
  */
 
 import * as fs from 'fs'
@@ -66,9 +69,12 @@ describe('session:create — adapter selection', () => {
       dialog: {},
     }))
 
-    // Records what the production code registers and asks for. isAvailable() is pinned
-    // to false so the handler short-circuits before touching tmux or the filesystem —
-    // this test is about adapter selection, not about launching.
+    // getForRuntime() records what production code asks for (requestedRuntimes).
+    // register() still writes to registeredAdapterIds, but nothing reads it today —
+    // production no longer calls register() at all. The spy stays as the hook the
+    // coverage described in the note at lines 120-126 below will use once it returns.
+    // isAvailable() is pinned to false so the handler short-circuits before touching
+    // tmux or the filesystem — this test is about adapter selection, not about launching.
     vi.doMock('../../src/main/agent/registry', () => ({
       AdapterRegistry: class {
         register(adapter: { id: string }) {
@@ -105,17 +111,19 @@ describe('session:create — adapter selection', () => {
         createSession: vi.fn(),
         watchSession: vi.fn(),
       },
-      nanoClawBridge: { isConnected: () => false },
     } as never)
 
     expect(registeredHandler).toBeDefined()
     return registeredHandler!
   }
 
-  it('registers the NanoClaw adapter so the second Schenkel is reachable', async () => {
-    await loadHandler()
-    expect(registeredAdapterIds).toContain('nanoclaw-channel')
-  })
+  // 'registers the NanoClaw adapter so the second Schenkel is reachable' removed with
+  // the NanoClaw subsystem (2026-08-17): registerIpcHandlers no longer registers a
+  // second Schenkel at all, since NanoClawChannelAdapter is gone. This coverage — that
+  // registerIpcHandlers actually reaches AdapterRegistry.register() for a non-default
+  // adapter, not just the constructor-provided claude-code one — returns once keel's own
+  // harness (see model-resolver.ts, c-worker.ts) ships an adapter that registers itself
+  // the same way.
 
   it('builds the definition at the niveau the resolved adapter declares', async () => {
     // A Niveau-B adapter must not get a prompt full of @-references: a harness without

@@ -41,7 +41,6 @@ function makeServices(overrides: Partial<AppServices> = {}): AppServices {
       disconnect: vi.fn(),
     },
     statusMonitor: { start: vi.fn(), stop: vi.fn(), on: vi.fn() },
-    nanoClawBridge: { connect: vi.fn().mockResolvedValue(undefined), disconnect: vi.fn(), on: vi.fn() },
     voiceManager: null,
     graphDb: null,
     graphWriter: null,
@@ -180,18 +179,11 @@ describe('initializeServices — degradation is reported, never thrown', () => {
     expect(status.graph.state).toBe('ready')
   })
 
-  it('marks nanoclaw degraded when the socket is unreachable', async () => {
-    const services = makeServices({
-      nanoClawBridge: {
-        connect: vi.fn().mockRejectedValue(new Error('ENOENT')),
-        on: vi.fn(),
-      },
-    } as unknown as Partial<AppServices>)
-
-    const status = await initializeServices(services, makeContext())
-
-    expect(status.nanoclaw.state).toBe('degraded')
-  })
+  // 'marks nanoclaw degraded when the socket is unreachable' removed with the NanoClaw
+  // subsystem (2026-08-17): initNanoClaw(), the 'nanoclaw' SubsystemId and
+  // services.nanoClawBridge are gone. This coverage — a Schenkel-2 harness reporting
+  // degraded when its transport is unreachable — returns only if a future harness
+  // reintroduces a connect()-then-degrade path with its own SubsystemId.
 
   it('marks voice disabled — not degraded — when config switches it off', async () => {
     const status = await initializeServices(makeServices(), {
@@ -356,11 +348,11 @@ describe('setStatus broadcasts services:status-changed (Befund 3)', () => {
     await initializeServices(makeServices(), makeContext())
 
     const statusMessages = win.sent.filter(m => m.channel === 'services:status-changed')
-    // Default happy path: tmux, claudeCli, nanoclaw, voice (disabled), graph, kanban,
+    // Default happy path: tmux, claudeCli, voice (disabled), graph, kanban,
     // notes — each transitions exactly once away from its "not initialized" baseline.
-    expect(statusMessages).toHaveLength(7)
+    expect(statusMessages).toHaveLength(6)
     const ids = statusMessages.map(m => (m.args[0] as { id: string }).id).sort()
-    expect(ids).toEqual(['claudeCli', 'graph', 'kanban', 'nanoclaw', 'notes', 'tmux', 'voice'].sort())
+    expect(ids).toEqual(['claudeCli', 'graph', 'kanban', 'notes', 'tmux', 'voice'].sort())
   })
 
   it('carries the subsystem id, state and reason as the payload', async () => {
@@ -412,7 +404,6 @@ describe('shutdownServices', () => {
 
     expect((services.tmux as unknown as { disconnect: () => void }).disconnect).toHaveBeenCalled()
     expect((services.statusMonitor as unknown as { stop: () => void }).stop).toHaveBeenCalled()
-    expect((services.nanoClawBridge as unknown as { disconnect: () => void }).disconnect).toHaveBeenCalled()
   })
 
   it('nulls the refs it tears down, including kanbanStore', () => {
@@ -449,7 +440,6 @@ describe('shutdownServices', () => {
 
     expect(() => shutdownServices(services)).not.toThrow()
 
-    expect((services.nanoClawBridge as unknown as { disconnect: () => void }).disconnect).toHaveBeenCalled()
     expect((services.voiceManager as unknown as { stopSession: () => void } | null)).toBeNull()
     expect((services.graphDb as unknown as { close: () => void } | null)).toBeNull()
   })

@@ -32,15 +32,6 @@ export const TERMINAL_CLEAR = 'terminal:clear' as const
 export const TERMINAL_SCROLL_MARKER = 'terminal:scroll-marker' as const
 
 // ---------------------------------------------------------------------------
-// NanoClaw channels (Schenkel 2 — Peer-Runtime alongside)
-// ---------------------------------------------------------------------------
-export const NANOCLAW_MESSAGE_INBOUND = 'nanoclaw:message-inbound' as const
-export const NANOCLAW_MESSAGE_OUTBOUND = 'nanoclaw:message-outbound' as const
-export const NANOCLAW_STATUS_CHANGED = 'nanoclaw:status-changed' as const
-export const NANOCLAW_CONNECT = 'nanoclaw:connect' as const
-export const NANOCLAW_DISCONNECT = 'nanoclaw:disconnect' as const
-
-// ---------------------------------------------------------------------------
 // Knowledge Graph channels (M1 — SQLite + sqlite-vec)
 // ---------------------------------------------------------------------------
 export const GRAPH_WRITE = 'graph:write' as const
@@ -181,8 +172,6 @@ export type MainToRendererChannel =
   | typeof SESSION_OUTPUT
   | typeof TERMINAL_DATA_INBOUND
   | typeof TERMINAL_SCROLL_MARKER
-  | typeof NANOCLAW_MESSAGE_INBOUND
-  | typeof NANOCLAW_STATUS_CHANGED
   | typeof CONFIG_CHANGED
   | typeof STATUSLINE_CTX_UPDATE
   | typeof STATUSLINE_HOOK_DATA
@@ -207,9 +196,6 @@ export type RendererToMainChannel =
   | typeof TERMINAL_DATA_OUTBOUND
   | typeof TERMINAL_RESIZE
   | typeof TERMINAL_CLEAR
-  | typeof NANOCLAW_MESSAGE_OUTBOUND
-  | typeof NANOCLAW_CONNECT
-  | typeof NANOCLAW_DISCONNECT
   | typeof GRAPH_WRITE
   | typeof GRAPH_READ
   | typeof GRAPH_QUERY

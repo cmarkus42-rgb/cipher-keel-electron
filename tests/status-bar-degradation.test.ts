@@ -11,7 +11,6 @@ function statusMap(overrides: Partial<ServiceStatusMap> = {}): ServiceStatusMap 
   return {
     tmux:      { id: 'tmux',      state: 'ready', reason: null },
     claudeCli: { id: 'claudeCli', state: 'ready', reason: null },
-    nanoclaw:  { id: 'nanoclaw',  state: 'ready', reason: null },
     voice:     { id: 'voice',     state: 'ready', reason: null },
     graph:     { id: 'graph',     state: 'ready', reason: null },
     kanban:    { id: 'kanban',    state: 'ready', reason: null },
@@ -61,10 +60,10 @@ describe('summarizeDegradation', () => {
 
   it('exposes the reason so it can be shown as a tooltip', () => {
     const summary = summarizeDegradation(statusMap({
-      nanoclaw: { id: 'nanoclaw', state: 'degraded', reason: 'ENOENT socket' },
+      claudeCli: { id: 'claudeCli', state: 'degraded', reason: 'claude not on PATH' },
     }))
 
-    expect(summary.degraded[0].reason).toBe('ENOENT socket')
+    expect(summary.degraded[0].reason).toBe('claude not on PATH')
   })
 
   it('treats a missing status map as unknown, not as healthy', () => {

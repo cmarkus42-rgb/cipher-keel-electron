@@ -15,8 +15,8 @@ import {
 } from '../src/shared/service-status'
 
 describe('SUBSYSTEM_IDS', () => {
-  it('covers exactly the seven subsystems the lifecycle initializes', () => {
-    expect([...SUBSYSTEM_IDS]).toEqual(['tmux', 'claudeCli', 'nanoclaw', 'voice', 'graph', 'kanban', 'notes'])
+  it('covers exactly the six subsystems the lifecycle initializes', () => {
+    expect([...SUBSYSTEM_IDS]).toEqual(['tmux', 'claudeCli', 'voice', 'graph', 'kanban', 'notes'])
   })
 
   it('has no duplicates', () => {
@@ -93,15 +93,14 @@ describe('ServiceStatusMap', () => {
   it('types a full map keyed by subsystem id', () => {
     const map: ServiceStatusMap = {
       tmux:      { id: 'tmux',      state: 'ready',    reason: null },
-      claudeCli: { id: 'claudeCli', state: 'ready',    reason: null },
-      nanoclaw:  { id: 'nanoclaw',  state: 'degraded', reason: 'socket not reachable' },
+      claudeCli: { id: 'claudeCli', state: 'degraded', reason: 'claude not on PATH' },
       voice:     { id: 'voice',     state: 'disabled', reason: 'disabled in config' },
       graph:     { id: 'graph',     state: 'ready',    reason: null },
       kanban:    { id: 'kanban',    state: 'ready',    reason: null },
       notes:     { id: 'notes',     state: 'ready',    reason: null },
     }
 
-    expect(map.nanoclaw.state).toBe('degraded')
+    expect(map.claudeCli.state).toBe('degraded')
     expect(map.voice.reason).toBe('disabled in config')
   })
 })
