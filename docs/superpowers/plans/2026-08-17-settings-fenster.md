@@ -596,14 +596,24 @@ describe('Config-Migration', () => {
   async function withConfig(cfg: unknown) {
     if (cfg !== null) fs.writeFileSync(datei(), JSON.stringify(cfg, null, 2))
     vi.doMock('electron', () => ({ app: { getPath: () => tmpDir } }))
-    return import('../../src/main/config/config-store')
+    const mod = await import('../../src/main/config/config-store')
+    // Der Store laedt faul, und das bleibt so: `loadConfig` haengt ueber `getConfigPath`
+    // an `app.getPath('userData')`, das beim Modulimport noch nicht verlaesslich ist.
+    // Ein Test, der anschliessend nur die Datei liest, wuerde die Migration sonst nie
+    // ausloesen — deshalb wird hier einmal angefasst. Der Produktivcode bleibt faul.
+    mod.configStore.getAll()
+    return mod
   }
 
   const gelesen = () => JSON.parse(fs.readFileSync(datei(), 'utf-8'))
 
-  it('gibt einer frischen Config leere Startparameter, ohne skipPermissions', async () => {
+  it('gibt einer frischen Config die Vorgabe-Startparameter, ohne skipPermissions', async () => {
     const { configStore } = await withConfig(null)
-    expect(configStore.get('agent').startArgs).toEqual({})
+    // Eine frische Installation verhaelt sich wie die ausgelieferte Version seit
+    // cipher-mux 0.9.x: die App startet ihre Sitzungen selbst, und in einem von ihr
+    // gesteuerten tmux-Pane beantwortet niemand eine Berechtigungsrueckfrage.
+    expect(configStore.get('agent').startArgs['claude-code'])
+      .toBe('--dangerously-skip-permissions')
     expect((configStore.get('agent') as Record<string, unknown>).skipPermissions).toBeUndefined()
   })
 
@@ -624,7 +634,8 @@ describe('Config-Migration', () => {
     const nachErstem = fs.readFileSync(datei(), 'utf-8')
     vi.resetModules()
     vi.doMock('electron', () => ({ app: { getPath: () => tmpDir } }))
-    await import('../../src/main/config/config-store')
+    const zweiter = await import('../../src/main/config/config-store')
+    zweiter.configStore.getAll()
     expect(fs.readFileSync(datei(), 'utf-8')).toBe(nachErstem)
   })
 
@@ -692,6 +703,8 @@ Im Interface `CipherKeelConfig` die Blöcke `app`, `ui`, `mcp` und `windows` **s
     modelTiers: { light: string; standard: string; heavy: string }
   }
 ```
+
+**`configStore` bleibt faul.** `getConfig()` lädt beim ersten Zugriff, nicht beim Modulimport — `loadConfig` hängt über `getConfigPath` an `app.getPath('userData')`, und das ist zum Importzeitpunkt des Moduls noch nicht verlässlich. Ein Test, der die Migration beobachten will, fasst den Store einmal an; der Produktivcode wird dafür **nicht** umgebaut.
 
 In `defaults` die Blöcke `app`, `ui`, `mcp`, `windows` streichen und `agent` ersetzen durch:
 
