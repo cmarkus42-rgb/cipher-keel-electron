@@ -1,8 +1,10 @@
 /**
- * NoteTagging — Auto-tagging via Ollama + tag repository management.
+ * NoteTagging — Auto-tagging via a configured model + tag repository management.
  *
  * Ported from cipher-mux 0.9.x (CK-NOTES-002).
- * Graceful degradation: returns null when Ollama is unavailable.
+ * Graceful degradation: returns null when the model is unreachable (transport). A role
+ * pointed at a structurally forbidden entry is a configuration error and propagates instead
+ * — see the `try` split in `autoTag` (CK-NFR-010).
  */
 
 import { clientForEndpoint } from '../worker/model-client'
@@ -204,9 +206,13 @@ export class NoteTagging {
   }
 
   async autoTag(content: string): Promise<string[] | null> {
+    // Resolving role -> endpoint is a configuration concern and propagates: a role pointed
+    // at a structurally forbidden entry (e.g. cli-harness) is the user's misconfiguration,
+    // not an absent service, and must not read the same as one (CK-NFR-010).
+    const prompt = buildTaggingPrompt(content, this.repo)
+    const endpoint = endpointForRole('tagging')
+
     try {
-      const prompt = buildTaggingPrompt(content, this.repo)
-      const endpoint = endpointForRole('tagging')
       const text = await clientForEndpoint(endpoint).generate({
         prompt, endpoint, timeoutMs: TAGGING_TIMEOUT_MS,
       })
@@ -214,7 +220,10 @@ export class NoteTagging {
 
       return parseTagResponse(text)
     } catch {
-      // Ollama not available — graceful degradation (CK-NOTES-002, CK-NFR-010)
+      // Sending is a transport concern: daemon unreachable, timeout, non-200 — all frequent
+      // and harmless. Silent degradation here is right (CK-NOTES-002). CK-NFR-010 demands
+      // that a failed subsystem be distinguishable from an empty one; it does not license
+      // swallowing a configuration error, which is why that case is no longer caught here.
       return null
     }
   }
