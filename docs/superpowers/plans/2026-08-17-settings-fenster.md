@@ -1280,8 +1280,20 @@ export interface SlotAnsicht {
   /** Empty string means no assignment. */
   gewaehlt: string
   optionen: SlotOptionAnsicht[]
+  /**
+   * Warnings about the assignment that is actually in effect. Empty when the assignment
+   * does not hold — a warning about a pairing that never runs is noise, not information.
+   */
   warnungen: WarnungAnsicht[]
-  /** German: what applies while nothing is assigned. */
+  /**
+   * German, non-null when the current assignment cannot be used: the entry is locked for
+   * this slot, or it names an id nothing defines. In both cases the fallback applies.
+   *
+   * The renderer displays this instead of reconciling `gewaehlt` against `optionen`
+   * itself. Reconciling is a rule, and rules do not cross this boundary.
+   */
+  gewaehltHinweis: string | null
+  /** German: what applies while nothing usable is assigned. */
   rueckfallText: string
   wirkung: Wirkung
 }
@@ -1427,11 +1439,33 @@ describe('Ansichtsmodell', () => {
     expect(codes(a, 'rolle:tagging')).not.toContain('werkzeugmodus-text')
   })
 
-  it('erreicht nicht-gemessen nicht: ein Tier haelt strukturell nur cli-harness', async () => {
+  it('erreicht nicht-gemessen nicht: die Paarung, die es braeuchte, ist gesperrt', async () => {
+    // Die Regel verlangt einen agentischen Laeufer auf einem Nicht-CLI-Eintrag. Genau
+    // diese Paarung sperrt sperrgrund fuer jeden Tier-Slot — und eine gesperrte
+    // Zuordnung traegt keine Warnungen, weil sie nicht laeuft. Der Eintrag ist bewusst
+    // ein local-http-Eintrag: waere hier ein cli-harness-Eintrag verankert, wuerde die
+    // Gegenprobe vom Eintrag blockiert statt von der Slot-Tabelle und koennte nie
+    // fallen, wenn das Harness einen eigene-schleife-Slot einfuehrt.
+    const a = await ansichtMit({
+      modelle: { zuordnung: { tiers: { light: '', standard: '', heavy: 'spark-gemma4-26b' } } },
+    })
+    expect(slot(a, 'tier:heavy').gewaehltHinweis).toContain('CLI-Harness')
+    expect(codes(a, 'tier:heavy')).toEqual([])
+  })
+
+  it('sagt es, wenn eine Zuordnung einen Eintrag nennt, den es nicht gibt', async () => {
+    const a = await ansichtMit({
+      modelle: { zuordnung: { rollen: { tagging: '', worker: 'gibt-es-nicht' } } },
+    })
+    expect(slot(a, 'rolle:worker').gewaehltHinweis).toContain('gibt-es-nicht')
+    expect(codes(a, 'rolle:worker')).toEqual([])
+  })
+
+  it('laesst gewaehltHinweis leer, solange die Zuordnung benutzbar ist', async () => {
     const a = await ansichtMit({
       modelle: { zuordnung: { tiers: { light: '', standard: '', heavy: 'claude-opus-cli' } } },
     })
-    expect(codes(a, 'tier:heavy')).not.toContain('nicht-gemessen')
+    expect(slot(a, 'tier:heavy').gewaehltHinweis).toBeNull()
   })
 
   it('erreicht unter-faehigkeit nicht: die C-Slots fahren ein-schuss, der auf C steht', async () => {
@@ -1478,7 +1512,7 @@ describe('Ansichtsmodell', () => {
     expect(e.geheimnisStatus).toBe('schluesselbund')
   })
 
-  it('meldet ein fehlendes Geheimnis und nennt die geprueft Umgebungsvariable', async () => {
+  it('meldet ein fehlendes Geheimnis und nennt die gepruefte Umgebungsvariable', async () => {
     const a = await ansichtMit(null)
     const e = a.eintraege.find(x => x.id === 'openrouter-qwen3-coder')!
     expect(e.geheimnisStatus).toBe('fehlt')
@@ -1488,6 +1522,33 @@ describe('Ansichtsmodell', () => {
   it('gibt einem Eintrag ohne keyRef gar keinen Geheimnis-Status', async () => {
     const a = await ansichtMit(null)
     expect(a.eintraege.find(x => x.id === 'mac-qwen3-30b')!.geheimnisStatus).toBeNull()
+  })
+
+  // --- die Felder, die sonst niemand anfasst ---
+  // Ohne diese drei koennte man tagging und worker vertauschen oder die Sprachausgabe
+  // invertieren, und die Suite bliebe gruen.
+
+  it('reicht die Modell-Tiers als Rueckfall durch', async () => {
+    const a = await ansichtMit(null)
+    expect(a.modellTiers).toEqual({ light: 'haiku', standard: 'sonnet', heavy: 'opus' })
+  })
+
+  it('ordnet die Rueckfall-Endpunkte der richtigen Rolle zu', async () => {
+    const a = await ansichtMit({
+      llm: {
+        tagging: { host: '10.0.0.1', port: 11434, model: 'tagger' },
+        worker: { host: '10.0.0.2', port: 11434, model: 'arbeiter' },
+      },
+    })
+    expect(a.rueckfallEndpunkte.tagging.model).toBe('tagger')
+    expect(a.rueckfallEndpunkte.tagging.host).toBe('10.0.0.1')
+    expect(a.rueckfallEndpunkte.worker.model).toBe('arbeiter')
+    expect(a.rueckfallEndpunkte.worker.host).toBe('10.0.0.2')
+  })
+
+  it('gibt die Sprachausgabe unveraendert weiter', async () => {
+    const a = await ansichtMit({ voice: { enabled: false, piperVoice: 'de_DE-probe' } })
+    expect(a.sprachausgabe).toEqual({ aktiv: false, stimme: 'de_DE-probe' })
   })
 
   it('markiert gebuendelte Eintraege als nicht loeschbar', async () => {
@@ -1667,6 +1728,19 @@ function endpunktAnsicht(e: { kind?: string; host?: string; port?: number; baseU
   }
 }
 
+/**
+ * Enough of a rejected config entry to recognise it, and no more.
+ *
+ * The raw value comes from a hand-edited file and is displayed to a user, so it is bounded
+ * here rather than in the renderer — the main process is where the value is known to be
+ * arbitrary. The ellipsis matters: without it a clipped blob reads as malformed JSON
+ * rather than as an excerpt, which would blame the wrong thing.
+ */
+function kurzfassung(roh: unknown): string {
+  const text = JSON.stringify(roh) ?? String(roh)
+  return text.length > 120 ? `Eintrag ${text.slice(0, 120)}…` : `Eintrag ${text}`
+}
+
 function rueckfallText(slot: Slot): string {
   if (slot.art === 'tier') {
     const handle = configStore.get('agent').modelTiers[slot.schluessel as 'light' | 'standard' | 'heavy']
@@ -1690,10 +1764,28 @@ function slotAnsicht(slot: Slot, eintraege: ModellEintrag[]): SlotAnsicht {
   }))
 
   const eintrag = eintraege.find(e => e.id === gewaehlt)
+
+  // An assignment is only worth warning about if it actually holds. Two ways it does not:
+  // it names an id nothing defines, or it names an entry this slot's runner cannot drive.
+  // Both mean the fallback runs, so warnings about the named entry would describe
+  // something that never happens — and the lock reason is the message that matters.
+  let gewaehltHinweis: string | null = null
+  if (gewaehlt && !eintrag) {
+    gewaehltHinweis =
+      `Die Zuordnung nennt den Eintrag '${gewaehlt}', den es nicht gibt. Es gilt der Rueckfall.`
+  } else if (eintrag) {
+    const grund = sperrgrund(slot.laeufer, eintrag.art)
+    if (grund) {
+      gewaehltHinweis = `Diese Zuordnung ist nicht benutzbar. ${grund} Es gilt der Rueckfall.`
+    }
+  }
+
   // No WarnKontext is passed: nothing in the project supplies a start context yet, so
   // `kontext-zu-klein` cannot fire. Spec section 5.5 states that, and
   // tests/model/ansicht.test.ts holds the counter-proof.
-  const warnListe = eintrag ? warnungen(eintrag, slot.laeufer, slot.niveau) : []
+  const warnListe = eintrag && !gewaehltHinweis
+    ? warnungen(eintrag, slot.laeufer, slot.niveau)
+    : []
 
   return {
     id: slot.id,
@@ -1701,6 +1793,7 @@ function slotAnsicht(slot: Slot, eintraege: ModellEintrag[]): SlotAnsicht {
     gewaehlt: gewaehlt ?? '',
     optionen,
     warnungen: warnListe,
+    gewaehltHinweis,
     rueckfallText: rueckfallText(slot),
     wirkung: slot.wirkung,
   }
@@ -1727,26 +1820,29 @@ function adapterAnsichten(): AdapterAnsicht[] {
     const adapter = registry.get(id)!
     const text = startArgs[id] ?? ''
     const appGesteuert = [...(adapter.appGesteuerteParameter ?? [])]
-    const warnungen: WarnungAnsicht[] = []
+    // Not named `warnungen`: that name belongs to the eignung function this module is the
+    // one caller of, and shadowing it here would make a reader check whether one is the
+    // other. Neither is.
+    const warnListe: WarnungAnsicht[] = []
     let getippt: string[] = []
 
     try {
       getippt = splitShellArgs(text)
     } catch (err) {
       // An unreadable line cannot be judged further, so no other rule runs on it.
-      warnungen.push({
+      warnListe.push({
         code: 'unlesbare-parameter',
         text: err instanceof Error ? err.message : String(err),
       })
       return {
         id, name: adapter.displayName, startArgs: text,
-        appGesteuerteParameter: appGesteuert, warnungen,
+        appGesteuerteParameter: appGesteuert, warnungen: warnListe,
       }
     }
 
     const doppelt = appGesteuert.filter(p => getippt.includes(p))
     if (doppelt.length > 0) {
-      warnungen.push({
+      warnListe.push({
         code: 'doppelter-parameter',
         text: `${doppelt.join(', ')} wird von der App selbst angehaengt — hier eingetragen ` +
           'steht der Parameter zweimal in der Kommandozeile.',
@@ -1754,7 +1850,7 @@ function adapterAnsichten(): AdapterAnsicht[] {
     }
 
     if (getippt.includes(BERECHTIGUNGS_FLAGGE)) {
-      warnungen.push({
+      warnListe.push({
         code: 'berechtigungen-uebersprungen',
         text: 'Dieser Parameter schaltet die Rueckfrage vor jedem Werkzeugaufruf ab. Er ist ' +
           'die Vorgabe, weil die App ihre Sitzungen selbst in einen tmux-Pane startet, in dem ' +
@@ -1765,7 +1861,7 @@ function adapterAnsichten(): AdapterAnsicht[] {
 
     return {
       id, name: adapter.displayName, startArgs: text,
-      appGesteuerteParameter: appGesteuert, warnungen,
+      appGesteuerteParameter: appGesteuert, warnungen: warnListe,
     }
   })
 }
@@ -1799,7 +1895,7 @@ export async function baueAnsicht(quellen: GeheimnisQuellen = {}): Promise<Setti
   return {
     eintraege: eintragsAnsichten,
     uebersprungen: uebersprungen.map(u => ({
-      beschreibung: `Eintrag ${JSON.stringify(u.roh).slice(0, 120)}`,
+      beschreibung: kurzfassung(u.roh),
       fehler: u.fehler,
     })),
     slots: SLOTS.map(s => slotAnsicht(s, eintraege)),
@@ -2722,10 +2818,7 @@ export function ModelleReiter({
             ))}
           </select>
           {slot.gewaehlt === '' && <div style={styles.rueckfall}>{slot.rueckfallText}</div>}
-          {slot.gewaehlt !== '' && (() => {
-            const gesperrt = slot.optionen.find(o => o.eintragId === slot.gewaehlt)?.sperrgrund
-            return gesperrt ? <div style={styles.sperrgrund}>{gesperrt}</div> : null
-          })()}
+          {slot.gewaehltHinweis && <div style={styles.sperrgrund}>{slot.gewaehltHinweis}</div>}
           <Warnliste warnungen={slot.warnungen} />
           {slot.id.startsWith('tier:') && (
             <div style={styles.rueckfallFeld}>

@@ -224,12 +224,28 @@ Die sechs Warnregeln gegen die fünf Slots durchgerechnet:
 | `verlaesst-netz` | **ja** | jeder Slot mit einem Eintrag in `fremdes-netz` |
 | `teure-ebene-fuer-mechanik` | **ja** | `rolle:*` (Niveau C) auf einen Eintrag in `fremdes-netz` |
 | `werkzeugmodus-text` | nein | verlangt `eigene-schleife` — kein Slot benutzt sie |
-| `nicht-gemessen` | nein | `tier:*` kann strukturell nur `cli-harness` halten, und das ist ausgenommen |
+| `nicht-gemessen` | nein | verlangt einen agentischen Läufer auf einem Nicht-CLI-Eintrag — genau die Paarung, die `sperrgrund` für jeden Tier-Slot sperrt |
 | `unter-faehigkeit` | nein | verlangt Niveau C mit einem Läufer über C — unter diesen Slots nicht vorhanden |
 | `kontext-zu-klein` | nein | braucht `startkontextToken`, und nichts im Projekt liefert das heute |
 
 Gegen die gebündelten Einträge geprüft: `rolle:worker` auf `openrouter-qwen3-coder`
 (`api`, `fremdes-netz`) löst tatsächlich genau die zwei erreichbaren Warnungen aus.
+
+**Eine Korrektur an dieser Tabelle, gefunden beim Review der Umsetzung.** Die ursprüngliche
+Begründung für `nicht-gemessen` lautete, ein Tier könne strukturell nur `cli-harness` halten.
+Das stimmt nicht: Eine Config *kann* ein Tier auf einen `local-http`-Eintrag zeigen lassen —
+`registry.ts` modelliert diesen Zustand ausdrücklich als „eine falsch geformte Zuordnung, die
+der Nutzer tatsächlich gemacht hat". Die Regel wäre damit erreichbar gewesen.
+
+Erreichbar ist sie trotzdem nicht, aber aus einem anderen und schärferen Grund: **Eine
+Zuordnung, die `sperrgrund` sperrt, trägt keine Warnungen.** Sie läuft nicht, es gilt der
+Rückfall, und eine Warnung über eine Paarung, die nie ausgeführt wird, ist keine Aussage über
+das, was läuft. Das Ansichtsmodell setzt in diesem Fall stattdessen `gewaehltHinweis` — den
+Sperrgrund im Klartext, plus den Hinweis, dass der Rückfall greift.
+
+Die Gegenprobe im Test ist entsprechend auf einen **Nicht-CLI**-Eintrag verankert. Wäre sie es
+nicht, würde sie vom Eintrag blockiert statt von der Slot-Tabelle und könnte nie fallen, wenn
+das Harness einen `eigene-schleife`-Slot einführt — sie hätte still aufgehört zu bewachen.
 
 **Die Settings-Seite gibt `warnungen()` einen Konsumenten, aber vier von sechs Regeln erreichen
 weiterhin keinen Menschen.** Das ist kein Versäumnis dieser Strecke: Alle vier hängen an
