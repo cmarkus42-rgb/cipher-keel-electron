@@ -4,7 +4,7 @@
  * `enabled` is read once at service start (main.ts), `piperVoice` on every utterance
  * (tts-piper.ts). Showing them side by side without saying so would be a lie by layout.
  */
-import type { SettingsAnsicht } from '../../../shared/settings-types'
+import type { SettingsAnsicht, Schreiber } from '../../../shared/settings-types'
 import { WirkungVermerk } from './WirkungVermerk'
 
 export function SprachausgabeReiter({
@@ -12,7 +12,7 @@ export function SprachausgabeReiter({
   schreibe,
 }: {
   ansicht: SettingsAnsicht
-  schreibe: (kanal: string, ...args: unknown[]) => Promise<void>
+  schreibe: Schreiber
 }) {
   return (
     <div>

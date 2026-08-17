@@ -8,7 +8,7 @@
  */
 import { StrictMode, useState, useEffect, useCallback } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { SettingsAnsicht, SettingsAntwort } from '../../shared/settings-types'
+import type { SettingsAnsicht, SettingsAntwort, Schreiber } from '../../shared/settings-types'
 import { ModelleReiter } from '../components/settings/ModelleReiter'
 import { CliStartReiter } from '../components/settings/CliStartReiter'
 import { SprachausgabeReiter } from '../components/settings/SprachausgabeReiter'
@@ -41,17 +41,19 @@ function SettingsApp() {
     void laden()
   }, [laden])
 
-  const schreibe = useCallback(async (kanal: string, ...args: unknown[]) => {
+  const schreibe: Schreiber = useCallback(async (kanal: string, ...args: unknown[]) => {
     try {
       const antwort = (await api().invoke(kanal as never, ...args)) as SettingsAntwort
       if (antwort.ok) {
         setAnsicht(antwort.ansicht)
         setFehler(null)
-      } else {
-        setFehler(antwort.fehler)
+        return true
       }
+      setFehler(antwort.fehler)
+      return false
     } catch (err) {
       setFehler(String(err))
+      return false
     }
   }, [])
 

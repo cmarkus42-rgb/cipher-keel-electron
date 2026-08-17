@@ -5,7 +5,7 @@
  * adapter appears here without this file knowing it exists. The warning about a duplicated
  * parameter is computed in main from the adapter's own appGesteuerteParameter.
  */
-import type { SettingsAnsicht } from '../../../shared/settings-types'
+import type { SettingsAnsicht, Schreiber } from '../../../shared/settings-types'
 import { WirkungVermerk } from './WirkungVermerk'
 import { Warnliste } from './Warnliste'
 
@@ -14,7 +14,7 @@ export function CliStartReiter({
   schreibe,
 }: {
   ansicht: SettingsAnsicht
-  schreibe: (kanal: string, ...args: unknown[]) => Promise<void>
+  schreibe: Schreiber
 }) {
   return (
     <div>

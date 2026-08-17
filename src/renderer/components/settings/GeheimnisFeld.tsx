@@ -6,7 +6,7 @@
  * a key, because nothing here ever receives one.
  */
 import { useState } from 'react'
-import type { EintragAnsicht } from '../../../shared/settings-types'
+import type { EintragAnsicht, Schreiber } from '../../../shared/settings-types'
 
 const STATUS_TEXT: Record<string, string> = {
   schluesselbund: 'hinterlegt',
@@ -27,7 +27,7 @@ export function GeheimnisFeld({
   schreibe,
 }: {
   eintrag: EintragAnsicht
-  schreibe: (kanal: string, ...args: unknown[]) => Promise<void>
+  schreibe: Schreiber
 }) {
   const [wert, setWert] = useState('')
   if (!eintrag.keyRef || !eintrag.geheimnisStatus) return null

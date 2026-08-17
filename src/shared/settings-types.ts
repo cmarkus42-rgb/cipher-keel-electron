@@ -17,6 +17,19 @@ export interface WarnungAnsicht {
   text: string
 }
 
+/**
+ * A mirror of src/main/model/entry.ts's `Erreichbarkeit`, not an import of it: the
+ * renderer may not reach into src/main/. Structurally identical on purpose, so
+ * `baueAnsicht` can pass a `ModellEintrag`'s `erreichbarkeit` straight through.
+ *
+ * `keyRef` here is the *name* a key is stored under, not the key itself — that name is
+ * already public in the config file, so carrying it to the renderer discloses nothing.
+ */
+export type ErreichbarkeitAnsicht =
+  | { art: 'cli-harness'; cli: string; handle: string }
+  | { art: 'local-http'; host: string; port: number; model: string }
+  | { art: 'api'; baseUrl: string; model: string; keyRef: string }
+
 export interface EintragAnsicht {
   id: string
   name: string
@@ -33,6 +46,13 @@ export interface EintragAnsicht {
   geheimnisHinweis: string | null
   /** False for a bundled entry: those cannot be deleted, only overridden. */
   loeschbar: boolean
+  /**
+   * What is actually configured, so an edit form can start from the real values instead
+   * of blanks. Without this an edit either fails validation for fields the user never
+   * touched, or — once the blocking field is filled in — silently overwrites the
+   * untouched ones with defaults.
+   */
+  erreichbarkeit: ErreichbarkeitAnsicht
 }
 
 export interface SlotOptionAnsicht {
@@ -106,3 +126,14 @@ export interface SettingsAnsicht {
 export type SettingsAntwort =
   | { ok: true; ansicht: SettingsAnsicht }
   | { ok: false; fehler: string }
+
+/**
+ * The one write signature every settings component uses, declared once so it cannot
+ * drift into five slightly different inline copies.
+ *
+ * Resolves `true` when the write landed (the view model was replaced) and `false` when
+ * it was rejected or threw — the page-level banner shows the reason either way, but a
+ * caller that needs to know whether *its own* write succeeded (closing a form, say)
+ * cannot tell from the banner alone.
+ */
+export type Schreiber = (kanal: string, ...args: unknown[]) => Promise<boolean>

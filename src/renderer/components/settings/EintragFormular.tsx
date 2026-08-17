@@ -9,11 +9,10 @@
  * second validator here would be a second truth.
  */
 import { useState } from 'react'
-import type { EintragAnsicht } from '../../../shared/settings-types'
+import type { EintragAnsicht, Schreiber } from '../../../shared/settings-types'
 
 type Art = 'cli-harness' | 'local-http' | 'api'
 type Oertlichkeit = 'lokal' | 'eigenes-netz' | 'fremdes-netz'
-type Schreiber = (kanal: string, ...args: unknown[]) => Promise<void>
 
 interface Felder {
   id: string
@@ -37,6 +36,35 @@ const LEER: Felder = {
   cli: 'claude', handle: '', host: '', port: '11434', model: '', baseUrl: '', keyRef: '',
 }
 
+/**
+ * An existing entry's fields, including the transport ones.
+ *
+ * Reading `erreichbarkeit` is the point: without it an edit would start from blanks and
+ * either fail validation or, once the blocking field was filled in, quietly overwrite the
+ * untouched ones with defaults. The view model carries these precisely so the form can
+ * show what is actually configured.
+ */
+function ausVorlage(v: EintragAnsicht): Felder {
+  const basis: Felder = {
+    ...LEER,
+    id: v.id,
+    name: v.name,
+    art: v.art,
+    oertlichkeit: v.oertlichkeit,
+    erklaertext: v.erklaertext,
+    empfehlung: v.empfehlung,
+  }
+  const e = v.erreichbarkeit
+  switch (e.art) {
+    case 'cli-harness':
+      return { ...basis, cli: e.cli, handle: e.handle }
+    case 'local-http':
+      return { ...basis, host: e.host, port: String(e.port), model: e.model }
+    case 'api':
+      return { ...basis, baseUrl: e.baseUrl, model: e.model, keyRef: e.keyRef }
+  }
+}
+
 export function EintragFormular({
   vorlage,
   schreibe,
@@ -46,20 +74,7 @@ export function EintragFormular({
   schreibe: Schreiber
   onFertig: () => void
 }) {
-  const [f, setF] = useState<Felder>(() =>
-    vorlage
-      ? {
-          ...LEER,
-          id: vorlage.id,
-          name: vorlage.name,
-          art: vorlage.art,
-          oertlichkeit: vorlage.oertlichkeit,
-          erklaertext: vorlage.erklaertext,
-          empfehlung: vorlage.empfehlung,
-          keyRef: vorlage.keyRef ?? '',
-        }
-      : LEER
-  )
+  const [f, setF] = useState<Felder>(() => (vorlage ? ausVorlage(vorlage) : LEER))
 
   const setze = (k: keyof Felder) => (e: { target: { value: string } }) =>
     setF(alt => ({ ...alt, [k]: e.target.value }))
@@ -73,7 +88,7 @@ export function EintragFormular({
   }
 
   const speichern = async () => {
-    await schreibe('settings:eintrag-speichern', {
+    const geschafft = await schreibe('settings:eintrag-speichern', {
       id: f.id,
       name: f.name,
       art: f.art,
@@ -82,7 +97,9 @@ export function EintragFormular({
       erklaertext: f.erklaertext,
       empfehlung: f.empfehlung,
     })
-    onFertig()
+    // Only on success. Closing after a rejected write would look exactly like a saved
+    // one, and the only sign of trouble would be a banner above the tab.
+    if (geschafft) onFertig()
   }
 
   const istUeberschreibung = vorlage !== null && !vorlage.loeschbar

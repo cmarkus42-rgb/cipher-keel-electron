@@ -233,6 +233,7 @@ export async function baueAnsicht(quellen: GeheimnisQuellen = {}): Promise<Setti
         geheimnisStatus: geheim ? geheim.status : null,
         geheimnisHinweis: geheim ? geheim.hinweis : null,
         loeschbar: !GEBUENDELTE_IDS.has(e.id),
+        erreichbarkeit: e.erreichbarkeit,
       }
     })
   )

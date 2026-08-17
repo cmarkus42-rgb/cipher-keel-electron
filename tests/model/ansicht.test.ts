@@ -159,6 +159,20 @@ describe('Ansichtsmodell', () => {
     expect(a.eintraege.find(x => x.id === 'claude-opus-cli')!.faehigkeitenHerkunft).toBeNull()
   })
 
+  it('reicht die Erreichbarkeit eines local-http-Eintrags durch', async () => {
+    const a = await ansichtMit(null)
+    const e = a.eintraege.find(x => x.id === 'spark-gemma4-26b')!
+    expect(e.erreichbarkeit).toEqual({
+      art: 'local-http', host: '100.78.7.108', port: 11434, model: 'gemma4:26b',
+    })
+  })
+
+  it('reicht die Erreichbarkeit eines cli-harness-Eintrags durch', async () => {
+    const a = await ansichtMit(null)
+    const e = a.eintraege.find(x => x.id === 'claude-opus-cli')!
+    expect(e.erreichbarkeit).toEqual({ art: 'cli-harness', cli: 'claude', handle: 'opus' })
+  })
+
   it('meldet ein hinterlegtes Geheimnis als schluesselbund', async () => {
     const a = await ansichtMit(null, { openrouter: 'sk-test' })
     const e = a.eintraege.find(x => x.id === 'openrouter-qwen3-coder')!

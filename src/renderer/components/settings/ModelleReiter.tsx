@@ -5,7 +5,7 @@
  * decides layout, never eligibility.
  */
 import { useState } from 'react'
-import type { SettingsAnsicht, SlotAnsicht } from '../../../shared/settings-types'
+import type { SettingsAnsicht, SlotAnsicht, Schreiber } from '../../../shared/settings-types'
 import { Warnliste } from './Warnliste'
 import { WirkungVermerk } from './WirkungVermerk'
 import { GeheimnisFeld } from './GeheimnisFeld'
@@ -37,7 +37,7 @@ export function ModelleReiter({
   schreibe,
 }: {
   ansicht: SettingsAnsicht
-  schreibe: (kanal: string, ...args: unknown[]) => Promise<void>
+  schreibe: Schreiber
 }) {
   // null = kein Formular offen; 'neu' = leeres Formular; sonst die Kennung des Eintrags
   const [formular, setFormular] = useState<string | null>(null)
@@ -124,7 +124,12 @@ export function ModelleReiter({
         <button onClick={() => setFormular('neu')} style={styles.neuKnopf}>Neuer Eintrag</button>
       </div>
       {formular && (
+        // Keyed on which entry is open: without it, switching straight from one entry's
+        // form to another reuses the mounted instance, and useState's initialiser does
+        // not run again. The heading would change while the fields kept the first
+        // entry's values -- and Speichern would write them under the second entry's id.
         <EintragFormular
+          key={formular}
           vorlage={vorlage}
           schreibe={schreibe}
           onFertig={() => setFormular(null)}
