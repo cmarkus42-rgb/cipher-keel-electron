@@ -48,6 +48,11 @@ export interface CipherKeelConfig {
      * former `skipPermissions` boolean, which named one vendor's flag in the schema
      * itself. The app-driven flags (see AgentAdapter.appGesteuerteParameter) are added
      * on top of these, never replaced by them.
+     *
+     * "No parameters at all" is `{ 'claude-code': '' }`, not `{}`: an empty object is
+     * merged with the defaults on load, which puts the default line back. Whatever writes
+     * this must therefore always write the adapter's key, never delete it — otherwise a
+     * user who clears the field silently gets the default back on the next start.
      */
     startArgs: Record<string, string>
     /**
@@ -215,21 +220,41 @@ export function migriere(roh: Record<string, unknown>): {
 }
 
 function loadConfig(): CipherKeelConfig {
+  let zusammengefuehrt: CipherKeelConfig
+  let veraendert: boolean
   try {
     const raw = fs.readFileSync(getConfigPath(), 'utf-8')
     if (!raw.trim()) return { ...defaults }
     const parsed = JSON.parse(raw) as Record<string, unknown>
-    const { config: migriert, veraendert } = migriere(parsed)
-    const zusammengefuehrt = deepMerge(
+    const migriert = migriere(parsed)
+    veraendert = migriert.veraendert
+    zusammengefuehrt = deepMerge(
       { ...defaults } as unknown as Record<string, unknown>,
-      migriert
+      migriert.config
     ) as unknown as CipherKeelConfig
-    // Persist the migration once, so the file on disk stops carrying the old shape.
-    if (veraendert) saveConfig(zusammengefuehrt)
-    return zusammengefuehrt
   } catch {
     return { ...defaults }
   }
+
+  // Persisting the migration is best effort, and it sits outside the read's try on
+  // purpose. Inside it, a failed write — read-only volume, ENOSPC, a file owned by
+  // another account — would fall into the catch and hand back defaults for a config that
+  // had just been read successfully. That value becomes `cached`, and the next
+  // configStore.set would write the defaults tree over the user's real file: an empty
+  // projects list and an empty registry, lost to a write error that had nothing to do
+  // with them. A migration that cannot be persisted now is simply persisted on the next
+  // write; a config that was read must never be discarded because of it.
+  if (veraendert) {
+    try {
+      saveConfig(zusammengefuehrt)
+    } catch (err) {
+      console.warn(
+        '[config-store] Die Migration konnte nicht geschrieben werden; sie gilt fuer diese ' +
+        'Sitzung und wird beim naechsten erfolgreichen Schreiben festgehalten:', err
+      )
+    }
+  }
+  return zusammengefuehrt
 }
 
 function saveConfig(config: CipherKeelConfig): void {

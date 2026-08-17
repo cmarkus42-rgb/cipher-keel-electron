@@ -52,6 +52,9 @@ describe('Config-Migration', () => {
   it('uebersetzt skipPermissions false in einen leeren Startparameter', async () => {
     const { configStore } = await withConfig({ agent: { skipPermissions: false } })
     expect(configStore.get('agent').startArgs['claude-code']).toBe('')
+    // Auch auf der Platte: hier ist der Fall, in dem die Vorgabe die Entscheidung des
+    // Nutzers ueberschreiben koennte, weil die Vorgabe das Flag traegt und er es nicht will.
+    expect(gelesen().agent.startArgs['claude-code']).toBe('')
   })
 
   it('ist idempotent — ein zweiter Lauf aendert nichts', async () => {
@@ -85,12 +88,58 @@ describe('Config-Migration', () => {
     expect(roh.windows).toBeUndefined()
   })
 
-  it('laesst lebende Bloecke unangetastet', async () => {
+  it('laesst lebende Bloecke unangetastet — im Speicher und auf der Platte', async () => {
     const { configStore } = await withConfig({
       agent: { skipPermissions: true },
       llm: { tagging: { host: '10.0.0.9', port: 11434, model: 'altwert' } },
+      projects: { list: [{ id: 'p1', name: 'Probe', rootPath: '/tmp/p1' }], activeId: 'p1' },
     })
     expect(configStore.get('llm').tagging.model).toBe('altwert')
     expect(configStore.get('llm').tagging.host).toBe('10.0.0.9')
+
+    // Die Platte ist der Punkt. Der zerstoererische Pfad dieser Aufgabe ist das
+    // Zurueckschreiben, und ein Test, der nur configStore.get() prueft, wuerde nicht
+    // bemerken, wenn statt der zusammengefuehrten Config die Vorgaben persistiert
+    // wuerden — die tragen dasselbe Flag, aber weder Projekte noch Endpunkte.
+    const roh = gelesen()
+    expect(roh.llm.tagging.host).toBe('10.0.0.9')
+    expect(roh.llm.tagging.model).toBe('altwert')
+    expect(roh.projects.list).toHaveLength(1)
+    expect(roh.projects.list[0].id).toBe('p1')
+  })
+
+  it('meldet fuer eine bereits migrierte Config, dass nichts zu tun war', async () => {
+    // `migriere` ist ausdruecklich exportiert, um ohne Dateisystem pruefbar zu sein —
+    // und die Idempotenz-Zusicherung des Docblocks lautet `veraendert: false`, nicht
+    // "die Bytes sind gleich". Ein Neuschreiben identischer Bytes wuerde den
+    // Byte-Vergleich bestehen und trotzdem bei jedem Start auf die Platte gehen.
+    const { migriere } = await withConfig(null)
+    const bereits = { agent: { startArgs: { 'claude-code': '--dangerously-skip-permissions' } } }
+    expect(migriere(bereits).veraendert).toBe(false)
+  })
+
+  it('behaelt die gelesene Config, wenn das Schreiben der Migration scheitert', async () => {
+    fs.writeFileSync(datei(), JSON.stringify({
+      agent: { skipPermissions: true },
+      llm: { tagging: { host: '10.0.0.9', port: 11434, model: 'altwert' } },
+    }))
+    // Nur die Datei schreibgeschuetzt, nicht das Verzeichnis: ein schreibgeschuetztes
+    // Verzeichnis verhindert das Anlegen, nicht das Ueberschreiben einer vorhandenen
+    // Datei. (Als root laeuft dieser Test nicht sinnvoll — dann greift der Schutz nicht.)
+    fs.chmodSync(datei(), 0o400)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      vi.doMock('electron', () => ({ app: { getPath: () => tmpDir } }))
+      const { configStore } = await import('../../src/main/config/config-store')
+      // Gelesen ist gelesen: es gilt die Datei, nicht der Vorgabenbaum.
+      expect(configStore.get('llm').tagging.model).toBe('altwert')
+      expect(configStore.get('agent').startArgs['claude-code'])
+        .toBe('--dangerously-skip-permissions')
+      expect(configStore.get('llm').tagging.host).toBe('10.0.0.9')
+      expect(warn).toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+      fs.chmodSync(datei(), 0o600)
+    }
   })
 })
