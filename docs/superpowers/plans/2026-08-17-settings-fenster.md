@@ -4220,8 +4220,11 @@ zu fehlen.
 
 ### Zusammenfassung
 
-Alle elf Belege treffen inzwischen die Erwartung genau — neun im ersten Lauf, Beleg 7 und
-Beleg 8 erst im zweiten, nach einer Korrektur am Testwerkzeug statt am gepruefeten Code.
+Zehn der elf Belege treffen die Erwartung genau — neun im ersten Lauf, Beleg 7 und Beleg 8
+erst im zweiten, nach einer Korrektur am Testwerkzeug statt am gepruefeten Code. Beleg 6 gilt
+nur als **teilweise belegt**: die Fassung unten im Nachtrag zeigt zweifelsfrei, dass die
+Zuordnung ohne Neustart wirkt, aber nicht, dass der Request beim Spark ankam statt unterwegs
+verworfen zu werden — dafuer fehlt der App die Unterscheidung (siehe Nachtrag unten).
 
 Beide scheiterten im ersten Lauf am selben Grund: `launch.sh` loeschte mit
 `rm -rf "$PROFILE"` bedingungslos das gesamte Profilverzeichnis vor jedem Start, wodurch
@@ -4286,23 +4289,43 @@ $ time node $D project-window "window.cipherKeel.invoke('notes:auto-tag','Ein Te
 ... 1:00,13 total
 ```
 
-Trifft die Erwartung — und zwar diskriminierend, nicht identisch: vor der Zuordnung ein
-Tag-Array in unter einer Sekunde, danach zweimal `null` nach exakt 60,1s bzw. 60,2s, was auf
-`TAGGING_TIMEOUT_MS` (60000ms, `note-tagging.ts`) trifft. `autoTag` gibt `null` bei einem
-Transportfehler zurueck (Timeout eingeschlossen); ein `null` nach genau diesem Budget zeigt,
-dass der Aufruf tatsaechlich beim neu zugeordneten Endpunkt landete und dort nicht
-rechtzeitig antwortete — nicht, dass die Zuordnung ignoriert wurde (dann waere das
-Tag-Array der Baseline zurueckgekommen).
+Trifft die Erwartung, aber nur teilweise — und der Unterschied ist wichtig genug, um ihn
+sauber zu trennen.
 
-**Unabhaengig verifiziert, dass die Ursache am Spark liegt, nicht an cipher keel:**
-`gemma4:26b` steht laut `curl http://100.78.7.108:11434/api/tags` auf der Maschine bereit,
-aber ein direkter `curl .../api/generate` mit dem Prompt "Sag nur OK" gegen `gemma4:26b`
-lieferte binnen 3 Minuten keine Antwort (Hintergrundlauf abgebrochen, kein Fehler, einfach
-keine Antwort) — derselbe Befund unabhaengig vom App-Code. Damit ist die Diskriminierung
-zwar durch einen echten, aber tagesaktuellen Zustand des Spark motiviert (Modell haengt oder
-laedt ungewoehnlich lang), nicht durch ein zweites `127.0.0.1`. Das aendert nichts an der
-Kernaussage des Belegs: Der Aufruf ging nachweislich an einen anderen Endpunkt als vorher,
-und das Ergebnis unterscheidet sich beobachtbar vom Rueckfall.
+**Was der Lauf belegt:** Die Zuordnung wirkte ohne Neustart. Vor der Zuordnung lieferte der
+Rueckfall ein Tag-Array in unter einer Sekunde; danach lief der Aufruf zweimal exakt bis
+`TAGGING_TIMEOUT_MS` (60000ms, `note-tagging.ts`) — 60,1s bzw. 60,2s — und endete mit `null`.
+Waere die Zuordnung ignoriert worden, haette weiterhin der lokale Rueckfall geantwortet, und
+zwar wie in der Baseline in unter einer Sekunde. Das allein zeigt schon: der Tagging-Aufruf
+wurde nach der Zuordnung nicht mehr vom lokalen Rueckfall bedient, sondern lief das
+App-seitige 60s-Budget gegen den neu zugeordneten, zu dieser Zeit ausgelasteten Host aus,
+statt sofort zu antworten.
+
+**Was der Lauf nicht belegt:** dass der Request beim Spark tatsaechlich ankam, statt
+unterwegs verworfen zu werden. `autoTag` faengt jeden Transportfehler ab und gibt `null`
+zurueck, ohne ihn zu loggen (`note-tagging.ts:222-228`) — die Fehlermeldung, die Host und
+Port nennen wuerde, ist damit verloren, bevor sie jemand sehen koennte. Und `HttpOllamaClient`
+reicht `timeout` an `http.request` durch (`ollama-client.ts:95`); das ist ein Socket-Timeout,
+der fuer einen verbundenen, aber untaetigen Socket identisch feuert wie fuer ein nie
+beantwortetes SYN — die App kann die beiden Faelle konstruktionsbedingt nicht unterscheiden.
+Wofuer das 60s-Ergebnis reicht: schnelles Scheitern auszuschliessen. `ECONNREFUSED`/`ENOENT`
+kaemen binnen Millisekunden mit einer anderen Meldung zurueck, und DNS ist bei einer rohen IP
+nicht im Spiel. „Abgelehnt" ist damit ausgeschlossen, „still verworfen" nicht.
+
+Die einzige Spur, die auf „verbunden und blockiert" statt „verworfen" deutet, liegt ausserhalb
+der App: ein `curl .../api/generate` gegen denselben Host:Port von derselben Maschine lieferte
+binnen drei Minuten keine Antwort (Hintergrundlauf abgebrochen, kein Fehler, einfach keine
+Antwort), und der Maschinenbesitzer bestaetigte, dass der Spark zu dieser Zeit durch einen
+Voice-Training-Lauf ausgelastet war. Das ist der Request eines anderen Prozesses zu einem
+nicht protokollierten Zeitpunkt — ein Indiz, keine Beobachtung des App-Requests selbst.
+`curl .../api/tags` bestaetigte separat nur, dass `gemma4:26b` auf der Maschine registriert
+ist (schnelle Antwort); das schliesst „Modell existiert nicht" als Ursache aus, sagt aber
+nichts darueber, was mit dem App-Request geschah.
+
+Was das in einer Zeile klaeren wuerde, fuer wen auch immer das wieder aufgreift: die
+Transportmeldung sichtbar machen (sie nennt bereits Host und Port), oder das Ollama-Log des
+Spark auf den eingehenden Request pruefen. Nicht ein weiterer Lauf gegen einen ausgelasteten
+Host.
 
 Zuordnung danach nicht zurueckgesetzt — die App wurde fuer den naechsten Beleg direkt
 weiterverwendet, und `stop.sh`/ein frischer Profil-Wipe raeumt vor dem naechsten Lauf ohnehin

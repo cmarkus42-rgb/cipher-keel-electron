@@ -16,6 +16,8 @@ const CONFIG_PATHS = [
   'voice.piperVoice',
   'llm.tagging',
   'llm.worker',
+  'modelle.eintraege',
+  'modelle.zuordnung',
 ]
 
 describe('CK-NFR-012 — the adjustable-surface inventory', () => {
