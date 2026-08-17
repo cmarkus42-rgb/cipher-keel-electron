@@ -547,16 +547,22 @@ git commit -m "feat(util): splitShellArgs -- Freitext zu argv, anfuehrungszeiche
 
 ---
 
-## Task 4: Config — `startArgs`, Migration, tote Blöcke raus
+## Task 4: Config und Adapter — `startArgs` statt Vendor-Schalter
 
 `ui`, `mcp`, `app` und `windows` haben im gesamten Quelltext keinen Leser (Spec §2). Sie stehen zu lassen hieße, die nächste Sitzung dieselbe Stunde investieren zu lassen, um sie erneut zu widerlegen.
 
+**Diese Aufgabe umfasst, was ursprünglich als Aufgaben 4 und 5 getrennt war.** Der Grund ist zwingend: Sobald `agent.skipPermissions` aus dem Schema fällt, bricht sein einziger Leser in `ipc-handlers.ts:132`. Getrennt könnte keine der beiden Hälften einen übersetzbaren Baum hinterlassen, und die globale Randbedingung verlangt genau das. Feld und Leser ändern sich zusammen oder gar nicht.
+
 **Files:**
 - Modify: `src/main/config/config-store.ts`
+- Modify: `src/main/agent/agent-adapter.ts`
+- Modify: `src/main/agent/adapters/claude-code.ts`
+- Modify: `src/main/ipc-handlers.ts` (Zeilen 130-133)
 - Test: `tests/config/migration.test.ts`
+- Test: `tests/agent/start-args.test.ts`
 
 **Interfaces:**
-- Consumes: nichts
+- Consumes: `splitShellArgs` und `formatShellCommand` aus Aufgabe 3
 - Produces:
   - `CipherKeelConfig.agent` wird `{ modelTiers: { light: string; standard: string; heavy: string }; startArgs: Record<string, string> }`
   - `CipherKeelConfig` verliert `app`, `ui`, `mcp`, `windows`
@@ -777,39 +783,17 @@ npx vitest run tests/config/migration.test.ts > /tmp/t.log 2>&1; echo "EXIT=$?";
 ```
 Erwartet: PASS, 7 Tests.
 
-- [ ] **Step 6: Typecheck — hier fallen die Aufrufer der entfernten Felder auf**
+- [ ] **Step 6: Typecheck — die Aufrufer der entfernten Felder sichtbar machen**
 
 ```bash
 npm run typecheck > /tmp/tc.log 2>&1; echo "EXIT=$?"; cat /tmp/tc.log
 ```
-Erwartet: Fehler an `ipc-handlers.ts:132` (`skipPermissions`) — das ist Aufgabe 5. Weitere Fehler zu `app`, `ui`, `mcp` oder `windows` **hier** beheben, indem der jeweilige Zugriff entfernt wird. Tritt ein Fehler an einer Stelle auf, die einen dieser Blöcke tatsächlich *liest*, ist die Bestandsaufnahme in Spec §2 falsch — dann **abbrechen und melden**, nicht umbauen.
 
-- [ ] **Step 7: Commit**
+Erwartet: **genau ein** Fehler, an `ipc-handlers.ts:132` (`skipPermissions`). Den behebt Step 11 dieser Aufgabe — der Baum wird erst am Ende wieder grün, aber es wird nichts in diesem Zustand committet.
 
-```bash
-git branch --show-current
-git add src/main/config/config-store.ts tests/config/migration.test.ts
-git commit -m "feat(config): startArgs je Adapter, Migration, tote Bloecke entfernt"
-```
+Erscheint zusätzlich ein Fehler zu `app`, `ui`, `mcp` oder `windows`, dann liest jemand einen Block, den Spec §2 für tot erklärt hat. **Abbrechen und melden**, nicht umbauen: dann ist die Bestandsaufnahme falsch, und das ist eine Entscheidung des Menschen, keine des Implementierers.
 
----
-
-## Task 5: Adapter — Startparameter statt Vendor-Schalter
-
-**Files:**
-- Modify: `src/main/agent/agent-adapter.ts`
-- Modify: `src/main/agent/adapters/claude-code.ts`
-- Modify: `src/main/ipc-handlers.ts:130-133`
-- Test: `tests/agent/start-args.test.ts`
-
-**Interfaces:**
-- Consumes: `splitShellArgs` aus Aufgabe 3, `agent.startArgs` aus Aufgabe 4
-- Produces:
-  - `interface AgentConfigReader { getStartArgs(adapterId: string): string[] }`
-  - `AgentAdapter` gewinnt `readonly appGesteuerteParameter?: readonly string[]`
-  - `ClaudeCodeAdapter.appGesteuerteParameter = ['--resume', '--fork-session', '--model', '--append-system-prompt-file']`
-
-- [ ] **Step 1: Den fehlschlagenden Test schreiben**
+- [ ] **Step 7: Den fehlschlagenden Adapter-Test schreiben**
 
 Create `tests/agent/start-args.test.ts`:
 
@@ -865,14 +849,14 @@ describe('Startparameter statt skipPermissions', () => {
 })
 ```
 
-- [ ] **Step 2: Test laufen lassen, Fehlschlag bestätigen**
+- [ ] **Step 8: Test laufen lassen, Fehlschlag bestätigen**
 
 ```bash
 npx vitest run tests/agent/start-args.test.ts > /tmp/t.log 2>&1; echo "EXIT=$?"; tail -20 /tmp/t.log
 ```
-Erwartet: FAIL — `getSkipPermissions is not a function` bzw. Typfehler.
+Erwartet: FAIL — `getStartArgs` ist noch nicht die Schnittstelle des Adapters.
 
-- [ ] **Step 3: `AgentAdapter` erweitern**
+- [ ] **Step 9: `AgentAdapter` erweitern**
 
 In `src/main/agent/agent-adapter.ts`, im Interface `AgentAdapter`, oberhalb von `buildLaunchCommand(opts: LaunchOpts): LaunchCommand` einfügen:
 
@@ -886,7 +870,7 @@ In `src/main/agent/agent-adapter.ts`, im Interface `AgentAdapter`, oberhalb von 
   readonly appGesteuerteParameter?: readonly string[]
 ```
 
-- [ ] **Step 4: `claude-code.ts` umstellen**
+- [ ] **Step 10: `claude-code.ts` umstellen**
 
 Den Import ergänzen:
 ```ts
@@ -941,7 +925,7 @@ ersetzen durch
 \`${this.startBefehl()}\`
 ```
 
-- [ ] **Step 5: Den Leser in `ipc-handlers.ts` umstellen**
+- [ ] **Step 11: Den Leser in `ipc-handlers.ts` umstellen**
 
 Import ergänzen:
 ```ts
@@ -962,21 +946,47 @@ wird
   })
 ```
 
-- [ ] **Step 6: Tests und Typecheck**
+- [ ] **Step 12: Die volle Prüfkette**
 
 ```bash
-npx vitest run tests/agent/ > /tmp/t.log 2>&1; echo "EXIT=$?"; tail -30 /tmp/t.log
-npm run typecheck > /tmp/tc.log 2>&1; echo "EXIT=$?"; tail -20 /tmp/tc.log
+npx vitest run tests/agent/ tests/config/ > /tmp/t.log 2>&1; echo "EXIT=$?"; tail -30 /tmp/t.log
+npm run typecheck > /tmp/tc.log 2>&1; echo "TYPECHECK=$?"; tail -20 /tmp/tc.log
+npm test > /tmp/full.log 2>&1; echo "TEST=$?"; tail -10 /tmp/full.log
+npm run lint > /tmp/l.log 2>&1; echo "LINT=$?"; tail -10 /tmp/l.log
 ```
-Erwartet: beide EXIT=0. Bestehende Tests, die `getSkipPermissions` mocken, sind auf `getStartArgs` umzustellen — der Testkörper ändert sich, die geprüfte Zusicherung nicht.
+Erwartet: alle EXIT=0. Bestehende Tests, die `getSkipPermissions` mocken, sind auf `getStartArgs` umzustellen — der Testkörper ändert sich, die geprüfte Zusicherung nicht.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 13: Commit**
 
 ```bash
 git branch --show-current
-git add src/main/agent/ src/main/ipc-handlers.ts tests/agent/
-git commit -m "feat(agent): Startparameter je Adapter statt vendorspezifischem Schalter"
+git add src/main/config/config-store.ts tests/config/migration.test.ts src/main/agent/ src/main/ipc-handlers.ts tests/agent/
+git commit -m "feat(config): startArgs je Adapter statt vendorspezifischem Schalter
+
+Das Schema verliert agent.skipPermissions und die vier Bloecke ohne Leser
+(app, ui, mcp, windows). An die Stelle des Schalters tritt agent.startArgs
+je Adapter-Kennung -- der Vendor steht damit nicht mehr in der Struktur der
+Konfiguration, nur noch als Schluessel.
+
+Config und Adapter in einem Commit, weil das Feld und sein einziger Leser
+sich zusammen aendern muessen: getrennt haette keine der beiden Haelften
+einen uebersetzbaren Baum hinterlassen."
 ```
+
+---
+
+## Task 5: (in Aufgabe 4 aufgegangen)
+
+Diese Aufgabe hiess urspruenglich „Adapter — Startparameter statt Vendor-Schalter" und ist
+vollstaendig in **Aufgabe 4** enthalten, deren Schritte 7 bis 13 sie ausfuehren.
+
+**Der Grund, festgehalten statt stillschweigend:** Aufgabe 4 entfernt `agent.skipPermissions`
+aus dem Schema. Dessen einziger Leser steht in `ipc-handlers.ts:132` und wurde von dieser
+Aufgabe umgestellt. Getrennt haette Aufgabe 4 einen Commit mit rotem Typecheck hinterlassen —
+und die globale Randbedingung „jede Aufgabe hinterlaesst einen gruenen Baum" verbietet das.
+
+Die Nummerierung bleibt, damit jeder Querverweis auf „Aufgabe 6" bis „Aufgabe 14" im uebrigen
+Dokument gueltig bleibt. **Hier ist nichts zu tun.**
 
 ---
 
