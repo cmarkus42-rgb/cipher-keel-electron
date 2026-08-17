@@ -1986,6 +1986,90 @@ In `RendererToMainChannel` ergänzen:
   | typeof SETTINGS_RUECKFALL_ENDPUNKT_SETZEN
 ```
 
+- [ ] **Step 1b: Das Leck an seiner Quelle schließen**
+
+`storeInKeychain` übergibt den Schlüssel als Argument an den `security`-CLI. Scheitert der Aufruf, legt Node **die vollständige Kommandozeile** in `err.message` ab — samt Klartext-Geheimnis. Jeder Aufrufer, der die Ursache wörtlich weitermeldet, veröffentlicht damit den Schlüssel, und die Ursache weiterzumelden ist sonst genau richtig.
+
+Deshalb wird hier redigiert, nicht im Handler: `api-keys.ts` ist das Modul, das weiß, dass das Geheimnis in der Argumentliste steht.
+
+In `src/main/worker/api-keys.ts` `storeInKeychain` ersetzen durch:
+
+```ts
+/**
+ * The cause of a keychain failure, with the secret guaranteed absent.
+ *
+ * `execFile` puts the whole argv into `err.message`, and this argv carries the key — so
+ * the message itself is unusable. `stderr` is what the tool actually said, and the
+ * containment check below is belt and braces: this is the one module that can be sure,
+ * so it makes sure rather than assuming.
+ */
+function ursacheOhneArgv(err: unknown, geheimnis: string): string {
+  const stderr = (err as { stderr?: unknown })?.stderr
+  const text = typeof stderr === 'string' && stderr.trim() ? stderr.trim() : ''
+  if (!text) return 'kein Fehlertext vom security-Aufruf'
+  if (geheimnis && text.includes(geheimnis)) {
+    return 'Fehlertext unterdrueckt — er enthielt den Schluessel'
+  }
+  return text
+}
+
+export async function storeInKeychain(ref: string, key: string): Promise<void> {
+  try {
+    await execFileAsync('security', [
+      'add-generic-password', '-s', keychainService(ref), '-a', 'key', '-w', key, '-U',
+    ])
+  } catch (err) {
+    // Never rethrow the original: its message contains the key. See ursacheOhneArgv.
+    throw new Error(
+      `Der Schluesselbund hat den Eintrag '${keychainService(ref)}' nicht angenommen. ` +
+      `Ist er entsperrt? (${ursacheOhneArgv(err, key)})`
+    )
+  }
+}
+```
+
+Dazu ein Test, `tests/worker/api-keys.test.ts` (anlegen oder ergänzen) — er darf den echten Schlüsselbund **nicht** anfassen und prüft nur die Redaktion:
+
+```ts
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+
+describe('storeInKeychain redigiert den Schluessel aus Fehlern', () => {
+  beforeEach(() => vi.resetModules())
+  afterEach(() => vi.doUnmock('../../src/main/util/exec-util'))
+
+  async function mitFehler(fehler: unknown) {
+    vi.doMock('../../src/main/util/exec-util', () => ({
+      execFileAsync: () => Promise.reject(fehler),
+    }))
+    return import('../../src/main/worker/api-keys')
+  }
+
+  it('gibt die Kommandozeile aus err.message niemals weiter', async () => {
+    const { storeInKeychain } = await mitFehler(
+      Object.assign(new Error(
+        'Command failed: security add-generic-password -s x -a key -w SUPER-GEHEIM -U'
+      ), { stderr: 'security: SecKeychainItemCreateFromContent: User interaction is not allowed.' })
+    )
+    await expect(storeInKeychain('probe', 'SUPER-GEHEIM')).rejects.toThrow(
+      /User interaction is not allowed/
+    )
+    await expect(storeInKeychain('probe', 'SUPER-GEHEIM')).rejects.not.toThrow(/SUPER-GEHEIM/)
+  })
+
+  it('unterdrueckt auch ein stderr, das den Schluessel selbst enthaelt', async () => {
+    const { storeInKeychain } = await mitFehler(
+      Object.assign(new Error('Command failed'), { stderr: 'echo SUPER-GEHEIM' })
+    )
+    await expect(storeInKeychain('probe', 'SUPER-GEHEIM')).rejects.toThrow(/unterdrueckt/)
+  })
+
+  it('sagt es, wenn der Aufruf gar keinen Fehlertext lieferte', async () => {
+    const { storeInKeychain } = await mitFehler(new Error('Command failed'))
+    await expect(storeInKeychain('probe', 'geheim')).rejects.toThrow(/kein Fehlertext/)
+  })
+})
+```
+
 - [ ] **Step 2: Handler schreiben**
 
 Create `src/main/settings/handlers.ts`:
@@ -2098,9 +2182,11 @@ export function registerSettingsHandlers(): void {
     if (!ref) return { ok: false, fehler: 'Ohne Schluesselnamen laesst sich nichts hinterlegen.' }
     if (!geheimnis) return { ok: false, fehler: 'Ein leeres Geheimnis wird nicht gespeichert — zum Entfernen bitte loeschen.' }
     try {
+      // storeInKeychain redigiert seine eigene Ursache — siehe api-keys.ts. Die Meldung
+      // hier weiterzureichen ist deshalb sicher, und nur deshalb.
       await storeInKeychain(ref, geheimnis)
     } catch (err) {
-      return { ok: false, fehler: `Der Schluesselbund hat das Speichern abgelehnt: ${err instanceof Error ? err.message : String(err)}` }
+      return { ok: false, fehler: err instanceof Error ? err.message : String(err) }
     }
     return mitAnsicht(() => {})
   })
