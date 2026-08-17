@@ -3553,6 +3553,50 @@ node $D settings-window "window.cipherKeel.invoke('settings:eintrag-loeschen','p
 ```
 Erwartet: der neue Eintrag erscheint mit `loeschbar: true`; der schiefe Eintrag liefert die Meldung aus `normaliseEintrag` („art ist 'api', erreichbarkeit ist 'local-http' — beide muessen dasselbe sagen"); das Löschen liefert `true`.
 
+- [ ] **Step 10b: Beleg 10 — die Kanäle, die kein anderer Beleg berührt**
+
+Aufgabe 8 liefert neun IPC-Handler und **keinen einzigen Test** — kein Test dieses Repos erreicht einen `ipcMain`-Handler. Die Belege 1 bis 9 decken sechs davon ab. Diese drei bleiben sonst unbelegt:
+
+```bash
+D=".claude/skills/run-keel/driver.mjs"
+
+# einfachfeld-setzen, beide Zweige
+node $D settings-window "window.cipherKeel.invoke('settings:einfachfeld-setzen','modelltier:heavy','opus-probe')
+  .then(a => a.ansicht.modellTiers)"
+node $D settings-window "window.cipherKeel.invoke('settings:einfachfeld-setzen','sprachausgabe:aktiv',false)
+  .then(a => a.ansicht.sprachausgabe)"
+# geschlossene Union: ein unbekanntes Feld wird abgewiesen, nicht stillschweigend geschrieben
+node $D settings-window "window.cipherKeel.invoke('settings:einfachfeld-setzen','gibt-es-nicht','x')
+  .then(a => a.fehler)"
+
+# rueckfall-endpunkt-setzen, gueltig und ungueltig
+node $D settings-window "window.cipherKeel.invoke('settings:rueckfall-endpunkt-setzen','tagging',
+  {host:'127.0.0.1',port:11434,model:'probe'}).then(a => a.ansicht.rueckfallEndpunkte.tagging)"
+node $D settings-window "window.cipherKeel.invoke('settings:rueckfall-endpunkt-setzen','tagging',
+  {host:'127.0.0.1',port:11434}).then(a => a.fehler)"
+
+# geheimnis-loeschen auf einem Ref, das es nicht gibt -- muss laut scheitern
+node $D settings-window "window.cipherKeel.invoke('settings:geheimnis-loeschen','gibt-es-nicht')
+  .then(a => a.fehler)"
+```
+
+Erwartet: die drei gültigen Aufrufe liefern die geänderten Werte in der zurückgegebenen Ansicht; die drei ungültigen liefern je eine deutsche Meldung und **keine** Änderung.
+
+- [ ] **Step 10c: Beleg 11 — der Adapter-Schlüssel wird nie gelöscht**
+
+Aus dem Review von Aufgabe 4: `startArgs: {}` bedeutet **nicht** „keine Parameter". Ein leeres Objekt wird beim Laden mit den Vorgaben zusammengeführt, wodurch die Vorgabezeile zurückkehrt. Nur `{ 'claude-code': '' }` schaltet ab.
+
+```bash
+node $D settings-window "window.cipherKeel.invoke('settings:startargs-setzen','claude-code','')
+  .then(a => a.ansicht.adapter.find(x=>x.id==='claude-code').startArgs)"
+.claude/skills/run-keel/stop.sh
+python3 -c "import json;print(json.load(open('/tmp/keel-verify/cipher-keel-config.json'))['agent']['startArgs'])"
+```
+
+Erwartet: der Schlüssel `'claude-code'` steht mit leerem Wert in der Datei. Fehlt der Schlüssel, kehrt die Vorgabe beim nächsten Start zurück und der Nutzer bekommt ein Flag, das er abgeschaltet hat — **dann melden**, nicht nachbessern.
+
+Danach die App für die restlichen Belege wieder starten.
+
 - [ ] **Step 11: Aufräumen und das Protokoll festhalten**
 
 ```bash
