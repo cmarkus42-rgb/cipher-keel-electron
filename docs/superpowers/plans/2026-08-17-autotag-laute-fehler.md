@@ -79,3 +79,57 @@ Zuordnung entfernen, Tagging erneut auslösen: Es muss wieder normal durchlaufen
 - Keine Notizen-Oberfläche, kein Klickpfad zum Tagging.
 - Keine Änderung an `parseTagResponse`, am Timeout oder am Erfolgsfall.
 - Keine neue Anforderung — CK-NFR-010 trägt die Unterscheidung bereits.
+
+---
+
+## Messprotokoll — 2026-08-17, laufende App
+
+Durchgeführt über `.claude/skills/run-keel/`. Rohbelege unter
+`.superpowers/sdd/2026-08-17-autotag-laute-fehler/beleg/`.
+
+### Der erzwungene Konfigurationsfehler
+
+`modelle.zuordnung.rollen.tagging = "claude-opus-cli"` — dieselbe Zuordnung, die beim Messlauf
+der Registry-Strecke in einem stillen `null` verschwand. Zurück kam, wörtlich:
+
+```
+EXCEPTION: Error: Error invoking remote method 'notes:auto-tag':
+Error: Ein cli-harness-Eintrag hat keinen Endpunkt
+```
+
+Nach **0,109 s**, ohne Timeout. Vorher an derselben Stelle:
+
+```json
+{ "type": "object", "subtype": "null", "value": null }
+```
+
+Der Fehler ist damit **benennbar** — er sagt, was falsch ist, statt zu schweigen.
+
+### Wo er landet — und hier lag die Spec daneben
+
+§4 dieser Strecke schrieb, ohne Notizen-Oberfläche könne die Meldung *„keinen Nutzer
+erreichen"*, und legte nahe, sie lande nirgends. Die erste Hälfte stimmt, die zweite nicht:
+
+**Electron protokolliert eine abgelehnte `ipcMain.handle`-Promise von sich aus** ins
+Main-Log — mit vollem Stacktrace bis `toModelEndpoint`. Dazu erscheint sie als abgelehnte
+Promise im Renderer.
+
+Der Fehler ist also fuer **jemanden, der ins Log sieht, sichtbar** — nur nicht für einen Nutzer
+der Oberfläche. Das ist ein spürbar besserer Zustand als der vorherige, in dem gar nichts
+irgendwo auftauchte, und die Spec hat ihn unterschätzt. Was fehlt, ist allein die Anzeige.
+
+### Gegenprobe
+
+Zuordnung entfernt, App neu gestartet, Tagging erneut ausgelöst:
+
+```
+["domain:infra", "phase:testing"]
+```
+
+Echte Tags, kein `null`, kein Stacktrace. Der Erfolgspfad ist unberührt, und der stille
+Transport-Rückfall ist es auch.
+
+### Rücksetzung
+
+Config MD5-identisch mit dem Backup (`2817cac00853252dc795d7e5f75be546`), zusätzlich per `diff`
+geprüft — keine Abweichung. Keine zweite App-Instanz lief mit; geprüft, nicht angenommen.
