@@ -13,7 +13,8 @@
 
 ## Global Constraints
 
-- **Sprache:** Code-Kommentare Englisch, alle nutzersichtbaren Zeichenketten **Deutsch ohne Umlaute in Bezeichnern**, Umlaute in Anzeigetexten erlaubt. Bestehende Dateien halten diese Regel — mitziehen.
+- **Sprache:** Code-Kommentare Englisch, alle nutzersichtbaren Zeichenketten Deutsch. **Keine Umlaute und kein ß im Quelltext** — weder in Bezeichnern noch in Anzeigetexten: `waere`, `verlaesst`, `Uebersprungen`, `muessen`. Nachgemessen im Bestand: `eignung.ts`, `registry.ts` und `config-store.ts` enthalten zusammen **null** Umlaute. Markdown-Dokumente sind davon ausgenommen.
+- **Jede Aufgabe hinterlässt einen grünen Baum.** Nach jedem Commit müssen `npm run typecheck` und `npm test` mit EXIT=0 durchlaufen. Kein Commit mit bekannt fehlschlagendem Typecheck.
 - **Sicherheitsgrundlage jedes BrowserWindow, nicht verhandelbar** (CK-NFR-004, CK-INF-022): `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, `preload: join(__dirname, '../preload/index.js')`, `webSecurity: true`, `allowRunningInsecureContent: false`.
 - **Kein Geheimnis verlässt den Hauptprozess.** Kein API-Schlüssel wird je an den Renderer zurückgegeben und keiner landet in `cipher-keel-config.json`.
 - **Kein stiller Rückfall.** Jeder Fehler bekommt eine deutsche Meldung, die eine Oberfläche erreicht.
@@ -1860,53 +1861,22 @@ export function registerSettingsHandlers(): void {
 }
 ```
 
-- [ ] **Step 3: Einhängen und Fensterkanal ergänzen**
+- [ ] **Step 3: Typecheck, Lint, Tests**
 
-In `src/main/ipc-handlers.ts`:
-
-Import ergänzen:
-```ts
-import { registerSettingsHandlers } from './settings/handlers'
-import { createSettingsWindow } from './window-manager'
-import { WINDOW_OPEN_SETTINGS } from '../shared/ipc-channels'
-```
-
-Neben `let activeGridWindow` ergänzen:
-```ts
-// Tracks the active settings window for focus-or-create logic
-let activeSettingsWindow: BrowserWindow | null = null
-```
-
-Am Ende von `registerIpcHandlers`, direkt nach dem `WINDOW_OPEN_GRID`-Handler, einfügen:
-
-```ts
-  ipcMain.handle(WINDOW_OPEN_SETTINGS, () => {
-    if (!activeSettingsWindow || activeSettingsWindow.isDestroyed()) {
-      activeSettingsWindow = createSettingsWindow(services)
-      activeSettingsWindow.on('closed', () => {
-        activeSettingsWindow = null
-      })
-    } else {
-      activeSettingsWindow.focus()
-    }
-    return { ok: true }
-  })
-
-  registerSettingsHandlers()
-```
-
-- [ ] **Step 4: Typecheck**
+Die Handler werden in **Aufgabe 9** eingehängt, zusammen mit dem Fenster, das sie erreichbar macht. Diese Aufgabe endet mit einem grünen Baum: `handlers.ts` ist noch von niemandem importiert, aber übersetzbar und lintbar.
 
 ```bash
-npm run typecheck > /tmp/tc.log 2>&1; echo "EXIT=$?"; cat /tmp/tc.log
+npm run typecheck > /tmp/tc.log 2>&1; echo "TYPECHECK=$?"; tail -20 /tmp/tc.log
+npm run lint > /tmp/l.log 2>&1; echo "LINT=$?"; tail -20 /tmp/l.log
+npm test > /tmp/t.log 2>&1; echo "TEST=$?"; tail -10 /tmp/t.log
 ```
-Erwartet: ein Fehler zu `createSettingsWindow` — die Funktion entsteht in Aufgabe 9. Alle anderen Fehler hier beheben.
+Erwartet: alle drei EXIT=0. Ein Typecheck-Fehler bedeutet, dass eine der importierten Signaturen anders aussieht als angenommen — dann die Signatur nachlesen und `handlers.ts` anpassen, **nicht** die aufgerufene Funktion.
 
-- [ ] **Step 5: Commit (mit dem bekannten offenen Ende)**
+- [ ] **Step 4: Commit**
 
 ```bash
 git branch --show-current
-git add src/shared/ipc-channels.ts src/main/settings/handlers.ts src/main/ipc-handlers.ts
+git add src/shared/ipc-channels.ts src/main/settings/handlers.ts
 git commit -m "feat(settings): IPC-Kanaele -- ein Lesekanal, acht validierende Schreibkanaele"
 ```
 
@@ -1918,13 +1888,16 @@ Ohne diese Aufgabe ist alles Vorige unerreichbar — genau der Fall, den Handove
 
 **Files:**
 - Modify: `src/main/window-manager.ts`
+- Modify: `src/main/ipc-handlers.ts`
 - Modify: `electron.vite.config.ts`
 - Create: `src/renderer/windows/settings-window.html`
 - Modify: `src/renderer/windows/project-window.tsx`
 
 **Interfaces:**
-- Consumes: `AppServices` aus `window-manager.ts`
+- Consumes: `AppServices` aus `window-manager.ts`; `registerSettingsHandlers` aus Aufgabe 8; `WINDOW_OPEN_SETTINGS` aus Aufgabe 8
 - Produces: `function createSettingsWindow(services: AppServices): BrowserWindow`
+
+Diese Aufgabe hängt die Handler aus Aufgabe 8 ein — dort wurden sie nur geschrieben, hier werden sie erreichbar. Beides zusammen, damit kein Commit einen Baum hinterlässt, der nicht übersetzt.
 
 - [ ] **Step 1: `createSettingsWindow` schreiben**
 
@@ -1976,6 +1949,42 @@ export function createSettingsWindow(_services: AppServices): BrowserWindow {
 
   return win
 }
+```
+
+- [ ] **Step 1b: Die Handler aus Aufgabe 8 einhängen**
+
+In `src/main/ipc-handlers.ts`:
+
+Imports ergänzen:
+```ts
+import { registerSettingsHandlers } from './settings/handlers'
+import { createSettingsWindow } from './window-manager'
+import { WINDOW_OPEN_SETTINGS } from '../shared/ipc-channels'
+```
+(`createSettingsWindow` gehört zu der bereits vorhandenen Importzeile aus `./window-manager` — dort ergänzen statt eine zweite anzulegen. `WINDOW_OPEN_SETTINGS` ebenso in die bestehende Kanal-Importliste.)
+
+Neben `let activeGridWindow` ergänzen:
+```ts
+// Tracks the active settings window for focus-or-create logic
+let activeSettingsWindow: BrowserWindow | null = null
+```
+
+In `registerIpcHandlers`, direkt nach dem `WINDOW_OPEN_GRID`-Handler, einfügen:
+
+```ts
+  ipcMain.handle(WINDOW_OPEN_SETTINGS, () => {
+    if (!activeSettingsWindow || activeSettingsWindow.isDestroyed()) {
+      activeSettingsWindow = createSettingsWindow(services)
+      activeSettingsWindow.on('closed', () => {
+        activeSettingsWindow = null
+      })
+    } else {
+      activeSettingsWindow.focus()
+    }
+    return { ok: true }
+  })
+
+  registerSettingsHandlers()
 ```
 
 - [ ] **Step 2: Bündel-Einstiegspunkt ergänzen**
@@ -2171,17 +2180,14 @@ import { StrictMode, useState, useEffect, useCallback } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { SettingsAnsicht, SettingsAntwort } from '../../shared/settings-types'
 import { ModelleReiter } from '../components/settings/ModelleReiter'
-import { CliStartReiter } from '../components/settings/CliStartReiter'
-import { SprachausgabeReiter } from '../components/settings/SprachausgabeReiter'
 
 const api = () => window.cipherKeel
 
-type ReiterId = 'modelle' | 'cli' | 'sprache'
+// The other two tabs arrive in the next task; this list is the only place to extend.
+type ReiterId = 'modelle'
 
 const REITER: { id: ReiterId; titel: string }[] = [
   { id: 'modelle', titel: 'Modelle' },
-  { id: 'cli', titel: 'CLI-Start' },
-  { id: 'sprache', titel: 'Sprachausgabe' },
 ]
 
 function SettingsApp() {
@@ -2244,8 +2250,6 @@ function SettingsApp() {
       {fehler && <div style={styles.fehler}>{fehler}</div>}
       <div style={styles.inhalt}>
         {reiter === 'modelle' && <ModelleReiter ansicht={ansicht} schreibe={schreibe} />}
-        {reiter === 'cli' && <CliStartReiter ansicht={ansicht} schreibe={schreibe} />}
-        {reiter === 'sprache' && <SprachausgabeReiter ansicht={ansicht} schreibe={schreibe} />}
       </div>
     </div>
   )
@@ -2599,12 +2603,14 @@ const styles = {
 }
 ```
 
-- [ ] **Step 4: Typecheck (die zwei fehlenden Reiter sind erwartet)**
+- [ ] **Step 4: Typecheck, Lint, Build**
 
 ```bash
-npm run typecheck > /tmp/tc.log 2>&1; echo "EXIT=$?"; tail -20 /tmp/tc.log
+npm run typecheck > /tmp/tc.log 2>&1; echo "TYPECHECK=$?"; tail -20 /tmp/tc.log
+npm run lint > /tmp/l.log 2>&1; echo "LINT=$?"; tail -20 /tmp/l.log
+npm run build > /tmp/b.log 2>&1; echo "BUILD=$?"; tail -10 /tmp/b.log
 ```
-Erwartet: Fehler nur zu `CliStartReiter` und `SprachausgabeReiter` — beide entstehen in Aufgabe 11.
+Erwartet: alle drei EXIT=0. Das Fenster ist an dieser Stelle mit einem einzigen Reiter lauffähig — die anderen beiden kommen in Aufgabe 11 dazu.
 
 - [ ] **Step 5: Commit**
 
@@ -2762,7 +2768,43 @@ const styles = {
 }
 ```
 
-- [ ] **Step 3: Die volle Prüfkette**
+- [ ] **Step 3: Die beiden Reiter in den Rahmen aufnehmen**
+
+In `src/renderer/windows/settings-window.tsx`:
+
+Die Importe ergänzen:
+```tsx
+import { CliStartReiter } from '../components/settings/CliStartReiter'
+import { SprachausgabeReiter } from '../components/settings/SprachausgabeReiter'
+```
+
+Den Kommentar und die beiden Deklarationen ersetzen. Aus
+```tsx
+// The other two tabs arrive in the next task; this list is the only place to extend.
+type ReiterId = 'modelle'
+
+const REITER: { id: ReiterId; titel: string }[] = [
+  { id: 'modelle', titel: 'Modelle' },
+]
+```
+wird
+```tsx
+type ReiterId = 'modelle' | 'cli' | 'sprache'
+
+const REITER: { id: ReiterId; titel: string }[] = [
+  { id: 'modelle', titel: 'Modelle' },
+  { id: 'cli', titel: 'CLI-Start' },
+  { id: 'sprache', titel: 'Sprachausgabe' },
+]
+```
+
+Und im Inhaltsbereich die beiden Zeilen ergänzen:
+```tsx
+        {reiter === 'cli' && <CliStartReiter ansicht={ansicht} schreibe={schreibe} />}
+        {reiter === 'sprache' && <SprachausgabeReiter ansicht={ansicht} schreibe={schreibe} />}
+```
+
+- [ ] **Step 4: Die volle Prüfkette**
 
 ```bash
 npm run typecheck > /tmp/tc.log 2>&1; echo "TYPECHECK=$?"; tail -20 /tmp/tc.log
@@ -2773,11 +2815,11 @@ npm run verify:bundle > /tmp/v.log 2>&1; echo "BUNDLE=$?"; tail -10 /tmp/v.log
 ```
 Erwartet: alle fünf EXIT=0.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git branch --show-current
-git add src/renderer/components/settings/
+git add src/renderer/components/settings/ src/renderer/windows/settings-window.tsx
 git commit -m "feat(ui): CLI-Start- und Sprachausgabe-Reiter"
 ```
 
