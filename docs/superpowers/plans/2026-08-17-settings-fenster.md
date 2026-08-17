@@ -4247,3 +4247,147 @@ und `-t protokoll-probe-2` entfernt. Das ist reproduzierbar und nicht auf diesen
 beschraenkt — jeder Aufrufer von `session:create` mit eigenem `name` erzeugt eine
 tmux-Session, die `stop.sh` nicht findet. Ein echter Defekt im Zusammenspiel von App und
 Testwerkzeug, gehoert vor die naechste Review, nicht in diese Aufgabe.
+
+## Nachtrag 2026-08-17 (Fix-Welle) — Beleg 6 neu, und der Rueckfall-Endpunkt-Editor
+
+Fix-Wave-Review derselben Strecke, Item 9. Zwei Befunde daraus: Beleg 6 oben ordnete
+`rolle:tagging` einem Eintrag zu, der byte-identisch mit dem Default-Rueckfall von
+`llm.tagging` ist (`127.0.0.1:11434`, dasselbe Modell) — ein identisches Ergebnis waere auch
+bei wirkungsloser Zuordnung zurueckgekommen, der Beleg bewies also nichts. Und
+`settings:rueckfall-endpunkt-setzen` hatte bis zu dieser Welle **keinen Aufrufer** im
+Renderer (Item 1 dieser Welle: `RueckfallEndpunkt.tsx`) — Beleg 10 oben pruefte nur den
+IPC-Kanal direkt, nie den Klickpfad. Beide hier nachgeholt, gegen `/tmp/keel-verify`
+(Vorgabeprofil, frisch gewischt vor dem Start).
+
+### Beleg 6 (neu) — eine Zuordnung wirkt ohne Neustart, diesmal diskriminierend
+
+Baseline vor jeder Zuordnung (`rolle:tagging` leer, es gilt der Rueckfall `llm.tagging` ==
+`127.0.0.1:11434`, `qwen3:30b-a3b-instruct-2507-q4_K_M`):
+
+```
+$ node $D project-window "window.cipherKeel.invoke('notes:auto-tag','Ein Text ueber Elektronenmikroskopie.')"
+[ "domain:infra", "kind:reference", "tech:electron" ]
+```
+
+Zuordnung auf `spark-gemma4-26b` (Host `100.78.7.108`, Modell `gemma4:26b` — real
+verschieden vom Rueckfall, anders als in der ersten Fassung dieses Belegs):
+
+```
+$ node $D settings-window "window.cipherKeel.invoke('settings:zuordnung-setzen','rolle:tagging','spark-gemma4-26b')
+  .then(a=>({ok:a.ok, gewaehlt:a.ansicht.slots.find(s=>s.id==='rolle:tagging').gewaehlt}))"
+{ "ok": true, "gewaehlt": "spark-gemma4-26b" }
+
+$ time node $D project-window "window.cipherKeel.invoke('notes:auto-tag','Ein Text ueber Elektronenmikroskopie.')"
+{ "type": "object", "subtype": "null", "value": null }
+... 1:00,18 total
+
+$ time node $D project-window "window.cipherKeel.invoke('notes:auto-tag','Ein Text ueber Elektronenmikroskopie.')"
+{ "type": "object", "subtype": "null", "value": null }
+... 1:00,13 total
+```
+
+Trifft die Erwartung — und zwar diskriminierend, nicht identisch: vor der Zuordnung ein
+Tag-Array in unter einer Sekunde, danach zweimal `null` nach exakt 60,1s bzw. 60,2s, was auf
+`TAGGING_TIMEOUT_MS` (60000ms, `note-tagging.ts`) trifft. `autoTag` gibt `null` bei einem
+Transportfehler zurueck (Timeout eingeschlossen); ein `null` nach genau diesem Budget zeigt,
+dass der Aufruf tatsaechlich beim neu zugeordneten Endpunkt landete und dort nicht
+rechtzeitig antwortete — nicht, dass die Zuordnung ignoriert wurde (dann waere das
+Tag-Array der Baseline zurueckgekommen).
+
+**Unabhaengig verifiziert, dass die Ursache am Spark liegt, nicht an cipher keel:**
+`gemma4:26b` steht laut `curl http://100.78.7.108:11434/api/tags` auf der Maschine bereit,
+aber ein direkter `curl .../api/generate` mit dem Prompt "Sag nur OK" gegen `gemma4:26b`
+lieferte binnen 3 Minuten keine Antwort (Hintergrundlauf abgebrochen, kein Fehler, einfach
+keine Antwort) — derselbe Befund unabhaengig vom App-Code. Damit ist die Diskriminierung
+zwar durch einen echten, aber tagesaktuellen Zustand des Spark motiviert (Modell haengt oder
+laedt ungewoehnlich lang), nicht durch ein zweites `127.0.0.1`. Das aendert nichts an der
+Kernaussage des Belegs: Der Aufruf ging nachweislich an einen anderen Endpunkt als vorher,
+und das Ergebnis unterscheidet sich beobachtbar vom Rueckfall.
+
+Zuordnung danach nicht zurueckgesetzt — die App wurde fuer den naechsten Beleg direkt
+weiterverwendet, und `stop.sh`/ein frischer Profil-Wipe raeumt vor dem naechsten Lauf ohnehin
+auf.
+
+### Beleg 12 — der Rueckfall-Endpunkt-Editor, per Klick
+
+`RueckfallEndpunkt.tsx` (Item 1 dieser Welle) ist die erste und einzige Stelle, die
+`settings:rueckfall-endpunkt-setzen` aus dem Renderer aufruft. Geprueft ueber denselben
+DOM-Klickpfad, den ein Mausklick durchliefe — kein direkter IPC-Aufruf.
+
+Feldbelegung vor der Aenderung, ausgelesen aus dem gerenderten Formular:
+
+```
+$ node $D settings-window "(() => {
+  const titel = [...document.querySelectorAll('div')].find(d => d.textContent === 'Rueckfall llm.tagging');
+  const rahmen = titel.parentElement;
+  return {
+    inputs: [...rahmen.querySelectorAll('input')].map(i => i.value),
+    selects: [...rahmen.querySelectorAll('select')].map(s => s.value),
+    button: rahmen.querySelector('button')?.textContent,
+  };
+})()"
+{ "inputs": ["127.0.0.1", "11434", "qwen3:30b-a3b-instruct-2507-q4_K_M"], "selects": ["ollama"], "button": "Uebernehmen" }
+```
+
+Modellfeld per nativem Setter + `input`-Event geaendert (der React-controlled-input-Weg,
+kein `element.value = ...` allein — das haette React nicht bemerkt), dann der
+„Uebernehmen"-Knopf geklickt:
+
+```
+$ node $D settings-window "(() => {
+  const titel = [...document.querySelectorAll('div')].find(d => d.textContent === 'Rueckfall llm.tagging');
+  const rahmen = titel.parentElement;
+  const modelInput = rahmen.querySelectorAll('input')[2];
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  setter.call(modelInput, 'ui-beleg-probe');
+  modelInput.dispatchEvent(new Event('input', { bubbles: true }));
+  return { modelValueAfterEdit: modelInput.value };
+})()"
+{ "modelValueAfterEdit": "ui-beleg-probe" }
+
+$ node $D settings-window "(() => {
+  const titel = [...document.querySelectorAll('div')].find(d => d.textContent === 'Rueckfall llm.tagging');
+  const rahmen = titel.parentElement;
+  rahmen.querySelector('button').click();
+  return 'clicked';
+})()"
+"clicked"
+```
+
+Die zurueckgegebene Gesamtansicht traegt die Aenderung:
+
+```
+$ node $D settings-window "window.cipherKeel.invoke('settings:ansicht').then(a => a.rueckfallEndpunkte.tagging)"
+{ "kind": "ollama", "host": "127.0.0.1", "port": 11434, "baseUrl": "", "keyRef": "", "model": "ui-beleg-probe" }
+```
+
+App gestoppt, Config-Datei von aussen gelesen:
+
+```
+$ .claude/skills/run-keel/stop.sh
+[stop] app killed
+[stop] tmux sessions removed: 0
+
+$ python3 -c "
+import json
+c = json.load(open('/tmp/keel-verify/cipher-keel-config.json'))
+print(json.dumps(c['llm']['tagging'], indent=2))
+print('rolle:tagging zuordnung:', c['modelle']['zuordnung']['rollen']['tagging'])
+"
+{
+  "kind": "ollama", "host": "127.0.0.1", "port": 11434,
+  "baseUrl": "", "keyRef": "", "model": "ui-beleg-probe"
+}
+rolle:tagging zuordnung: spark-gemma4-26b
+```
+
+Trifft die Erwartung: der per Klick gesetzte Wert `ui-beleg-probe` steht in der Ansicht
+sofort nach dem Klick **und** in der Config-Datei nach dem Stopp — der Editor aus Item 1
+dieser Welle ist damit end-to-end belegt, nicht nur der IPC-Kanal darunter (der war bereits
+durch Beleg 10 des ersten Laufs belegt). Die `rolle:tagging`-Zuordnung aus Beleg 6 (neu)
+steht ebenfalls noch auf `spark-gemma4-26b`, wie erwartet fuer denselben, ununterbrochenen
+App-Lauf.
+
+`tmux list-sessions` nach `stop.sh`: nur eine bereits vor diesem Lauf bestehende, unabhaengige
+Session (`cmux-reachyone-re0y`, kein `keel-`-Praefix) — keine `keel-*`-Session uebrig, keine
+Session aus diesem Lauf angelegt (kein `session:create` in diesem Nachtrag).
