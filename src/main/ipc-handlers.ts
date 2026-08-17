@@ -117,7 +117,7 @@ import { buildPhaseInputSection } from './session/phase-input'
 import { assembleEntityClaudeMd } from './session/assemble-entity'
 import { materialiseCapabilities } from './session/materialise-capabilities'
 import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-file'
-import { formatShellCommand } from './util/shell-quote'
+import { formatShellCommand, splitShellArgs } from './util/shell-quote'
 import { AdapterRegistry } from './agent/registry'
 import { describeMissingTool } from './util/missing-tool'
 
@@ -129,7 +129,8 @@ export function registerIpcHandlers(services: AppServices): void {
   // both Electron and the ConfigStore loaded, which is why the reading happens here and
   // not inside the adapter.
   const adapterRegistry = new AdapterRegistry({
-    getSkipPermissions: () => configStore.get('agent').skipPermissions,
+    getStartArgs: (adapterId: string) =>
+      splitShellArgs(configStore.get('agent').startArgs[adapterId] ?? ''),
   })
 
   // Project manager — wired to configStore for persistence (CK-INF-020)

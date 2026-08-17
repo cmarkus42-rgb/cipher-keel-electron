@@ -19,12 +19,15 @@ describe('agent config defaults', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('defaults skipPermissions to true', async () => {
-    // A user decision (2026-08-10): the app launches sessions itself, and the
-    // launched agent runs with --dangerously-skip-permissions unless turned off.
-    // If this ever flips silently, sessions change behaviour with no visible cause.
+  it('defaults startArgs to empty (Task 4, 2026-08-17)', async () => {
+    // Supersedes the 2026-08-10 decision this test used to guard: `skipPermissions` named
+    // one vendor's flag in the schema itself, defaulting to true. That default is not
+    // carried forward — a fresh install now starts with no launch parameters for any
+    // adapter. An existing file with `skipPermissions: true` keeps behaving the same way,
+    // but via config-store's migration (see tests/config/migration.test.ts), not via this
+    // default. If this ever flips silently, sessions change behaviour with no visible cause.
     vi.doMock('electron', () => ({ app: { getPath: () => tmpDir } }))
     const { configStore } = await import('../../src/main/config/config-store')
-    expect(configStore.getAll().agent.skipPermissions).toBe(true)
+    expect(configStore.getAll().agent.startArgs).toEqual({})
   })
 })

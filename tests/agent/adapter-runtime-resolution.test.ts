@@ -6,7 +6,7 @@ import { AdapterRegistry } from '../../src/main/agent/registry'
 // non-trivial. Removed with the NanoClaw subsystem (2026-08-17); the plain
 // constructor-only registry below is behaviorally equivalent for every test here.
 function makeRegistry(): AdapterRegistry {
-  return new AdapterRegistry({ getSkipPermissions: () => true })
+  return new AdapterRegistry({ getStartArgs: () => [] })
 }
 
 // The Rahmen's `runtime` field declares which harness an entity runs on (M2 section

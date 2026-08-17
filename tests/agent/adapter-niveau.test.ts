@@ -8,7 +8,7 @@ import { CapabilityNiveau } from '../../src/main/preset/niveau'
 // will actually run, instead of defaulting every session to A.
 describe('adapter niveau declaration (M2 section 11.3)', () => {
   it('ClaudeCodeAdapter runs at Niveau A', () => {
-    const adapter = new ClaudeCodeAdapter({ getSkipPermissions: () => true })
+    const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
     expect(adapter.niveau).toBe(CapabilityNiveau.A)
   })
 
