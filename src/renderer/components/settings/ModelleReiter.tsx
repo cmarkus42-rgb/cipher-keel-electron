@@ -4,7 +4,7 @@
  * Every locked option and every warning is text the main process computed. This file
  * decides layout, never eligibility.
  */
-import type { SettingsAnsicht } from '../../../shared/settings-types'
+import type { SettingsAnsicht, SlotAnsicht } from '../../../shared/settings-types'
 import { Warnliste } from './Warnliste'
 import { WirkungVermerk } from './WirkungVermerk'
 import { GeheimnisFeld } from './GeheimnisFeld'
@@ -19,6 +19,15 @@ const OERTLICHKEIT_TEXT: Record<string, string> = {
   'lokal': 'lokal',
   'eigenes-netz': 'eigenes Netz',
   'fremdes-netz': 'fremdes Netz',
+}
+
+/** The distinct lock reasons among a slot's options, in first-seen order. */
+function sperrgruende(slot: SlotAnsicht): string[] {
+  const gesehen = new Set<string>()
+  for (const o of slot.optionen) {
+    if (o.sperrgrund) gesehen.add(o.sperrgrund)
+  }
+  return [...gesehen]
 }
 
 export function ModelleReiter({
@@ -57,18 +66,40 @@ export function ModelleReiter({
           >
             <option value="">— keine Zuordnung —</option>
             {slot.optionen.map(o => (
-              <option key={o.eintragId} value={o.eintragId} disabled={o.sperrgrund !== null}>
+              <option
+                key={o.eintragId}
+                value={o.eintragId}
+                disabled={o.sperrgrund !== null}
+                title={o.sperrgrund ?? undefined}
+              >
                 {o.name}{o.sperrgrund ? ' — gesperrt' : ''}
               </option>
             ))}
           </select>
+          {/*
+            A disabled option can say "gesperrt" but not why — an option element renders
+            no children beyond its label. The reasons are listed once beneath the field,
+            deduplicated, because several entries usually share one: the answer to "why
+            can I not pick that" belongs on screen, not in a tooltip.
+          */}
+          {sperrgruende(slot).map(grund => (
+            <div key={grund} style={styles.sperrgrund}>{grund}</div>
+          ))}
           {slot.gewaehlt === '' && <div style={styles.rueckfall}>{slot.rueckfallText}</div>}
           {slot.gewaehltHinweis && <div style={styles.sperrgrund}>{slot.gewaehltHinweis}</div>}
           <Warnliste warnungen={slot.warnungen} />
           {slot.id.startsWith('tier:') && (
             <div style={styles.rueckfallFeld}>
               <label style={styles.marke}>Rueckfall-Handle</label>
+              {/*
+                Keyed on the value, not just the slot: an uncontrolled input keeps whatever
+                it was mounted with, and every write returns a whole fresh view. Without
+                this key the field would go on showing a value the view model has already
+                replaced — the one place in this window where "it replaces what it has"
+                would quietly not be true.
+              */}
               <input
+                key={ansicht.modellTiers[slot.id.slice(5) as 'light' | 'standard' | 'heavy']}
                 defaultValue={ansicht.modellTiers[slot.id.slice(5) as 'light' | 'standard' | 'heavy']}
                 onBlur={e =>
                   schreibe('settings:einfachfeld-setzen', `modelltier:${slot.id.slice(5)}`, e.target.value)
