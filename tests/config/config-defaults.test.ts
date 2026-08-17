@@ -19,15 +19,18 @@ describe('agent config defaults', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('defaults startArgs to empty (Task 4, 2026-08-17)', async () => {
-    // Supersedes the 2026-08-10 decision this test used to guard: `skipPermissions` named
-    // one vendor's flag in the schema itself, defaulting to true. That default is not
-    // carried forward — a fresh install now starts with no launch parameters for any
-    // adapter. An existing file with `skipPermissions: true` keeps behaving the same way,
-    // but via config-store's migration (see tests/config/migration.test.ts), not via this
-    // default. If this ever flips silently, sessions change behaviour with no visible cause.
+  it('defaults to launching claude-code with permissions skipped', async () => {
+    // A user decision (2026-08-10): the app launches sessions itself, and the
+    // launched agent runs with --dangerously-skip-permissions unless turned off.
+    // If this ever flips silently, sessions change behaviour with no visible cause.
+    //
+    // Task 4 (2026-08-17) changed the field's shape from a boolean
+    // (`agent.skipPermissions`) to a free-text launch parameter per adapter id
+    // (`agent.startArgs['claude-code']`), but not the guarantee this test guards: a fresh
+    // install still starts with permissions skipped, now expressed as the equivalent flag.
     vi.doMock('electron', () => ({ app: { getPath: () => tmpDir } }))
     const { configStore } = await import('../../src/main/config/config-store')
-    expect(configStore.getAll().agent.startArgs).toEqual({})
+    expect(configStore.getAll().agent.startArgs['claude-code'])
+      .toBe('--dangerously-skip-permissions')
   })
 })

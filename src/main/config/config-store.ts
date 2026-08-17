@@ -92,12 +92,13 @@ export interface CipherKeelConfig {
 
 const defaults: CipherKeelConfig = {
   agent: {
-    // A fresh install starts with no launch parameters at all — the former
-    // `skipPermissions: true` default is not carried forward as a schema default, only as
-    // what migriere() reproduces for a file that already had it set. Baking a vendor flag
-    // into the defaults would put the vendor back into the schema's shape, which is the
-    // exact thing this field replaces.
-    startArgs: {},
+    // Sessions are launched by the app itself, into a tmux pane it drives — nobody is
+    // sitting there to answer a permission prompt, so a fresh install keeps the flag that
+    // has matched cipher-mux 0.9.x behaviour all along. This is a default *value* under an
+    // adapter key, not a vendor name baked into the schema's *shape*; only the latter is
+    // what startArgs replaces. It is also what migriere() produces for an existing
+    // `skipPermissions: true`, so a fresh install and a migrated one launch identically.
+    startArgs: { 'claude-code': '--dangerously-skip-permissions' },
     // The strength gradient the presets already express: heavy where errors multiply
     // (Systems Engineer, Architect), standard elsewhere. Editable per CK-NFR-012.
     modelTiers: { light: 'haiku', standard: 'sonnet', heavy: 'opus' },
@@ -238,12 +239,16 @@ function saveConfig(config: CipherKeelConfig): void {
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2), { encoding: 'utf-8', mode: 0o600 })
 }
 
-// Loaded eagerly at import time rather than on first access: a migration (see migriere()
-// above) has to reach the file on disk before anything reads it back, and importing this
-// module is the app's one and only startup moment, so there is no later point to defer to.
-let cached: CipherKeelConfig = loadConfig()
+// Loaded lazily on first access, not at module import: `loadConfig` reaches
+// `app.getPath('userData')` through `getConfigPath`, and that is not reliable yet at the
+// moment this module is imported (it runs before `app.whenReady()` in the real app, and no
+// test would catch an eager call breaking that — every test here mocks 'electron').
+let cached: CipherKeelConfig | null = null
 
 function getConfig(): CipherKeelConfig {
+  if (!cached) {
+    cached = loadConfig()
+  }
   return cached
 }
 
