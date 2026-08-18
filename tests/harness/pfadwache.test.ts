@@ -127,3 +127,58 @@ describe('pruefePfad', () => {
     expect(pruefePfad(join(heim, '.CIPHER-webhook.env'), ktxImHeim).ok).toBe(false)
   })
 })
+
+// Anchors (heim, userDataPfad) must be resolved the same way as the candidate and the root —
+// otherwise a symlinked home directory (common on external volumes; /tmp itself is one on most
+// systems) makes `istIn` compare a resolved candidate against an unresolved prefix, and the
+// containment check silently stops matching. `config` is deliberately not a name any deny rule
+// would catch on its own — only the directory-containment rule may produce the rejection here,
+// so a control case runs alongside each symlink case to prove the rule fires at all.
+describe('pruefePfad – Anker-Aufloesung ueber Symlinks (heim, userDataPfad)', () => {
+  let heimEcht: string
+  let heimLink: string
+  let userDataEcht: string
+  let userDataLink: string
+
+  beforeAll(() => {
+    heimEcht = realpathSync(mkdtempSync(join(tmpdir(), 'keel-heim-echt-')))
+    heimLink = join(tmpdir(), `keel-heim-link-${process.pid}-${Date.now()}`)
+    symlinkSync(heimEcht, heimLink)
+    mkdirSync(join(heimEcht, '.ssh'), { recursive: true })
+    writeFileSync(join(heimEcht, '.ssh', 'config'), 'Host beispiel\n  User cipher')
+
+    userDataEcht = realpathSync(mkdtempSync(join(tmpdir(), 'keel-udata-echt-')))
+    userDataLink = join(tmpdir(), `keel-udata-link-${process.pid}-${Date.now()}`)
+    symlinkSync(userDataEcht, userDataLink)
+    writeFileSync(join(userDataEcht, 'config.json'), '{"a":1}')
+  })
+
+  afterAll(() => {
+    rmSync(heimEcht, { recursive: true, force: true })
+    rmSync(heimLink, { force: true })
+    rmSync(userDataEcht, { recursive: true, force: true })
+    rmSync(userDataLink, { force: true })
+  })
+
+  it('Kontrolle: heim ohne Symlink lehnt ~/.ssh/config ab', () => {
+    const ktxEcht = { wurzel: heimEcht, heim: heimEcht, userDataPfad: join(heimEcht, 'udata') }
+    expect(pruefePfad(join(heimEcht, '.ssh', 'config'), ktxEcht).ok).toBe(false)
+  })
+
+  it('heim ueber einen Symlink: ~/.ssh/config bleibt abgelehnt', () => {
+    // wurzel === heimLink so the outside-root rule cannot mask the .ssh-containment check —
+    // the resolved candidate lands inside the resolved root either way.
+    const ktxLink = { wurzel: heimLink, heim: heimLink, userDataPfad: join(heimLink, 'udata') }
+    expect(pruefePfad(join(heimLink, '.ssh', 'config'), ktxLink).ok).toBe(false)
+  })
+
+  it('Kontrolle: userDataPfad ohne Symlink lehnt die eigene Konfiguration ab', () => {
+    const ktxEcht = { wurzel: userDataEcht, heim: heimEcht, userDataPfad: userDataEcht }
+    expect(pruefePfad(join(userDataEcht, 'config.json'), ktxEcht).ok).toBe(false)
+  })
+
+  it('userDataPfad ueber einen Symlink bleibt abgelehnt', () => {
+    const ktxLink = { wurzel: userDataLink, heim: heimEcht, userDataPfad: userDataLink }
+    expect(pruefePfad(join(userDataLink, 'config.json'), ktxLink).ok).toBe(false)
+  })
+})

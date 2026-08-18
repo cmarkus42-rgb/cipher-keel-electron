@@ -74,12 +74,20 @@ export function pruefePfad(roh: string, ktx: WacheKontext): WacheErgebnis {
   // than `.env`, and it is still denied. That is the intended, stricter reading.
   const nameKlein = name.toLowerCase()
 
+  // Every anchor a containment check compares the candidate against is resolved the same way
+  // as the candidate itself — not just `ktx.wurzel`. A symlinked home directory (common on
+  // external volumes; /tmp itself is one on most systems) would otherwise compare a resolved
+  // candidate against an unresolved prefix, and `istIn` would silently stop matching.
+  const heimAufgeloest = aufloesen(ktx.heim)
+  const userDataAufgeloest = aufloesen(ktx.userDataPfad)
+  const wurzelAufgeloest = aufloesen(ktx.wurzel)
+
   // 1. Protected paths — in every mode, never overridable by an allow rule.
   const geschuetzt =
-    istIn(pfad, join(ktx.heim, '.ssh')) ||
-    istIn(pfad, ktx.userDataPfad) ||
-    (SHELL_STARTDATEIEN.has(nameKlein) && istIn(pfad, ktx.heim)) ||
-    (nameKlein.startsWith('.cipher-') && istIn(pfad, ktx.heim)) ||
+    istIn(pfad, join(heimAufgeloest, '.ssh')) ||
+    istIn(pfad, userDataAufgeloest) ||
+    (SHELL_STARTDATEIEN.has(nameKlein) && istIn(pfad, heimAufgeloest)) ||
+    (nameKlein.startsWith('.cipher-') && istIn(pfad, heimAufgeloest)) ||
     pfad.split(sep).some((segment) => segment.toLowerCase() === '.git')
   if (geschuetzt) return { ok: false, grund: 'Pfad ist geschuetzt' }
 
@@ -90,7 +98,7 @@ export function pruefePfad(roh: string, ktx: WacheKontext): WacheErgebnis {
   }
 
   // 3. Allow — inside the root, and nowhere else.
-  if (!istIn(pfad, aufloesen(ktx.wurzel))) {
+  if (!istIn(pfad, wurzelAufgeloest)) {
     return { ok: false, grund: 'Pfad liegt ausserhalb der Wurzel' }
   }
 
