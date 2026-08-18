@@ -100,6 +100,34 @@ describe('projiziere', () => {
     const block = v[4].bloecke[0]
     expect(block).toMatchObject({ art: 'werkzeug-ergebnis', aufrufId: 'c1' })
     const inhaltStr = JSON.stringify(block)
-    expect(inhaltStr).toContain('widersprechen')
+    expect(inhaltStr).toContain('Ausfuehrung unbekannt')
+  })
+
+  it('markiert tool.failed-Ergebnis ohne Intent mit Hinweis', () => {
+    const v = projiziere([
+      ev(1, 'run.started', { auftragstext: 'a' }),
+      ev(2, 'tool.failed', { aufrufId: 'c1', meldung: 'Fehler ohne Intent' }),
+    ])
+    const block = v[1].bloecke[0]
+    expect(block).toMatchObject({ art: 'werkzeug-ergebnis', aufrufId: 'c1', fehler: true })
+    const inhaltStr = JSON.stringify(block)
+    expect(inhaltStr).toContain('Intent')
+  })
+
+  it('unterscheidet zwischen Zwangsabschluss und echter Doppelantwort im Hinweis', () => {
+    const v = projiziere([
+      ev(1, 'run.started', { auftragstext: 'a' }),
+      ev(2, 'model.answered', { bloecke: [
+        { art: 'werkzeug-aufruf', id: 'c1', name: 'datei_lesen', eingabe: {} },
+      ] }),
+      ev(3, 'tool.intent', { aufrufId: 'c1', name: 'datei_lesen' }),
+      ev(4, 'tool.completed', { aufrufId: 'c1', inhalt: [{ art: 'text', text: 'erstes ergebnis' }] }),
+      ev(5, 'tool.completed', { aufrufId: 'c1', inhalt: [{ art: 'text', text: 'zweites ergebnis' }] }),
+    ])
+    const secondBlock = v[2].bloecke[1]
+    expect(secondBlock).toMatchObject({ art: 'werkzeug-ergebnis', aufrufId: 'c1' })
+    const inhaltStr = JSON.stringify(secondBlock)
+    expect(inhaltStr).not.toContain('Ausfuehrung unbekannt')
+    expect(inhaltStr).toContain('bereits')
   })
 })

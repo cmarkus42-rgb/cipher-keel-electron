@@ -17,7 +17,7 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[] {
   const verlauf: Nachricht[] = []
   let offeneIntents: string[] = []
   let ergebnisse: Block[] = []
-  const beantwortetAufrufe = new Set<string>()
+  const beantwortetAufrufe = new Map<string, 'zwangsabschluss' | 'ergebnis' | 'fehler'>()
 
   const ergebnisseAbschliessen = (): void => {
     // An intent without a result means a hard death between effect and write. The call is not
@@ -25,7 +25,7 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[] {
     // wrong for the first writing one, and nobody would go looking for the exception then.
     for (const aufrufId of offeneIntents) {
       ergebnisse.push({ art: 'werkzeug-ergebnis', aufrufId, inhalt: [{ art: 'text', text: UNBEKANNT }], fehler: true })
-      beantwortetAufrufe.add(aufrufId)
+      beantwortetAufrufe.set(aufrufId, 'zwangsabschluss')
     }
     offeneIntents = []
     if (ergebnisse.length > 0) {
@@ -56,8 +56,11 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[] {
         offeneIntents = offeneIntents.filter(x => x !== id)
         const inhalt = (e.nutzlast.inhalt as Block[]) ?? []
         const finalInhalt: Block[] = []
-        if (beantwortetAufrufe.has(id)) {
-          finalInhalt.push({ art: 'text', text: `Aufruf ${id}: Die Angaben widersprechen sich. Zuvor als Ausfuehrung unbekannt abgeschlossen, jetzt kommt Erfolg.` })
+        const vorherig = beantwortetAufrufe.get(id)
+        if (vorherig === 'zwangsabschluss') {
+          finalInhalt.push({ art: 'text', text: `Aufruf ${id}: Zuvor als Ausfuehrung unbekannt abgeschlossen, jetzt kommt Erfolg. Die Angaben widersprechen sich.` })
+        } else if (vorherig === 'ergebnis' || vorherig === 'fehler') {
+          finalInhalt.push({ art: 'text', text: `Aufruf ${id}: Zu diesem Aufruf liegt bereits ein Ergebnis vor. Dieses ist ein weiteres Ergebnis fuer denselben Aufruf.` })
         } else if (!hatteIntent) {
           finalInhalt.push({ art: 'text', text: `Aufruf ${id}: Ergebnis ohne vorherigen Intent im Protokoll.` })
         }
@@ -66,7 +69,7 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[] {
           art: 'werkzeug-ergebnis', aufrufId: id,
           inhalt: finalInhalt, fehler: false,
         })
-        beantwortetAufrufe.add(id)
+        beantwortetAufrufe.set(id, 'ergebnis')
         break
       }
       case 'tool.failed': {
@@ -74,8 +77,11 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[] {
         const hatteIntent = offeneIntents.includes(id)
         offeneIntents = offeneIntents.filter(x => x !== id)
         const inhalt: Block[] = []
-        if (beantwortetAufrufe.has(id)) {
-          inhalt.push({ art: 'text', text: `Aufruf ${id}: Die Angaben widersprechen sich. Zuvor als Ausfuehrung unbekannt abgeschlossen, jetzt kommt Fehler.` })
+        const vorherig = beantwortetAufrufe.get(id)
+        if (vorherig === 'zwangsabschluss') {
+          inhalt.push({ art: 'text', text: `Aufruf ${id}: Zuvor als Ausfuehrung unbekannt abgeschlossen, jetzt kommt Fehler. Die Angaben widersprechen sich.` })
+        } else if (vorherig === 'ergebnis' || vorherig === 'fehler') {
+          inhalt.push({ art: 'text', text: `Aufruf ${id}: Zu diesem Aufruf liegt bereits ein Ergebnis vor. Dieses ist ein weiteres Ergebnis fuer denselben Aufruf.` })
         } else if (!hatteIntent) {
           inhalt.push({ art: 'text', text: `Aufruf ${id}: Fehler ohne vorherigen Intent im Protokoll.` })
         }
@@ -84,7 +90,7 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[] {
           art: 'werkzeug-ergebnis', aufrufId: id,
           inhalt, fehler: true,
         })
-        beantwortetAufrufe.add(id)
+        beantwortetAufrufe.set(id, 'fehler')
         break
       }
       case 'tool.schema_loaded': {
