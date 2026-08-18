@@ -1,4 +1,4 @@
-# Design: Der Harness-Kern — Schleife, kanonische Form, Ereignisprotokoll
+# Design: Der Harness-Kern — Schleife, kanonische Form, Ereignisprotokoll, lesende Werkzeuge
 
 **Stand:** 2026-08-18
 **Autorität:** `cipher-keel-harness-ideation/deliverables/konzept_v1.0.md` (M8, freigegeben
@@ -10,33 +10,61 @@ das Harness-Subsystem liegt vollständig in 0.1
 ## 1. Warum diese Strecke, und warum genau dieser Ausschnitt
 
 M8 gibt v1 als siebzehn Zeilen mit einer Reihenfolge-Spalte vor, sortiert **nach
-Nachrüstbarkeit, nicht nach Wichtigkeit**: Was später teuer wird, kommt zuerst. Diese Spec
-beschreibt **Strecke 1** daraus — die Zeilen 1 bis 5, 7 und 11:
+Nachrüstbarkeit, nicht nach Wichtigkeit**: Was später teuer wird, kommt zuerst.
 
 | M8 §7 | Inhalt | in dieser Strecke |
 |---|---|---|
 | 1 | Kern / Ereignisstrom / Eingabekanal | ja |
 | 2 | Kanonische Form inkl. `image` und `document` | ja |
-| 3 | Ereignisprotokoll, Verlauf als Projektion, Wiederaufnahme | ja, mit einer benannten Lücke (§12) |
-| 4 | Präfix-Ordnung, Stummelliste, aufgeschobenes Laden | **nur die Ordnung** (§6, §12) |
-| 5 | Vier Budgets, drei Endzustände, Abschlussmodus | ja, mit **zwei** Endzuständen (§7) |
+| 3 | Ereignisprotokoll, Verlauf als Projektion, Wiederaufnahme | ja, vollständig |
+| 4 | Präfix-Ordnung, Stummelliste, aufgeschobenes Laden | ja, vollständig |
+| 5 | Vier Budgets, drei Endzustände, Abschlussmodus | ja, mit **zwei** Endzuständen (§8.2) |
 | 7 | Zwei Codecs (`anthropic`, `openai-chat`) | ja |
+| 9 | Voller Werkzeugsatz | **nur die lesende Hälfte** (§5) |
 | 11 | Rückgabe-Vertrag an den Außenkanten | ja — vorhanden, wird eingebunden |
 
-Nicht in dieser Strecke: Werkzeuge und Ausführungsgrenze (Zeilen 9, 10, 13), `ausgesetzt` samt
-Weckdienst (6), Delegation (8), Fähigkeitstabelle samt Kanarienauftrag (12), die nachgelagerten
-Zeilen 14 bis 17. Die Kopplung, die das erzwingt, steht in M8 §7 Zeile 10: Mit Shell und
-Schreiben im Umfang ist jede Prüfung unterhalb der Betriebssystem-Grenze Theater. Werkzeuge und
-Sandbox reisen zusammen, und beide zusammen sind Strecke 2.
+Nicht in dieser Strecke: schreibende Werkzeuge, Editieren, Shell (Rest von Zeile 9),
+OS-Ausführungsgrenze und Sandbox-Profile (10), Kompaktierung (13), `ausgesetzt` samt Weckdienst
+(6), Delegation (8), Kanarienauftrag (12), die nachgelagerten Zeilen 14 bis 17.
 
-Zeile 11 ist nachträglich in diese Strecke gezogen worden. Der Grund steht in §7: Der
-Abschlussmodus lautet „liefere jetzt das Ergebnis in Vertragsform" — ohne die Vertragsprüfung
-wäre das eine Anweisung, deren Erfüllung niemand feststellt. `result-contract.ts` existiert;
-M8 §7 nennt Zeile 11 selbst „Vorhanden, wird eingebunden".
+### 1.1 Warum lesende Werkzeuge trotz der Kopplung an die Sandbox
+
+M8 §7 koppelt Zeile 9 an Zeile 10, und die Begründung ist wörtlich:
+
+> Mit **Shell und Schreiben** im Umfang ist eine Zeichenketten-Prüfung auf Kommandos Theater —
+> `npm run` mit verändertem Skript und `$(...)` gehen daran vorbei.
+
+Das gilt für schreibende und ausführende Werkzeuge. Ein Satz aus *lesen, suchen, Graph lesen*
+verändert nichts, startet keinen Prozess, und sein einziger Netzweg ist der Modell-Endpunkt, den
+`c-worker.ts` heute schon benutzt. Von den drei Zutaten der gefährlichen Konstellation aus M8 §4.6
+— Zugriff auf Privates, fremde Inhalte im Kontext, Kanal nach draußen — fehlt damit die dritte.
+
+Der Unterschied, auf den es ankommt: Eine Prüfung ist Theater gegen eine **Shell**, weil dort
+`$(...)` und ein verändertes Skript daran vorbeigehen. Gegen ein **Pfad-Argument, das das Werkzeug
+selbst auflöst**, ist sie die Sache selbst — vorausgesetzt, sie löst vorher Symlinks auf (§5.4).
+
+M8 hat diesen Zwischenschnitt nicht betrachtet, verbietet ihn aber auch nicht: §4.1 legt den
+Werkzeugzuschnitt ausdrücklich **außerhalb** des Harnesses fest, in der Preset-Schicht — das
+Harness empfängt eine fertige Liste und kennt keine Niveau-Konstante. Eine schmale Liste ist damit
+architektonisch der Normalfall, nicht die Ausnahme.
+
+### 1.2 Warum nicht der Kern allein
+
+Der Kern ohne Werkzeuge ist eine Schleife, die einen Prompt schickt, eine Antwort bekommt und
+endet. Ihr einziger Konsument wäre das Fenster, das sie vorführt — formgleich mit dem Befund, gegen
+den die Settings-Strecke angetreten ist, nur eine Ebene höher. Mit lesenden Werkzeugen kann sie ein
+Subsystem durchsehen und einen Befund liefern, und drei Mechanismen bekommen einen Auslöser, die
+sonst ungeprüft in die nächste Strecke gewandert wären: die Regel für den offenen `tool.intent`,
+die Stummelliste und das aufgeschobene Laden.
+
+Zeile 11 ist ebenfalls nachträglich hereingezogen worden. Der Abschlussmodus lautet „liefere jetzt
+das Ergebnis in Vertragsform" — ohne die Vertragsprüfung wäre das eine Anweisung, deren Erfüllung
+niemand feststellt. `result-contract.ts` existiert; M8 §7 nennt Zeile 11 selbst „Vorhanden, wird
+eingebunden".
 
 ## 2. Was schon dasteht
 
-Der Bestand ist größer als der Handover vermuten lässt, und drei Befunde formen die Spec:
+Der Bestand ist größer als der Handover vermuten lässt, und vier Befunde formen die Spec:
 
 - **`src/main/worker/` ist electron-frei.** Kein Modul dort importiert `electron`. Der Kern darf
   es also benutzen, ohne den Wächtertest aus M8 §8 („Der Kern kennt Electron nicht") zu brechen.
@@ -44,7 +72,12 @@ Der Bestand ist größer als der Handover vermuten lässt, und drei Befunde form
   bereits `codec`, `werkzeugmodus`, `paralleleAufrufe`, `denkbloecke`, `bilder`, `dokumente`,
   `aufgeschobenesLaden`, `werkzeugObergrenze`, `nutzbaresKontextfenster`, `vertragsStrenge`,
   `rundenbudget`, `gemessenAm`, `gemessenMit`, `quelle` — also M8 §5 wörtlich. Was fehlt, ist der
-  Kanarienauftrag, der sie füllt (Strecke 4). Strecke 1 **liest** sie.
+  Kanarienauftrag, der sie füllt (Strecke 4). Diese Strecke **liest** sie, und zwar an sechs
+  Stellen: Codec-Wahl, Transport-Wahl, Bild- und Dokumentfähigkeit, Werkzeugmodus, parallele
+  Aufrufe, aufgeschobenes Laden, Kontextfenster.
+- **Die Graph-Lesewerkzeuge existieren als Funktionen.** `graph/query.ts`, `graph/search.ts` und
+  `graph/abstraction.ts` tragen die Logik; `graph/mcp-server.ts` ist eine Renderung darüber. Die
+  Harness-Werkzeuge werden die zweite — nicht ein MCP-Client, den M8 §13 ausschließt.
 - **`eigene-schleife` ist bereits Laufzeit-Vokabular.** Der `Laeufer` existiert in `eignung.ts`
   und steht dort auf Niveau A mit E21 als Begründung; `KNOWN_RUNTIMES` trägt `keel-harness`. Die
   Haken sind gesetzt, der Träger fehlt.
@@ -67,9 +100,14 @@ src/main/harness/            electron-frei, ohne Ausnahme
   codec.ts         das Interface: toWire / fromWire                   rein
   codec-anthropic.ts                                                  rein
   codec-openai-chat.ts                                                rein
-  praefix.ts       Ordnung und deterministische Serialisierung        rein
+  praefix.ts       Ordnung, Stummelliste, determ. Serialisierung      rein
   projektion.ts    (Ereignisse) => Verlauf                            rein
   budget.ts        vier Budgets, Endzustaende, Abschlussmodus         rein
+  preise.ts        versionierte Preistabelle, Vorgabe + Override      rein
+  werkzeuge.ts     Registry, Stummel, Schema-Nachreichung             rein
+  pfadwache.ts     geschuetzte Pfade, Wurzel, Symlink-Aufloesung      I/O (realpath)
+  werkzeug-datei.ts   lesen, listen, suchen                           I/O
+  werkzeug-graph.ts   die vier lesenden Graph-Werkzeuge               I/O (SQLite)
   protokoll.ts     SQLite: Schema, anhaengen, lesen                   I/O
   lauf.ts          die Schleife — der einzige Ort, der zusammensetzt
   index.ts         die oeffentliche Flaeche
@@ -80,9 +118,9 @@ src/renderer/windows/harness-window.{html,tsx}
 src/renderer/components/harness/      das Ereignis-Panel
 ```
 
-Neun der elf Kernmodule sind rein — testbar ohne Netz, ohne Datenbank, ohne Electron. Der Schnitt
-ist derselbe, den `api-client.ts` in seinem Kopf beschreibt: die Entscheidungen exportiert, „was
-übrig bleibt, ist die HTTPS-Verrohrung".
+Zehn der sechzehn Kernmodule sind rein — testbar ohne Netz, ohne Datenbank, ohne Electron. Der
+Schnitt ist derselbe, den `api-client.ts` in seinem Kopf beschreibt: die Entscheidungen exportiert,
+„was übrig bleibt, ist die HTTPS-Verrohrung".
 
 ### 3.2 Warum die IPC-Fläche außerhalb des Verzeichnisses liegt
 
@@ -137,8 +175,7 @@ export interface AnthropicEndpointSpec {
 Woher weiß `toModelEndpoint`, dass ein `art: 'api'`-Eintrag Anthropic ist? **Aus
 `faehigkeiten.codec`, und aus nichts sonst.** Ein zusätzliches `dialekt`-Feld an der
 Erreichbarkeit wäre dieselbe Tatsache ein zweites Mal aufgeschrieben, mit einer Konsistenzregel
-als Folgekosten. Ein Feld entscheidet beides: welcher Codec übersetzt und welcher Transport
-sendet.
+als Folgekosten. Ein Feld entscheidet beides: welcher Codec übersetzt und welcher Transport sendet.
 
 Die Signatur bekommt dafür einen optionalen zweiten Parameter, keine neue Funktion:
 
@@ -159,11 +196,11 @@ Drei Aufrufstellen, und der Unterschied zwischen ihnen ist der Grund für „opt
 Zwei Folgen:
 
 1. Ein `local-http`-Eintrag mit `codec: 'openai-chat'` läuft gegen Ollamas eigene `/v1`-Fläche.
-   Damit ist der DGX Spark in Strecke 1 erreichbar, **ohne** dass `ollama-native` gebaut sein
+   Damit ist der DGX Spark in dieser Strecke erreichbar, **ohne** dass `ollama-native` gebaut sein
    muss — und die Abnahme „derselbe Auftrag gegen drei Anbieter" (M8 §10) wird erreichbar.
-2. `codec: 'ollama-native'` und `codec: 'text'` sind in Strecke 1 nicht gebaut (M8 §7 Zeile 14).
-   Ein Eintrag, der sie nennt, wird beim Start des Laufs **laut** abgewiesen, mit dem
-   Codec-Namen im Text — nie still auf einen anderen Codec gefallen.
+2. `codec: 'ollama-native'` und `codec: 'text'` sind hier nicht gebaut (M8 §7 Zeile 14). Ein
+   Eintrag, der sie nennt, wird beim Start des Laufs **laut** abgewiesen, mit dem Codec-Namen im
+   Text — nie still auf einen anderen Codec gefallen.
 
 ### 3.5 Was ein Lauf beim Start bekommt
 
@@ -171,8 +208,9 @@ Zwei Folgen:
 export interface Auftrag {
   auftragstext: string
   modellId: string                    // in die Registry, nicht in die Config
+  wurzel: string                      // Projektwurzel — die Leseerlaubnis, §5.4
   anhaenge?: string[]                 // absolute Pfade, siehe §4.5
-  pflichtfelder?: string[]            // fuer die Vertragspruefung, §7.6
+  pflichtfelder?: string[]            // fuer die Vertragspruefung, §8.6
   budgets: {
     runden: number
     wanduhrMs: number
@@ -183,9 +221,9 @@ export interface Auftrag {
 ```
 
 M8 §4.4 verlangt für **autonome** Läufe ein geschlossenes Dokument mit Entität, Phase, Subsystem,
-Input-Quelle, erwartetem Output und Budget. Strecke 1 kennt nur **interaktive** Läufe — ein Mensch
-sitzt davor, und §4.4 nimmt sie ausdrücklich aus: „Ein interaktiver Lauf hat den Menschen per
-Konstruktion in der Schleife und braucht diese Geschlossenheit nicht." Die Felder für Phase,
+Input-Quelle, erwartetem Output und Budget. Diese Strecke kennt nur **interaktive** Läufe — ein
+Mensch sitzt davor, und §4.4 nimmt sie ausdrücklich aus: „Ein interaktiver Lauf hat den Menschen
+per Konstruktion in der Schleife und braucht diese Geschlossenheit nicht." Die Felder für Phase,
 Subsystem und Graph-Input kommen mit der Beauftragung in Strecke 3.
 
 `Faehigkeiten` wird aus `model/entry.ts` importiert — auch dieses Modul ist electron-frei, der
@@ -214,14 +252,17 @@ Nicht nachrüstbar ist **die Union**, nicht der einzelne Fall. M8 §3.3 begründ
 Form ist das, wodurch alles übersetzt wird — jeder Codec, jedes Ereignis, jede Protokollzeile. Ist
 sie textfrei entworfen, unterstellt später jede dieser Stellen Text.
 
-Die beiden Werkzeug-Blöcke gehören dazu, obwohl Strecke 1 keine Werkzeuge hat: Sie sind der Grund,
-warum die Form dem Anthropic-Muster folgt (verlustfrei nach OpenAI und Gemini abbildbar, umgekehrt
-nicht). Die Codecs übersetzen sie. `lauf.ts` schickt in Strecke 1 keine Werkzeugliste mit — kommt
-trotzdem ein `werkzeug-aufruf` zurück, ist das ein benannter Vertragsbruch.
+Das Anthropic-Muster ist gewählt, weil es sich verlustfrei nach OpenAI und Gemini abbilden lässt;
+der umgekehrte Weg verliert Information.
+
+`inhalt: Block[]` am Werkzeug-Ergebnis ist kein Übermaß: M8 §3.3 verlangt ausdrücklich, dass ein
+Werkzeugergebnis `text`, `image` und `document` tragen darf. Ein Lesewerkzeug, das auf ein Bild
+zeigt, ist der Fall, der das in dieser Strecke einlöst.
 
 `signatur` am Denkblock ist kein Beiwerk: Anthropic verlangt Denkblöcke bei Fortsetzung wörtlich
-samt Signatur zurück. Eine Form ohne dieses Feld verliert die Fortsetzbarkeit genau dort, wo
-Denken teuer war.
+samt Signatur zurück. Eine Form ohne dieses Feld verliert die Fortsetzbarkeit genau dort, wo Denken
+teuer war — und mit Werkzeugen ist die Fortsetzung nach einem Denkblock der Normalfall, nicht der
+Sonderfall.
 
 ### 4.2 Die Antwort trägt drei Dinge
 
@@ -235,21 +276,30 @@ export interface ModelAntwort {
 
 Normalisiert **und** roh, beides. M8 §3.1 verlangt die Usage-Felder roh; §4.8 verlangt eine Zahl,
 gegen die ein Budget prüft. `max_tokens` bei Anthropic und `finish_reason: 'length'` bei OpenAI
-sind dieselbe Tatsache in zwei Schreibweisen — normalisiert wird sie einmal, im Codec, und das
-Rohe bleibt daneben stehen, damit niemand die Normalisierung glauben muss.
+sind dieselbe Tatsache in zwei Schreibweisen — normalisiert wird sie einmal, im Codec, und das Rohe
+bleibt daneben stehen, damit niemand die Normalisierung glauben muss.
 
 ### 4.3 Der Codec hat zwei Funktionen und keinen Zustand
 
 ```ts
 export interface Codec {
   name: 'anthropic' | 'openai-chat'
-  toWire(nachrichten: Nachricht[], f: Faehigkeiten): unknown
+  toWire(nachrichten: Nachricht[], werkzeuge: WerkzeugStummel[], f: Faehigkeiten): unknown
   fromWire(antwort: unknown): ModelAntwort
 }
 ```
 
-Kein Zugriff auf Schleifenzustand, Budgets oder Werkzeuge — die Typsignatur macht es unmöglich
-(M8 §8, Art „Form"). Der Textmodus ist später ein weiterer Codec, kein zweiter Pfad.
+Kein Zugriff auf Schleifenzustand, Budgets oder Werkzeug-**Ausführung** — die Typsignatur macht es
+unmöglich (M8 §8, Art „Form"). Der Codec sieht die Werkzeugliste nur, um sie in die Drahtform zu
+schreiben; er ruft nichts auf.
+
+Zwei Fähigkeitsfelder wirken hier unmittelbar:
+
+- `paralleleAufrufe: false` → der Codec setzt `parallel_tool_calls` **nicht**. M8 §5 nennt genau
+  diesen Fall: Das Feld an ein Modell ohne Unterstützung legt mit HTTP 400 das ganze
+  Werkzeug-Subsystem lahm.
+- `werkzeugmodus: 'text'` → in dieser Strecke nicht gebaut. Der Lauf startet nicht und nennt den
+  Grund. Das Text-Protokoll ist der `text`-Codec und gehört zu M8 §7 Zeile 14.
 
 ### 4.4 Multimodalität, und wo Unvermögen gemeldet wird
 
@@ -275,12 +325,147 @@ Medientyp aus der Endung, kodiert base64 und baut `bild`- beziehungsweise `dokum
 *Aufnahme* per Drag&Drop oder Screenshot-Einfügen ist Oberflächenarbeit späterer Strecken (M8
 §4.11); die *Darstellung* im Prompt ist ab jetzt Sache des Kerns.
 
-Ein Pfad, der nicht existiert oder nicht lesbar ist, lässt den Lauf **nicht starten** und meldet
-den Pfad. Er wird nicht stillschweigend übergangen.
+Anhänge gehen **nicht** durch die Pfadwache aus §5.4: Sie sind eine Handlung des Nutzers, keine
+des Modells. Ein Pfad, der nicht existiert oder nicht lesbar ist, lässt den Lauf nicht starten und
+wird genannt.
 
-## 5. Das Ereignisprotokoll
+## 5. Die Werkzeuge
 
-### 5.1 Eine eigene Datei, eine einzige Tabelle
+### 5.1 Der Satz dieser Strecke
+
+| Werkzeug | Wirkung |
+|---|---|
+| `datei_lesen` | eine Datei, optional ein Zeilenbereich |
+| `verzeichnis_listen` | Glob-Muster relativ zur Wurzel |
+| `inhalt_suchen` | Regex über Dateien, mit Pfadfilter |
+| `graph_suchen` | wie `graph_search` |
+| `graph_knoten_holen` | wie `graph_get_node` |
+| `graph_ausweiten` | wie `graph_expand` |
+| `graph_abfragen` | wie `graph_query` |
+| `werkzeug_schema` | das Meta-Werkzeug des aufgeschobenen Ladens (§5.5) |
+
+Nicht dabei und ausdrücklich nicht: `schreiben`, `editieren`, Shell, `graph_upsert_node`,
+`graph_link`, `graph_maintain`, Delegation, Websuche, Netzabruf.
+
+**Die Datei-Werkzeuge laufen im Prozess, nie über eine Shell.** Ein `grep` per `execFile` wäre
+bequem und würde genau die Grenze wieder aufheben, deren Fehlen diese Strecke rechtfertigt: Sobald
+ein Kommando gebaut wird, ist die Argument-Prüfung wieder Theater.
+
+**Die Graph-Werkzeuge rufen dieselben Funktionen wie der MCP-Server**, nicht den Server selbst. Ein
+MCP-Client für fremde Server ist nach M8 §13 kein v1-Inhalt, und für den eigenen Server wäre er ein
+Umweg über eine Prozessgrenze, die es nicht gibt. Zwei Renderungen über einer Quelle — dasselbe
+Muster, mit dem M8 §4.1 Werkzeugliste und Berechtigungsfragment verbindet. Ein Wächtertest hält
+fest, dass beide Renderungen dieselben vier Lese-Operationen anbieten.
+
+### 5.2 Das Werkzeug-Interface
+
+```ts
+export interface WerkzeugStummel {
+  name: string
+  /** Eine Zeile. Steht im stabilen Praefix, §7. */
+  beschreibung: string
+}
+
+export interface Werkzeug extends WerkzeugStummel {
+  /** Erst bei Bedarf serialisiert — nie im stabilen Praefix, §5.5. */
+  schema(): Record<string, unknown>
+  ausfuehren(eingabe: unknown, ktx: WerkzeugKontext): Promise<WerkzeugErgebnis>
+}
+
+export type WerkzeugErgebnis =
+  | { ok: true;  inhalt: Block[] }
+  | { ok: false; meldung: string }
+
+export interface WerkzeugKontext {
+  wurzel: string
+  graphDb: Database | null
+}
+```
+
+Ein `{ ok: false }` wird zu einem `werkzeug-ergebnis`-Block mit `fehler: true` und geht in den
+Verlauf — es beendet den Lauf **nicht**. Das Modell soll auf einen Fehler reagieren können; genau
+dafür trägt der Block ein Fehlerflag statt einer Ausnahme.
+
+### 5.3 Der Zug mit Werkzeugen
+
+Ein Zug nach M8 §3.2: Prompt anhängen → Modell rufen → Antwort in die kanonische Form parsen →
+Werkzeugaufrufe ausführen → Ergebnisse anhängen → Budgets prüfen.
+
+**Kein Effekt ohne vorheriges Intent-Ereignis.** Der Werkzeug-Aufrufer schreibt `tool.intent`
+— Aufruf-ID, Name, Argumente — **bevor** er ausführt, und `tool.completed` beziehungsweise
+`tool.failed` danach. Ein Wächtertest prüft die Reihenfolge im Protokoll (M8 §8).
+
+**Nebenläufigkeit:** Alle Werkzeuge dieser Strecke sind lesend, also dürfen alle Aufrufe eines Zuges
+nebenläufig laufen. Das Single-Writer-Prinzip aus M8 §3.2 gilt damit **trivial erfüllt** — es gibt
+keinen schreibenden Aufruf, der eine sequenzielle Ausführung erzwingen könnte. Der Mechanismus
+dafür (ein `schreibend`-Feld am Werkzeug und die Sequenzialisierung) kommt mit den schreibenden
+Werkzeugen; siehe §13.1.
+
+**Die Werkzeug-Obergrenze ist ein inferiertes Signal.** Ist die Liste länger als
+`faehigkeiten.werkzeugObergrenze`, wird der Lauf nicht verweigert — der Hinweis geht als
+`hinweise: string[]` in `run.started`. Nur gemessene Signale dürfen abbrechen (M8 §4.10).
+
+### 5.4 Die Pfadwache
+
+Lesende Werkzeuge ohne Pfadwache könnten `~/.ssh/id_rsa` lesen, und der Modell-Endpunkt ist der
+Kanal nach draußen. Die Prüfreihenfolge steht in M8 §4.6 und wird wörtlich übernommen:
+**geschützte Pfade zuerst, dann Verweigerungsregeln, dann Erlaubnisregeln.**
+
+```ts
+export function pruefePfad(roh: string, wurzel: string):
+  | { ok: true;  pfad: string }
+  | { ok: false; grund: string }
+```
+
+1. **Symlinks auflösen** (`fs.realpath`), und zwar *vor* jeder Prüfung. Ohne diesen Schritt führt
+   der erste Symlink an allem Folgenden vorbei. Existiert der Pfad nicht, wird das nächst-höhere
+   existierende Elternverzeichnis aufgelöst und der Rest angehängt.
+2. **Geschützte Pfade**, in jedem Modus, nicht überschreibbar: `~/.ssh`, Shell-Startdateien
+   (`.zshrc`, `.zprofile`, `.bashrc`, `.bash_profile`, `.profile`), jedes `.git`-Verzeichnis,
+   keels eigene Konfiguration (`app.getPath('userData')`) und `~/.cipher-*`.
+3. **Erlaubnis:** innerhalb von `auftrag.wurzel`. Alles außerhalb wird abgelehnt.
+
+Die Ablehnung nennt den Grund und **nicht** den Inhalt: `Pfad liegt außerhalb der Wurzel` oder
+`Pfad ist geschützt`. Sie wird zu einem `werkzeug-ergebnis` mit `fehler: true`, nicht zu einem
+Laufabbruch — ein Modell, das versehentlich zu weit greift, soll es erfahren und weiterarbeiten.
+
+Diese Prüfung ist **keine** Ausführungsgrenze im Sinne von M8 §4.5 und ersetzt sie nicht. Sie
+trägt, solange kein Werkzeug einen Prozess startet. Kommt die Shell, kommt die Sandbox — die
+Pfadwache bleibt daneben stehen, weil sie dann die Werkzeug-Argumente prüft und die Sandbox den
+Prozess.
+
+### 5.5 Stummelliste und aufgeschobenes Laden
+
+Im stabilen Präfix steht je Werkzeug nur **Name und eine Zeile Beschreibung**. Das vollständige
+Schema wird bei Bedarf geholt und an den **Verlauf** angehängt, nie ins Präfix geschrieben — alles
+andere invalidierte bei jedem Nachladen den Cache und machte genau das kaputt, wofür der
+Mechanismus existiert (M8 §3.5).
+
+Geholt wird über ein Meta-Werkzeug, dessen eigenes Schema im Präfix steht:
+
+```
+werkzeug_schema(name: string) -> das vollstaendige Eingabeschema des Werkzeugs
+```
+
+Die Alternative — das Modell ruft ein Werkzeug ohne Schema auf, und die Schleife reicht statt der
+Ausführung das Schema nach — wurde verworfen: Sie kostet dieselbe Runde Latenz, verbrennt aber
+zusätzlich einen auf geratenem Schema gebauten Aufruf und zeigt dem Modell eine falsche Form, bevor
+sie ihm die richtige zeigt.
+
+Ein erfolgreiches Nachladen erzeugt `tool.schema_loaded` mit dem Werkzeugnamen.
+
+**Das Fähigkeitsfeld entscheidet, ob überhaupt aufgeschoben wird.** `aufgeschobenesLaden: false`
+→ alle Schemata stehen im stabilen Präfix, `werkzeug_schema` entfällt aus der Liste. `true` →
+Stummel plus Meta-Werkzeug. Beide Formen sind innerhalb einer Session konstant.
+
+**Maskieren statt Entfernen** gilt für die Stummelliste: Ein maskiertes Werkzeug behält seinen
+Stummel, sein Aufruf wird mit Begründung abgelehnt, und die Liste bleibt zeichengleich. In dieser
+Strecke maskiert nichts — die Regel steht in der Form, damit sie nicht später eingezogen werden
+muss. Zwei Mechanismen, zwei Zwecke: Cache-Stabilität und Präfix-Budget.
+
+## 6. Das Ereignisprotokoll
+
+### 6.1 Eine eigene Datei, eine einzige Tabelle
 
 `harness.db` in `userData`, geöffnet mit derselben `resolveBetterSqliteBinding`-Auflösung wie
 `graph.db` — ohne die findet der gepackte Build die Node-ABI-Variante (Befund vom 2026-08-09,
@@ -316,35 +501,39 @@ der `UPDATE` verbietet. Ein Test, der den Quelltext nach `UPDATE`-Vorkommen absu
 Schreibweise; die Datenbank, die es ablehnt, prüft die Sache — dieselbe Logik, mit der M8 §4.5 die
 Ausführungsgrenze ans Betriebssystem gibt statt an eine Prüfung im Harness.
 
+Der `DELETE`-Trigger geht über M8 hinaus und hat eine Folge, die benannt gehört: Ein Aufräumen
+alter Läufe ist damit nur durch Löschen der Datei möglich. Solange kein Bedarf gemessen ist, ist
+das der richtige Preis.
+
 `seq` wird beim Anhängen in derselben Transaktion vergeben (`COALESCE(MAX(seq), 0) + 1`).
 better-sqlite3 ist synchron, der Hauptprozess ist einfädig — damit gilt Single-Writer ohne
 zusätzliche Vorkehrung.
 
-### 5.2 Ereignisse in Strecke 1
+### 6.2 Ereignisse in dieser Strecke
 
-`run.started` · `prompt.sent` · `model.answered` · `budget.warned` · `run.finished`
+`run.started` · `prompt.sent` · `model.answered` · `tool.intent` · `tool.completed` ·
+`tool.failed` · `tool.schema_loaded` · `budget.warned` · `run.finished`
 
-Nicht in Strecke 1, weil ihre Auslöser fehlen: `tool.intent`, `tool.completed`, `tool.failed`,
-`tool.schema_loaded`, `delegation.dispatched`, `delegation.judged`, `repair.attempted`,
-`heartbeat`, `run.suspended`.
+Nicht dabei, weil ihre Auslöser fehlen: `delegation.dispatched`, `delegation.judged`,
+`repair.attempted`, `heartbeat`, `run.suspended`.
 
-`heartbeat` gehört zu M8 §7 Zeile 15 (Beobachtbarkeit autonomer Läufe), ausdrücklich
-nachgelagert. `repair.attempted` gehört zum Reparaturversuch, der an der `vertragsStrenge` einer
-gemessenen Fähigkeitszeile hängt — Strecke 4.
+`heartbeat` gehört zu M8 §7 Zeile 15 (Beobachtbarkeit autonomer Läufe), ausdrücklich nachgelagert.
+`repair.attempted` gehört zum Reparaturversuch, der an der `vertragsStrenge` einer **gemessenen**
+Fähigkeitszeile hängt — und die entsteht erst mit dem Kanarienauftrag, Strecke 4.
 
-### 5.3 `prompt.sent` wird vollständig und wörtlich gespeichert
+### 6.3 `prompt.sent` wird vollständig und wörtlich gespeichert
 
 M8 §3.1 übergibt die Persistenz ausdrücklich an die Spec. Die Entscheidung fällt am Wächtertest
-aus §8: Er baut den Präfix aus dem Protokoll und vergleicht ihn **zeichengleich mit
-`prompt.sent`**. Ist `prompt.sent` selbst schon eine Rekonstruktion aus Präfix-Verweis plus Delta,
-vergleicht der Test die Zusammensetzung mit sich selbst und prüft nichts.
+aus §8: Er baut den Präfix aus dem Protokoll und vergleicht ihn **zeichengleich mit `prompt.sent`**.
+Ist `prompt.sent` selbst schon eine Rekonstruktion aus Präfix-Verweis plus Delta, vergleicht der
+Test die Zusammensetzung mit sich selbst und prüft nichts.
 
 Der Preis ist bekannt und wird hingenommen: Der stabile Präfix liegt je Zug erneut im Protokoll,
 Größenordnung anderthalb Megabyte bei dreißig Zügen à fünfzigtausend Zeichen. Eine
 inhaltsadressierte Ablage wurde erwogen und verworfen — sie löst ein Speicherproblem, das nicht
 gemessen ist.
 
-### 5.4 Wiederaufnahme ist kein eigener Codepfad
+### 6.4 Wiederaufnahme ist kein eigener Codepfad
 
 Die Schleife hält **keinen** Verlauf im Speicher. Vor jedem Zug liest sie die Ereignisse des Laufs
 und projiziert daraus den Verlauf.
@@ -354,43 +543,56 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[]
 ```
 
 Damit ist „Zug 1" und „Zug 14 nach einem Neustart" derselbe Ablauf. Der Grund ist nicht Eleganz:
-Die Wiederaufnahme hängt an einem harten Prozesstod und ist deshalb schlecht testbar. Ein Pfad,
-der bei jedem normalen Zug mitläuft, ist bei der Abnahme bereits tausendfach gelaufen.
+Die Wiederaufnahme hängt an einem harten Prozesstod und ist deshalb schlecht testbar. Ein Pfad, der
+bei jedem normalen Zug mitläuft, ist bei der Abnahme bereits tausendfach gelaufen.
 
-Was Wiederaufnahme unmöglich machen würde und deshalb verboten ist (M8 §3.4): Zustand nur im
-Prozessspeicher, mutierte Verlaufseinträge, ein Präfix aus nicht reproduzierbaren Laufzeitwerten.
+Werkzeugergebnisse werden dabei **aus dem Protokoll gelesen, nicht neu ausgeführt**.
 
-Die Regel für den **offenen `tool.intent`** ist in Strecke 1 nicht erreichbar, weil es keine
-Werkzeuge gibt. Sie wird deshalb nicht vorgebaut — siehe §12.
+### 6.5 Der offene Intent
 
-## 6. Der Präfix
+Zwischen der Wirkung eines Werkzeugs und dem Schreiben seines Ergebnisses liegt ein Moment, in dem
+ein harter Prozesstod ein `tool.intent` ohne Abschluss hinterlässt. Die Wirkung ist dann
+*unbekannt* — sie kann eingetreten sein oder nicht. M8 §3.4 gibt die Regel wörtlich vor:
+
+> Findet die Wiederaufnahme einen offenen Intent, wird der Aufruf **nicht wiederholt**. Stattdessen
+> geht ein Werkzeugergebnis mit beschriebenem Fehler in den Verlauf — „Ausführung unbekannt,
+> Zustand prüfen" — samt der Anweisung an das Modell, den Zustand festzustellen, bevor es
+> weitermacht.
+
+Das ist schwächer als „das Idempotenzproblem ist gelöst", und dafür wahr.
+
+Bei rein lesenden Werkzeugen wäre eine Wiederholung tatsächlich harmlos. Die Regel wird trotzdem
+so gebaut, wie sie für schreibende gilt — die Ausnahme „bei lesenden darf wiederholt werden" wäre
+eine Sonderregel, die genau in dem Moment falsch wird, in dem das erste schreibende Werkzeug
+dazukommt, und die dann niemand mehr sucht.
+
+## 7. Der Präfix
 
 Ordnung nach M8 §3.5:
 
 1. **Stabil, unveränderlich innerhalb einer Session:** Body → Capabilities → Persona → globale
-   Regeln → Auftrag samt Phaseninput → Werkzeug-Stummelliste *(in Strecke 1 leer)*
-2. **Append-only:** der Verlauf
-3. **Volatil, am Ende:** das Fortschrittsobjekt *(in Strecke 1 leer — ein Lauf ohne Werkzeuge hat
-   keine Fortschrittseinheiten)*
+   Regeln → Auftrag samt Phaseninput → **Werkzeug-Stummelliste**
+2. **Append-only:** der Verlauf, einschließlich nachgeladener Werkzeugschemata
+3. **Volatil, am Ende:** das Fortschrittsobjekt
 
-Regeln, die Strecke 1 vollständig trägt:
+Regeln:
 
 - keine Zeitstempel, Zähler oder Rundenangaben im stabilen Teil
 - deterministische Serialisierung mit sortierten Schlüsseln
 - der Präfix ist aus dem Protokoll rekonstruierbar, ohne ihn neu zu bauen
+- ein nachgeladenes Schema erscheint im Verlauf und **nie** im stabilen Teil
 
-**Stummelliste und aufgeschobenes Laden sind nicht in dieser Strecke.** Beide sind werkzeugförmig:
-Eine Stummelliste ohne Werkzeuge ist leer, und aufgeschobenes Laden lädt nichts. Nicht nachrüstbar
-ist die *Ordnung*, weil sonst die Präfix-Ökonomie inkonsistent wird; die Stummelliste ist ein
-weiterer Abschnitt im stabilen Teil, dessen späteres Einfügen **eine** Cache-Invalidierung kostet
-und keinen Umbau. Siehe §12.
+**Das Fortschrittsobjekt** (M8 §4.7) führt offene und erledigte Einheiten mit Duplikatschutz und
+wird bei jedem Zug deterministisch ans Ende gehängt. In dieser Strecke speist es sich aus den
+Werkzeugaufrufen des Laufs; die Rolling Summary als Graph-Artefakt daraus gehört zur Delegation und
+ist Strecke 3.
 
-Was Strecke 1 vom Präfix trotzdem voll belegt, ist die teuerste Zusicherung: Ein zweiter Lauf
-meldet einen Cache-Treffer. Das prüft die Ordnung an der Stelle, an der sie Geld kostet.
+Die teuerste Zusicherung dieses Abschnitts: **Ein zweiter Lauf meldet einen Cache-Treffer.** Das
+prüft die Ordnung an der Stelle, an der sie Geld kostet.
 
-## 7. Budgets, Endzustände, Abschlussmodus, Vertrag
+## 8. Budgets, Endzustände, Abschlussmodus, Vertrag
 
-### 7.1 Vier Budgets
+### 8.1 Vier Budgets
 
 | Budget | Quelle | geprüft |
 |---|---|---|
@@ -409,7 +611,7 @@ ist sie eine anpassbare Fläche im Sinne von CK-NFR-012 und **braucht einen Eint
 `docs/anpassbare-flaechen.md`**, sonst schlägt `tests/docs/anpassbare-flaechen.test.ts` zu. Eine
 neue anpassbare Fläche ohne Inventareintrag ist ein Prüfbefund.
 
-### 7.2 Zwei Endzustände, nicht drei
+### 8.2 Zwei Endzustände, nicht drei
 
 | Endzustand | Gründe |
 |---|---|
@@ -417,14 +619,14 @@ neue anpassbare Fläche ohne Inventareintrag ist ein Prüfbefund.
 | `abgebrochen` | `transportfehler`, `abgebrochen-von-aussen` |
 
 `ausgesetzt` ist M8 §7 Zeile 6 und damit Strecke 3. Es wird auch **nicht als unbewohnte Variante**
-in die Union aufgenommen: Jedes `switch` müsste dann einen Zweig tragen, den nichts erreicht.
-Kommt es in Strecke 3 dazu, zeigt der Compiler jede Stelle an, die es braucht — das ist billiger
-als tote Zweige mitzuschleppen.
+in die Union aufgenommen: Jedes `switch` müsste dann einen Zweig tragen, den nichts erreicht. Kommt
+es in Strecke 3 dazu, zeigt der Compiler jede Stelle an, die es braucht — das ist billiger als tote
+Zweige mitzuschleppen.
 
-`kein-fortschritt` ist kein Grund, sondern ein inferiertes Warnsignal (M8 §4.10) und in Strecke 1
-nicht vorhanden.
+`kein-fortschritt` ist kein Grund, sondern ein inferiertes Warnsignal (M8 §4.10) und in dieser
+Strecke nicht vorhanden.
 
-### 7.3 Jeder Grund trägt seinen Anweisungstext
+### 8.3 Jeder Grund trägt seinen Anweisungstext
 
 ```ts
 export interface Abschlussgrund {
@@ -437,30 +639,33 @@ export interface Abschlussgrund {
 
 Ein Text, zwei Verwendungen — dieselbe Bauweise, die `result-contract.ts` in seinem Kopf begründet.
 
-### 7.4 Der Abschlussmodus ist keine Ausnahme
+### 8.4 Der Abschlussmodus ist keine Ausnahme
 
-Schlägt ein Budget an, folgt **ein letzter Zug** mit der Anweisung, jetzt das Ergebnis in
-Vertragsform zu liefern, samt Grund. Erst danach `run.finished`. Ein angeschlagenes Budget führt
-also zu einem verwertbaren Teilergebnis, nicht zu einer geworfenen Ausnahme.
+Schlägt ein Budget an, folgt **ein letzter Zug ohne Werkzeuge** mit der Anweisung, jetzt das
+Ergebnis in Vertragsform zu liefern, samt Grund. Erst danach `run.finished`. Ein angeschlagenes
+Budget führt also zu einem verwertbaren Teilergebnis, nicht zu einer geworfenen Ausnahme.
 
-### 7.5 Trunkierung wird vor jeder Reparaturentscheidung gelesen
+„Ohne Werkzeuge" ist wörtlich zu nehmen: Die Stummelliste bleibt zeichengleich im Präfix stehen
+(maskieren statt entfernen, §5.5), aber jeder Aufruf wird mit Begründung abgelehnt.
+
+### 8.5 Trunkierung wird vor jeder Reparaturentscheidung gelesen
 
 `stopGrund.normalisiert === 'laenge'` → `abgebrochen / transportfehler`, **kein** Reparaturversuch
 (M8 §4.8). Sonst verbrennt der eine Versuch an einem Problem, das kein Nachdenken löst.
 
-### 7.6 Der Rückgabe-Vertrag, an den Außenkanten
+### 8.6 Der Rückgabe-Vertrag, an den Außenkanten
 
-`checkWorkerAnswer` prüft das Ergebnis eines abgeschlossenen Laufs gegen die Pflichtfelder des
-Auftrags. **Nur dort.** Innerhalb der Schleife gilt er nicht, und die Schleifen-Schnittstelle nimmt
+`checkWorkerAnswer` prüft das Ergebnis eines abgeschlossenen Laufs gegen `auftrag.pflichtfelder`.
+**Nur dort.** Innerhalb der Werkzeugschleife gilt er nicht, und die Schleifen-Schnittstelle nimmt
 keine Pflichtfelder entgegen — die Durchsetzung liegt in der Form (M8 §4.9, §8).
 
 Das Ergebnis der Prüfung steht in `run.finished` und wird nicht erzwungen: Erzwungenes
 Schema-Decoding hebt die Validität auf hundert Prozent und senkt die Antwortgenauigkeit. Ein
 sichtbar gescheiterter Lauf ist das bessere Ergebnis als valides Nonsens.
 
-## 8. IPC und Fenster
+## 9. IPC und Fenster
 
-### 8.1 Vier Kanäle, jeder mit einem Aufrufer
+### 9.1 Vier Kanäle, jeder mit einem Aufrufer
 
 | Kanal | Art | Aufrufer im Renderer |
 |---|---|---|
@@ -477,16 +682,16 @@ Beide Regeln der Settings-Handler gelten weiter: **im Hauptprozess validieren, d
 trauen** — und der Broadcast läuft über `event-bus.ts`, nie über ein eingefangenes
 `BrowserWindow`.
 
-**Der Abbruch wirkt an der Zuggrenze, nicht mitten in der Anfrage.** `harness:lauf-abbrechen`
-setzt eine Marke; die Schleife liest sie vor dem nächsten Zug und schließt mit
+**Der Abbruch wirkt an der Zuggrenze, nicht mitten in der Anfrage.** `harness:lauf-abbrechen` setzt
+eine Marke; die Schleife liest sie vor dem nächsten Zug und schließt mit
 `abgebrochen / abgebrochen-von-aussen` ab. Eine laufende HTTP-Anfrage wird nicht abgeschnitten.
 Das ist die Übertragung von M8 §4.6 — „jede Unterbrechung liegt auf einer Werkzeuggrenze" — auf
-eine Strecke ohne Werkzeuge, in der die Zuggrenze die einzige saubere Grenze ist. Der Preis ist
+diese Strecke: Die Werkzeuge sind lesend und kurz, die Zuggrenze ist die teure. Der Preis ist
 benannt: Bei einem Modell, das neunzig Sekunden denkt, wirkt der Abbruch bis zu neunzig Sekunden
-später. Ein `AbortSignal` durch den Transport wäre die Abhilfe und gehört zur Werkzeug-Strecke,
-wo die Unterbrechung ohnehin eine Grenze braucht.
+später. Ein `AbortSignal` durch den Transport wäre die Abhilfe und gehört zur Strecke, in der die
+Unterbrechung ohnehin eine schärfere Grenze braucht.
 
-### 8.2 Das Fenster spiegelt das Settings-Fenster
+### 9.2 Das Fenster spiegelt das Settings-Fenster
 
 `createHarnessWindow` neben `createSettingsWindow`, `harness-window.{html,tsx}` neben
 `settings-window.*`, mit garantiertem Klickpfad aus dem Projektfenster. Das Muster ist in der
@@ -497,33 +702,54 @@ Ein neuer Zellentyp im SessionGrid wäre der Weg, den der M6-Nachtrag gerade abg
 entfällt ersatzlos.
 
 Das Panel zeigt je Ereignis eine Zeile — Zeitstempel, Art, Kurzfassung der Nutzlast, aufklappbar.
-Es kennt **keinen Anbieternamen**: Was es anzeigt, kommt aus dem Ereignisstrom.
+Werkzeugaufrufe erscheinen als Paar aus Intent und Ergebnis. Das Panel kennt **keinen
+Anbieternamen**: Was es anzeigt, kommt aus dem Ereignisstrom.
 
-## 9. Fehlerbehandlung
+## 10. Fehlerbehandlung
 
-Die Leitregel des Projekts gilt unverändert: **Stille Fehler sind die teuersten.** Konkret:
+Die Leitregel des Projekts gilt unverändert: **Stille Fehler sind die teuersten.**
 
-- **Unbekannter Codec** (`ollama-native`, `text`) → Lauf startet nicht, Meldung nennt den Codec
-- **Blocktyp, den das Modell nicht kann** → Codec meldet, nennt Blocktyp und Fähigkeitszeile
-- **Anhang nicht lesbar** → Lauf startet nicht, Meldung nennt den Pfad
-- **`cli-harness`-Eintrag** → Lauf startet nicht; `sperrgrund` in `eignung.ts` hat den Text bereits
-- **Transportfehler** (Netz, Zeitüberschreitung, Status ≠ 200) → `abgebrochen / transportfehler`,
+**Lässt den Lauf nicht starten** — die Meldung nennt jeweils die Ursache:
+
+- unbekannter oder ungebauter Codec (`ollama-native`, `text`)
+- `werkzeugmodus: 'text'` — das Text-Protokoll ist Strecke 4
+- `cli-harness`-Eintrag — `sperrgrund` in `eignung.ts` hat den Text bereits
+- ein Anhang, der nicht existiert oder nicht lesbar ist
+- eine Wurzel, die kein Verzeichnis ist
+
+**Beendet den Lauf:**
+
+- Transportfehler (Netz, Zeitüberschreitung, Status ≠ 200) → `abgebrochen / transportfehler`,
   kein Reparaturversuch
-- **`werkzeug-aufruf` in der Antwort, obwohl keine Werkzeugliste gesendet wurde** → benannter
-  Vertragsbruch, `abgebrochen`
+- Trunkierung → derselbe Weg (§8.5)
+- ein Werkzeugaufruf auf ein Werkzeug, das nicht in der Liste steht → benannter Vertragsbruch
+
+**Geht als Werkzeugergebnis mit `fehler: true` in den Verlauf und lässt den Lauf weiterlaufen:**
+
+- Pfad außerhalb der Wurzel, Pfad geschützt (§5.4)
+- Datei nicht gefunden, nicht lesbar, zu groß
+- ungültige Werkzeug-Eingabe gegen das Schema
+- ein Aufruf während des Abschlussmodus (§8.4)
+- ein offener Intent nach Wiederaufnahme (§6.5)
 
 Kein Fehlertext enthält ein Geheimnis oder den Namen, unter dem eines abgelegt ist. `execFile` legt
 die vollständige Argumentliste in `err.message` — redigiert wird dort, wo bekannt ist, dass das
 Geheimnis in der Argumentliste steht, nicht beim Aufrufer.
 
-## 10. Tests
+Kein Fehlertext einer abgelehnten Pfadprüfung nennt den Inhalt oder die Existenz des Ziels: „Pfad
+ist geschützt" ist die vollständige Auskunft.
 
-**Unit, ohne Netz und ohne Datenbank** — die neun reinen Module: Blockübersetzung in beide
-Richtungen je Codec, Normalisierung von `stop_reason` und Usage, Präfix-Serialisierung,
-Projektion, Budgetarithmetik, Preistabelle, Abschlussgründe.
+## 11. Tests
+
+**Unit, ohne Netz und ohne Datenbank** — die reinen Module: Blockübersetzung in beide Richtungen je
+Codec, Normalisierung von `stop_reason` und Usage, Präfix-Serialisierung, Stummelliste, Projektion,
+Budgetarithmetik, Preistabelle, Abschlussgründe, Werkzeug-Registry.
+
+**Gegen ein temporäres Verzeichnis** — die Pfadwache: Wurzel-Grenze, jeder geschützte Pfad, und
+**der Symlink-Fall**: ein Link innerhalb der Wurzel, der nach `~/.ssh` zeigt, wird abgelehnt.
 
 **Gegen eine `:memory:`-Datenbank** — `protokoll.ts`: Anhängen, `seq`-Vergabe, Lesen, und dass die
-Trigger `UPDATE` und `DELETE` ablehnen.
+Trigger `UPDATE` und `DELETE` ablehnen. Dazu die Graph-Werkzeuge gegen eine Test-Graphdatenbank.
 
 **Wächtertests:**
 
@@ -532,44 +758,54 @@ Trigger `UPDATE` und `DELETE` ablehnen.
 | Der Kern kennt Electron nicht | kein `electron`-Import unter `src/main/harness/`, ohne Ausnahmeliste |
 | Der Verlauf ist append-only | `UPDATE` und `DELETE` auf `ereignisse` werfen |
 | Der Präfix ist rekonstruierbar | Projektion aus dem Protokoll zeichengleich mit `prompt.sent` |
+| Ein Schema steht nie im Präfix | nach `tool.schema_loaded` ist der stabile Teil zeichengleich wie davor |
 | Die Schleife sieht nur die kanonische Form | derselbe aufgezeichnete Ablauf durch beide Codecs ergibt dieselbe **Ereignisfolge** |
+| Kein Effekt ohne Intent | im Protokoll steht vor jedem `tool.completed`/`tool.failed` ein `tool.intent` mit derselben Aufruf-ID |
+| Eine Quelle, zwei Renderungen | die vier Graph-Lesewerkzeuge und der MCP-Server bieten dieselben Operationen |
 | Der Vertrag bleibt an den Außenkanten | die Schleifen-Schnittstelle nimmt keine Pflichtfelder entgegen (Typ-Ebene) |
 | Kein Kanal ohne Aufrufer | jeder `harness:`-Kanal hat einen Renderer-Aufrufer |
 | Jede anpassbare Fläche steht im Inventar | die Preistabelle in `docs/anpassbare-flaechen.md` |
 
 **Die vier IPC-Handler bekommen bewusst keine Unit-Tests.** Kein Test dieses Repos erreicht einen
-`ipcMain`-Handler; ihre Abnahme sind Belege aus der laufenden App (§11).
+`ipcMain`-Handler; ihre Abnahme sind Belege aus der laufenden App (§12).
 
-**Die vier Gegenproben in `tests/model/ansicht.test.ts` bleiben in dieser Strecke stehen.**
-Strecke 1 fügt **keinen B-Slot** in `slots.ts` ein. Ein Slot ist ein Angebot an den Nutzer: Wer
-dort eine Zuordnung setzt, erwartet, dass ein Tier oder eine Rolle daraufhin über diesen Läufer
-fährt. Das verlangt einen Adapter, der eine Session über das Harness startet — und der hängt an
-den Werkzeugen. Ein Slot vor dem Adapter wäre eine Oberfläche für eine Attrappe, also genau das
-Muster, gegen das die Settings-Strecke angetreten ist.
+**Die vier Gegenproben in `tests/model/ansicht.test.ts` bleiben in dieser Strecke stehen.** Es wird
+**kein B-Slot** in `slots.ts` eingefügt. Ein Slot ist ein Angebot an den Nutzer: Wer dort eine
+Zuordnung setzt, erwartet, dass ein Tier oder eine Rolle daraufhin über diesen Läufer fährt. Das
+verlangt einen Adapter, der eine Session über das Harness startet, und der hängt an den
+schreibenden Werkzeugen und der Shell. Ein Slot vor dem Adapter wäre eine Oberfläche für eine
+Attrappe — genau das Muster, gegen das die Settings-Strecke angetreten ist.
 
 Fällt eine der vier Gegenproben trotzdem, gilt der Handover unverändert: Sie ist nicht kaputt, sie
 hat gearbeitet. Nicht abschwächen, nicht löschen — prüfen, ob die Regel jetzt zu Recht feuert, und
 die Gegenprobe in einen positiven Test umbauen. Für `kontext-zu-klein` reicht ein Slot ohnehin
 nicht; sie braucht zusätzlich einen `WarnKontext` in `ansicht.ts`, der heute nicht übergeben wird.
 
-## 11. Messprotokoll — die eigentliche Abnahme
+## 12. Messprotokoll — die eigentliche Abnahme
 
-Grüne Tests sagen in diesem Repo über eine Verdrahtung nichts aus. Sieben Belege aus der laufenden
+Grüne Tests sagen in diesem Repo über eine Verdrahtung nichts aus. Elf Belege aus der laufenden
 App, jeder mit **gültiger und ungültiger** Eingabe, damit auch das laute Scheitern belegt ist und
 nicht nur der Erfolg. Wörtlich nachzutragen im Plandokument unter `## Messprotokoll 2026-08-18`.
 
-1. Lauf ohne Werkzeuge gegen ein echtes Modell → vollständige Ereignisfolge im Panel, ohne
+1. Lauf ohne Werkzeugaufruf gegen ein echtes Modell → vollständige Ereignisfolge im Panel, ohne
    Anbieternamen in der Darstellung
 2. Derselbe Auftrag gegen Anthropic, einen OpenAI-kompatiblen Hoster und den Spark → dreimal
    vertragsgemäß, der Unterschied liegt nachweislich nur in der Fähigkeitszeile
 3. Auftrag mit angehängtem Bild und angehängter Datei gegen zwei Anbieter; ein dritter meldet
    Unvermögen ausdrücklich, statt es wegzulassen
-4. Prozess zwischen zwei Zügen hart beendet, Lauf fortgesetzt → kein Zug wird ein zweites Mal
-   gesendet, der rekonstruierte Präfix ist zeichengleich
-5. Zweiter Lauf meldet einen Cache-Treffer
-6. Budget künstlich auf zwei Runden → `fertig / runden-erschöpft` mit verwertbarem Teilergebnis,
-   keine Ausnahme
-7. `KEEL_KEEP_PROFILE=1` — Start mit vorhandener Konfiguration und vorhandener `harness.db`
+4. **Ein Auftrag, der wirklich Arbeit ist:** „Sieh dir `src/main/model/` an und sag, welche Datei
+   die Warnregeln hält und wer sie aufruft." Mehrere Werkzeugaufrufe, ein belegter Befund
+5. `werkzeug_schema` wird geholt → `tool.schema_loaded` im Panel, das Schema steht im Verlauf und
+   der stabile Präfix ist zeichengleich wie vorher
+6. Ein Werkzeugaufruf auf einen Pfad außerhalb der Wurzel und einer auf `~/.ssh` → beide abgelehnt,
+   der Lauf läuft weiter, das Modell reagiert auf die Ablehnung
+7. **Der Symlink-Fall in der laufenden App:** ein Link in der Wurzel, der nach außen zeigt → abgelehnt
+8. Prozess **mitten in einem Werkzeugaufruf** hart beendet, Lauf fortgesetzt → der offene Intent
+   erscheint als „Ausführung unbekannt, Zustand prüfen"; kein Werkzeug läuft ein zweites Mal
+9. Zweiter Lauf meldet einen Cache-Treffer
+10. Budget künstlich auf zwei Runden → `fertig / runden-erschöpft` mit verwertbarem Teilergebnis,
+    keine Ausnahme; ein Werkzeugaufruf im Abschlusszug wird abgelehnt
+11. `KEEL_KEEP_PROFILE=1` — Start mit vorhandener Konfiguration und vorhandener `harness.db`
 
 **Vor jedem Messlauf prüfen**, ob noch etwas läuft: `tmux list-sessions` und
 `ps aux | grep -i "[c]ipher-keel"`. Eine zweite Instanz teilt sonst Config und Datenbank.
@@ -577,29 +813,30 @@ nicht nur der Erfolg. Wörtlich nachzutragen im Plandokument unter `## Messproto
 Der Fehlerpfad wird **absichtlich erzwungen** statt auf einen Zufallsfehler gewartet, und mit einem
 wirklich schwachen Modell belegt — ein starkes Modell hätte ihn nie gezeigt.
 
-## 12. Ausdrücklich nicht in dieser Strecke
+## 13. Ausdrücklich nicht in dieser Strecke
 
-Werkzeuge und Werkzeugschleife · OS-Ausführungsgrenze, Egress-Allowlist, Sandbox-Profil ·
-Kompaktierung · `ausgesetzt` und der Weckdienst · beide Delegations-Primitive · der gekapselte
-Rechercheur · Kanarienauftrag und das Füllen der Fähigkeitstabelle · Ergebnisurteil ·
-Codecs `ollama-native` und `text` · Beobachtbarkeit autonomer Läufe samt `heartbeat` ·
-Token-Streaming · Reparaturversuche · Drag&Drop und Screenshot-Einfügen · ein B-Slot in
+Schreibende und editierende Werkzeuge · Shell · `graph_upsert_node`, `graph_link`,
+`graph_maintain` · OS-Ausführungsgrenze, Egress-Allowlist, Sandbox-Profil je Lauf · Kompaktierung ·
+`ausgesetzt` und der Weckdienst · beide Delegations-Primitive · der gekapselte Rechercheur ·
+Kanarienauftrag und das Füllen der Fähigkeitstabelle · Ergebnisurteil · Codecs `ollama-native` und
+`text` · Beobachtbarkeit autonomer Läufe samt `heartbeat` · Token-Streaming · Reparaturversuche ·
+echte Werkzeug-Suche über einen großen Katalog · Drag&Drop und Screenshot-Einfügen · ein B-Slot in
 `slots.ts`.
 
-### 12.1 Übernommene Abnahmen — fällig in Strecke 2
+### 13.1 Übernommene Abnahmen — fällig mit den schreibenden Werkzeugen
 
-Was Strecke 1 nicht prüfen kann, weil ihm der Auslöser fehlt. Es wird **nicht vorgebaut** — Code
-ohne Aufrufer ist in diesem Projekt ein Prüfbefund — und es wird **nicht vergessen**:
+Was diese Strecke nicht prüfen kann, weil ihm der Auslöser fehlt. Es wird **nicht vorgebaut** —
+Code ohne Aufrufer ist in diesem Projekt ein Prüfbefund — und es wird **nicht vergessen**:
 
 | Abnahme | Herkunft | fällig mit |
 |---|---|---|
-| Ein offener `tool.intent` geht nach der Wiederaufnahme als „Ausführung unbekannt, Zustand prüfen" in den Verlauf; kein Werkzeug läuft ein zweites Mal | M8 §3.4, §10 | Werkzeuge |
-| Die Stummelliste bleibt über die Session zeichengleich; ein maskiertes Werkzeug behält seinen Stummel | M8 §3.5, §8 | Werkzeuge |
-| Ein nachgeladenes Schema erscheint im Verlauf und **nicht** im Präfix | M8 §3.5, §10 | Werkzeuge |
+| Ein schreibender Aufruf in der Menge erzwingt sequenzielle Ausführung (Single-Writer auf Werkzeugebene) | M8 §1, §3.2 | schreibenden Werkzeugen |
+| Ein Shell-Aufruf auf einen nicht erlaubten Pfad scheitert **am Betriebssystem**, nicht an einer Prüfung im Harness | M8 §4.5, §10 | Shell und Sandbox |
+| Ein maskiertes Werkzeug behält seinen Stummel, sein Aufruf wird mit Begründung abgelehnt, die Liste bleibt zeichengleich | M8 §3.5 | dem ersten echten Maskierungsfall |
 
-## 13. Nachzuführende Dokumente
+## 14. Nachzuführende Dokumente
 
-- `docs/anpassbare-flaechen.md` — die Preistabelle als anpassbare Fläche (§7.1), plus der
+- `docs/anpassbare-flaechen.md` — die Preistabelle als anpassbare Fläche (§8.1), plus der
   Inventartest
 - `src/main/worker/c-worker.ts` — der Kommentar „three niveaus are three runtimes" ist gegen die
   Preset-Schicht falsch und gehört korrigiert, nicht fortgeschrieben (M8 §6). Ein Kommentar, der
