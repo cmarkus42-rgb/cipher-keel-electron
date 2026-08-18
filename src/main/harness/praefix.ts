@@ -21,11 +21,32 @@ export interface PraefixTeile {
 
 /** Sorted keys, everywhere, so two equal objects have one spelling. */
 export function serialisiereDeterministisch(wert: unknown): string {
-  if (Array.isArray(wert)) return `[${wert.map(serialisiereDeterministisch).join(',')}]`
+  const besucht = new WeakSet<object>()
+  return _serialisiere(wert, besucht)
+}
+
+function _serialisiere(wert: unknown, besucht: WeakSet<object>): string {
+  if (Array.isArray(wert)) {
+    return `[${wert.map(item => _serialisiere(item, besucht)).join(',')}]`
+  }
   if (wert !== null && typeof wert === 'object') {
     const o = wert as Record<string, unknown>
-    const paare = Object.keys(o).sort().map(k => `${JSON.stringify(k)}:${serialisiereDeterministisch(o[k])}`)
-    return `{${paare.join(',')}}`
+
+    // Cycle detection: if this object is already on the current path, error.
+    if (besucht.has(o)) {
+      throw new Error('Die Eingabe enthaelt einen Zyklus und ist nicht deterministisch serialisierbar.')
+    }
+
+    // Add to visited set on the current path.
+    besucht.add(o)
+
+    try {
+      const paare = Object.keys(o).sort().map(k => `${JSON.stringify(k)}:${_serialisiere(o[k], besucht)}`)
+      return `{${paare.join(',')}}`
+    } finally {
+      // Remove from visited set so the same object can appear in sibling positions.
+      besucht.delete(o)
+    }
   }
   return JSON.stringify(wert) ?? 'null'
 }
