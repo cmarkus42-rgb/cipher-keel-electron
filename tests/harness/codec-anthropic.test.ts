@@ -71,17 +71,17 @@ describe('anthropicCodec.fromWire', () => {
     expect(a.stopGrund.normalisiert).toBe('werkzeug')
   })
 
-  it('wirft, wenn content fehlt', () => {
+  it('wirft auf Deutsch mit begrenztem Ausschnitt, wenn content fehlt', () => {
     expect(() => anthropicCodec.fromWire({
       stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 },
-    })).toThrow()
+    })).toThrow(/fromWire.*content.*Erhalten.*[:{]/)
   })
 
-  it('wirft, wenn content kein Array ist', () => {
+  it('wirft auf Deutsch mit begrenztem Ausschnitt, wenn content kein Array ist', () => {
     expect(() => anthropicCodec.fromWire({
       content: 'string statt array', stop_reason: 'end_turn',
       usage: { input_tokens: 1, output_tokens: 1 },
-    })).toThrow()
+    })).toThrow(/fromWire.*Array.*Erhalten.*[:{]/)
   })
 
   it('akzeptiert ein leeres content-Array', () => {

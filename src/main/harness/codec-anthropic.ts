@@ -86,11 +86,15 @@ export const anthropicCodec: Codec = {
     // distinction.
     if (!a.content) {
       const snippet = JSON.stringify(antwort).substring(0, 200)
-      throw new Error(`Anthropic response has no 'content' field: ${snippet}…`)
+      throw new Error(
+        `fromWire: content fehlt oder ist leer — kaputte Antwort vom Modell. Erhalten: ${snippet}…`,
+      )
     }
     if (!Array.isArray(a.content)) {
+      const snippet = JSON.stringify(antwort).substring(0, 200)
       throw new Error(
-        `Anthropic response 'content' must be an array; got ${typeof a.content}`,
+        `fromWire: content muss ein Array sein, nicht ${typeof a.content} — kaputte Antwort. ` +
+        `Erhalten: ${snippet}…`,
       )
     }
 
