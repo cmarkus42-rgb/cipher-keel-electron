@@ -41,4 +41,14 @@ describe('CK-NFR-012 — the adjustable-surface inventory', () => {
         .toMatch(/ja|nein/)
     }
   })
+
+  it('documents the cost budget price table', () => {
+    // The price table is adjustable because rates change faster than releases.
+    // It must be documented, and the key constraint — unknown models cost zero,
+    // not guessed — must be explicit.
+    expect(INVENTORY).toContain('Kostenbudget')
+    expect(INVENTORY).toContain('VORGABE_PREISE')
+    expect(INVENTORY).toContain('src/main/harness/budget.ts')
+    expect(INVENTORY).toContain('unbekanntes Modell kostet null')
+  })
 })

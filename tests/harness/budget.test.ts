@@ -9,8 +9,10 @@ const FRISCH = { runden: 0, verstricheneMs: 0, kostenCent: 0, letzteEingabeToken
 
 describe('kostenCent', () => {
   it('rechnet Ein- und Ausgabe getrennt gegen die Tabelle', () => {
-    const c = kostenCent('claude-opus-5', { eingabeToken: 1_000_000, ausgabeToken: 0 }, VORGABE_PREISE)
-    expect(c).toBeGreaterThan(0)
+    // claude-opus-5: 1500 cent/M input, 7500 cent/M output
+    // 1M input + 0.5M output = 1500 + 3750 = 5250 cent
+    const c = kostenCent('claude-opus-5', { eingabeToken: 1_000_000, ausgabeToken: 500_000 }, VORGABE_PREISE)
+    expect(c).toBe(5250)
   })
 
   it('rechnet ein unbekanntes Modell mit null statt zu raten', () => {

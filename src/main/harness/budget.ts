@@ -13,8 +13,8 @@
 
 import type { ModelAntwort } from './form'
 import { kostenCent, PREISTABELLE_STAND, VORGABE_PREISE, type Preis } from './preise'
-// `Preis` und `VORGABE_PREISE` gehen nur in verbrauchNach — pruefeBudgets rechnet nicht,
-// es vergleicht. Die Kosten stehen zu diesem Zeitpunkt schon im Verbrauch.
+// `Preis` and `VORGABE_PREISE` are only used in verbrauchNach; pruefeBudgets compares,
+// not calculates. Costs are already tracked in the Verbrauch object.
 
 export type Endzustand = 'fertig' | 'abgebrochen'
 
