@@ -1,8 +1,11 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
+import Database from 'better-sqlite3'
+import { openGraphDb } from '../../src/main/graph/db'
 import { GRAPH_WERKZEUGE } from '../../src/main/harness/werkzeug-graph'
 import { TOOL_DEFINITIONS } from '../../src/main/graph/mcp-server'
+import type { WerkzeugKontext } from '../../src/main/harness/werkzeuge'
 
-const KTX_OHNE_DB = {
+const KTX_OHNE_DB: WerkzeugKontext = {
   wache: { wurzel: '/tmp', heim: '/tmp', userDataPfad: '/tmp/ud' },
   graphDb: null,
 }
@@ -39,5 +42,198 @@ describe('Waechter: eine Quelle, zwei Renderungen', () => {
     const imServer = TOOL_DEFINITIONS.map(t => t.name).filter(n => LESEND.includes(n)).sort()
     expect(imServer).toEqual([...LESEND].sort())
     expect(GRAPH_WERKZEUGE.length).toBe(imServer.length)
+  })
+})
+
+// ============================================================================
+// Tests gegen echte Graphdatenbank — Erfolgspfade und Randfälle
+// ============================================================================
+
+describe('Graph-Werkzeuge gegen echte DB', () => {
+  let db: Database.Database
+  let ktx: WerkzeugKontext
+
+  afterEach(() => { if (db?.open) db.close() })
+
+  // Setup für jeden Test
+  function setupDb() {
+    db = openGraphDb({ path: ':memory:' })
+    ktx = {
+      wache: { wurzel: '/tmp', heim: '/tmp', userDataPfad: '/tmp/ud' },
+      graphDb: db,
+    }
+    // Knoten für Tests einfügen
+    db.prepare(`
+      INSERT INTO node (uid, kind, path, title, status, frontmatter, body, content_hash, erstellt)
+      VALUES ('n1', 'anforderung', '/n1.md', 'Anforderung eins', 'aktiv', '{}', 'Body A', 'h1', '2026-01-01')
+    `).run()
+    db.prepare(`
+      INSERT INTO node (uid, kind, path, title, status, frontmatter, body, content_hash, erstellt)
+      VALUES ('n2', 'entscheidung', '/n2.md', 'Entscheidung zwei', 'aktiv', '{}', 'Body B', 'h2', '2026-01-02')
+    `).run()
+    db.prepare(`
+      INSERT INTO node (uid, kind, path, title, status, frontmatter, body, content_hash, erstellt)
+      VALUES ('n3', 'artefakt', '/n3.md', 'Artefakt Anfang', 'aktiv', '{"tags":["test"]}', 'Body C', 'h3', '2026-01-03')
+    `).run()
+    // Edge für Expand-Tests
+    db.prepare(`
+      INSERT INTO edge (src, dst, type, source, erstellt)
+      VALUES ('n1', 'n2', 'begruendet', 'frontmatter', '2026-01-01')
+    `).run()
+    // FTS indexieren
+    db.prepare(`INSERT INTO node_fts (uid, title, body) VALUES ('n1', 'Anforderung eins', 'Body A')`).run()
+    db.prepare(`INSERT INTO node_fts (uid, title, body) VALUES ('n2', 'Entscheidung zwei', 'Body B')`).run()
+    db.prepare(`INSERT INTO node_fts (uid, title, body) VALUES ('n3', 'Artefakt Anfang', 'Body C')`).run()
+  }
+
+  describe('graph_suchen (erfolgreich)', () => {
+    it('findet Knoten nach Suchbegriff', async () => {
+      setupDb()
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_suchen')!
+      const r = await w.ausfuehren({ query: 'Anforderung' }, ktx)
+      expect(r.ok).toBe(true)
+      if (r.ok) {
+        const txt = JSON.stringify(r.inhalt)
+        expect(txt).toContain('n1')
+        expect(txt).toContain('Anforderung eins')
+      }
+    })
+
+    it('respektiert limit Parameter', async () => {
+      setupDb()
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_suchen')!
+      const r = await w.ausfuehren({ query: 'Artefakt Entscheidung Anforderung', limit: 1 }, ktx)
+      expect(r.ok).toBe(true)
+      if (r.ok) {
+        const txt = JSON.stringify(r.inhalt)
+        // Mit limit: 1 sollten nicht alle drei Treffer drin sein
+        const matches = (txt.match(/uid/g) || []).length
+        expect(matches).toBeLessThanOrEqual(2)
+      }
+    })
+  })
+
+  describe('graph_suchen (Randfälle)', () => {
+    it('lehnt query vom falschen Typ ab', async () => {
+      setupDb()
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_suchen')!
+      const r = await w.ausfuehren({ query: 123 }, ktx)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.meldung.toLowerCase()).toContain('query')
+    })
+
+    it('lehnt negatives limit ab', async () => {
+      setupDb()
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_suchen')!
+      const r = await w.ausfuehren({ query: 'Test', limit: -10 }, ktx)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.meldung.toLowerCase()).toContain('limit')
+    })
+
+    it('lehnt zu großes limit ab', async () => {
+      setupDb()
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_suchen')!
+      const r = await w.ausfuehren({ query: 'Test', limit: 100000 }, ktx)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.meldung.toLowerCase()).toContain('limit')
+    })
+  })
+
+  describe('graph_knoten_holen (erfolgreich)', () => {
+    it('laedt einen existierenden Knoten vollstaendig', async () => {
+      setupDb()
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_knoten_holen')!
+      const r = await w.ausfuehren({ uid: 'n1' }, ktx)
+      expect(r.ok).toBe(true)
+      if (r.ok) {
+        const txt = JSON.stringify(r.inhalt)
+        expect(txt).toContain('Anforderung eins')
+        expect(txt).toContain('Body A')
+      }
+    })
+
+    it('meldet gefunden: false fuer nicht existierenden Knoten', async () => {
+      setupDb()
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_knoten_holen')!
+      const r = await w.ausfuehren({ uid: 'nicht_existiert' }, ktx)
+      expect(r.ok).toBe(true)
+      if (r.ok) {
+        const txt = JSON.stringify(r.inhalt)
+        expect(txt).toContain('gefunden')
+        expect(txt).toContain('false')
+      }
+    })
+  })
+
+  describe('graph_knoten_holen (Randfälle)', () => {
+    it('lehnt uid vom falschen Typ ab', async () => {
+      setupDb()
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_knoten_holen')!
+      const r = await w.ausfuehren({ uid: 456 }, ktx)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.meldung.toLowerCase()).toContain('uid')
+    })
+  })
+
+  describe('graph_ausweiten (erfolgreich)', () => {
+    it('weitet Nachbarschaft aus', async () => {
+      setupDb()
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_ausweiten')!
+      const r = await w.ausfuehren({ uid: 'n1' }, ktx)
+      expect(r.ok).toBe(true)
+      if (r.ok) {
+        const txt = JSON.stringify(r.inhalt)
+        expect(txt).toContain('n1')
+      }
+    })
+  })
+
+  describe('graph_ausweiten (Randfälle)', () => {
+    it('lehnt uid vom falschen Typ ab', async () => {
+      setupDb()
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_ausweiten')!
+      const r = await w.ausfuehren({ uid: null }, ktx)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.meldung.toLowerCase()).toContain('uid')
+    })
+
+    it('lehnt ungültige depth ab', async () => {
+      setupDb()
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_ausweiten')!
+      const r = await w.ausfuehren({ uid: 'n1', depth: 'nicht-numerisch' }, ktx)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.meldung.toLowerCase()).toContain('depth')
+    })
+  })
+
+  describe('graph_abfragen (erfolgreich)', () => {
+    it('führt eine bekannte Vorlage aus', async () => {
+      setupDb()
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_abfragen')!
+      const r = await w.ausfuehren({ template: 'herkunfts_kette', params: { uid: 'n1' } }, ktx)
+      expect(r.ok).toBe(true)
+    })
+  })
+
+  describe('graph_abfragen (Randfälle)', () => {
+    it('lehnt template vom falschen Typ ab', async () => {
+      setupDb()
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_abfragen')!
+      const r = await w.ausfuehren({ template: ['array'] }, ktx)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.meldung.toLowerCase()).toContain('template')
+    })
+
+    it('lehnt unbekannte Vorlage mit deutscher Meldung ab', async () => {
+      setupDb()
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_abfragen')!
+      const r = await w.ausfuehren({ template: 'vorlage_existiert_nicht' }, ktx)
+      expect(r.ok).toBe(false)
+      if (!r.ok) {
+        // Darf kein englischer Wortschwall sein
+        expect(r.meldung).not.toMatch(/SELECT|SQL|sqlite/i)
+        expect(r.meldung.toLowerCase()).toContain('vorlage')
+      }
+    })
   })
 })
