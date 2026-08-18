@@ -17,6 +17,7 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[] {
   const verlauf: Nachricht[] = []
   let offeneIntents: string[] = []
   let ergebnisse: Block[] = []
+  const beantwortetAufrufe = new Set<string>()
 
   const ergebnisseAbschliessen = (): void => {
     // An intent without a result means a hard death between effect and write. The call is not
@@ -24,6 +25,7 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[] {
     // wrong for the first writing one, and nobody would go looking for the exception then.
     for (const aufrufId of offeneIntents) {
       ergebnisse.push({ art: 'werkzeug-ergebnis', aufrufId, inhalt: [{ art: 'text', text: UNBEKANNT }], fehler: true })
+      beantwortetAufrufe.add(aufrufId)
     }
     offeneIntents = []
     if (ergebnisse.length > 0) {
@@ -50,20 +52,39 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[] {
         break
       case 'tool.completed': {
         const id = String(e.nutzlast.aufrufId)
+        const hatteIntent = offeneIntents.includes(id)
         offeneIntents = offeneIntents.filter(x => x !== id)
+        const inhalt = (e.nutzlast.inhalt as Block[]) ?? []
+        const finalInhalt: Block[] = []
+        if (beantwortetAufrufe.has(id)) {
+          finalInhalt.push({ art: 'text', text: `Aufruf ${id}: Die Angaben widersprechen sich. Zuvor als Ausfuehrung unbekannt abgeschlossen, jetzt kommt Erfolg.` })
+        } else if (!hatteIntent) {
+          finalInhalt.push({ art: 'text', text: `Aufruf ${id}: Ergebnis ohne vorherigen Intent im Protokoll.` })
+        }
+        finalInhalt.push(...inhalt)
         ergebnisse.push({
           art: 'werkzeug-ergebnis', aufrufId: id,
-          inhalt: (e.nutzlast.inhalt as Block[]) ?? [], fehler: false,
+          inhalt: finalInhalt, fehler: false,
         })
+        beantwortetAufrufe.add(id)
         break
       }
       case 'tool.failed': {
         const id = String(e.nutzlast.aufrufId)
+        const hatteIntent = offeneIntents.includes(id)
         offeneIntents = offeneIntents.filter(x => x !== id)
+        const inhalt: Block[] = []
+        if (beantwortetAufrufe.has(id)) {
+          inhalt.push({ art: 'text', text: `Aufruf ${id}: Die Angaben widersprechen sich. Zuvor als Ausfuehrung unbekannt abgeschlossen, jetzt kommt Fehler.` })
+        } else if (!hatteIntent) {
+          inhalt.push({ art: 'text', text: `Aufruf ${id}: Fehler ohne vorherigen Intent im Protokoll.` })
+        }
+        inhalt.push({ art: 'text', text: String(e.nutzlast.meldung ?? '') })
         ergebnisse.push({
           art: 'werkzeug-ergebnis', aufrufId: id,
-          inhalt: [{ art: 'text', text: String(e.nutzlast.meldung ?? '') }], fehler: true,
+          inhalt, fehler: true,
         })
+        beantwortetAufrufe.add(id)
         break
       }
       case 'tool.schema_loaded': {

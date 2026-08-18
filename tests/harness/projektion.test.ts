@@ -75,4 +75,31 @@ describe('projiziere', () => {
     expect(v[1].rolle).toBe('nutzer')
     expect(JSON.stringify(v[1].bloecke)).toContain('datei_lesen')
   })
+
+  it('markiert ein Ergebnis ohne vorherigen Intent mit deutschem Hinweis', () => {
+    const v = projiziere([
+      ev(1, 'run.started', { auftragstext: 'a' }),
+      ev(2, 'tool.completed', { aufrufId: 'c1', inhalt: [{ art: 'text', text: 'ergebnis' }] }),
+    ])
+    const block = v[1].bloecke[0]
+    expect(block).toMatchObject({ art: 'werkzeug-ergebnis', aufrufId: 'c1', fehler: false })
+    const inhaltStr = JSON.stringify(block)
+    expect(inhaltStr).toContain('Intent')
+  })
+
+  it('markiert ein widerspruchliches Ergebnis nach Zwangsabschluss mit deutschem Hinweis', () => {
+    const v = projiziere([
+      ev(1, 'run.started', { auftragstext: 'a' }),
+      ev(2, 'model.answered', { bloecke: [
+        { art: 'werkzeug-aufruf', id: 'c1', name: 'datei_lesen', eingabe: {} },
+      ] }),
+      ev(3, 'tool.intent', { aufrufId: 'c1', name: 'datei_lesen' }),
+      ev(4, 'model.answered', { bloecke: [{ art: 'text', text: 'modell antwortet' }] }),
+      ev(5, 'tool.completed', { aufrufId: 'c1', inhalt: [{ art: 'text', text: 'verspätetes ergebnis' }] }),
+    ])
+    const block = v[4].bloecke[0]
+    expect(block).toMatchObject({ art: 'werkzeug-ergebnis', aufrufId: 'c1' })
+    const inhaltStr = JSON.stringify(block)
+    expect(inhaltStr).toContain('widersprechen')
+  })
 })
