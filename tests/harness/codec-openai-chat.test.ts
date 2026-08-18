@@ -52,6 +52,28 @@ describe('openAiChatCodec.toWire', () => {
     }
     expect(w.tools[0].function).toMatchObject({ name: 'datei_lesen', description: 'Liest eine Datei.' })
   })
+
+  it('markiert einen Denken-Block mit Vorspann, wenn das Modell keine Denkbloecke fuehrt', () => {
+    const w = openAiChatCodec.toWire(
+      [{ rolle: 'nutzer', bloecke: [{ art: 'denken', text: 'Innere Ueberlegung' }] }],
+      STUMMEL, KANN,
+    ) as { messages: Array<{ content: Array<Record<string, unknown>> }> }
+    const inhaltstext = (w.messages[0].content[0] as Record<string, string>).text
+    expect(inhaltstext).toContain('[Denken-Block ohne Unterstuetzung:')
+    expect(inhaltstext).toContain('Innere Ueberlegung')
+  })
+
+  it('wirft bei Blocktyp im default-Fall (z.B. verschachtelte Werkzeugergebnisse)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nestedBlock: any = { art: 'werkzeug-aufruf', id: 'c2', name: 'nested', eingabe: {} }
+    expect(() => openAiChatCodec.toWire(
+      [{ rolle: 'modell', bloecke: [{
+        art: 'werkzeug-ergebnis', aufrufId: 'c1', fehler: false,
+        inhalt: [nestedBlock],
+      }] }],
+      [], KANN,
+    )).toThrow(/werkzeug-aufruf/)
+  })
 })
 
 describe('openAiChatCodec.fromWire', () => {
@@ -76,5 +98,10 @@ describe('openAiChatCodec.fromWire', () => {
       { art: 'werkzeug-aufruf', id: 'c1', name: 'datei_lesen', eingabe: { pfad: 'a.ts' } },
     ])
     expect(a.stopGrund.normalisiert).toBe('werkzeug')
+  })
+
+  it('wirft, wenn choices fehlt oder leer ist (kaputte Antwort)', () => {
+    expect(() => openAiChatCodec.fromWire({ usage: { prompt_tokens: 1, completion_tokens: 1 } })).toThrow(/choices/)
+    expect(() => openAiChatCodec.fromWire({ choices: [], usage: { prompt_tokens: 1, completion_tokens: 1 } })).toThrow(/choices/)
   })
 })

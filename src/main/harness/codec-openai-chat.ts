@@ -16,16 +16,29 @@ import { CodecKannNicht, type Codec, type WerkzeugStummel } from './codec'
 function inhaltsteil(b: Block, f: Faehigkeiten): Record<string, unknown> {
   switch (b.art) {
     case 'text':
-    case 'denken':
       return { type: 'text', text: b.text }
+    case 'denken': {
+      // A thinking block is text. A model without thinking capability *can* see a text — rejection
+      // would block continuation of a run from Model A to Model B, a case we want. Instead: mark
+      // the block visibly as translated, not silently.
+      if (!f.denkbloecke) {
+        const text = `[Denken-Block ohne Unterstuetzung: Dieses Modell fuehrt keine Denkbloecke. Inhalt wird als normaler Text uebersetzt.]\n\n${b.text}`
+        return { type: 'text', text }
+      }
+      return { type: 'text', text: b.text }
+    }
     case 'bild':
       if (!f.bilder) throw new CodecKannNicht('bild', 'bilder', f)
       return { type: 'image_url', image_url: { url: `data:${b.medientyp};base64,${b.daten}` } }
     case 'dokument':
       if (!f.dokumente) throw new CodecKannNicht('dokument', 'dokumente', f)
       return { type: 'file', file: { filename: b.name, file_data: `data:${b.medientyp};base64,${b.daten}` } }
-    default:
-      return { type: 'text', text: '' }
+    default: {
+      const blockArt = (b as Record<string, unknown>).art ?? 'unbekannt'
+      throw new Error(
+        `Block-Typ '${blockArt}' kann in inhaltsteil() nicht vorkommen (keine Werkzeug-Aufrufe oder -Ergebnisse hier).`,
+      )
+    }
   }
 }
 
@@ -89,6 +102,13 @@ export const openAiChatCodec: Codec = {
         id: string; function: { name: string; arguments: string }
       }> }; finish_reason?: string }>
       usage?: { prompt_tokens?: number; completion_tokens?: number }
+    }
+    if (!a.choices || a.choices.length === 0) {
+      const snippet = JSON.stringify(antwort).substring(0, 200)
+      throw new Error(
+        `fromWire: choices fehlt oder ist leer — kaputte Antwort vom Modell. ` +
+        `Erhalten: ${snippet}`,
+      )
     }
     const wahl = a.choices?.[0]
     const bloecke: Block[] = []
