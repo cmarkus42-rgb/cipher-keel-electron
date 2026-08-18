@@ -42,6 +42,18 @@ beforeAll(() => {
   // of some over-broad "starts with a dot" heuristic among the excluded names.
   writeFileSync(join(wurzel, '.gitignore'), 'node_modules/\n')
 
+  // Depth-dependent exclusion fixture (task-9 fix-round 3): node_modules nests and must fall at
+  // any depth; build-output names are only excluded directly under the root, so a same-named
+  // source directory deeper in the tree must survive.
+  mkdirSync(join(wurzel, 'node_modules', 'x', 'node_modules'), { recursive: true })
+  writeFileSync(join(wurzel, 'node_modules', 'x', 'node_modules', 'tief.ts'), 'export const n = 1\n')
+  mkdirSync(join(wurzel, 'build'), { recursive: true })
+  writeFileSync(join(wurzel, 'build', 'erzeugt.ts'), 'export const b = 1\n')
+  mkdirSync(join(wurzel, 'src', 'build'), { recursive: true })
+  writeFileSync(join(wurzel, 'src', 'build', 'quelle.ts'), 'export const q = 1\n')
+  mkdirSync(join(wurzel, 'src', 'node_modules'), { recursive: true })
+  writeFileSync(join(wurzel, 'src', 'node_modules', 'fremd.ts'), 'export const f = 1\n')
+
   ktx = { wache: { wurzel, heim, userDataPfad: join(heim, 'ud') }, graphDb: null }
 })
 
@@ -154,6 +166,45 @@ describe('verzeichnis_listen — schwere Verzeichnisse ausgeschlossen (Relevanzf
     const r = await werkzeug('verzeichnis_listen').ausfuehren({ muster: '**/*.ts' }, ktx)
     expect(r.ok).toBe(true)
     if (r.ok) expect((r.inhalt[0] as { text: string }).text).toContain(join('distribution', 'datei.ts'))
+  })
+})
+
+describe('verzeichnis_listen — tiefenabhaengiger Ausschluss (node_modules & Co. ueberall, Build-Namen nur an der Wurzel)', () => {
+  it('schliesst node_modules auch verschachtelt aus', async () => {
+    const r = await werkzeug('verzeichnis_listen').ausfuehren({ muster: '**/*.ts' }, ktx)
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      const text = (r.inhalt[0] as { text: string }).text
+      expect(text).not.toContain(join('node_modules', 'x', 'node_modules', 'tief.ts'))
+    }
+  })
+
+  it('schliesst ein build-Verzeichnis direkt an der Wurzel aus', async () => {
+    const r = await werkzeug('verzeichnis_listen').ausfuehren({ muster: '**/*.ts' }, ktx)
+    expect(r.ok).toBe(true)
+    if (r.ok) expect((r.inhalt[0] as { text: string }).text).not.toContain(join('build', 'erzeugt.ts'))
+  })
+
+  it('laesst ein gleichnamiges "build"-Verzeichnis in der Tiefe sichtbar — das ist der eigentliche Fund', async () => {
+    const r = await werkzeug('verzeichnis_listen').ausfuehren({ muster: '**/*.ts' }, ktx)
+    expect(r.ok).toBe(true)
+    if (r.ok) expect((r.inhalt[0] as { text: string }).text).toContain(join('src', 'build', 'quelle.ts'))
+  })
+
+  it('schliesst ein node_modules-Verzeichnis in der Tiefe trotzdem aus (Gegenstueck zum vorigen Test)', async () => {
+    const r = await werkzeug('verzeichnis_listen').ausfuehren({ muster: '**/*.ts' }, ktx)
+    expect(r.ok).toBe(true)
+    if (r.ok) expect((r.inhalt[0] as { text: string }).text).not.toContain(join('src', 'node_modules', 'fremd.ts'))
+  })
+
+  it('unterscheidet im Ausschluss-Hinweis zwischen "jede Tiefe" und "nur direkt unter der Wurzel"', async () => {
+    const r = await werkzeug('verzeichnis_listen').ausfuehren({ muster: '**/*.ts' }, ktx)
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      const text = (r.inhalt[0] as { text: string }).text
+      expect(text).toContain('jede Tiefe')
+      expect(text).toContain('nur direkt unter der Wurzel')
+    }
   })
 })
 

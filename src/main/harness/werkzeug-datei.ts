@@ -75,26 +75,46 @@ function zeilenGrenzePruefen(
  * what may be read; this only decides what is worth handing to a code search. Conflating the two
  * later would either weaken pfadwache while assuming safety is untouched, or make this filter
  * paranoid while assuming it protects something it was never meant to.
+ *
+ * Two lists, not one — depth changes the answer for each:
+ * - `node_modules` nests inside itself (`node_modules/x/node_modules/y`) and must fall at every
+ *   depth, wherever it appears; the same holds for other names that are never source regardless
+ *   of where they sit.
+ * - Build-output directories (`dist`, `build`, `out`, `coverage`, `release`) are only excluded
+ *   directly under the project root, where tooling conventionally writes them. `src/build/` is
+ *   very likely hand-written source, not tool output, and stays visible.
  */
-const AUSGESCHLOSSENE_VERZEICHNISSE = new Set([
-  'node_modules', 'dist', 'build', 'out', 'coverage', '.cache', '.next', 'vendor',
+const AUSGESCHLOSSEN_JEDE_TIEFE = new Set(['node_modules', '.cache', '.next', 'vendor'])
+const AUSGESCHLOSSEN_NUR_WURZEL = new Set([
+  'dist', 'build', 'out', 'coverage',
   // electron-builder's packaged output in this repo: 442 MB, same category as dist/build/out.
   'release',
 ])
 
 /** Returns the (lowercased) excluded segment name if the relative path runs through one, else null. */
 function ausgeschlossenesSegment(relativerPfad: string): string | null {
-  for (const segment of relativerPfad.split(/[\\/]/)) {
-    const klein = segment.toLowerCase()
-    if (AUSGESCHLOSSENE_VERZEICHNISSE.has(klein)) return klein
+  const segmente = relativerPfad.split(/[\\/]/)
+  for (let i = 0; i < segmente.length; i += 1) {
+    const klein = segmente[i].toLowerCase()
+    if (AUSGESCHLOSSEN_JEDE_TIEFE.has(klein)) return klein
+    if (i === 0 && AUSGESCHLOSSEN_NUR_WURZEL.has(klein)) return klein
   }
   return null
 }
 
-/** One line, appended to a result, when directories were left out of an otherwise-complete-looking listing. */
+/**
+ * One line, appended to a result, when directories were left out of an otherwise-complete-looking
+ * listing — split by scope so the note does not overclaim: a root-only exclusion must not read as
+ * "filtered everywhere", since a same-named directory deeper in the tree may still be listed.
+ */
 function ausschlussHinweis(ausgeschlossen: ReadonlySet<string>): string {
   if (ausgeschlossen.size === 0) return ''
-  return `\n(Verzeichnisse ausgeschlossen: ${[...ausgeschlossen].sort().join(', ')})`
+  const jedeTiefe = [...ausgeschlossen].filter(n => AUSGESCHLOSSEN_JEDE_TIEFE.has(n)).sort()
+  const nurWurzel = [...ausgeschlossen].filter(n => AUSGESCHLOSSEN_NUR_WURZEL.has(n)).sort()
+  const teile: string[] = []
+  if (jedeTiefe.length > 0) teile.push(`${jedeTiefe.join(', ')} (jede Tiefe)`)
+  if (nurWurzel.length > 0) teile.push(`${nurWurzel.join(', ')} (nur direkt unter der Wurzel)`)
+  return `\n(Verzeichnisse ausgeschlossen: ${teile.join('; ')})`
 }
 
 function musterZuRegex(muster: string): RegExp {
