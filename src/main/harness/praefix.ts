@@ -26,29 +26,30 @@ export function serialisiereDeterministisch(wert: unknown): string {
 }
 
 function _serialisiere(wert: unknown, besucht: WeakSet<object>): string {
-  if (Array.isArray(wert)) {
-    return `[${wert.map(item => _serialisiere(item, besucht)).join(',')}]`
-  }
+  // Cycle detection for any object or array, before checking type.
   if (wert !== null && typeof wert === 'object') {
-    const o = wert as Record<string, unknown>
-
-    // Cycle detection: if this object is already on the current path, error.
-    if (besucht.has(o)) {
+    if (besucht.has(wert)) {
       throw new Error('Die Eingabe enthaelt einen Zyklus und ist nicht deterministisch serialisierbar.')
     }
+    besucht.add(wert)
+  }
 
-    // Add to visited set on the current path.
-    besucht.add(o)
-
-    try {
+  try {
+    if (Array.isArray(wert)) {
+      return `[${wert.map(item => _serialisiere(item, besucht)).join(',')}]`
+    }
+    if (wert !== null && typeof wert === 'object') {
+      const o = wert as Record<string, unknown>
       const paare = Object.keys(o).sort().map(k => `${JSON.stringify(k)}:${_serialisiere(o[k], besucht)}`)
       return `{${paare.join(',')}}`
-    } finally {
-      // Remove from visited set so the same object can appear in sibling positions.
-      besucht.delete(o)
+    }
+    return JSON.stringify(wert) ?? 'null'
+  } finally {
+    // Remove from visited set so the same object or array can appear in sibling positions.
+    if (wert !== null && typeof wert === 'object') {
+      besucht.delete(wert)
     }
   }
-  return JSON.stringify(wert) ?? 'null'
 }
 
 export function baueStabilenTeil(teile: PraefixTeile, werkzeuge: WerkzeugStummel[]): string {

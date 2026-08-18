@@ -73,6 +73,17 @@ describe('serialisiereDeterministisch', () => {
     const obj = { x: 1 }
     expect(() => serialisiereDeterministisch([obj, obj])).not.toThrow()
   })
+
+  it('wirft einen benannten Fehler bei einem zyklischen Array', () => {
+    const arr: unknown[] = [1, 2]
+    arr.push(arr)
+    expect(() => serialisiereDeterministisch(arr)).toThrow(/Zyklus/)
+  })
+
+  it('erlaubt dasselbe Array zweimal nebeneinander in einer aeusseren Liste', () => {
+    const arr = [1, 2]
+    expect(() => serialisiereDeterministisch([arr, arr])).not.toThrow()
+  })
 })
 
 describe('baueFortschritt', () => {
