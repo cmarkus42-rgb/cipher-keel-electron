@@ -29,6 +29,10 @@ export type WacheErgebnis =
   | { ok: true; pfad: string }
   | { ok: false; grund: string }
 
+// Lowercase once, at the set/regex definitions, and compare against a lowercased name at the
+// call site (see `pruefePfad`) — one form, used everywhere a name is matched. Case-insensitive
+// filesystems (default APFS, default Windows) hand a reading tool the content of `.env` when it
+// asks for `.ENV`; a case-sensitive name check would wave that request through.
 const SHELL_STARTDATEIEN = new Set([
   '.zshrc', '.zprofile', '.zshenv', '.bashrc', '.bash_profile', '.profile',
 ])
@@ -65,19 +69,23 @@ function aufloesen(pfad: string): string {
 export function pruefePfad(roh: string, ktx: WacheKontext): WacheErgebnis {
   const pfad = aufloesen(roh)
   const name = basename(pfad)
+  // One lowercased form, used for every name comparison below. The rules protect a namespace,
+  // not a specific on-disk file — on a case-sensitive filesystem `.ENV` names a different file
+  // than `.env`, and it is still denied. That is the intended, stricter reading.
+  const nameKlein = name.toLowerCase()
 
   // 1. Protected paths — in every mode, never overridable by an allow rule.
   const geschuetzt =
     istIn(pfad, join(ktx.heim, '.ssh')) ||
     istIn(pfad, ktx.userDataPfad) ||
-    (SHELL_STARTDATEIEN.has(name) && istIn(pfad, ktx.heim)) ||
-    (name.startsWith('.cipher-') && istIn(pfad, ktx.heim)) ||
-    pfad.split(sep).includes('.git')
+    (SHELL_STARTDATEIEN.has(nameKlein) && istIn(pfad, ktx.heim)) ||
+    (nameKlein.startsWith('.cipher-') && istIn(pfad, ktx.heim)) ||
+    pfad.split(sep).some((segment) => segment.toLowerCase() === '.git')
   if (geschuetzt) return { ok: false, grund: 'Pfad ist geschuetzt' }
 
   // 2. Deny rules — these bite *inside* the root as well. A project carries secrets, and a
   // .env the model reads travels to the provider with the next prompt.
-  if (VERWEIGERTE_NAMEN.test(name) || VERWEIGERTE_ENDUNGEN.test(name)) {
+  if (VERWEIGERTE_NAMEN.test(nameKlein) || VERWEIGERTE_ENDUNGEN.test(nameKlein)) {
     return { ok: false, grund: 'Pfad ist geschuetzt' }
   }
 

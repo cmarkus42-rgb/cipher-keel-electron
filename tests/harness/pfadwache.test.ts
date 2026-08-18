@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pruefePfad } from '../../src/main/harness/pfadwache'
@@ -10,7 +10,12 @@ let userDataPfad: string
 let ktx: { wurzel: string; heim: string; userDataPfad: string }
 
 beforeAll(() => {
-  heim = mkdtempSync(join(tmpdir(), 'keel-heim-'))
+  // realpathSync here matches what a real WacheKontext.heim already is: Electron's
+  // app.getPath('home') returns a canonical path, not a raw tmpdir symlink target (macOS
+  // routes os.tmpdir() through /var -> /private/var). Without this, `ktx.heim` and the
+  // guard's already-resolved candidate path would disagree on a prefix that has nothing to
+  // do with the rule under test.
+  heim = realpathSync(mkdtempSync(join(tmpdir(), 'keel-heim-')))
   wurzel = join(heim, 'projekt')
   userDataPfad = join(heim, 'Library', 'Application Support', 'cipher-keel')
   mkdirSync(wurzel, { recursive: true })
@@ -86,5 +91,39 @@ describe('pruefePfad', () => {
     if (e.ok) throw new Error('haette abgelehnt werden muessen')
     expect(e.grund).not.toContain('privat')
     expect(e.grund.split(' ').length).toBeLessThan(8)
+  })
+
+  // Case-insensitive filesystems (default APFS, default Windows) hand a tool the content of
+  // `.env` when it asks for `.ENV`. The guard must deny the name regardless of casing.
+  it('lehnt .ENV (Grossbuchstaben) innerhalb der Wurzel ab', () => {
+    expect(pruefePfad(join(wurzel, '.ENV'), ktx))
+      .toEqual({ ok: false, grund: 'Pfad ist geschuetzt' })
+  })
+
+  it('lehnt .Env (gemischte Gross-/Kleinschreibung) innerhalb der Wurzel ab', () => {
+    expect(pruefePfad(join(wurzel, '.Env'), ktx))
+      .toEqual({ ok: false, grund: 'Pfad ist geschuetzt' })
+  })
+
+  it('lehnt ZERT.PEM (Grossbuchstaben-Endung) innerhalb der Wurzel ab', () => {
+    expect(pruefePfad(join(wurzel, 'ZERT.PEM'), ktx).ok).toBe(false)
+  })
+
+  it('lehnt eine grossgeschriebene Shell-Startdatei ab', () => {
+    // Placed outside `wurzel`, the outside-root rule would deny it either way and mask a
+    // case-sensitivity bug in SHELL_STARTDATEIEN. Using wurzel === heim isolates the rule.
+    const ktxImHeim = { wurzel: heim, heim, userDataPfad }
+    expect(pruefePfad(join(heim, '.ZSHRC'), ktxImHeim).ok).toBe(false)
+  })
+
+  it('lehnt ein grossgeschriebenes .GIT-Wegstueck ab', () => {
+    expect(pruefePfad(join(wurzel, '.GIT', 'config'), ktx).ok).toBe(false)
+  })
+
+  it('lehnt ~/.CIPHER-* (Grossbuchstaben-Praefix) ab', () => {
+    // Same isolation as above: without wurzel === heim, the outside-root rule would mask a
+    // case-sensitivity bug in the .cipher- prefix check.
+    const ktxImHeim = { wurzel: heim, heim, userDataPfad }
+    expect(pruefePfad(join(heim, '.CIPHER-webhook.env'), ktxImHeim).ok).toBe(false)
   })
 })
