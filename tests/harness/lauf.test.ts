@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { oeffneHarnessDb, lesen } from '../../src/main/harness/protokoll'
-import { starteLauf } from '../../src/main/harness/lauf'
+import { anhaengen, oeffneHarnessDb, lesen } from '../../src/main/harness/protokoll'
+import { starteLauf, setzeFort, verbrauchAusEreignissen } from '../../src/main/harness/lauf'
 import { WerkzeugRegistry } from '../../src/main/harness/werkzeuge'
 import type { ModellEintrag } from '../../src/main/model/entry'
 import type { ModelAntwort } from '../../src/main/harness/form'
+import type { Ereignis } from '../../src/main/harness/ereignisse'
 
 const EINTRAG: ModellEintrag = {
   id: 'test-modell', name: 'Testmodell', art: 'api',
@@ -212,5 +213,56 @@ describe('starteLauf', () => {
     const u = umgebungMit([antwort('a')])
     const eintrag = { ...EINTRAG, faehigkeiten: { ...EINTRAG.faehigkeiten!, werkzeugmodus: 'text' as const } }
     await expect(starteLauf(AUFTRAG, { ...u, eintrag })).rejects.toThrow(/Text-Protokoll/)
+  })
+
+  it('rechnet den Verbrauch bei der Fortsetzung aus dem Protokoll neu, statt bei null zu beginnen', async () => {
+    // A run that already spent its one round before a crash must recognise the exhausted
+    // budget on the very next turn after resuming — not rediscover it a full round later.
+    const db = oeffneHarnessDb(':memory:')
+    const laufId = 'lauf-fortsetzen'
+    anhaengen(db, laufId, 'run.started', {
+      auftragstext: AUFTRAG.auftragstext, modellId: AUFTRAG.modellId, werkzeuge: [],
+    })
+    anhaengen(db, laufId, 'prompt.sent', { text: 'BODY', zug: 1 })
+    anhaengen(db, laufId, 'model.answered', {
+      bloecke: [{ art: 'text', text: 'vor dem Absturz' }],
+      stopGrund: { normalisiert: 'ende', roh: 'stop' },
+      usage: { eingabeToken: 100, ausgabeToken: 10, roh: null },
+    })
+
+    const u = { ...umgebungMit([antwort('Teilergebnis nach Wiederaufnahme')]), db }
+    await setzeFort(laufId, { ...AUFTRAG, budgets: { ...AUFTRAG.budgets, runden: 1 } }, u)
+
+    const ereignisse = lesen(db, laufId)
+    // Exactly one more turn after resuming — the closing turn, not a normal one first.
+    expect(ereignisse.filter(e => e.art === 'model.answered')).toHaveLength(2)
+    expect(ereignisse.at(-1)?.nutzlast).toMatchObject({
+      endzustand: 'fertig', grund: 'runden-erschoepft',
+    })
+  })
+})
+
+describe('verbrauchAusEreignissen', () => {
+  const ev = (seq: number, art: Ereignis['art'], nutzlast: Record<string, unknown>, ts: string): Ereignis =>
+    ({ laufId: 'x', seq, ts, art, nutzlast })
+
+  it('zaehlt Runden aus model.answered und nimmt den Kontextstand der letzten Antwort, nicht die Summe', () => {
+    const ereignisse: Ereignis[] = [
+      ev(1, 'run.started', {}, '2026-08-18T10:00:00.000Z'),
+      ev(2, 'model.answered', { usage: { eingabeToken: 100, ausgabeToken: 10, roh: null } }, '2026-08-18T10:01:00.000Z'),
+      ev(3, 'model.answered', { usage: { eingabeToken: 200, ausgabeToken: 10, roh: null } }, '2026-08-18T10:02:00.000Z'),
+      ev(4, 'model.answered', { usage: { eingabeToken: 300, ausgabeToken: 10, roh: null } }, '2026-08-18T10:03:00.000Z'),
+    ]
+    const v = verbrauchAusEreignissen(ereignisse, 'claude-sonnet-5', Date.parse('2026-08-18T10:05:00.000Z'))
+    expect(v.runden).toBe(3)
+    expect(v.letzteEingabeToken).toBe(300)
+    // Elapsed time is measured from run.started's own timestamp, not from when this function runs.
+    expect(v.verstricheneMs).toBe(5 * 60_000)
+  })
+
+  it('kostet ein leeres Protokoll ohne Antworten mit null Runden und null Kosten', () => {
+    const ereignisse: Ereignis[] = [ev(1, 'run.started', {}, '2026-08-18T10:00:00.000Z')]
+    const v = verbrauchAusEreignissen(ereignisse, 'claude-sonnet-5', Date.parse('2026-08-18T10:00:00.000Z'))
+    expect(v).toEqual({ runden: 0, verstricheneMs: 0, kostenCent: 0, letzteEingabeToken: 0 })
   })
 })

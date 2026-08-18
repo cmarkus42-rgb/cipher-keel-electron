@@ -1,10 +1,13 @@
 /**
  * lauf — the loop, and the only module that assembles the others.
  *
- * It holds no history. Before every turn it reads the run's events and projects. That makes
- * "turn 1" and "turn 14 after a restart" the same code path — and resumption, which hangs on a
- * hard process death and is therefore badly testable, has by then run a thousand times in normal
- * operation (M8 section 3.4).
+ * It holds no history and no consumption in memory. Before every turn it reads the run's events,
+ * projects the conversation from them, and reconstructs how much of each budget is spent from the
+ * same log (see `verbrauchAusEreignissen`). That makes "turn 1" and "turn 14 after a restart" the
+ * same code path for both — and resumption, which hangs on a hard process death and is therefore
+ * badly testable, has by then run a thousand times in normal operation (M8 section 3.4). A version
+ * that carried consumption across turns in a local variable would reset it to zero on every
+ * restart, and a run that keeps crashing would get unbounded budget instead of none.
  *
  * `sende` is injected rather than imported so the loop can be driven without a network. It is
  * not a mock seam bolted on for tests: the loop genuinely has no business knowing which
@@ -23,9 +26,10 @@ import { nurText, werkzeugAufrufe } from './form'
 import { projiziere } from './projektion'
 import { baueFortschritt, baueStabilenTeil, type PraefixTeile } from './praefix'
 import {
-  grundFuerStopGrund, pruefeBudgets, verbrauchNach, VON_AUSSEN, ZIEL_ERREICHT,
+  grundFuerStopGrund, pruefeBudgets, VON_AUSSEN, ZIEL_ERREICHT,
   type Abschlussgrund, type Budgets, type Verbrauch,
 } from './budget'
+import { kostenCent, VORGABE_PREISE, type Preis } from './preise'
 import type { WacheKontext } from './pfadwache'
 import type { WerkzeugRegistry } from './werkzeuge'
 
@@ -53,8 +57,42 @@ export interface LaufUmgebung {
   sende: (koerper: unknown, praefix: string) => Promise<ModelAntwort>
 }
 
-const LEERER_VERBRAUCH: Verbrauch = {
-  runden: 0, verstricheneMs: 0, kostenCent: 0, letzteEingabeToken: 0,
+/**
+ * Reconstruct consumption from the event log rather than carrying it in a variable across turns
+ * — the same rule the rest of the loop follows for the conversation itself. Pure: events in,
+ * `Verbrauch` out, nothing read from anywhere else.
+ *
+ * - Rounds are the count of `model.answered` events — one per turn actually taken.
+ * - Context fill is the *last* answer's input token count, not a sum: it is a level, not an
+ *   amount, and the provider reports the whole conversation's size on every turn.
+ * - Cost is a sum: every turn's tokens are billed once and stay billed.
+ * - Elapsed wall time is measured from `run.started`'s own timestamp, not from when this
+ *   function happens to run. That is a deliberate reading of "wall clock", not the only
+ *   possible one: it counts time the run spent not running at all, between a crash and its
+ *   resumption, as budget spent. A run that has been dead for an hour has used an hour of
+ *   wall clock either way.
+ */
+export function verbrauchAusEreignissen(
+  ereignisse: Ereignis[], modellId: string, jetztMs: number,
+  tabelle: Record<string, Preis> = VORGABE_PREISE,
+): Verbrauch {
+  const gestartet = ereignisse.find(e => e.art === 'run.started')
+  const begonnenMs = gestartet ? Date.parse(gestartet.ts) : jetztMs
+
+  let runden = 0
+  let kostenGesamt = 0
+  let letzteEingabeToken = 0
+  for (const e of ereignisse) {
+    if (e.art !== 'model.answered') continue
+    runden += 1
+    const usage = e.nutzlast.usage as { eingabeToken: number; ausgabeToken: number } | undefined
+    if (usage) {
+      kostenGesamt += kostenCent(modellId, usage, tabelle)
+      letzteEingabeToken = usage.eingabeToken
+    }
+  }
+
+  return { runden, verstricheneMs: jetztMs - begonnenMs, kostenCent: kostenGesamt, letzteEingabeToken }
 }
 
 function pruefeStartbedingungen(eintrag: ModellEintrag): void {
@@ -121,9 +159,6 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
   const codec = codecFuer(f.codec)
   const stummel = u.registry.stummel(f.aufgeschobenesLaden)
   const stabil = baueStabilenTeil(u.praefixTeile, stummel)
-  const begonnen = u.uhr()
-  let verbrauch = LEERER_VERBRAUCH
-  let abschluss: Abschlussgrund | null = null
 
   for (;;) {
     if (u.abgebrochen()) {
@@ -133,11 +168,23 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
 
     const ereignisse = lesen(u.db, laufId)
     const verlauf = projiziere(ereignisse)
+    // Reconstructed from the log every turn, never carried — a run resuming after a crash must
+    // recognise an already exhausted budget on its very first turn back, not rediscover it a
+    // full round later because a local variable forgot everything the log still remembers.
+    const verbrauchVorab = verbrauchAusEreignissen(ereignisse, auftrag.modellId, u.uhr())
+    const abschlussVorab = pruefeBudgets(auftrag.budgets, verbrauchVorab, f.nutzbaresKontextfenster)
+
     // The stable part first, byte-identical every turn; the volatile progress object last.
     const praefix = [stabil, baueFortschritt([], erledigte(ereignisse))].filter(t => t !== '').join('\n\n')
-    const koerper = codec.toWire(verlauf, abschluss ? [] : stummel, f)
+    const koerper = codec.toWire(verlauf, abschlussVorab ? [] : stummel, f)
 
-    schreibe(u, laufId, 'prompt.sent', { text: praefix, zug: verbrauch.runden + 1 })
+    if (abschlussVorab) {
+      // A hit budget is a closing mode, not an exception: one last turn without tools.
+      ereignisse.push(schreibe(u, laufId, 'budget.warned', {
+        grund: abschlussVorab.code, anweisung: abschlussVorab.anweisung,
+      }))
+    }
+    ereignisse.push(schreibe(u, laufId, 'prompt.sent', { text: praefix, zug: verbrauchVorab.runden + 1 }))
 
     let antwort: ModelAntwort
     try {
@@ -150,9 +197,9 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
       return
     }
 
-    schreibe(u, laufId, 'model.answered', {
+    ereignisse.push(schreibe(u, laufId, 'model.answered', {
       bloecke: antwort.bloecke, stopGrund: antwort.stopGrund, usage: antwort.usage,
-    })
+    }))
 
     // Truncation is read before any repair decision — no amount of thinking fixes it.
     const transport = grundFuerStopGrund(antwort.stopGrund)
@@ -161,12 +208,10 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
       return
     }
 
-    if (abschluss) {
-      beende(u, laufId, abschluss, nurText(antwort.bloecke), auftrag.pflichtfelder)
+    if (abschlussVorab) {
+      beende(u, laufId, abschlussVorab, nurText(antwort.bloecke), auftrag.pflichtfelder)
       return
     }
-
-    verbrauch = verbrauchNach(verbrauch, auftrag.modellId, antwort, begonnen, u.uhr())
 
     const aufrufe = werkzeugAufrufe(antwort.bloecke)
     if (aufrufe.length > 0) {
@@ -196,11 +241,12 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
       return
     }
 
-    const budget = pruefeBudgets(auftrag.budgets, verbrauch, f.nutzbaresKontextfenster)
-    if (budget) {
-      // A hit budget is a closing mode, not an exception: one last turn without tools.
-      schreibe(u, laufId, 'budget.warned', { grund: budget.code, anweisung: budget.anweisung })
-      abschluss = budget
+    // The model stopped naturally and made no calls — but if this very turn's own consumption
+    // just exhausted a budget, that wins: one more, tool-less turn follows before the run ends.
+    // The next iteration's own reconstruction (identical to the one at the top of this one, just
+    // over a longer log) decides that; nothing here needs to remember it.
+    const verbrauchDanach = verbrauchAusEreignissen(ereignisse, auftrag.modellId, u.uhr())
+    if (pruefeBudgets(auftrag.budgets, verbrauchDanach, f.nutzbaresKontextfenster)) {
       continue
     }
 
@@ -236,8 +282,10 @@ async function anhangBloecke(auftrag: Auftrag): Promise<Block[]> {
 
 function schreibe(
   u: LaufUmgebung, laufId: string, art: Ereignis['art'], nutzlast: Record<string, unknown>,
-): void {
-  u.strom(anhaengen(u.db, laufId, art, nutzlast))
+): Ereignis {
+  const e = anhaengen(u.db, laufId, art, nutzlast)
+  u.strom(e)
+  return e
 }
 
 function beende(
