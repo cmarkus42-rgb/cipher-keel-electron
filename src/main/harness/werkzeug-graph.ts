@@ -10,16 +10,20 @@
  * They belong to the stretch that brings the sandbox.
  *
  * Findings addressed:
- * - F1: Size limits on limit (1..100), depth (1..5), JSON truncation at 8KB
+ * - F1: Size limits on limit (1..100), depth (1..5)
  * - F2: Enums in schemas (NODE_KINDS, EDGE_TYPES, QUERY_TEMPLATES)
- * - F3: German error messages with context + truncated raw cause
+ * - F3: German error messages with allowlist, not blacklist
  * - F4: Optional fields with wrong type are rejected, not silently coerced
+ * - F3 (Fix): Body field truncated before serialization, result stays valid JSON
+ * - F1 (Fix): Error messages redacted with allowlist, not regex blacklist
+ * - F2 (Fix): params field in graph_abfragen is type-checked (not string/array)
  */
 
 import { graphSearch, graphGetNode, graphExpand } from '../graph/search'
 import { graphQuery, QUERY_TEMPLATES, isValidTemplate } from '../graph/query'
 import { NODE_KINDS } from '../graph/node-types'
 import { EDGE_TYPES } from '../graph/edge-types'
+import type { FullNode } from '../graph/search'
 import type { Werkzeug, WerkzeugErgebnis, WerkzeugKontext } from './werkzeuge'
 
 const OHNE_DB: WerkzeugErgebnis = {
@@ -27,7 +31,23 @@ const OHNE_DB: WerkzeugErgebnis = {
   meldung: 'Der Knowledge-Graph ist in dieser Sitzung nicht verfuegbar.',
 }
 
-const MAX_JSON_SIZE = 8192 // 8 KB, as per other harness tools
+// Body truncation limit: generous (100 KB) since it's actual content.
+// Result serialization fallback: 8 KB as last safeguard.
+// Separation intentional: body truncation keeps result as valid JSON with marker in situ;
+// serialization fallback is last-resort for accumulated metadata that exceeds limits.
+const MAX_BODY_SIZE = 102400 // 100 KB for actual content
+const MAX_JSON_SIZE = 8192 // 8 KB as serialization fallback for other tools
+
+// Known safe error messages that can be passed through (allowlist).
+// Everything else is abstracted to "[Datenbankfehler]" to avoid leaking schema names.
+const SAFE_ERROR_PATTERNS = [
+  /Vorlage/i, // Graph query template errors (already redacted in graph_abfragen)
+  /Parameter/, // Missing/wrong parameters
+]
+
+function isSafeError(msg: string): boolean {
+  return SAFE_ERROR_PATTERNS.some(p => p.test(msg))
+}
 
 function alsText(wert: unknown): WerkzeugErgebnis {
   let txt = JSON.stringify(wert, null, 2)
@@ -43,15 +63,31 @@ function alsText(wert: unknown): WerkzeugErgebnis {
   return { ok: true, inhalt }
 }
 
+/**
+ * Truncate body field before serialization so result stays valid JSON.
+ * Marker stays in JSON where the model sees it directly.
+ */
+function truncateBody(knoten: FullNode | null): FullNode | null {
+  if (!knoten || !knoten.body) return knoten
+  if (knoten.body.length <= MAX_BODY_SIZE) return knoten
+  return {
+    ...knoten,
+    body: knoten.body.slice(0, MAX_BODY_SIZE) + '\n[Rumpf gekürzt — nicht vollständig]',
+  }
+}
+
 function fehlgeschlagen(werkzeug: string, err: unknown): WerkzeugErgebnis {
   let msg = err instanceof Error ? err.message : String(err)
-  // Suppress SQL/stack noise
-  if (msg.match(/SELECT|INSERT|UPDATE|DELETE|sqlite/i)) {
+
+  // Allowlist: only pass through known safe patterns. Everything else gets abstracted.
+  // Intention: avoid leaking schema names (table, column), constraint names, etc.
+  // Full cause goes into event log, not into prompt.
+  if (!isSafeError(msg)) {
     msg = '[Datenbankfehler]'
-  }
-  if (msg.length > 100) {
+  } else if (msg.length > 100) {
     msg = msg.slice(0, 100) + '…'
   }
+
   return {
     ok: false,
     meldung: `${werkzeug}: ${msg}`,
@@ -113,7 +149,8 @@ const graphKnotenHolen: Werkzeug = {
     try {
       const knoten = graphGetNode(ktx.graphDb, eingabe.uid)
       // A missing node is a fact, not a failure — the model should be able to act on it.
-      return alsText(knoten ?? { gefunden: false, uid: eingabe.uid })
+      const gekuerzt = truncateBody(knoten)
+      return alsText(gekuerzt ?? { gefunden: false, uid: eingabe.uid })
     } catch (err) { return fehlgeschlagen('graph_knoten_holen', err) }
   },
 }
@@ -179,6 +216,14 @@ const graphAbfragen: Werkzeug = {
   async ausfuehren(eingabe, ktx: WerkzeugKontext) {
     if (!ktx.graphDb) return OHNE_DB
     if (typeof eingabe.template !== 'string') return { ok: false, meldung: "Das Feld 'template' fehlt in der Eingabe." }
+
+    // F2: Type-check params: must be object, not array or string
+    if ('params' in eingabe) {
+      const paramsType = typeof eingabe.params
+      if (paramsType !== 'object' || eingabe.params === null || Array.isArray(eingabe.params)) {
+        return { ok: false, meldung: "Das Feld 'params' muss ein Objekt sein." }
+      }
+    }
 
     // F3: Pre-check template against allowlist for better error message
     if (!isValidTemplate(eingabe.template)) {

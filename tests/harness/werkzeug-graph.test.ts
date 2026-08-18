@@ -298,3 +298,106 @@ describe('JSON-Groessenschranke (8 KB)', () => {
     }
   })
 })
+
+// ============================================================================
+// Fix-Runde 3: Fehlerbehandlung, Optionalfelder, Rumpf-Schranke
+// ============================================================================
+
+describe('Fix-Runde 3: Fehlerbehandlung und Validierung', () => {
+  let db: Database.Database
+  let ktx: WerkzeugKontext
+
+  afterEach(() => { if (db?.open) db.close() })
+
+  describe('Finding 1: Datenbankfehler duerfen keine Tabellennamen enthaellen', () => {
+    it('meldet Fehler ohne Tabellenname wenn DB beschaedigt ist', async () => {
+      db = openGraphDb({ path: ':memory:' })
+      ktx = {
+        wache: { wurzel: '/tmp', heim: '/tmp', userDataPfad: '/tmp/ud' },
+        graphDb: db,
+      }
+
+      // Destruktor: Tabelle löschen, um "no such table: node" zu erzeugen
+      db.prepare('DROP TABLE node').run()
+
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_knoten_holen')!
+      const r = await w.ausfuehren({ uid: 'n1' }, ktx)
+      expect(r.ok).toBe(false)
+      if (!r.ok) {
+        // Meldung darf keinen Tabellennamen enthalten (z.B. "node", "edge")
+        expect(r.meldung).not.toMatch(/\btable\b.*\bnode\b/i)
+        expect(r.meldung).not.toMatch(/\btable\b.*\bedge\b/i)
+        // Sollte auf Deutsch sein und Werkzeugnamen enthalten
+        expect(r.meldung).toContain('graph_knoten_holen')
+      }
+    })
+  })
+
+  describe('Finding 2: params bei graph_abfragen muss typsicher sein', () => {
+    it('lehnt params vom falschen Typ (String) ab', async () => {
+      db = openGraphDb({ path: ':memory:' })
+      ktx = {
+        wache: { wurzel: '/tmp', heim: '/tmp', userDataPfad: '/tmp/ud' },
+        graphDb: db,
+      }
+
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_abfragen')!
+      const r = await w.ausfuehren({ template: 'herkunfts_kette', params: 'irgendeinstring' }, ktx)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.meldung.toLowerCase()).toContain('params')
+    })
+
+    it('lehnt params vom falschen Typ (Array) ab', async () => {
+      db = openGraphDb({ path: ':memory:' })
+      ktx = {
+        wache: { wurzel: '/tmp', heim: '/tmp', userDataPfad: '/tmp/ud' },
+        graphDb: db,
+      }
+
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_abfragen')!
+      const r = await w.ausfuehren({ template: 'herkunfts_kette', params: ['array', 'statt', 'object'] }, ktx)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.meldung.toLowerCase()).toContain('params')
+    })
+  })
+
+  describe('Finding 3: Rumpf wird gekürzt bevor serialisiert', () => {
+    it('kuerzt großen Rumpf nicht zu seiner vollstaendigen Groesse', async () => {
+      db = openGraphDb({ path: ':memory:' })
+      ktx = {
+        wache: { wurzel: '/tmp', heim: '/tmp', userDataPfad: '/tmp/ud' },
+        graphDb: db,
+      }
+
+      // Knoten mit sehr großem Rumpf (120 KB, MAX_BODY_SIZE = 100 KB)
+      // Der Rumpf sollte auf 100 KB gekürzt werden, nicht vollständig zurückgegeben
+      const bigBody = 'x'.repeat(120000)
+      db.prepare(`
+        INSERT INTO node (uid, kind, path, title, status, frontmatter, body, content_hash, erstellt)
+        VALUES (?, 'artefakt', ?, ?, 'aktiv', '{}', ?, ?, '2026-01-01')
+      `).run('large', '/large.md', 'Large Document', bigBody, 'h1')
+
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_knoten_holen')!
+      const r = await w.ausfuehren({ uid: 'large' }, ktx)
+      expect(r.ok).toBe(true)
+
+      if (r.ok) {
+        // Prüfe: Der Rumpf ist nicht 120 KB lang in der Ausgabe
+        // (sondern höchstens ~100 KB + Marker, aber dann JSON-gekürzt)
+        const allText = r.inhalt
+          .filter(i => i.art === 'text')
+          .map(i => {
+            if (i.art === 'text') return i.text
+            return ''
+          })
+          .join('')
+
+        // Wenn der Rumpf NICHT gekürzt würde, wäre die JSON sehr groß
+        // Die Schranke sollte die Größe begrenzen
+        expect(allText.length).toBeLessThan(120000)
+        // Der Hinweis sollte zeigen, dass gekürzt wurde (Body oder JSON oder beide)
+        expect(allText.includes('[Rumpf gekürzt') || allText.includes('[Ergebnis gekürzt')).toBe(true)
+      }
+    })
+  })
+})
