@@ -26,6 +26,22 @@ beforeAll(() => {
   writeFileSync(join(wurzel, 'a.ts'), 'zeile 1\nzeile 2\nzeile 3\n')
   writeFileSync(join(wurzel, 'unter', 'b.ts'), 'export const warnungen = 1\n')
   writeFileSync(join(wurzel, '.env'), 'TOKEN=geheim')
+
+  // Same filename inside and outside node_modules -- lets a test compare the two directly,
+  // rather than only proving one side (see task-9 fix-round 2).
+  mkdirSync(join(wurzel, 'node_modules', 'paket'), { recursive: true })
+  writeFileSync(join(wurzel, 'node_modules', 'paket', 'ausserhalb.ts'), 'export const y = 1\n')
+  writeFileSync(join(wurzel, 'ausserhalb.ts'), 'export const y = 1\n')
+
+  // Guards against a substring/prefix implementation of the exclusion filter instead of a
+  // whole-path-segment one: 'distribution' must not vanish because it starts with 'dist'.
+  mkdirSync(join(wurzel, 'distribution'), { recursive: true })
+  writeFileSync(join(wurzel, 'distribution', 'datei.ts'), 'export const z = 1\n')
+
+  // Guards the same class of bug from the other direction: '.gitignore' must not vanish because
+  // of some over-broad "starts with a dot" heuristic among the excluded names.
+  writeFileSync(join(wurzel, '.gitignore'), 'node_modules/\n')
+
   ktx = { wache: { wurzel, heim, userDataPfad: join(heim, 'ud') }, graphDb: null }
 })
 
@@ -99,6 +115,45 @@ describe('verzeichnis_listen', () => {
   it('nennt geschuetzte Treffer gar nicht erst', async () => {
     const r = await werkzeug('verzeichnis_listen').ausfuehren({ muster: '**/*' }, ktx)
     if (r.ok) expect((r.inhalt[0] as { text: string }).text).not.toContain('.env')
+  })
+})
+
+describe('verzeichnis_listen — schwere Verzeichnisse ausgeschlossen (Relevanzfilter, keine Sicherheitsgrenze)', () => {
+  it('listet eine Datei ausserhalb von node_modules', async () => {
+    const r = await werkzeug('verzeichnis_listen').ausfuehren({ muster: '**/*.ts' }, ktx)
+    expect(r.ok).toBe(true)
+    if (r.ok) expect((r.inhalt[0] as { text: string }).text).toContain('ausserhalb.ts')
+  })
+
+  it('listet die gleichnamige Datei innerhalb von node_modules nicht — Kontrolle daneben beweist, dass sie ohne Filter auftauchen wuerde', async () => {
+    const r = await werkzeug('verzeichnis_listen').ausfuehren({ muster: '**/*.ts' }, ktx)
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      const text = (r.inhalt[0] as { text: string }).text
+      expect(text).not.toContain(join('node_modules', 'paket', 'ausserhalb.ts'))
+    }
+  })
+
+  it('vermerkt ausgeschlossene Verzeichnisse im Ergebnis, statt Vollstaendigkeit vorzutaeuschen', async () => {
+    const r = await werkzeug('verzeichnis_listen').ausfuehren({ muster: '**/*.ts' }, ktx)
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      const text = (r.inhalt[0] as { text: string }).text.toLowerCase()
+      expect(text).toContain('ausgeschlossen')
+      expect(text).toContain('node_modules')
+    }
+  })
+
+  it('schliesst .gitignore nicht faelschlich aus', async () => {
+    const r = await werkzeug('verzeichnis_listen').ausfuehren({ muster: '.gitignore' }, ktx)
+    expect(r.ok).toBe(true)
+    if (r.ok) expect((r.inhalt[0] as { text: string }).text).toContain('.gitignore')
+  })
+
+  it('schliesst ein Verzeichnis "distribution" nicht faelschlich aus, weil es mit "dist" beginnt', async () => {
+    const r = await werkzeug('verzeichnis_listen').ausfuehren({ muster: '**/*.ts' }, ktx)
+    expect(r.ok).toBe(true)
+    if (r.ok) expect((r.inhalt[0] as { text: string }).text).toContain(join('distribution', 'datei.ts'))
   })
 })
 

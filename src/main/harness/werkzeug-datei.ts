@@ -66,6 +66,37 @@ function zeilenGrenzePruefen(
   return { ok: true, wert }
 }
 
+/**
+ * Directories excluded from listing and searching, by exact path segment (case-insensitive) —
+ * not a substring or prefix match, so 'distribution' survives despite starting with 'dist' and
+ * '.gitignore' survives despite the dot-prefixed names in this set.
+ *
+ * This is a relevance filter, not a security boundary. pfadwache stays the sole authority over
+ * what may be read; this only decides what is worth handing to a code search. Conflating the two
+ * later would either weaken pfadwache while assuming safety is untouched, or make this filter
+ * paranoid while assuming it protects something it was never meant to.
+ */
+const AUSGESCHLOSSENE_VERZEICHNISSE = new Set([
+  'node_modules', 'dist', 'build', 'out', 'coverage', '.cache', '.next', 'vendor',
+  // electron-builder's packaged output in this repo: 442 MB, same category as dist/build/out.
+  'release',
+])
+
+/** Returns the (lowercased) excluded segment name if the relative path runs through one, else null. */
+function ausgeschlossenesSegment(relativerPfad: string): string | null {
+  for (const segment of relativerPfad.split(/[\\/]/)) {
+    const klein = segment.toLowerCase()
+    if (AUSGESCHLOSSENE_VERZEICHNISSE.has(klein)) return klein
+  }
+  return null
+}
+
+/** One line, appended to a result, when directories were left out of an otherwise-complete-looking listing. */
+function ausschlussHinweis(ausgeschlossen: ReadonlySet<string>): string {
+  if (ausgeschlossen.size === 0) return ''
+  return `\n(Verzeichnisse ausgeschlossen: ${[...ausgeschlossen].sort().join(', ')})`
+}
+
 function musterZuRegex(muster: string): RegExp {
   // Minimal glob: ** crosses directories, * does not, everything else is literal.
   const teile = muster.split(/(\*\*\/|\*\*|\*|\?)/).filter(t => t !== '')
@@ -79,10 +110,16 @@ function musterZuRegex(muster: string): RegExp {
   return new RegExp(`^${gebaut}$`)
 }
 
-function erlaubteDateien(ktx: WerkzeugKontext): string[] {
+function erlaubteDateien(ktx: WerkzeugKontext): { dateien: string[]; ausgeschlossen: Set<string> } {
   const eintraege = readdirSync(ktx.wache.wurzel, { recursive: true, encoding: 'utf-8' })
   const raus: string[] = []
+  const ausgeschlossen = new Set<string>()
   for (const e of eintraege) {
+    // Cheapest check first: skip entries under an excluded directory before spending a
+    // pruefePfad call (three realpathSync calls of its own) on each of them.
+    const segment = ausgeschlossenesSegment(e)
+    if (segment) { ausgeschlossen.add(segment); continue }
+
     const voll = join(ktx.wache.wurzel, e)
     // The guard decides membership, not a second list here — one rule, one place.
     if (!pruefePfad(voll, ktx.wache).ok) continue
@@ -90,7 +127,7 @@ function erlaubteDateien(ktx: WerkzeugKontext): string[] {
       if (statSync(voll).isFile()) raus.push(voll)
     } catch { /* vanished between listing and stat — not this tool's problem */ }
   }
-  return raus.sort()
+  return { dateien: raus.sort(), ausgeschlossen }
 }
 
 const dateiLesen: Werkzeug = {
@@ -158,12 +195,14 @@ const verzeichnisListen: Werkzeug = {
     try { re = musterZuRegex(muster) }
     catch { return { ok: false, meldung: `Muster '${muster}' ist nicht auswertbar.` } }
 
-    const treffer = erlaubteDateien(ktx)
+    const { dateien, ausgeschlossen } = erlaubteDateien(ktx)
+    const treffer = dateien
       .map(p => relative(ktx.wache.wurzel, p))
       .filter(p => re.test(p.split('\\').join('/')))
+    const kernText = treffer.length > 0 ? treffer.join('\n') : 'Keine Treffer.'
     return {
       ok: true,
-      inhalt: [{ art: 'text', text: treffer.length > 0 ? treffer.join('\n') : 'Keine Treffer.' }],
+      inhalt: [{ art: 'text', text: kernText + ausschlussHinweis(ausgeschlossen) }],
     }
   },
 }
@@ -198,11 +237,20 @@ const inhaltSuchen: Werkzeug = {
       pfadRe = musterZuRegex(eingabe.pfadFilter)
     }
 
+    // The clock starts *before* the listing, not inside the loop below — erlaubteDateien() walks
+    // the whole tree and runs pruefePfad per surviving entry, and that cost belongs to the same
+    // budget as the search itself. A comment that promised "the whole run" while timing only the
+    // per-line work would be a promise the code does not keep.
     const start = Date.now()
+    const { dateien: erlaubte, ausgeschlossen } = erlaubteDateien(ktx)
+    if (budgetUeberschritten(start)) {
+      return { ok: false, meldung: `Suche abgebrochen: Zeitbudget von ${suchZeitbudgetMs} ms ueberschritten.` }
+    }
+
     const zeilen: string[] = []
     let uebersprungen = 0
 
-    dateiSchleife: for (const datei of erlaubteDateien(ktx)) {
+    dateiSchleife: for (const datei of erlaubte) {
       if (budgetUeberschritten(start)) {
         return { ok: false, meldung: `Suche abgebrochen: Zeitbudget von ${suchZeitbudgetMs} ms ueberschritten.` }
       }
@@ -230,10 +278,13 @@ const inhaltSuchen: Werkzeug = {
     }
 
     const kernText = zeilen.length > 0 ? zeilen.join('\n') : 'Keine Treffer.'
-    const hinweis = uebersprungen > 0
+    const groessenHinweis = uebersprungen > 0
       ? `\n(${uebersprungen} Datei(en) uebersprungen: groesser als ${MAX_BYTES} Bytes)`
       : ''
-    return { ok: true, inhalt: [{ art: 'text', text: kernText + hinweis }] }
+    return {
+      ok: true,
+      inhalt: [{ art: 'text', text: kernText + groessenHinweis + ausschlussHinweis(ausgeschlossen) }],
+    }
   },
 }
 
