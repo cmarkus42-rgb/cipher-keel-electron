@@ -1852,6 +1852,8 @@ export function kostenCent(
 
 import type { ModelAntwort } from './form'
 import { kostenCent, PREISTABELLE_STAND, VORGABE_PREISE, type Preis } from './preise'
+// `Preis` und `VORGABE_PREISE` gehen nur in verbrauchNach — pruefeBudgets rechnet nicht,
+// es vergleicht. Die Kosten stehen zu diesem Zeitpunkt schon im Verbrauch.
 
 export type Endzustand = 'fertig' | 'abgebrochen'
 
@@ -1899,9 +1901,7 @@ export const VON_AUSSEN: Abschlussgrund = {
 
 export function pruefeBudgets(
   b: Budgets, v: Verbrauch, nutzbaresKontextfenster: number,
-  tabelle: Record<string, Preis> = VORGABE_PREISE,
 ): Abschlussgrund | null {
-  void tabelle
   if (v.runden >= b.runden) {
     return { code: 'runden-erschoepft', endzustand: 'fertig',
       anweisung: `Das Rundenbudget von ${b.runden} Zuegen ist erschoepft. ${ABSCHLUSS}` }
@@ -3058,9 +3058,15 @@ function pruefeStartbedingungen(eintrag: ModellEintrag): void {
   codecFuer(f.codec)
 }
 
-export async function starteLauf(auftrag: Auftrag, u: LaufUmgebung): Promise<string> {
+/**
+ * The run id may be passed in. The IPC surface needs it *before* the run starts, because the
+ * abort mark is keyed by it — minting it inside and handing it back afterwards would leave a
+ * window in which a run cannot be cancelled.
+ */
+export async function starteLauf(
+  auftrag: Auftrag, u: LaufUmgebung, laufId: string = randomUUID(),
+): Promise<string> {
   pruefeStartbedingungen(u.eintrag)
-  const laufId = randomUUID()
   const f = u.eintrag.faehigkeiten!
   const stummel = u.registry.stummel(f.aufgeschobenesLaden)
 
@@ -3722,6 +3728,7 @@ import { ipcMain, app } from 'electron'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { statSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import {
   HARNESS_LAUF_STARTEN, HARNESS_LAUF_LESEN, HARNESS_LAUF_ABBRECHEN, HARNESS_EREIGNIS,
 } from '../shared/ipc-channels'
@@ -3771,7 +3778,10 @@ export function registerHarnessHandlers(services: AppServices): void {
       const eintrag = eintragNachId(w.modellId)
       if (!eintrag) return { ok: false, meldung: `Kein Registry-Eintrag '${w.modellId}'.` }
 
-      const laufId = await starteLauf(
+      // Minted here, not inside starteLauf: the abort mark is keyed by it, and a run that
+      // cannot be cancelled during its first turn is a run that cannot be cancelled.
+      const laufId = randomUUID()
+      await starteLauf(
         {
           auftragstext: w.auftragstext,
           modellId: w.modellId,
@@ -3792,9 +3802,10 @@ export function registerHarnessHandlers(services: AppServices): void {
           registry: new WerkzeugRegistry([...DATEI_WERKZEUGE, ...GRAPH_WERKZEUGE]),
           strom: (ev) => broadcast(HARNESS_EREIGNIS, ev as HarnessEreignis),
           uhr: () => Date.now(),
-          abgebrochen: () => abbruchmarken.has(laufIdHalter.wert),
+          abgebrochen: () => abbruchmarken.has(laufId),
           sende: sendeUeberTransport(eintrag),
         },
+        laufId,
       )
       return { ok: true, wert: laufId }
     } catch (err) {
@@ -3830,9 +3841,6 @@ export function registerHarnessHandlers(services: AppServices): void {
 Dazu zwei kleine Hilfen, die dieselbe Datei traegt:
 
 ```ts
-/** Holds the id the abort mark is checked against; starteLauf mints it after the call begins. */
-const laufIdHalter = { wert: '' }
-
 /**
  * The transport, wired to the codec. The loop hands over the wire body and gets blocks back —
  * it never learns which of the three clients answered.
@@ -3848,11 +3856,6 @@ function sendeUeberTransport(eintrag: ModellEintrag) {
   }
 }
 ```
-
-> **Hinweis fuer den Implementierer:** `laufIdHalter` ist die einzige Stelle, an der die
-> Abbruchmarke und die erst spaeter vergebene Lauf-ID zusammenkommen. Wenn `starteLauf` in einer
-> spaeteren Strecke die ID entgegennimmt statt sie zu erzeugen, faellt diese Kruecke weg. Sie
-> steht hier bewusst sichtbar statt versteckt.
 
 - [ ] **Step 6: Write `src/main/harness-praefix-quelle.ts`**
 
