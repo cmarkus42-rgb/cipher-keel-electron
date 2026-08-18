@@ -37,3 +37,22 @@ export class CodecKannNicht extends Error {
     this.name = 'CodecKannNicht'
   }
 }
+
+import { anthropicCodec } from './codec-anthropic'
+import { openAiChatCodec } from './codec-openai-chat'
+
+/**
+ * The two codecs this stretch builds. `ollama-native` and `text` are M8 section 7 row 14 and
+ * are refused by name rather than silently falling back to a different one.
+ */
+export function codecFuer(name: Faehigkeiten['codec']): Codec {
+  switch (name) {
+    case 'anthropic': return anthropicCodec
+    case 'openai-chat': return openAiChatCodec
+    default:
+      throw new Error(
+        `Der Codec '${name}' ist in dieser Ausbaustufe nicht gebaut — verfuegbar sind ` +
+        `anthropic und openai-chat.`,
+      )
+  }
+}
