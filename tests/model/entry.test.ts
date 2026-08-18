@@ -113,3 +113,29 @@ describe('toModelEndpoint', () => {
       .toThrow('hat keinen Endpunkt')
   })
 })
+
+describe('toModelEndpoint mit Codec', () => {
+  it('macht aus local-http plus openai-chat einen /v1-Endpunkt ohne Schluessel', () => {
+    const ep = toModelEndpoint(
+      { art: 'local-http', host: '100.78.7.108', port: 11434, model: 'gemma4:26b' },
+      'openai-chat',
+    )
+    expect(ep).toEqual({
+      kind: 'openai-compatible', baseUrl: 'http://100.78.7.108:11434/v1',
+      model: 'gemma4:26b', keyRef: '',
+    })
+  })
+
+  it('macht aus api plus anthropic einen Anthropic-Endpunkt', () => {
+    const ep = toModelEndpoint(
+      { art: 'api', baseUrl: 'https://api.anthropic.com/v1', model: 'claude-opus-5', keyRef: 'anthropic' },
+      'anthropic',
+    )
+    expect(ep.kind).toBe('anthropic')
+  })
+
+  it('bleibt ohne Codec beim bisherigen Verhalten', () => {
+    const ep = toModelEndpoint({ art: 'local-http', host: 'h', port: 1, model: 'm' })
+    expect(ep.kind).toBe('ollama')
+  })
+})

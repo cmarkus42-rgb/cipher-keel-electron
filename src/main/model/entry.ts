@@ -147,17 +147,34 @@ export function normaliseEintrag(raw: unknown): ModellEintrag {
   }
 }
 
-export function toModelEndpoint(e: Erreichbarkeit): ModelEndpoint {
+/**
+ * The endpoint a registry entry resolves to.
+ *
+ * The optional codec is what tells an `api` entry apart from an Anthropic one, and it is the
+ * only thing that does — a second `dialekt` field would be the same fact written twice, with a
+ * consistency rule as the running cost. `normaliseEintrag` calls this without a codec, because
+ * at that point `faehigkeiten` is not merged yet and the question there is only whether
+ * baseUrl and keyRef are present — the same question for both dialects.
+ */
+export function toModelEndpoint(e: Erreichbarkeit, codec?: Faehigkeiten['codec']): ModelEndpoint {
   switch (e.art) {
     case 'cli-harness':
       // The reason a cli-harness entry is different lives in eignung.ts (sperrgrund) —
       // this is the transport fact only, not a restatement of the rule.
       throw new Error(`Ein cli-harness-Eintrag hat keinen Endpunkt`)
     case 'local-http':
+      // Driven through the /v1 surface when the capability row asks for the openai-chat codec.
+      // That is how the Spark is reachable before ollama-native exists. No key: Ollama wants none.
+      if (codec === 'openai-chat') {
+        return normaliseEndpoint({
+          kind: 'openai-compatible', baseUrl: `http://${e.host}:${e.port}/v1`, model: e.model, keyRef: '',
+        })
+      }
       return normaliseEndpoint({ kind: 'ollama', host: e.host, port: e.port, model: e.model })
     case 'api':
       return normaliseEndpoint({
-        kind: 'openai-compatible', baseUrl: e.baseUrl, model: e.model, keyRef: e.keyRef,
+        kind: codec === 'anthropic' ? 'anthropic' : 'openai-compatible',
+        baseUrl: e.baseUrl, model: e.model, keyRef: e.keyRef,
       })
   }
 }

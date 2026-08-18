@@ -101,3 +101,26 @@ describe('clientForEndpoint', () => {
     expect(client.constructor.name).toBe('OpenAiCompatibleClient')
   })
 })
+
+describe('keyRef als Aussage gegen keyRef als Versaeumnis', () => {
+  it('nimmt einen leeren keyRef als "braucht keinen Schluessel" hin', () => {
+    const ep = normaliseEndpoint({
+      kind: 'openai-compatible', baseUrl: 'http://100.78.7.108:11434/v1', model: 'gemma4:26b', keyRef: '',
+    })
+    if (ep.kind === 'openai-compatible') expect(ep.keyRef).toBe('')
+  })
+
+  it('kennt den Anthropic-Endpunkt als dritte Art', () => {
+    const ep = normaliseEndpoint({
+      kind: 'anthropic', baseUrl: 'https://api.anthropic.com/v1', model: 'claude-opus-5', keyRef: 'anthropic',
+    })
+    expect(ep.kind).toBe('anthropic')
+  })
+
+  it('gibt fuer den Anthropic-Endpunkt einen eigenen Transport', () => {
+    const ep = normaliseEndpoint({
+      kind: 'anthropic', baseUrl: 'https://api.anthropic.com/v1', model: 'm', keyRef: 'a',
+    })
+    expect(clientForEndpoint(ep).constructor.name).toBe('AnthropicClient')
+  })
+})

@@ -18,6 +18,7 @@ import * as http from 'node:http'
 import type {
   ModelClient,
   GenerateRequest,
+  ChatRequest,
   OllamaEndpointSpec,
 } from './model-client'
 
@@ -123,5 +124,12 @@ export class HttpOllamaClient implements ModelClient {
       request.write(body)
       request.end()
     })
+  }
+
+  chat(_req: ChatRequest): Promise<unknown> {
+    return Promise.reject(new Error(
+      'Der Ollama-Native-Transport hat keinen chat-Weg. Ein lokales Modell laeuft in dieser ' +
+      'Ausbaustufe ueber seine /v1-Flaeche: Eintrag mit codec "openai-chat".',
+    ))
   }
 }

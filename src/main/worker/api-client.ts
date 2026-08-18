@@ -20,6 +20,7 @@ import * as http from 'node:http'
 import type {
   ModelClient,
   GenerateRequest,
+  ChatRequest,
   OpenAiCompatibleEndpointSpec,
 } from './model-client'
 import { resolveApiKey } from './api-keys'
@@ -139,6 +140,66 @@ export class OpenAiCompatibleClient implements ModelClient {
         reject(new Error(
           `${url.host} hat die zugestandene Zeit von ${req.timeoutMs ?? API_TIMEOUT_MS} ms ` +
           `überschritten`
+        ))
+      })
+      request.write(body)
+      request.end()
+    })
+  }
+
+  async chat(req: ChatRequest): Promise<unknown> {
+    if (req.endpoint.kind !== 'openai-compatible') {
+      throw new Error('OpenAiCompatibleClient wurde mit einem fremden Endpunkt aufgerufen')
+    }
+    const endpoint = req.endpoint
+    // An empty keyRef means the endpoint needs no key — Ollama's /v1 surface and vLLM. A named
+    // keyRef that resolves to nothing stays a named failure.
+    const key = endpoint.keyRef === '' ? null : await resolveApiKey(endpoint.keyRef)
+    if (endpoint.keyRef !== '' && !key) {
+      throw new Error(
+        `Für '${endpoint.model}' ist kein API-Schlüssel hinterlegt — erwartet im Keychain ` +
+        `oder als Umgebungsvariable; siehe docs/anpassbare-flaechen.md`
+      )
+    }
+
+    const body = JSON.stringify({ ...(req.koerper as object), model: endpoint.model })
+    const url = new URL(chatCompletionsUrl(endpoint))
+    const transport = url.protocol === 'http:' ? http : https
+    const headers: Record<string, string | number> = {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(body),
+    }
+    if (key) headers.Authorization = `Bearer ${key}`
+
+    return new Promise<unknown>((resolve, reject) => {
+      const request = transport.request(
+        {
+          hostname: url.hostname,
+          port: url.port || (url.protocol === 'http:' ? 80 : 443),
+          path: url.pathname + url.search,
+          method: 'POST',
+          headers,
+          timeout: req.timeoutMs ?? API_TIMEOUT_MS,
+        },
+        (res) => {
+          const chunks: Buffer[] = []
+          res.on('data', (c: Buffer) => chunks.push(c))
+          res.on('end', () => {
+            const payload = Buffer.concat(chunks).toString('utf-8')
+            if (res.statusCode !== 200) {
+              reject(new Error(describeApiFailure(res.statusCode ?? 0, payload, endpoint)))
+              return
+            }
+            try { resolve(JSON.parse(payload)) }
+            catch { reject(new Error(`Antwort ist kein verwertbares JSON: ${payload.slice(0, 200)}`)) }
+          })
+        },
+      )
+      request.on('error', (err) => reject(new Error(`${url.host} ist nicht erreichbar: ${err.message}`)))
+      request.on('timeout', () => {
+        request.destroy()
+        reject(new Error(
+          `${url.host} hat die zugestandene Zeit von ${req.timeoutMs ?? API_TIMEOUT_MS} ms ueberschritten`
         ))
       })
       request.write(body)

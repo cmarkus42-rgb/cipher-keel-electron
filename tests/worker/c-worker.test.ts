@@ -17,6 +17,13 @@ function block(inner: string): string {
 const GOOD = block('{ "datei": "src/foo.ts", "begruendung": "weil" }')
 const MISSING_FIELD = block('{ "datei": "src/foo.ts" }')
 
+// runCWorker exercises generate() only — chat() is a structural-typing requirement of
+// ModelClient (Task 5), not something the C-worker path calls, so every fake below throws
+// if it is ever reached.
+const CHAT_NOT_USED: Pick<ModelClient, 'chat'> = {
+  chat() { return Promise.reject(new Error('chat() wird vom C-Worker-Pfad nicht benutzt')) },
+}
+
 /** Answers from a list, one per call, and records the prompts it was given. */
 function fakeClient(answers: string[]): ModelClient & { prompts: string[] } {
   const prompts: string[] = []
@@ -28,11 +35,12 @@ function fakeClient(answers: string[]): ModelClient & { prompts: string[] } {
       if (next === undefined) throw new Error('fake client called more often than expected')
       return next
     },
+    ...CHAT_NOT_USED,
   }
 }
 
 function throwingClient(message: string): ModelClient {
-  return { async generate(): Promise<string> { throw new Error(message) } }
+  return { async generate(): Promise<string> { throw new Error(message) }, ...CHAT_NOT_USED }
 }
 
 describe('buildFormatInstruction', () => {
@@ -117,7 +125,7 @@ describe('runCWorker', () => {
   // leaving 83 GB of models pinned "Forever" on a shared machine.
   it('passes keepAliveSeconds through, so a caller can let the model go', async () => {
     let seen: GenerateRequest | null = null
-    const client: ModelClient = { async generate(req) { seen = req; return GOOD } }
+    const client: ModelClient = { async generate(req) { seen = req; return GOOD }, ...CHAT_NOT_USED }
 
     await runCWorker(
       { prompt: 'x', requiredFields: FIELDS, endpoint: LOCAL, keepAliveSeconds: 0 },
@@ -129,7 +137,7 @@ describe('runCWorker', () => {
 
   it('leaves keepAliveSeconds undefined when the caller says nothing', async () => {
     let seen: GenerateRequest | null = null
-    const client: ModelClient = { async generate(req) { seen = req; return GOOD } }
+    const client: ModelClient = { async generate(req) { seen = req; return GOOD }, ...CHAT_NOT_USED }
 
     await runCWorker({ prompt: 'x', requiredFields: FIELDS, endpoint: LOCAL }, client)
     expect(seen!.keepAliveSeconds).toBeUndefined()
@@ -139,6 +147,7 @@ describe('runCWorker', () => {
     let seen: GenerateRequest | null = null
     const client: ModelClient = {
       async generate(req) { seen = req; return GOOD },
+      ...CHAT_NOT_USED,
     }
     await runCWorker(
       { prompt: 'x', requiredFields: FIELDS, endpoint: normaliseEndpoint({ model: 'gemma4:26b' }) },

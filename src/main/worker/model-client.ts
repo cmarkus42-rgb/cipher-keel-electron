@@ -17,10 +17,11 @@
 
 import { HttpOllamaClient } from './ollama-client'
 import { OpenAiCompatibleClient } from './api-client'
+import { AnthropicClient } from './anthropic-client'
 
 /** The shape config may hold. Everything optional except the model. */
 export interface RawEndpoint {
-  kind?: string
+  kind?: 'ollama' | 'openai-compatible' | 'anthropic'
   host?: string
   port?: number
   baseUrl?: string
@@ -43,13 +44,21 @@ export interface OpenAiCompatibleEndpointSpec {
   keyRef: string
 }
 
+export interface AnthropicEndpointSpec {
+  kind: 'anthropic'
+  baseUrl: string
+  model: string
+  keyRef: string
+}
+
 /**
  * Where a request goes. `openai-compatible` covers far more than OpenAI — DeepSeek,
  * OpenRouter, Together, Fireworks, Groq, Mistral and vLLM all speak that dialect, and so
- * does Ollama's own `/v1` surface. Vendors with their own shape (Anthropic's Messages API,
- * Google's generateContent) are the next members of this union, not exceptions to it.
+ * does Ollama's own `/v1` surface. `anthropic` is the first vendor with its own shape
+ * (the Messages API); Google's generateContent would be the next member of this union,
+ * not an exception to it.
  */
-export type ModelEndpoint = OllamaEndpointSpec | OpenAiCompatibleEndpointSpec
+export type ModelEndpoint = OllamaEndpointSpec | OpenAiCompatibleEndpointSpec | AnthropicEndpointSpec
 
 export const DEFAULT_OLLAMA_HOST = '127.0.0.1'
 export const DEFAULT_OLLAMA_PORT = 11434
@@ -66,9 +75,21 @@ export interface GenerateRequest {
   keepAliveSeconds?: number
 }
 
+/**
+ * A chat call. `koerper` is already in the provider's wire form — the codec built it, and the
+ * transport neither knows nor needs the canonical form. What comes back is the raw parsed
+ * response, which the codec turns back into blocks.
+ */
+export interface ChatRequest {
+  koerper: unknown
+  endpoint: ModelEndpoint
+  timeoutMs?: number
+}
+
 export interface ModelClient {
   /** Returns the model's response text. Throws with a described failure otherwise. */
   generate(req: GenerateRequest): Promise<string>
+  chat(req: ChatRequest): Promise<unknown>
 }
 
 export function normaliseEndpoint(raw: RawEndpoint): ModelEndpoint {
@@ -87,28 +108,29 @@ export function normaliseEndpoint(raw: RawEndpoint): ModelEndpoint {
     }
   }
 
-  if (kind === 'openai-compatible') {
+  if (kind === 'openai-compatible' || kind === 'anthropic') {
     // No default base URL on purpose: guessing one would send a prompt somewhere nobody
     // asked for, and the mistake would only surface as a strange answer.
     if (!raw.baseUrl) {
       throw new Error(
-        `Endpunkt '${raw.model}' ist als openai-compatible deklariert, nennt aber keine baseUrl`
+        `Endpunkt '${raw.model}' ist als ${kind} deklariert, nennt aber keine baseUrl`
       )
     }
-    if (!raw.keyRef) {
+    // An empty keyRef is a statement — "this endpoint needs no key", which is true for Ollama's
+    // /v1 surface and for vLLM. An absent one is an omission and stays an error. This is the
+    // difference `??` does not make, used deliberately.
+    if (raw.keyRef === undefined) {
       throw new Error(
-        `Endpunkt '${raw.model}' ist als openai-compatible deklariert, nennt aber keinen keyRef`
+        `Endpunkt '${raw.model}' ist als ${kind} deklariert, nennt aber keinen keyRef`
       )
     }
-    return {
-      kind: 'openai-compatible',
-      baseUrl: raw.baseUrl.replace(/\/+$/, ''),
-      model: raw.model,
-      keyRef: raw.keyRef,
-    }
+    const gemeinsam = { baseUrl: raw.baseUrl.replace(/\/+$/, ''), model: raw.model, keyRef: raw.keyRef }
+    return kind === 'anthropic' ? { kind: 'anthropic', ...gemeinsam } : { kind: 'openai-compatible', ...gemeinsam }
   }
 
-  throw new Error(`Unbekannte Endpunkt-Art '${kind}' — bekannt sind ollama, openai-compatible`)
+  throw new Error(
+    `Unbekannte Endpunkt-Art '${kind}' — bekannt sind ollama, openai-compatible, anthropic`
+  )
 }
 
 /** A short, log-safe description. Never contains a key or a key reference. */
@@ -136,5 +158,6 @@ export function clientForEndpoint(endpoint: ModelEndpoint): ModelClient {
   switch (endpoint.kind) {
     case 'ollama': return new HttpOllamaClient()
     case 'openai-compatible': return new OpenAiCompatibleClient()
+    case 'anthropic': return new AnthropicClient()
   }
 }
