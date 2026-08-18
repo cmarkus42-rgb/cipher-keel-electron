@@ -5,7 +5,7 @@ description: Launch and drive the cipher keel Electron app to check that a chang
 
 # Running cipher keel
 
-cipher keel is an Electron app with two windows. Almost everything interesting happens
+cipher keel is an Electron app with three windows. Almost everything interesting happens
 behind IPC (`window.cipherKeel.invoke(...)`), and **no test in this repo reaches an
 `ipcMain` handler** — there is no electron mock, and vitest runs under plain Node. The
 suite can be entirely green while the app is broken. That actually happened: the
@@ -28,6 +28,12 @@ node .claude/skills/run-keel/driver.mjs --list
 profile stays untouched and "fresh start" behaviour is reproducible. Pass a different
 path as the first argument if you need two profiles in one session.
 
+The throwaway profile is wiped on every launch by default — that is what makes "fresh
+start" reproducible. Set `KEEL_KEEP_PROFILE=1` to skip the wipe and keep whatever is
+already at the profile path. That is how you drive the app against a config written
+beforehand: it is the only way a migration or a hand-broken config entry gets verified
+against the running app at all, rather than against a unit test.
+
 **Always finish with `stop.sh`.** The app creates real tmux sessions; leaving them
 behind pollutes the machine and corrupts the next run's `tmux list-sessions` check.
 
@@ -39,7 +45,16 @@ node .claude/skills/run-keel/driver.mjs <urlPart> '<js expression>'
 
 `<urlPart>` picks the window: `project-window` for the project window (project list,
 kickoff wizard, ProjectView with Timeline + Kanban), `index.html` for the grid window
-(SessionGrid, StatusBar). The expression is evaluated with `awaitPromise`, so an
+(SessionGrid, StatusBar), `settings-window` for the settings window (model registry,
+assignments, CLI start parameters, speech output).
+
+The settings window does not open on start. Open it first, then drive it:
+
+    D=".claude/skills/run-keel/driver.mjs"
+    node $D project-window "window.cipherKeel.invoke('window:open-settings')"
+    node $D settings-window "window.cipherKeel.invoke('settings:ansicht')"
+
+The expression is evaluated with `awaitPromise`, so an
 `invoke(...)` promise can be passed directly and its resolved value is printed as JSON.
 
 ```bash

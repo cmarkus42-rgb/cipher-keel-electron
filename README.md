@@ -236,20 +236,21 @@ than what is delivered would be worse than none (CK-NFR-012).
 - **Unsigned and unnotarised.** The DMG needs a manual `xattr -cr` after install (see
   [Install](#install)). Signing is a deliberate 0.1 decision, not an oversight —
   revisit it if the project finds real distribution
-- **No settings UI for anything but `ui.*`.** Preset model tiers now resolve through
-  `agent.modelTiers` in the config file, so a preset asking for `heavy` launches on the
-  handle that key names — but neither that key nor most others can be reached from inside
-  the app. Which surfaces are adjustable, where each one lives, and which are visible or
-  editable today is inventoried in [`docs/anpassbare-flaechen.md`](docs/anpassbare-flaechen.md)
-  (CK-NFR-012)
-- **`agent.skipPermissions` has no settings UI.** Every session the app launches runs `claude`
-  with `--dangerously-skip-permissions` by default — this is a deliberate 0.1 decision
-  (2026-08-10), not an oversight: the app itself launches the agent, so it also owns the
-  decision to skip Claude Code's own permission prompts. The only way to turn it off today is
-  by hand-editing `agent.skipPermissions` to `false` in the config file (`cipher-keel-config.json`
-  under the app's `userData` directory — see `getConfigPath()` in
-  `src/main/config/config-store.ts`); there is no in-app toggle. It is one entry among
-  others in [`docs/anpassbare-flaechen.md`](docs/anpassbare-flaechen.md)
+- **A settings window now covers most of the config, but not all of it.** Opened from the
+  project window's header ("Einstellungen"), it has three tabs: model registry and the five
+  tier/role assignments with their fallback endpoints, CLI start parameters per adapter, and
+  speech output. `ui.*` never existed as an adjustable surface — the dark theme, layout and
+  grid are hardcoded — so there is nothing to add a UI for there. Which surfaces are
+  adjustable, where each one lives, and which are visible or editable today is inventoried
+  in [`docs/anpassbare-flaechen.md`](docs/anpassbare-flaechen.md) (CK-NFR-012)
+- **The permission-skip flag has an in-app toggle now.** Every session the app launches runs
+  `claude` with `--dangerously-skip-permissions` by default — this is a deliberate 0.1
+  decision (2026-08-10), not an oversight: the app itself launches the agent, so it also owns
+  the decision to skip Claude Code's own permission prompts. It moved from a fixed
+  `agent.skipPermissions` boolean to a free-text `agent.startArgs['claude-code']` line
+  (2026-08-17), editable in the settings window's "CLI-Start" tab — clearing the flag there
+  turns it off for the next session. Hand-editing `agent.skipPermissions` in the config file
+  no longer works: `migriere()` deletes that key on the next app start
 - **macOS on Apple Silicon only.** tmux plus Unix domain sockets plus keychain. Linux is
   an intended later target and nothing in the packaging setup blocks it; Windows is not
   planned. There is no Intel build

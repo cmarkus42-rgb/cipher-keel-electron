@@ -66,6 +66,7 @@ import {
   PROJECT_SWITCH,
   PROJECT_GET_CURRENT,
   WINDOW_OPEN_GRID,
+  WINDOW_OPEN_SETTINGS,
   KANBAN_LIST,
   KANBAN_CREATE,
   KANBAN_UPDATE,
@@ -102,8 +103,9 @@ import { graphMaintain } from './graph/maintain'
 import type { GraphWriter } from './graph/writer'
 import { ProjectManager } from './project/project-manager'
 import type { CreateKanbanItemInput, UpdateKanbanItemInput } from '../shared/kanban-types'
-import { createMainWindow } from './window-manager'
+import { createMainWindow, createSettingsWindow } from './window-manager'
 import type { AppServices } from './window-manager'
+import { registerSettingsHandlers } from './settings/handlers'
 import { registerWindow, broadcast } from './event-bus'
 import { normalizeToP1Format } from './p1/normalizer'
 import { getEntityDefinition, getEntityRahmen } from './preset/registry'
@@ -117,19 +119,22 @@ import { buildPhaseInputSection } from './session/phase-input'
 import { assembleEntityClaudeMd } from './session/assemble-entity'
 import { materialiseCapabilities } from './session/materialise-capabilities'
 import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-file'
-import { formatShellCommand } from './util/shell-quote'
+import { formatShellCommand, splitShellArgs } from './util/shell-quote'
 import { AdapterRegistry } from './agent/registry'
 import { describeMissingTool } from './util/missing-tool'
 
 // Tracks the active grid window for focus-or-create logic (CK-UI-002)
 let activeGridWindow: BrowserWindow | null = null
+// Tracks the active settings window for focus-or-create logic
+let activeSettingsWindow: BrowserWindow | null = null
 
 export function registerIpcHandlers(services: AppServices): void {
   // The registry demands its config reader — see Task 6. This is the one place that has
   // both Electron and the ConfigStore loaded, which is why the reading happens here and
   // not inside the adapter.
   const adapterRegistry = new AdapterRegistry({
-    getSkipPermissions: () => configStore.get('agent').skipPermissions,
+    getStartArgs: (adapterId: string) =>
+      splitShellArgs(configStore.get('agent').startArgs[adapterId] ?? ''),
   })
 
   // Project manager — wired to configStore for persistence (CK-INF-020)
@@ -703,6 +708,20 @@ export function registerIpcHandlers(services: AppServices): void {
     }
     return { ok: true }
   })
+
+  ipcMain.handle(WINDOW_OPEN_SETTINGS, () => {
+    if (!activeSettingsWindow || activeSettingsWindow.isDestroyed()) {
+      activeSettingsWindow = createSettingsWindow(services)
+      activeSettingsWindow.on('closed', () => {
+        activeSettingsWindow = null
+      })
+    } else {
+      activeSettingsWindow.focus()
+    }
+    return { ok: true }
+  })
+
+  registerSettingsHandlers()
 
   // ---------------------------------------------------------------------------
   // GitHub handlers (Phase 3b — GH-001..GH-005, GH-014, GH-015)

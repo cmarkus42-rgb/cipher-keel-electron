@@ -94,6 +94,14 @@ export interface AgentAdapter {
    */
   readonly niveau: CapabilityNiveau
 
+  /**
+   * Parameters this adapter appends from its own logic. The settings surface warns when a
+   * user types one of them into the free-text start parameters, because it would then
+   * appear twice on the command line. Named here rather than in the surface so that the
+   * adapter which adds them is also the one that names them.
+   */
+  readonly appGesteuerteParameter?: readonly string[]
+
   // --- lifecycle ---
   /** Build a structured launch command. Never returns a raw shell string. */
   buildLaunchCommand(opts: LaunchOpts): LaunchCommand

@@ -13,7 +13,8 @@
 import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
-import { MAX_SESSIONS, DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT } from '../../shared/constants'
+// DEFAULT_WINDOW_WIDTH/HEIGHT und MAX_SESSIONS werden hier nicht mehr gebraucht — die
+// Fenstergroessen stehen in window-manager.ts, und app.maxSessions hatte nie einen Leser.
 
 export interface ProjectRecord {
   id: string
@@ -41,33 +42,25 @@ export interface LlmEndpoint {
 }
 
 export interface CipherKeelConfig {
-  app: {
-    maxSessions: number
-  }
   agent: {
-    skipPermissions: boolean
+    /**
+     * Extra launch parameters per adapter id, as one free-text line each. Replaces the
+     * former `skipPermissions` boolean, which named one vendor's flag in the schema
+     * itself. The app-driven flags (see AgentAdapter.appGesteuerteParameter) are added
+     * on top of these, never replaced by them.
+     *
+     * "No parameters at all" is `{ 'claude-code': '' }`, not `{}`: an empty object is
+     * merged with the defaults on load, which puts the default line back. Whatever writes
+     * this must therefore always write the adapter's key, never delete it — otherwise a
+     * user who clears the field silently gets the default back on the next start.
+     */
+    startArgs: Record<string, string>
     /**
      * Tier label -> model handle, for the Rahmen's `model` field (M2 section 5.3).
      * Aliases rather than pinned ids: M2 calls concrete handles fragile, and aliases
      * survive model releases. An empty value means "let the harness decide".
      */
     modelTiers: { light: string; standard: string; heavy: string }
-  }
-  ui: {
-    theme: 'dark' | 'light' | 'cipher-ivory'
-    language: 'en' | 'de'
-    grid: {
-      cols: number
-      rows: number
-    }
-  }
-  windows: {
-    main: { x: number; y: number; width: number; height: number }
-  }
-  mcp: {
-    port: number
-    host: string
-    apiKey: string
   }
   voice: {
     enabled: boolean
@@ -103,31 +96,17 @@ export interface CipherKeelConfig {
 }
 
 const defaults: CipherKeelConfig = {
-  app: {
-    maxSessions: MAX_SESSIONS,
-  },
   agent: {
-    // Sessions are launched by the app itself; true matches cipher-mux 0.9.x behaviour.
-    skipPermissions: true,
+    // Sessions are launched by the app itself, into a tmux pane it drives — nobody is
+    // sitting there to answer a permission prompt, so a fresh install keeps the flag that
+    // has matched cipher-mux 0.9.x behaviour all along. This is a default *value* under an
+    // adapter key, not a vendor name baked into the schema's *shape*; only the latter is
+    // what startArgs replaces. It is also what migriere() produces for an existing
+    // `skipPermissions: true`, so a fresh install and a migrated one launch identically.
+    startArgs: { 'claude-code': '--dangerously-skip-permissions' },
     // The strength gradient the presets already express: heavy where errors multiply
     // (Systems Engineer, Architect), standard elsewhere. Editable per CK-NFR-012.
     modelTiers: { light: 'haiku', standard: 'sonnet', heavy: 'opus' },
-  },
-  ui: {
-    theme: 'dark',
-    language: 'en',
-    grid: {
-      cols: 2,
-      rows: 2,
-    },
-  },
-  windows: {
-    main: { x: 0, y: 0, width: DEFAULT_WINDOW_WIDTH, height: DEFAULT_WINDOW_HEIGHT },
-  },
-  mcp: {
-    port: 3100,
-    host: '127.0.0.1',
-    apiKey: '',
   },
   voice: {
     enabled: true,
@@ -198,15 +177,84 @@ function deepMerge<T extends Record<string, unknown>>(target: T, source: Record<
   return result
 }
 
+const TOTE_BLOECKE = ['app', 'ui', 'mcp', 'windows']
+
+/**
+ * Bring a config file written before this feature up to the current shape.
+ *
+ * Idempotent by construction: every branch is guarded on the old key still being present,
+ * so a second run finds nothing to do and reports `veraendert: false` — which is what
+ * keeps loadConfig from rewriting the file on every start.
+ *
+ * Exported so it can be tested without a filesystem.
+ */
+export function migriere(roh: Record<string, unknown>): {
+  config: Record<string, unknown>
+  veraendert: boolean
+} {
+  const config = { ...roh }
+  let veraendert = false
+
+  const agent = config.agent as Record<string, unknown> | undefined
+  if (agent && 'skipPermissions' in agent) {
+    const neu = { ...agent }
+    // A hand-written startArgs wins: the user stated the newer intent explicitly.
+    if (!neu.startArgs) {
+      neu.startArgs = {
+        'claude-code': neu.skipPermissions === true ? '--dangerously-skip-permissions' : '',
+      }
+    }
+    delete neu.skipPermissions
+    config.agent = neu
+    veraendert = true
+  }
+
+  for (const block of TOTE_BLOECKE) {
+    if (block in config) {
+      delete config[block]
+      veraendert = true
+    }
+  }
+
+  return { config, veraendert }
+}
+
 function loadConfig(): CipherKeelConfig {
+  let zusammengefuehrt: CipherKeelConfig
+  let veraendert: boolean
   try {
     const raw = fs.readFileSync(getConfigPath(), 'utf-8')
     if (!raw.trim()) return { ...defaults }
     const parsed = JSON.parse(raw) as Record<string, unknown>
-    return deepMerge({ ...defaults } as unknown as Record<string, unknown>, parsed) as unknown as CipherKeelConfig
+    const migriert = migriere(parsed)
+    veraendert = migriert.veraendert
+    zusammengefuehrt = deepMerge(
+      { ...defaults } as unknown as Record<string, unknown>,
+      migriert.config
+    ) as unknown as CipherKeelConfig
   } catch {
     return { ...defaults }
   }
+
+  // Persisting the migration is best effort, and it sits outside the read's try on
+  // purpose. Inside it, a failed write — read-only volume, ENOSPC, a file owned by
+  // another account — would fall into the catch and hand back defaults for a config that
+  // had just been read successfully. That value becomes `cached`, and the next
+  // configStore.set would write the defaults tree over the user's real file: an empty
+  // projects list and an empty registry, lost to a write error that had nothing to do
+  // with them. A migration that cannot be persisted now is simply persisted on the next
+  // write; a config that was read must never be discarded because of it.
+  if (veraendert) {
+    try {
+      saveConfig(zusammengefuehrt)
+    } catch (err) {
+      console.warn(
+        '[config-store] Die Migration konnte nicht geschrieben werden; sie gilt fuer diese ' +
+        'Sitzung und wird beim naechsten erfolgreichen Schreiben festgehalten:', err
+      )
+    }
+  }
+  return zusammengefuehrt
 }
 
 function saveConfig(config: CipherKeelConfig): void {
@@ -216,6 +264,10 @@ function saveConfig(config: CipherKeelConfig): void {
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2), { encoding: 'utf-8', mode: 0o600 })
 }
 
+// Loaded lazily on first access, not at module import: `loadConfig` reaches
+// `app.getPath('userData')` through `getConfigPath`, and that is not reliable yet at the
+// moment this module is imported (it runs before `app.whenReady()` in the real app, and no
+// test would catch an eager call breaking that — every test here mocks 'electron').
 let cached: CipherKeelConfig | null = null
 
 function getConfig(): CipherKeelConfig {

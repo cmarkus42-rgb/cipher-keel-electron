@@ -1,6 +1,6 @@
 // tests/util/shell-quote.test.ts
 import { describe, it, expect } from 'vitest'
-import { formatShellCommand } from '../../src/main/util/shell-quote'
+import { formatShellCommand, splitShellArgs } from '../../src/main/util/shell-quote'
 
 describe('formatShellCommand', () => {
   it('leaves a plain command untouched', () => {
@@ -34,5 +34,66 @@ describe('formatShellCommand', () => {
   it('rejects a newline outright rather than quoting it', () => {
     // tmux send-keys treats a newline as Enter — quoting cannot save this.
     expect(() => formatShellCommand('claude', ['a\nb'])).toThrow()
+  })
+})
+
+describe('splitShellArgs', () => {
+  it('gibt eine leere Liste fuer leeren Text und fuer reinen Leerraum', () => {
+    expect(splitShellArgs('')).toEqual([])
+    expect(splitShellArgs('   \t ')).toEqual([])
+  })
+
+  it('trennt an Leerraum', () => {
+    expect(splitShellArgs('--resume --model opus')).toEqual(['--resume', '--model', 'opus'])
+  })
+
+  it('haelt einfache Anfuehrungszeichen zusammen und entfernt sie', () => {
+    expect(splitShellArgs("--datei '/pfad mit leerzeichen/x.md'"))
+      .toEqual(['--datei', '/pfad mit leerzeichen/x.md'])
+  })
+
+  it('haelt doppelte Anfuehrungszeichen zusammen und entfernt sie', () => {
+    expect(splitShellArgs('--datei "/pfad mit leerzeichen/x.md"'))
+      .toEqual(['--datei', '/pfad mit leerzeichen/x.md'])
+  })
+
+  it('maskiert ein Leerzeichen per Rueckstrich ausserhalb von Anfuehrungszeichen', () => {
+    expect(splitShellArgs('--datei /pfad\\ mit/x.md')).toEqual(['--datei', '/pfad mit/x.md'])
+  })
+
+  it('behandelt ein Anfuehrungszeichen innerhalb der anderen Sorte als Zeichen', () => {
+    expect(splitShellArgs(`--text "Kenos' Rezept"`)).toEqual(['--text', "Kenos' Rezept"])
+  })
+
+  it('laesst den Rueckstrich in doppelten Anfuehrungszeichen das Anfuehrungszeichen schuetzen', () => {
+    expect(splitShellArgs('--text "Use \\"careful\\" quoting"'))
+      .toEqual(['--text', 'Use "careful" quoting'])
+  })
+
+  it('schuetzt in doppelten Anfuehrungszeichen auch den Rueckstrich selbst', () => {
+    expect(splitShellArgs('--text "a\\\\b"')).toEqual(['--text', 'a\\b'])
+  })
+
+  it('laesst den Rueckstrich in einfachen Anfuehrungszeichen literal, wie POSIX es will', () => {
+    expect(splitShellArgs("--text 'a\\b'")).toEqual(['--text', 'a\\b'])
+  })
+
+  it('laesst einen Rueckstrich vor einem harmlosen Zeichen in Anfuehrungszeichen stehen', () => {
+    expect(splitShellArgs('--text "a\\zb"')).toEqual(['--text', 'a\\zb'])
+  })
+
+  it('erlaubt ein leeres Argument als ausdrueckliches Paar Anfuehrungszeichen', () => {
+    expect(splitShellArgs(`--leer ""`)).toEqual(['--leer', ''])
+  })
+
+  it('wirft mit deutscher Meldung bei unbalanciertem Anfuehrungszeichen', () => {
+    expect(() => splitShellArgs('--datei "/pfad ohne Ende'))
+      .toThrow(/Anfuehrungszeichen/)
+  })
+
+  it('ist die Umkehrung von formatShellCommand fuer sichere und unsichere Argumente', () => {
+    const args = ['--dangerously-skip-permissions', '/pfad mit leerzeichen/x.md', "Kenos' Rezept"]
+    const zeile = formatShellCommand('claude', args)
+    expect(splitShellArgs(zeile)).toEqual(['claude', ...args])
   })
 })

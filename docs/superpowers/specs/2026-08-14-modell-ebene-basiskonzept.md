@@ -185,7 +185,11 @@ ersten drei Schritte sind klein, und jeder macht den vierten billiger.
 ## 9. Was dieses Konzept ausdrücklich offen lässt
 
 Es ist detailunabhängig. **Nicht** entschieden sind: Feldnamen und Speicherformat der
-Registry, wo Geheimnisse liegen (Keychain gegen Config gegen Umgebungsvariable), das
-Werkzeug-Protokoll je Anbieter, Abbruch- und Budgetregeln der Schleife, ob B Streaming
-braucht, und wie weit das eigene Harness hinter Claude Code zurückbleiben darf, ohne
-unbrauchbar zu werden. **Diese Fragen gehören in die Ideation zu Punkt 4**, nicht hierher.
+Registry, das Werkzeug-Protokoll je Anbieter, Abbruch- und Budgetregeln der Schleife, ob B
+Streaming braucht, und wie weit das eigene Harness hinter Claude Code zurückbleiben darf,
+ohne unbrauchbar zu werden. **Diese Fragen gehören in die Ideation zu Punkt 4**, nicht
+hierher.
+
+(Die Frage, wo Geheimnisse liegen, ist seit `src/main/worker/api-keys.ts` beantwortet:
+Schluesselbund zuerst, Umgebungsvariable zweitens. Siehe
+`2026-08-17-settings-fenster-design.md` §5.3.)

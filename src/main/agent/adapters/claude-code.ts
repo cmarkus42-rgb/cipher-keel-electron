@@ -2,7 +2,8 @@
  * Claude Code adapter — Tier-1, full capability support.
  *
  * Encapsulates all Claude Code CLI specifics:
- * - Launch via `claude --dangerously-skip-permissions` (configurable)
+ * - Launch via `claude`, with free-text start parameters from agent.startArgs (see
+ *   AgentConfigReader below) prepended to the flags this adapter builds itself
  * - MCP injection via `claude mcp add-json` AND direct settings.json
  *   manipulation (triple-path for reliability)
  * - StatusLine hook for context usage reporting
@@ -26,10 +27,12 @@ import type {
 import type { AdapterFeature, AdapterCapabilities } from '../../../shared/types'
 import { CapabilityNiveau } from '../../preset/niveau'
 import { runCommand, isCommandOnPath } from '../../util/exec-util'
+import { formatShellCommand } from '../../util/shell-quote'
 
 /** Minimal interface for reading the agent config section. */
 export interface AgentConfigReader {
-  getSkipPermissions(): boolean
+  /** Extra launch parameters for this adapter, already split into argv. */
+  getStartArgs(adapterId: string): string[]
 }
 
 export class ClaudeCodeAdapter implements AgentAdapter {
@@ -37,6 +40,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   readonly displayName = 'Claude Code'
   readonly tier = 'tier-1' as const
   readonly niveau = CapabilityNiveau.A
+  readonly appGesteuerteParameter = [
+    '--resume', '--fork-session', '--model', '--append-system-prompt-file',
+  ] as const
 
   private readonly configReader: AgentConfigReader
 
@@ -45,10 +51,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   }
 
   buildLaunchCommand(opts: LaunchOpts): LaunchCommand {
-    const args: string[] = []
-    if (this.configReader.getSkipPermissions()) {
-      args.push('--dangerously-skip-permissions')
-    }
+    // User parameters first, app-driven flags after: with the migrated default this
+    // produces a byte-identical command line to the pre-startArgs behaviour.
+    const args: string[] = [...this.configReader.getStartArgs(this.id)]
     if (opts.resume) {
       args.push('--resume')
     }
@@ -228,18 +233,23 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     )
   }
 
+  /** The launch line as a human reads it — one source with buildLaunchCommand's argv. */
+  private startBefehl(): string {
+    return formatShellCommand('claude', this.configReader.getStartArgs(this.id))
+  }
+
   buildWorkshopPromptFragment(lang: 'de' | 'en'): string {
     if (lang === 'de') {
       return `### Worker-Session-Startup (Claude Code)
 
-Starte Worker mit: \`claude --dangerously-skip-permissions\`
+Starte Worker mit: \`${this.startBefehl()}\`
 MCP-Tools stehen automatisch zur Verfuegung wenn die Session via cipher-keel erstellt wurde.
 Instruktionen DIREKT via tmux send-keys in den Pane schicken.
 `
     }
     return `### Worker Session Startup (Claude Code)
 
-Start workers with: \`claude --dangerously-skip-permissions\`
+Start workers with: \`${this.startBefehl()}\`
 MCP tools are automatically available when sessions are created via cipher-keel.
 Send instructions DIRECTLY via tmux send-keys into the pane.
 `
@@ -253,7 +263,7 @@ Send instructions DIRECTLY via tmux send-keys into the pane.
     if (lang === 'de') {
       return `### Worker-Session-Startup (Claude Code)
 
-Starte Worker mit: \`claude --dangerously-skip-permissions\`
+Starte Worker mit: \`${this.startBefehl()}\`
 MCP-Tools stehen automatisch zur Verfuegung wenn die Session via cipher-keel erstellt wurde.
 Instruktionen DIREKT via tmux send-keys in den Pane schicken.
 Session-Prefix fuer Cyber-Factory-Worker: \`ckeel-cf-\`
@@ -261,7 +271,7 @@ Session-Prefix fuer Cyber-Factory-Worker: \`ckeel-cf-\`
     }
     return `### Worker Session Startup (Claude Code)
 
-Start workers with: \`claude --dangerously-skip-permissions\`
+Start workers with: \`${this.startBefehl()}\`
 MCP tools are automatically available when sessions are created via cipher-keel.
 Send instructions DIRECTLY via tmux send-keys into the pane.
 Session prefix for Cyber Factory workers: \`ckeel-cf-\`
