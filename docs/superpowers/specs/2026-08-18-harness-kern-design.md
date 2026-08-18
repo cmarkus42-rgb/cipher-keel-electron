@@ -682,6 +682,14 @@ Das Ergebnis der Prüfung steht in `run.finished` und wird nicht erzwungen: Erzw
 Schema-Decoding hebt die Validität auf hundert Prozent und senkt die Antwortgenauigkeit. Ein
 sichtbar gescheiterter Lauf ist das bessere Ergebnis als valides Nonsens.
 
+**Wie weit „an den Außenkanten" wörtlich zu nehmen ist.** M8 §4.9 formuliert die Durchsetzung als
+„die Schleifen-Schnittstelle nimmt gar keine Pflichtfelder entgegen". Der `Auftrag` trägt sie
+trotzdem — er *ist* die Außenkante, und die Prüfung muss wissen, wogegen sie prüft. Was nicht
+passieren darf, ist eine Stufe tiefer: **Weder die Zug-Funktion noch ein Codec noch ein Werkzeug
+sieht `pflichtfelder`.** So gibt es keinen Ort, an dem ein Pflichtfeld eine Antwort formen könnte,
+bevor sie gedacht ist — frei denken, dann formatieren, dann prüfen. Der Wächtertest in §11 prüft
+genau diese Grenze und nicht den Wortlaut.
+
 ## 9. IPC und Fenster
 
 ### 9.1 Vier Kanäle, jeder mit einem Aufrufer
@@ -781,7 +789,7 @@ Trigger `UPDATE` und `DELETE` ablehnen. Dazu die Graph-Werkzeuge gegen eine Test
 | Die Schleife sieht nur die kanonische Form | derselbe aufgezeichnete Ablauf durch beide Codecs ergibt dieselbe **Ereignisfolge** |
 | Kein Effekt ohne Intent | im Protokoll steht vor jedem `tool.completed`/`tool.failed` ein `tool.intent` mit derselben Aufruf-ID |
 | Eine Quelle, zwei Renderungen | die vier Graph-Lesewerkzeuge und der MCP-Server bieten dieselben Operationen |
-| Der Vertrag bleibt an den Außenkanten | die Schleifen-Schnittstelle nimmt keine Pflichtfelder entgegen (Typ-Ebene) |
+| Der Vertrag bleibt an den Außenkanten | weder die Zug-Funktion noch ein Codec sieht `pflichtfelder`; nur `Auftrag` hinein und `run.finished` hinaus tun es |
 | Kein Kanal ohne Aufrufer | jeder `harness:`-Kanal hat einen Renderer-Aufrufer |
 | Jede anpassbare Fläche steht im Inventar | die Preistabelle in `docs/anpassbare-flaechen.md` |
 

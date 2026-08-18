@@ -2803,3 +2803,1685 @@ npm test && npm run typecheck && npm run lint
 git add src/main/harness/werkzeug-graph.ts tests/harness/werkzeug-graph.test.ts
 git commit -m "feat(harness): die vier lesenden Graph-Werkzeuge als zweite Renderung"
 ```
+
+---
+
+### Task 11: Die Schleife — ein Zug ohne Werkzeuge
+
+**Files:**
+- Create: `src/main/harness/lauf.ts`
+- Test: `tests/harness/lauf.test.ts`
+
+**Interfaces:**
+- Consumes: alles aus Task 1 bis 8
+- Produces: `interface Auftrag { auftragstext; modellId; wurzel; anhaenge?; pflichtfelder?; budgets }`,
+  `interface LaufUmgebung { db; eintrag; praefixTeile; wache; graphDb; registry; strom; uhr; abgebrochen }`,
+  `starteLauf(auftrag, umgebung): Promise<string>`, `setzeFort(laufId, auftrag, umgebung): Promise<void>`
+
+> **Diese Aufgabe baut den Zug ohne Werkzeugausfuehrung.** Die Antwort darf schon
+> Werkzeug-Aufrufbloecke enthalten — sie werden in dieser Aufgabe als benannter Vertragsbruch
+> abgelehnt, weil noch keine Werkzeugliste mitgeschickt wird. Task 12 macht daraus die
+> Ausfuehrung.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// tests/harness/lauf.test.ts
+import { describe, it, expect } from 'vitest'
+import { oeffneHarnessDb, lesen } from '../../src/main/harness/protokoll'
+import { starteLauf } from '../../src/main/harness/lauf'
+import { WerkzeugRegistry } from '../../src/main/harness/werkzeuge'
+import type { ModellEintrag } from '../../src/main/model/entry'
+import type { ModelAntwort } from '../../src/main/harness/form'
+
+const EINTRAG: ModellEintrag = {
+  id: 'test-modell', name: 'Testmodell', art: 'api',
+  erreichbarkeit: { art: 'api', baseUrl: 'https://x/v1', model: 'm', keyRef: 'k' },
+  oertlichkeit: 'fremdes-netz', erklaertext: '', empfehlung: '',
+  faehigkeiten: {
+    codec: 'openai-chat', werkzeugmodus: 'nativ', paralleleAufrufe: true, denkbloecke: false,
+    bilder: true, dokumente: true, aufgeschobenesLaden: true, werkzeugObergrenze: 20,
+    nutzbaresKontextfenster: 100_000, vertragsStrenge: { schemaTiefe: 2, reparaturversuche: 1 },
+    rundenbudget: 12, gemessenAm: null, gemessenMit: null, quelle: 'vermutet',
+  },
+}
+
+const AUFTRAG = {
+  auftragstext: 'sag hallo', modellId: 'test-modell', wurzel: '/tmp',
+  budgets: { runden: 3, wanduhrMs: 60_000, kostenCent: 100, kontextAnteil: 0.8 },
+}
+
+/** A transport stand-in: the loop must not know it is not talking to a network. */
+function umgebungMit(antworten: ModelAntwort[], gesendet: string[] = []) {
+  let i = 0
+  let t = 0
+  return {
+    db: oeffneHarnessDb(':memory:'),
+    eintrag: EINTRAG,
+    praefixTeile: { body: 'BODY', capabilities: '', persona: '', globaleRegeln: '', auftragstext: AUFTRAG.auftragstext },
+    wache: { wurzel: '/tmp', heim: '/tmp', userDataPfad: '/tmp/ud' },
+    graphDb: null,
+    registry: new WerkzeugRegistry([]),
+    strom: () => {},
+    uhr: () => (t += 1000),
+    abgebrochen: () => false,
+    sende: async (_koerper: unknown, praefix: string): Promise<ModelAntwort> => {
+      gesendet.push(praefix)
+      return antworten[i++]
+    },
+  }
+}
+
+function antwort(text: string, stop: 'ende' | 'laenge' = 'ende'): ModelAntwort {
+  return {
+    bloecke: [{ art: 'text', text }],
+    stopGrund: { normalisiert: stop, roh: stop === 'ende' ? 'stop' : 'length' },
+    usage: { eingabeToken: 100, ausgabeToken: 10, roh: null },
+  }
+}
+
+describe('starteLauf', () => {
+  it('schreibt run.started, prompt.sent, model.answered und run.finished', async () => {
+    const u = umgebungMit([antwort('hallo')])
+    const laufId = await starteLauf(AUFTRAG, u)
+    expect(lesen(u.db, laufId).map(e => e.art))
+      .toEqual(['run.started', 'prompt.sent', 'model.answered', 'run.finished'])
+  })
+
+  it('legt den gesendeten Prompt woertlich und vollstaendig ab', async () => {
+    const gesendet: string[] = []
+    const u = umgebungMit([antwort('hallo')], gesendet)
+    const laufId = await starteLauf(AUFTRAG, u)
+    const ev = lesen(u.db, laufId).find(e => e.art === 'prompt.sent')
+    expect(ev?.nutzlast.text).toBe(gesendet[0])
+    expect(String(ev?.nutzlast.text)).toContain('BODY')
+  })
+
+  it('endet mit fertig und ziel-erreicht, wenn das Modell aufhoert', async () => {
+    const u = umgebungMit([antwort('hallo')])
+    const laufId = await starteLauf(AUFTRAG, u)
+    const ende = lesen(u.db, laufId).at(-1)
+    expect(ende?.nutzlast).toMatchObject({ endzustand: 'fertig', grund: 'ziel-erreicht' })
+  })
+
+  it('macht aus Trunkierung einen Abbruch ohne Reparaturversuch', async () => {
+    const u = umgebungMit([antwort('abgeschnitten', 'laenge')])
+    const laufId = await starteLauf(AUFTRAG, u)
+    const arten = lesen(u.db, laufId).map(e => e.art)
+    expect(arten).not.toContain('repair.attempted')
+    expect(lesen(u.db, laufId).at(-1)?.nutzlast).toMatchObject({
+      endzustand: 'abgebrochen', grund: 'transportfehler',
+    })
+  })
+
+  it('haelt den stabilen Praefix ueber die Zuege zeichengleich', async () => {
+    const gesendet: string[] = []
+    const werkzeugAntwort: ModelAntwort = {
+      bloecke: [{ art: 'werkzeug-aufruf', id: 'c1', name: 'datei_lesen', eingabe: {} }],
+      stopGrund: { normalisiert: 'werkzeug', roh: 'tool_calls' },
+      usage: { eingabeToken: 100, ausgabeToken: 10, roh: null },
+    }
+    const u = umgebungMit([werkzeugAntwort, antwort('fertig')], gesendet)
+    await starteLauf(AUFTRAG, u)
+    // Every sent prompt starts with the identical stable part — that is what the provider caches.
+    expect(gesendet[1].startsWith(gesendet[0].split('## Fortschritt')[0])).toBe(true)
+  })
+
+  it('lehnt einen Werkzeugaufruf ab, solange keine Werkzeugliste gesendet wurde', async () => {
+    const werkzeugAntwort: ModelAntwort = {
+      bloecke: [{ art: 'werkzeug-aufruf', id: 'c1', name: 'zaubern', eingabe: {} }],
+      stopGrund: { normalisiert: 'werkzeug', roh: 'tool_calls' },
+      usage: { eingabeToken: 100, ausgabeToken: 10, roh: null },
+    }
+    const u = umgebungMit([werkzeugAntwort])
+    const laufId = await starteLauf(AUFTRAG, u)
+    expect(String(lesen(u.db, laufId).at(-1)?.nutzlast.hinweis)).toContain('zaubern')
+  })
+
+  it('faehrt nach erschoepftem Rundenbudget einen Abschlusszug und endet fertig', async () => {
+    const weiter = (): ModelAntwort => ({
+      bloecke: [{ art: 'text', text: 'noch nicht fertig' }],
+      stopGrund: { normalisiert: 'werkzeug', roh: 'tool_calls' },
+      usage: { eingabeToken: 100, ausgabeToken: 10, roh: null },
+    })
+    const u = umgebungMit([weiter(), weiter(), weiter(), antwort('Teilergebnis')])
+    const laufId = await starteLauf({ ...AUFTRAG, budgets: { ...AUFTRAG.budgets, runden: 3 } }, u)
+    const ende = lesen(u.db, laufId).at(-1)
+    expect(ende?.nutzlast).toMatchObject({ endzustand: 'fertig', grund: 'runden-erschoepft' })
+    expect(String(ende?.nutzlast.ergebnis)).toContain('Teilergebnis')
+  })
+
+  it('bricht auf Zuruf an der Zuggrenze ab', async () => {
+    const u = { ...umgebungMit([antwort('a'), antwort('b')]), abgebrochen: () => true }
+    const laufId = await starteLauf(AUFTRAG, u)
+    expect(lesen(u.db, laufId).at(-1)?.nutzlast).toMatchObject({
+      endzustand: 'abgebrochen', grund: 'abgebrochen-von-aussen',
+    })
+  })
+
+  it('lehnt einen ungebauten Codec beim Start ab, statt still zu ersetzen', async () => {
+    const u = umgebungMit([antwort('a')])
+    const eintrag = { ...EINTRAG, faehigkeiten: { ...EINTRAG.faehigkeiten!, codec: 'text' as const } }
+    await expect(starteLauf(AUFTRAG, { ...u, eintrag })).rejects.toThrow(/text/)
+  })
+
+  it('lehnt werkzeugmodus text beim Start ab', async () => {
+    const u = umgebungMit([antwort('a')])
+    const eintrag = { ...EINTRAG, faehigkeiten: { ...EINTRAG.faehigkeiten!, werkzeugmodus: 'text' as const } }
+    await expect(starteLauf(AUFTRAG, { ...u, eintrag })).rejects.toThrow(/Text-Protokoll/)
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run tests/harness/lauf.test.ts`
+Expected: FAIL — `Failed to resolve import "../../src/main/harness/lauf"`
+
+- [ ] **Step 3: Write `lauf.ts`**
+
+```ts
+/**
+ * lauf — the loop, and the only module that assembles the others.
+ *
+ * It holds no history. Before every turn it reads the run's events and projects. That makes
+ * "turn 1" and "turn 14 after a restart" the same code path — and resumption, which hangs on a
+ * hard process death and is therefore badly testable, has by then run a thousand times in normal
+ * operation (M8 section 3.4).
+ *
+ * `sende` is injected rather than imported so the loop can be driven without a network. It is
+ * not a mock seam bolted on for tests: the loop genuinely has no business knowing which
+ * transport answers.
+ */
+
+import type Database from 'better-sqlite3'
+import { randomUUID } from 'node:crypto'
+import type { ModellEintrag } from '../model/entry'
+import { checkWorkerAnswer } from '../worker/result-contract'
+import { anhaengen, lesen } from './protokoll'
+import type { Ereignis } from './ereignisse'
+import { codecFuer } from './codec'
+import type { Block, ModelAntwort } from './form'
+import { nurText, werkzeugAufrufe } from './form'
+import { projiziere } from './projektion'
+import { baueFortschritt, baueStabilenTeil, type PraefixTeile } from './praefix'
+import {
+  grundFuerStopGrund, pruefeBudgets, verbrauchNach, VON_AUSSEN, ZIEL_ERREICHT,
+  type Abschlussgrund, type Budgets, type Verbrauch,
+} from './budget'
+import type { WacheKontext } from './pfadwache'
+import type { WerkzeugRegistry } from './werkzeuge'
+
+export interface Auftrag {
+  auftragstext: string
+  modellId: string
+  wurzel: string
+  anhaenge?: string[]
+  pflichtfelder?: string[]
+  budgets: Budgets
+}
+
+export interface LaufUmgebung {
+  db: Database.Database
+  eintrag: ModellEintrag
+  praefixTeile: PraefixTeile
+  wache: WacheKontext
+  graphDb: Database.Database | null
+  registry: WerkzeugRegistry
+  /** Every appended event, for whoever wants to watch. */
+  strom: (e: Ereignis) => void
+  uhr: () => number
+  abgebrochen: () => boolean
+  /** Wire body in, raw answer already decoded by the codec, out. */
+  sende: (koerper: unknown, praefix: string) => Promise<ModelAntwort>
+}
+
+const LEERER_VERBRAUCH: Verbrauch = {
+  runden: 0, verstricheneMs: 0, kostenCent: 0, letzteEingabeToken: 0,
+}
+
+function pruefeStartbedingungen(eintrag: ModellEintrag): void {
+  const f = eintrag.faehigkeiten
+  if (!f) {
+    throw new Error(
+      `Der Eintrag '${eintrag.id}' traegt keine Faehigkeitszeile — ein cli-harness besitzt sein ` +
+      `Protokoll selbst und kann nicht durch die eigene Schleife gefahren werden.`,
+    )
+  }
+  if (f.werkzeugmodus === 'text') {
+    throw new Error(
+      `'${eintrag.id}' braucht das Text-Protokoll fuer Werkzeuge. Das ist in dieser Ausbaustufe ` +
+      `nicht gebaut — es kommt als eigener Codec.`,
+    )
+  }
+  // Throws by name for ollama-native and text rather than falling back to something else.
+  codecFuer(f.codec)
+}
+
+export async function starteLauf(auftrag: Auftrag, u: LaufUmgebung): Promise<string> {
+  pruefeStartbedingungen(u.eintrag)
+  const laufId = randomUUID()
+  const f = u.eintrag.faehigkeiten!
+  const stummel = u.registry.stummel(f.aufgeschobenesLaden)
+
+  const hinweise: string[] = []
+  // The tool ceiling is an inferred signal (M8 section 4.10): it may warn, never abort.
+  if (stummel.length > f.werkzeugObergrenze) {
+    hinweise.push(
+      `Die Werkzeugliste hat ${stummel.length} Eintraege, die Faehigkeitszeile empfiehlt ` +
+      `hoechstens ${f.werkzeugObergrenze}.`,
+    )
+  }
+
+  schreibe(u, laufId, 'run.started', {
+    auftragstext: auftrag.auftragstext,
+    modellId: auftrag.modellId,
+    codec: f.codec,
+    werkzeuge: stummel.map(s => s.name),
+    budgets: auftrag.budgets,
+    hinweise,
+    anhangBloecke: await anhangBloecke(auftrag),
+  })
+
+  await fahre(laufId, auftrag, u)
+  return laufId
+}
+
+/** Same entry point after a restart: read, project, carry on. No second implementation. */
+export async function setzeFort(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise<void> {
+  pruefeStartbedingungen(u.eintrag)
+  await fahre(laufId, auftrag, u)
+}
+
+async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise<void> {
+  const f = u.eintrag.faehigkeiten!
+  const codec = codecFuer(f.codec)
+  const stummel = u.registry.stummel(f.aufgeschobenesLaden)
+  const stabil = baueStabilenTeil(u.praefixTeile, stummel)
+  const begonnen = u.uhr()
+  let verbrauch = LEERER_VERBRAUCH
+  let abschluss: Abschlussgrund | null = null
+
+  for (;;) {
+    if (u.abgebrochen()) {
+      beende(u, laufId, VON_AUSSEN, '')
+      return
+    }
+
+    const ereignisse = lesen(u.db, laufId)
+    const verlauf = projiziere(ereignisse)
+    // The stable part first, byte-identical every turn; the volatile progress object last.
+    const praefix = [stabil, baueFortschritt([], erledigte(ereignisse))].filter(t => t !== '').join('\n\n')
+    const koerper = codec.toWire(verlauf, abschluss ? [] : stummel, f)
+
+    schreibe(u, laufId, 'prompt.sent', { text: praefix, zug: verbrauch.runden + 1 })
+
+    let antwort: ModelAntwort
+    try {
+      antwort = await u.sende(koerper, praefix)
+    } catch (err) {
+      beende(u, laufId, {
+        code: 'transportfehler', endzustand: 'abgebrochen',
+        anweisung: err instanceof Error ? err.message : String(err),
+      }, '')
+      return
+    }
+
+    schreibe(u, laufId, 'model.answered', {
+      bloecke: antwort.bloecke, stopGrund: antwort.stopGrund, usage: antwort.usage,
+    })
+
+    // Truncation is read before any repair decision — no amount of thinking fixes it.
+    const transport = grundFuerStopGrund(antwort.stopGrund)
+    if (transport) {
+      beende(u, laufId, transport, nurText(antwort.bloecke))
+      return
+    }
+
+    if (abschluss) {
+      beende(u, laufId, abschluss, nurText(antwort.bloecke), auftrag.pflichtfelder)
+      return
+    }
+
+    verbrauch = verbrauchNach(verbrauch, auftrag.modellId, antwort, begonnen, u.uhr())
+
+    const aufrufe = werkzeugAufrufe(antwort.bloecke)
+    if (aufrufe.length > 0) {
+      // Task 12 turns this into execution. Until then a call is a named contract break rather
+      // than something quietly ignored.
+      beende(u, laufId, {
+        code: 'transportfehler', endzustand: 'abgebrochen',
+        anweisung: `Das Modell rief '${aufrufe[0].name}' auf, obwohl keine Werkzeugliste ` +
+          `gesendet wurde.`,
+      }, nurText(antwort.bloecke), undefined, `Das Modell rief '${aufrufe[0].name}' auf.`)
+      return
+    }
+
+    const budget = pruefeBudgets(auftrag.budgets, verbrauch, f.nutzbaresKontextfenster)
+    if (budget) {
+      // A hit budget is a closing mode, not an exception: one last turn without tools.
+      schreibe(u, laufId, 'budget.warned', { grund: budget.code, anweisung: budget.anweisung })
+      abschluss = budget
+      continue
+    }
+
+    beende(u, laufId, ZIEL_ERREICHT, nurText(antwort.bloecke), auftrag.pflichtfelder)
+    return
+  }
+}
+
+function erledigte(ereignisse: Ereignis[]): string[] {
+  return ereignisse
+    .filter(e => e.art === 'tool.completed')
+    .map(e => `${String(e.nutzlast.name ?? 'Werkzeug')} (${String(e.nutzlast.aufrufId)})`)
+}
+
+async function anhangBloecke(auftrag: Auftrag): Promise<Block[]> {
+  if (!auftrag.anhaenge || auftrag.anhaenge.length === 0) return []
+  const { readFileSync } = await import('node:fs')
+  const { basename, extname } = await import('node:path')
+  const TYPEN: Record<string, string> = {
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+    '.webp': 'image/webp', '.pdf': 'application/pdf',
+  }
+  return auftrag.anhaenge.map(pfad => {
+    // Attachments deliberately bypass pfadwache: they are the user's act, not the model's.
+    // A path that cannot be read stops the run instead of being silently skipped.
+    const daten = readFileSync(pfad).toString('base64')
+    const medientyp = TYPEN[extname(pfad).toLowerCase()] ?? 'application/octet-stream'
+    return medientyp.startsWith('image/')
+      ? { art: 'bild' as const, medientyp, daten }
+      : { art: 'dokument' as const, medientyp, name: basename(pfad), daten }
+  })
+}
+
+function schreibe(
+  u: LaufUmgebung, laufId: string, art: Ereignis['art'], nutzlast: Record<string, unknown>,
+): void {
+  u.strom(anhaengen(u.db, laufId, art, nutzlast))
+}
+
+function beende(
+  u: LaufUmgebung, laufId: string, grund: Abschlussgrund, ergebnis: string,
+  pflichtfelder?: string[], hinweis?: string,
+): void {
+  // The contract is checked at the outer edge only, and never enforced: a visibly failed run
+  // beats valid nonsense (M8 section 4.9).
+  const vertrag = pflichtfelder && pflichtfelder.length > 0
+    ? checkWorkerAnswer(ergebnis, pflichtfelder)
+    : null
+  schreibe(u, laufId, 'run.finished', {
+    endzustand: grund.endzustand,
+    grund: grund.code,
+    anweisung: grund.anweisung,
+    ergebnis,
+    vertrag: vertrag ? (vertrag.ok ? { ok: true } : { ok: false, grund: vertrag.reason }) : null,
+    ...(hinweis ? { hinweis } : {}),
+  })
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx vitest run tests/harness/lauf.test.ts`
+Expected: PASS, 10 Tests
+
+- [ ] **Step 5: Full check and commit**
+
+```bash
+npm test && npm run typecheck && npm run lint
+git add src/main/harness/lauf.ts tests/harness/lauf.test.ts
+git commit -m "feat(harness): die Schleife -- Zug, Budgets, Abschlussmodus, Vertrag"
+```
+
+---
+
+### Task 12: Werkzeugausführung, Intent vor Effekt, Wiederaufnahme
+
+**Files:**
+- Modify: `src/main/harness/lauf.ts`
+- Create: `src/main/harness/index.ts`
+- Test: `tests/harness/lauf-werkzeuge.test.ts`
+
+**Interfaces:**
+- Consumes: `Werkzeug`, `WerkzeugRegistry`, `META_WERKZEUG_NAME` aus Task 9
+- Produces: `index.ts` exportiert `starteLauf`, `setzeFort`, `oeffneHarnessDb`, `lesen`, `laufIds`,
+  `WerkzeugRegistry`, `DATEI_WERKZEUGE`, `GRAPH_WERKZEUGE`, Typen `Auftrag`, `LaufUmgebung`, `Ereignis`
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// tests/harness/lauf-werkzeuge.test.ts
+import { describe, it, expect } from 'vitest'
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { oeffneHarnessDb, anhaengen, lesen } from '../../src/main/harness/protokoll'
+import { starteLauf, setzeFort } from '../../src/main/harness/lauf'
+import { WerkzeugRegistry } from '../../src/main/harness/werkzeuge'
+import { DATEI_WERKZEUGE } from '../../src/main/harness/werkzeug-datei'
+import type { ModelAntwort } from '../../src/main/harness/form'
+import type { ModellEintrag } from '../../src/main/model/entry'
+
+const EINTRAG: ModellEintrag = {
+  id: 'test-modell', name: 'Testmodell', art: 'api',
+  erreichbarkeit: { art: 'api', baseUrl: 'https://x/v1', model: 'm', keyRef: 'k' },
+  oertlichkeit: 'fremdes-netz', erklaertext: '', empfehlung: '',
+  faehigkeiten: {
+    codec: 'openai-chat', werkzeugmodus: 'nativ', paralleleAufrufe: true, denkbloecke: false,
+    bilder: true, dokumente: true, aufgeschobenesLaden: true, werkzeugObergrenze: 20,
+    nutzbaresKontextfenster: 100_000, vertragsStrenge: { schemaTiefe: 2, reparaturversuche: 1 },
+    rundenbudget: 12, gemessenAm: null, gemessenMit: null, quelle: 'vermutet',
+  },
+}
+
+function umgebung(wurzel: string, antworten: ModelAntwort[]) {
+  let i = 0, t = 0
+  return {
+    db: oeffneHarnessDb(':memory:'),
+    eintrag: EINTRAG,
+    praefixTeile: { body: 'BODY', capabilities: '', persona: '', globaleRegeln: '', auftragstext: 'a' },
+    wache: { wurzel, heim: wurzel, userDataPfad: join(wurzel, 'ud') },
+    graphDb: null,
+    registry: new WerkzeugRegistry(DATEI_WERKZEUGE),
+    strom: () => {},
+    uhr: () => (t += 1000),
+    abgebrochen: () => false,
+    sende: async (): Promise<ModelAntwort> => antworten[i++],
+  }
+}
+
+const ruft = (name: string, eingabe: Record<string, unknown>, id = 'c1'): ModelAntwort => ({
+  bloecke: [{ art: 'werkzeug-aufruf', id, name, eingabe }],
+  stopGrund: { normalisiert: 'werkzeug', roh: 'tool_calls' },
+  usage: { eingabeToken: 100, ausgabeToken: 10, roh: null },
+})
+
+const sagt = (text: string): ModelAntwort => ({
+  bloecke: [{ art: 'text', text }],
+  stopGrund: { normalisiert: 'ende', roh: 'stop' },
+  usage: { eingabeToken: 100, ausgabeToken: 10, roh: null },
+})
+
+const AUFTRAG = (wurzel: string) => ({
+  auftragstext: 'lies a.ts', modellId: 'test-modell', wurzel,
+  budgets: { runden: 6, wanduhrMs: 60_000, kostenCent: 100, kontextAnteil: 0.9 },
+})
+
+describe('Werkzeugausfuehrung', () => {
+  it('schreibt tool.intent vor tool.completed', async () => {
+    const w = mkdtempSync(join(tmpdir(), 'keel-lw-'))
+    writeFileSync(join(w, 'a.ts'), 'inhalt')
+    const u = umgebung(w, [ruft('datei_lesen', { pfad: join(w, 'a.ts') }), sagt('fertig')])
+    const id = await starteLauf(AUFTRAG(w), u)
+    const arten = lesen(u.db, id).map(e => e.art)
+    expect(arten.indexOf('tool.intent')).toBeLessThan(arten.indexOf('tool.completed'))
+    rmSync(w, { recursive: true, force: true })
+  })
+
+  it('macht aus einer abgelehnten Pfadpruefung ein tool.failed und laeuft weiter', async () => {
+    const w = mkdtempSync(join(tmpdir(), 'keel-lw-'))
+    writeFileSync(join(w, '.env'), 'TOKEN=x')
+    const u = umgebung(w, [ruft('datei_lesen', { pfad: join(w, '.env') }), sagt('verstanden')])
+    const id = await starteLauf(AUFTRAG(w), u)
+    const ev = lesen(u.db, id)
+    expect(ev.some(e => e.art === 'tool.failed')).toBe(true)
+    expect(ev.at(-1)?.nutzlast).toMatchObject({ endzustand: 'fertig' })
+    rmSync(w, { recursive: true, force: true })
+  })
+
+  it('reicht ein Schema nach und schreibt tool.schema_loaded', async () => {
+    const w = mkdtempSync(join(tmpdir(), 'keel-lw-'))
+    const u = umgebung(w, [ruft('werkzeug_schema', { name: 'datei_lesen' }), sagt('fertig')])
+    const id = await starteLauf(AUFTRAG(w), u)
+    const geladen = lesen(u.db, id).find(e => e.art === 'tool.schema_loaded')
+    expect(geladen?.nutzlast.name).toBe('datei_lesen')
+    rmSync(w, { recursive: true, force: true })
+  })
+
+  it('haelt den stabilen Praefix nach dem Nachladen zeichengleich', async () => {
+    const w = mkdtempSync(join(tmpdir(), 'keel-lw-'))
+    const u = umgebung(w, [ruft('werkzeug_schema', { name: 'datei_lesen' }), sagt('fertig')])
+    const id = await starteLauf(AUFTRAG(w), u)
+    const prompts = lesen(u.db, id).filter(e => e.art === 'prompt.sent')
+      .map(e => String(e.nutzlast.text))
+    expect(prompts[1].startsWith(prompts[0].split('## Fortschritt')[0])).toBe(true)
+    // The schema is in the history, never in the stable part.
+    expect(prompts[0]).not.toContain('"required"')
+    rmSync(w, { recursive: true, force: true })
+  })
+
+  it('lehnt ein unbekanntes Werkzeug beim Namen ab', async () => {
+    const w = mkdtempSync(join(tmpdir(), 'keel-lw-'))
+    const u = umgebung(w, [ruft('zaubern', {}), sagt('ok')])
+    const id = await starteLauf(AUFTRAG(w), u)
+    const f = lesen(u.db, id).find(e => e.art === 'tool.failed')
+    expect(String(f?.nutzlast.meldung)).toContain('zaubern')
+    rmSync(w, { recursive: true, force: true })
+  })
+
+  it('fuehrt mehrere lesende Aufrufe eines Zuges aus', async () => {
+    const w = mkdtempSync(join(tmpdir(), 'keel-lw-'))
+    writeFileSync(join(w, 'a.ts'), 'A')
+    writeFileSync(join(w, 'b.ts'), 'B')
+    const zwei: ModelAntwort = {
+      bloecke: [
+        { art: 'werkzeug-aufruf', id: 'c1', name: 'datei_lesen', eingabe: { pfad: join(w, 'a.ts') } },
+        { art: 'werkzeug-aufruf', id: 'c2', name: 'datei_lesen', eingabe: { pfad: join(w, 'b.ts') } },
+      ],
+      stopGrund: { normalisiert: 'werkzeug', roh: 'tool_calls' },
+      usage: { eingabeToken: 100, ausgabeToken: 10, roh: null },
+    }
+    const u = umgebung(w, [zwei, sagt('fertig')])
+    const id = await starteLauf(AUFTRAG(w), u)
+    expect(lesen(u.db, id).filter(e => e.art === 'tool.completed')).toHaveLength(2)
+    rmSync(w, { recursive: true, force: true })
+  })
+
+  it('lehnt einen Werkzeugaufruf im Abschlusszug ab', async () => {
+    const w = mkdtempSync(join(tmpdir(), 'keel-lw-'))
+    writeFileSync(join(w, 'a.ts'), 'A')
+    const u = umgebung(w, [
+      ruft('datei_lesen', { pfad: join(w, 'a.ts') }),
+      ruft('datei_lesen', { pfad: join(w, 'a.ts') }, 'c2'),
+      sagt('Teilergebnis'),
+    ])
+    const id = await starteLauf({ ...AUFTRAG(w), budgets: { ...AUFTRAG(w).budgets, runden: 2 } }, u)
+    expect(lesen(u.db, id).at(-1)?.nutzlast).toMatchObject({ grund: 'runden-erschoepft' })
+    rmSync(w, { recursive: true, force: true })
+  })
+})
+
+describe('Wiederaufnahme', () => {
+  it('fuehrt kein Werkzeug ein zweites Mal aus', async () => {
+    const w = mkdtempSync(join(tmpdir(), 'keel-lw-'))
+    writeFileSync(join(w, 'a.ts'), 'inhalt')
+    const u = umgebung(w, [sagt('fertig')])
+    const id = 'lauf-fortsetzen'
+    // A run that already got as far as a completed tool call.
+    anhaengen(u.db, id, 'run.started', { auftragstext: 'a', modellId: 'test-modell', werkzeuge: [] })
+    anhaengen(u.db, id, 'model.answered', { bloecke: [
+      { art: 'werkzeug-aufruf', id: 'c1', name: 'datei_lesen', eingabe: { pfad: join(w, 'a.ts') } },
+    ] })
+    anhaengen(u.db, id, 'tool.intent', { aufrufId: 'c1', name: 'datei_lesen' })
+    anhaengen(u.db, id, 'tool.completed', { aufrufId: 'c1', name: 'datei_lesen', inhalt: [{ art: 'text', text: 'inhalt' }] })
+
+    await setzeFort(id, AUFTRAG(w), u)
+    expect(lesen(u.db, id).filter(e => e.art === 'tool.intent')).toHaveLength(1)
+    rmSync(w, { recursive: true, force: true })
+  })
+
+  it('gibt einem offenen Intent ein Ergebnis mit unbekannter Ausfuehrung', async () => {
+    const w = mkdtempSync(join(tmpdir(), 'keel-lw-'))
+    const u = umgebung(w, [sagt('verstanden')])
+    const id = 'lauf-offen'
+    anhaengen(u.db, id, 'run.started', { auftragstext: 'a', modellId: 'test-modell', werkzeuge: [] })
+    anhaengen(u.db, id, 'model.answered', { bloecke: [
+      { art: 'werkzeug-aufruf', id: 'c1', name: 'datei_lesen', eingabe: {} },
+    ] })
+    anhaengen(u.db, id, 'tool.intent', { aufrufId: 'c1', name: 'datei_lesen' })
+
+    await setzeFort(id, AUFTRAG(w), u)
+    const prompt = lesen(u.db, id).filter(e => e.art === 'prompt.sent').at(-1)
+    // The projection put it into the history; the loop must not re-run the call.
+    expect(lesen(u.db, id).filter(e => e.art === 'tool.intent')).toHaveLength(1)
+    expect(prompt).toBeDefined()
+    rmSync(w, { recursive: true, force: true })
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run tests/harness/lauf-werkzeuge.test.ts`
+Expected: FAIL — der Vertragsbruch-Zweig aus Task 11 beendet den Lauf, statt auszufuehren
+
+- [ ] **Step 3: Delete the test from Task 11 that this task makes wrong**
+
+In `tests/harness/lauf.test.ts` faellt der Fall
+
+```
+it('lehnt einen Werkzeugaufruf ab, solange keine Werkzeugliste gesendet wurde', ...)
+```
+
+**ersatzlos weg.** Er hat den Zwischenstand aus Task 11 festgehalten, in dem die Schleife noch
+nicht ausfuehren konnte. Ab dieser Aufgabe ist ein Werkzeugaufruf kein Vertragsbruch mehr, sondern
+der Normalfall — der Test wuerde jetzt eine Eigenschaft einfordern, die absichtlich nicht mehr
+gilt. Das ist die eine Sorte Testloeschung, die richtig ist: Der Test hat gearbeitet und ist
+fertig, nicht kaputt und weggeraeumt. Der Fall „unbekanntes Werkzeug" bleibt und wandert nach
+`lauf-werkzeuge.test.ts`, wo er als `tool.failed` geprueft wird.
+
+Ebenso faellt der jetzt unbenutzte sechste Parameter `hinweis` aus `beende()` weg.
+
+- [ ] **Step 4: Replace the contract-break branch in `lauf.ts` with execution**
+
+Ersetze in `fahre` den Block `if (aufrufe.length > 0) { beende(...) }` durch:
+
+```ts
+    if (aufrufe.length > 0) {
+      if (abschluss) {
+        // Masking rather than removing: the stub list stays byte-identical, the call is refused
+        // with a reason (M8 section 3.5).
+        for (const a of aufrufe) {
+          schreibe(u, laufId, 'tool.intent', { aufrufId: a.id, name: a.name, eingabe: a.eingabe })
+          schreibe(u, laufId, 'tool.failed', {
+            aufrufId: a.id, name: a.name,
+            meldung: 'Der Lauf ist im Abschlusszug — es wird kein Werkzeug mehr ausgefuehrt.',
+          })
+        }
+        continue
+      }
+      // All tools in this stretch read, so all calls of a turn may run concurrently. The
+      // Single-Writer rule from M8 section 3.2 holds trivially: no call writes. The mechanism
+      // for it arrives with the writing tools.
+      await Promise.all(aufrufe.map(a => fuehreAus(u, laufId, a)))
+      const nachWerkzeug = pruefeBudgets(auftrag.budgets, verbrauch, f.nutzbaresKontextfenster)
+      if (nachWerkzeug) {
+        schreibe(u, laufId, 'budget.warned', { grund: nachWerkzeug.code, anweisung: nachWerkzeug.anweisung })
+        abschluss = nachWerkzeug
+      }
+      continue
+    }
+```
+
+- [ ] **Step 5: Add `fuehreAus` to `lauf.ts`**
+
+```ts
+/**
+ * One tool call, with the intent written *before* the effect.
+ *
+ * That order is the whole point: a hard death between effect and result leaves an intent without
+ * a completion, and the projection turns that into "execution unknown" rather than repeating the
+ * call. Writing the intent afterwards would make the two states indistinguishable.
+ */
+async function fuehreAus(
+  u: LaufUmgebung, laufId: string, a: Extract<Block, { art: 'werkzeug-aufruf' }>,
+): Promise<void> {
+  schreibe(u, laufId, 'tool.intent', { aufrufId: a.id, name: a.name, eingabe: a.eingabe })
+
+  if (a.name === META_WERKZEUG_NAME) {
+    const gesucht = typeof a.eingabe.name === 'string' ? a.eingabe.name : ''
+    const schema = u.registry.schemaVon(gesucht)
+    if (!schema) {
+      schreibe(u, laufId, 'tool.failed', {
+        aufrufId: a.id, name: a.name,
+        meldung: `Es gibt kein Werkzeug '${gesucht}'.`,
+      })
+      return
+    }
+    // Appended to the history, never written into the stable prefix.
+    schreibe(u, laufId, 'tool.schema_loaded', { name: gesucht, schema })
+    schreibe(u, laufId, 'tool.completed', {
+      aufrufId: a.id, name: a.name,
+      inhalt: [{ art: 'text', text: `Schema fuer ${gesucht} steht im Verlauf.` }],
+    })
+    return
+  }
+
+  const werkzeug = u.registry.finde(a.name)
+  if (!werkzeug) {
+    schreibe(u, laufId, 'tool.failed', {
+      aufrufId: a.id, name: a.name,
+      meldung: `Es gibt kein Werkzeug '${a.name}'. Verfuegbar sind: ` +
+        u.registry.alle().map(w => w.name).join(', ') + '.',
+    })
+    return
+  }
+
+  try {
+    const r = await werkzeug.ausfuehren(a.eingabe, { wache: u.wache, graphDb: u.graphDb })
+    if (r.ok) schreibe(u, laufId, 'tool.completed', { aufrufId: a.id, name: a.name, inhalt: r.inhalt })
+    else schreibe(u, laufId, 'tool.failed', { aufrufId: a.id, name: a.name, meldung: r.meldung })
+  } catch (err) {
+    schreibe(u, laufId, 'tool.failed', {
+      aufrufId: a.id, name: a.name,
+      meldung: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+```
+
+Dazu die Importe ergaenzen: `import { META_WERKZEUG_NAME, type WerkzeugRegistry } from './werkzeuge'`.
+
+- [ ] **Step 6: Write `index.ts`**
+
+```ts
+/**
+ * index — the harness's public surface.
+ *
+ * Everything outside src/main/harness/ imports from here, so the module cut inside stays free to
+ * move. Nothing here touches Electron; the IPC surface lives in src/main/harness-handlers.ts.
+ */
+
+export { starteLauf, setzeFort, type Auftrag, type LaufUmgebung } from './lauf'
+export { oeffneHarnessDb, anhaengen, lesen, laufIds } from './protokoll'
+export { WerkzeugRegistry, type Werkzeug, type WerkzeugKontext } from './werkzeuge'
+export { DATEI_WERKZEUGE } from './werkzeug-datei'
+export { GRAPH_WERKZEUGE } from './werkzeug-graph'
+export { codecFuer } from './codec'
+export { projiziere } from './projektion'
+export { baueStabilenTeil, type PraefixTeile } from './praefix'
+export { PREISTABELLE_STAND, VORGABE_PREISE } from './preise'
+export type { Ereignis, EreignisArt } from './ereignisse'
+export type { Block, Nachricht, ModelAntwort } from './form'
+export type { WacheKontext } from './pfadwache'
+```
+
+- [ ] **Step 7: Run tests to verify they pass**
+
+Run: `npx vitest run tests/harness/`
+Expected: PASS — alle Harness-Tests, inklusive der beiden Wiederaufnahme-Faelle
+
+- [ ] **Step 8: Full check and commit**
+
+```bash
+npm test && npm run typecheck && npm run lint
+git add src/main/harness/lauf.ts src/main/harness/index.ts tests/harness/lauf-werkzeuge.test.ts
+git commit -m "feat(harness): Werkzeugausfuehrung, Intent vor Effekt, Wiederaufnahme"
+```
+
+---
+
+### Task 13: IPC, Fenster und das Ereignis-Panel
+
+**Files:**
+- Modify: `src/shared/ipc-channels.ts` (fünf Konstanten, zwei Unions)
+- Create: `src/shared/harness-types.ts`
+- Create: `src/main/harness-handlers.ts`
+- Modify: `src/main/window-manager.ts` (`createHarnessWindow`)
+- Modify: `src/main/ipc-handlers.ts` (`WINDOW_OPEN_HARNESS`, `registerHarnessHandlers()`)
+- Modify: `electron.vite.config.ts` (vierter Renderer-Eingang)
+- Create: `src/renderer/windows/harness-window.html`
+- Create: `src/renderer/windows/harness-window.tsx`
+- Create: `src/renderer/components/harness/EreignisPanel.tsx`
+- Modify: `src/renderer/components/ProjectView.tsx` (Klickpfad)
+- Test: `tests/harness/ipc-kanaele.test.ts`
+
+**Interfaces:**
+- Consumes: `starteLauf`, `setzeFort`, `lesen`, `laufIds` aus `harness/index.ts`
+- Produces: `HARNESS_LAUF_STARTEN`, `HARNESS_LAUF_LESEN`, `HARNESS_LAUF_ABBRECHEN`,
+  `HARNESS_EREIGNIS`, `WINDOW_OPEN_HARNESS`; `interface HarnessAntwort<T>`, `interface LaufAnzeige`
+
+> **Diese Aufgabe hat bewusst keine Unit-Tests fuer die Handler.** Kein Test dieses Repos erreicht
+> einen `ipcMain`-Handler; ihre Abnahme sind die Belege aus Aufgabe 15. Was hier getestet wird,
+> ist die Zusicherung *daneben*: dass kein Kanal ohne Aufrufer bleibt.
+
+- [ ] **Step 1: Write the failing guard test**
+
+```ts
+// tests/harness/ipc-kanaele.test.ts
+import { describe, it, expect } from 'vitest'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
+import * as kanaele from '../../src/shared/ipc-channels'
+
+const WURZEL = join(__dirname, '..', '..')
+
+function alleDateien(verzeichnis: string): string[] {
+  return readdirSync(verzeichnis, { recursive: true, encoding: 'utf-8' })
+    .map(e => join(verzeichnis, e))
+    .filter(p => /\.(ts|tsx)$/.test(p))
+}
+
+const HARNESS_KANAELE = Object.entries(kanaele)
+  .filter(([, wert]) => typeof wert === 'string' && wert.startsWith('harness:'))
+  .map(([, wert]) => wert as string)
+
+describe('Waechter: kein Harness-Kanal ohne Aufrufer', () => {
+  it('kennt ueberhaupt Harness-Kanaele', () => {
+    expect(HARNESS_KANAELE.length).toBe(4)
+  })
+
+  it('jeder Kanal hat einen Aufrufer im Renderer', () => {
+    const rendererQuellen = alleDateien(join(WURZEL, 'src', 'renderer'))
+      .map(p => readFileSync(p, 'utf-8')).join('\n')
+    const ohne = HARNESS_KANAELE.filter(k => !rendererQuellen.includes(k))
+    expect(ohne).toEqual([])
+  })
+
+  it('jeder Kanal hat einen Handler oder Sender im Hauptprozess', () => {
+    const hauptQuellen = alleDateien(join(WURZEL, 'src', 'main'))
+      .map(p => readFileSync(p, 'utf-8')).join('\n')
+    const ohne = HARNESS_KANAELE.filter(k => !hauptQuellen.includes(k))
+    expect(ohne).toEqual([])
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run tests/harness/ipc-kanaele.test.ts`
+Expected: FAIL — `expected 0 to be 4`
+
+- [ ] **Step 3: Declare the channels in `src/shared/ipc-channels.ts`**
+
+Nach dem Settings-Block einfuegen:
+
+```ts
+// ---------------------------------------------------------------------------
+// Harness channels (M8 — the own agent loop)
+// ---------------------------------------------------------------------------
+export const HARNESS_LAUF_STARTEN = 'harness:lauf-starten' as const
+export const HARNESS_LAUF_LESEN = 'harness:lauf-lesen' as const
+export const HARNESS_LAUF_ABBRECHEN = 'harness:lauf-abbrechen' as const
+/** Main -> Renderer: one event of a running run, as it is appended. */
+export const HARNESS_EREIGNIS = 'harness:ereignis' as const
+export const WINDOW_OPEN_HARNESS = 'window:open-harness' as const
+```
+
+`HARNESS_EREIGNIS` in die `MainToRendererChannel`-Union, die vier uebrigen in
+`RendererToMainChannel`.
+
+- [ ] **Step 4: Write `src/shared/harness-types.ts`**
+
+```ts
+/**
+ * harness-types — what crosses the IPC boundary.
+ *
+ * Deliberately narrow: the renderer sees events, never a provider, never an endpoint, never a
+ * capability row. What it displays comes out of the event stream (M8 section 4.11).
+ */
+
+export interface HarnessEreignis {
+  laufId: string
+  seq: number
+  ts: string
+  art: string
+  nutzlast: Record<string, unknown>
+}
+
+export interface LaufStartWunsch {
+  auftragstext: string
+  modellId: string
+  wurzel: string
+  anhaenge?: string[]
+}
+
+export type HarnessAntwort<T> =
+  | { ok: true; wert: T }
+  | { ok: false; meldung: string }
+```
+
+- [ ] **Step 5: Write `src/main/harness-handlers.ts`**
+
+```ts
+/**
+ * harness-handlers — the harness's IPC surface.
+ *
+ * It lives *outside* src/main/harness/ on purpose. settings/handlers.ts imports electron from
+ * inside its feature directory, and copying that here would mean an exception in the guard test
+ * that checks the core knows no Electron. An exception list is how a guard quietly stops
+ * guarding — this project had that exact failure this month. So the rule stays "no module under
+ * src/main/harness/ imports electron", with no addendum, and the surface lives here.
+ *
+ * Both rules of the settings handlers hold: validate in main, never trust the renderer; and
+ * broadcast through event-bus, never through a captured BrowserWindow.
+ */
+
+import { ipcMain, app } from 'electron'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { statSync } from 'node:fs'
+import {
+  HARNESS_LAUF_STARTEN, HARNESS_LAUF_LESEN, HARNESS_LAUF_ABBRECHEN, HARNESS_EREIGNIS,
+} from '../shared/ipc-channels'
+import type { HarnessAntwort, HarnessEreignis, LaufStartWunsch } from '../shared/harness-types'
+import { broadcast } from './event-bus'
+import { resolveBetterSqliteBinding } from './graph/native-binding'
+import { eintragNachId } from './model/registry'
+import type { ModellEintrag } from './model/entry'
+import { assemblePraefixTeile } from './harness-praefix-quelle'
+import {
+  starteLauf, oeffneHarnessDb, lesen, laufIds,
+  WerkzeugRegistry, DATEI_WERKZEUGE, GRAPH_WERKZEUGE,
+} from './harness'
+import type { AppServices } from './service-lifecycle'
+
+let db: ReturnType<typeof oeffneHarnessDb> | null = null
+const abbruchmarken = new Set<string>()
+
+function harnessDb(): ReturnType<typeof oeffneHarnessDb> {
+  if (!db) {
+    db = oeffneHarnessDb(
+      join(app.getPath('userData'), 'harness.db'),
+      resolveBetterSqliteBinding(join(app.getAppPath(), 'node_modules', 'better-sqlite3')),
+    )
+  }
+  return db
+}
+
+function fehler(err: unknown): HarnessAntwort<never> {
+  return { ok: false, meldung: err instanceof Error ? err.message : String(err) }
+}
+
+export function registerHarnessHandlers(services: AppServices): void {
+  ipcMain.handle(HARNESS_LAUF_STARTEN, async (_e, roh: unknown): Promise<HarnessAntwort<string>> => {
+    try {
+      const w = roh as LaufStartWunsch
+      if (!w || typeof w.auftragstext !== 'string' || w.auftragstext.trim() === '') {
+        return { ok: false, meldung: 'Der Auftrag ist leer.' }
+      }
+      if (typeof w.modellId !== 'string' || w.modellId === '') {
+        return { ok: false, meldung: 'Es ist kein Modell gewaehlt.' }
+      }
+      if (typeof w.wurzel !== 'string' || !statSync(w.wurzel).isDirectory()) {
+        return { ok: false, meldung: `Die Wurzel '${String(w.wurzel)}' ist kein Verzeichnis.` }
+      }
+
+      const eintrag = eintragNachId(w.modellId)
+      if (!eintrag) return { ok: false, meldung: `Kein Registry-Eintrag '${w.modellId}'.` }
+
+      const laufId = await starteLauf(
+        {
+          auftragstext: w.auftragstext,
+          modellId: w.modellId,
+          wurzel: w.wurzel,
+          anhaenge: Array.isArray(w.anhaenge) ? w.anhaenge : undefined,
+          budgets: { runden: 12, wanduhrMs: 900_000, kostenCent: 200, kontextAnteil: 0.8 },
+        },
+        {
+          db: harnessDb(),
+          eintrag,
+          praefixTeile: assemblePraefixTeile(w.auftragstext),
+          wache: {
+            wurzel: w.wurzel,
+            heim: homedir(),
+            userDataPfad: app.getPath('userData'),
+          },
+          graphDb: services.graphDb,
+          registry: new WerkzeugRegistry([...DATEI_WERKZEUGE, ...GRAPH_WERKZEUGE]),
+          strom: (ev) => broadcast(HARNESS_EREIGNIS, ev as HarnessEreignis),
+          uhr: () => Date.now(),
+          abgebrochen: () => abbruchmarken.has(laufIdHalter.wert),
+          sende: sendeUeberTransport(eintrag),
+        },
+      )
+      return { ok: true, wert: laufId }
+    } catch (err) {
+      return fehler(err)
+    }
+  })
+
+  ipcMain.handle(HARNESS_LAUF_LESEN, (_e, laufId: unknown): HarnessAntwort<HarnessEreignis[]> => {
+    try {
+      if (typeof laufId !== 'string' || laufId === '') {
+        // No argument means "which runs exist" — the run list is a projection too.
+        return { ok: true, wert: laufIds(harnessDb()).map(id => ({
+          laufId: id, seq: 0, ts: '', art: 'lauf', nutzlast: {},
+        })) }
+      }
+      return { ok: true, wert: lesen(harnessDb(), laufId) as HarnessEreignis[] }
+    } catch (err) {
+      return fehler(err)
+    }
+  })
+
+  ipcMain.handle(HARNESS_LAUF_ABBRECHEN, (_e, laufId: unknown): HarnessAntwort<true> => {
+    if (typeof laufId !== 'string' || laufId === '') {
+      return { ok: false, meldung: 'Es ist kein Lauf genannt.' }
+    }
+    // The mark is read at the turn boundary. A request in flight is not cut off — see spec 9.1.
+    abbruchmarken.add(laufId)
+    return { ok: true, wert: true }
+  })
+}
+```
+
+Dazu zwei kleine Hilfen, die dieselbe Datei traegt:
+
+```ts
+/** Holds the id the abort mark is checked against; starteLauf mints it after the call begins. */
+const laufIdHalter = { wert: '' }
+
+/**
+ * The transport, wired to the codec. The loop hands over the wire body and gets blocks back —
+ * it never learns which of the three clients answered.
+ */
+function sendeUeberTransport(eintrag: ModellEintrag) {
+  return async (koerper: unknown): Promise<import('./harness').ModelAntwort> => {
+    const { toModelEndpoint } = await import('./model/entry')
+    const { clientForEndpoint } = await import('./worker/model-client')
+    const { codecFuer } = await import('./harness')
+    const endpunkt = toModelEndpoint(eintrag.erreichbarkeit, eintrag.faehigkeiten?.codec)
+    const roh = await clientForEndpoint(endpunkt).chat({ koerper, endpoint: endpunkt })
+    return codecFuer(eintrag.faehigkeiten!.codec).fromWire(roh)
+  }
+}
+```
+
+> **Hinweis fuer den Implementierer:** `laufIdHalter` ist die einzige Stelle, an der die
+> Abbruchmarke und die erst spaeter vergebene Lauf-ID zusammenkommen. Wenn `starteLauf` in einer
+> spaeteren Strecke die ID entgegennimmt statt sie zu erzeugen, faellt diese Kruecke weg. Sie
+> steht hier bewusst sichtbar statt versteckt.
+
+- [ ] **Step 6: Write `src/main/harness-praefix-quelle.ts`**
+
+```ts
+/**
+ * harness-praefix-quelle — where the stable prefix's sections come from.
+ *
+ * Separate from the handlers because it is the seam to the preset layer: today it hands over a
+ * plain body and the house rules, later it hands over an entity's assembled body, capabilities
+ * and persona. Keeping it a named function means that later change touches one file.
+ */
+
+import type { PraefixTeile } from './harness'
+
+const BODY =
+  'Du arbeitest in einem Projektverzeichnis und beantwortest die Frage, die im Auftrag steht. ' +
+  'Du kannst lesen, suchen und den Knowledge-Graph abfragen. Du kannst nichts schreiben und ' +
+  'nichts ausfuehren.'
+
+const REGELN = [
+  'Belege schlagen Behauptungen: Nenne Datei und Zeile, wenn du etwas ueber den Code sagst.',
+  'Wenn ein Werkzeug abgelehnt wird, nenne die Ablehnung in deiner Antwort statt sie zu umgehen.',
+  'Was du nicht geprueft hast, sagst du nicht.',
+].join('\n')
+
+export function assemblePraefixTeile(auftragstext: string): PraefixTeile {
+  return {
+    body: BODY,
+    capabilities: '',
+    persona: '',
+    globaleRegeln: `## Regeln\n\n${REGELN}`,
+    auftragstext,
+  }
+}
+```
+
+- [ ] **Step 7: Add `createHarnessWindow` to `window-manager.ts`**
+
+Wortgleich zu `createSettingsWindow`, drei Unterschiede: Groesse, Titel-Datei, Kommentar.
+
+```ts
+/**
+ * The harness window. Mirrors the settings window on purpose — that pattern was built and
+ * proved in the running app, and a new SessionGrid cell type would be the route the M6 addendum
+ * just cleared away (NanoClawChannelCell entfaellt ersatzlos).
+ */
+export function createHarnessWindow(_services: AppServices): BrowserWindow {
+  const win = new BrowserWindow({
+    width: 1100,
+    height: 820,
+    minWidth: 760,
+    minHeight: 560,
+    show: false,
+    backgroundColor: '#0d0d0d',
+    webPreferences: {
+      // Security baseline — NON-NEGOTIABLE (CK-NFR-004, CK-INF-022)
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: join(__dirname, '../preload/index.js'),
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+    },
+  })
+
+  win.once('ready-to-show', () => {
+    win.show()
+  })
+
+  const url = process.env.ELECTRON_RENDERER_URL
+  if (url) {
+    win.loadURL(`${url}/windows/harness-window.html`).catch(() => {
+      console.warn('[window-manager] /windows/ path failed, trying root-level')
+      win.loadURL(`${url}/harness-window.html`).catch((err: Error) =>
+        console.error('[window-manager] harness-window load failed:', err.message)
+      )
+    })
+  } else {
+    win.loadFile(join(__dirname, '../renderer/windows/harness-window.html'))
+  }
+
+  return win
+}
+```
+
+- [ ] **Step 8: Wire the window and the handlers in `ipc-handlers.ts`**
+
+Neben `WINDOW_OPEN_SETTINGS`, im selben Muster:
+
+```ts
+  ipcMain.handle(WINDOW_OPEN_HARNESS, () => {
+    if (!activeHarnessWindow || activeHarnessWindow.isDestroyed()) {
+      activeHarnessWindow = createHarnessWindow(services)
+      registerWindow(activeHarnessWindow)
+      activeHarnessWindow.on('closed', () => {
+        activeHarnessWindow = null
+      })
+    } else {
+      activeHarnessWindow.focus()
+    }
+    return { ok: true }
+  })
+
+  registerHarnessHandlers(services)
+```
+
+Dazu `let activeHarnessWindow: BrowserWindow | null = null` neben den anderen Fensterhaltern und
+die drei Importe. `registerWindow` ist hier noetig und beim Settings-Fenster nicht: Nur dieses
+Fenster empfaengt einen Broadcast.
+
+- [ ] **Step 9: Add the renderer entry in `electron.vite.config.ts`**
+
+```ts
+          'harness-window': resolve(__dirname, 'src/renderer/windows/harness-window.html')
+```
+
+- [ ] **Step 10: Write `harness-window.html`**
+
+Wortgleich zu `settings-window.html`, mit drei Aenderungen: `<title>cipher keel — Harness</title>`,
+`src="./harness-window.tsx"`, und ein zusaetzlicher Stilblock fuer die Ereignisliste:
+
+```html
+      /* The event list scrolls and its text must be selectable — a prompt is evidence. */
+      pre,
+      code {
+        user-select: text;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: inherit;
+      }
+```
+
+- [ ] **Step 11: Write `EreignisPanel.tsx`**
+
+```tsx
+/**
+ * EreignisPanel — one line per event, expandable.
+ *
+ * It knows no provider name. What it shows comes out of the event stream, which is exactly the
+ * acceptance M8 section 10 asks for: the renderer displays the run without knowing who answered.
+ */
+import { useState } from 'react'
+import type { HarnessEreignis } from '../../../shared/harness-types'
+
+const FARBE: Record<string, string> = {
+  'run.started': '#7aa2f7',
+  'prompt.sent': '#565f89',
+  'model.answered': '#9ece6a',
+  'tool.intent': '#e0af68',
+  'tool.completed': '#73daca',
+  'tool.failed': '#f7768e',
+  'tool.schema_loaded': '#bb9af7',
+  'budget.warned': '#ff9e64',
+  'run.finished': '#7dcfff',
+}
+
+function kurzfassung(e: HarnessEreignis): string {
+  const n = e.nutzlast
+  switch (e.art) {
+    case 'run.started': return `${String(n.modellId)} · Codec ${String(n.codec)} · ${(n.werkzeuge as string[] ?? []).length} Werkzeuge`
+    case 'prompt.sent': return `${String(n.text ?? '').length} Zeichen (Zug ${String(n.zug)})`
+    case 'model.answered': return `${(n.bloecke as unknown[] ?? []).length} Bloecke · stop ${String((n.stopGrund as { roh?: string })?.roh ?? '')}`
+    case 'tool.intent': return `${String(n.name)} (${String(n.aufrufId)})`
+    case 'tool.completed': return `${String(n.name)} ok`
+    case 'tool.failed': return `${String(n.name)}: ${String(n.meldung)}`
+    case 'tool.schema_loaded': return String(n.name)
+    case 'budget.warned': return String(n.grund)
+    case 'run.finished': return `${String(n.endzustand)} / ${String(n.grund)}`
+    default: return ''
+  }
+}
+
+export function EreignisPanel({ ereignisse }: { ereignisse: HarnessEreignis[] }): JSX.Element {
+  const [offen, setOffen] = useState<number | null>(null)
+  if (ereignisse.length === 0) {
+    return <p style={{ padding: 16, color: '#565f89' }}>Noch kein Lauf.</p>
+  }
+  return (
+    <div style={{ overflowY: 'auto', flex: 1, padding: 8 }}>
+      {ereignisse.map(e => (
+        <div key={`${e.laufId}-${e.seq}`} style={{ marginBottom: 2 }}>
+          <button
+            onClick={() => setOffen(offen === e.seq ? null : e.seq)}
+            style={{
+              display: 'flex', gap: 12, width: '100%', textAlign: 'left', cursor: 'pointer',
+              background: 'transparent', border: 'none', color: '#e0e0e0', font: 'inherit', padding: '2px 4px',
+            }}
+          >
+            <span style={{ color: '#414868', minWidth: 28 }}>{e.seq}</span>
+            <span style={{ color: FARBE[e.art] ?? '#e0e0e0', minWidth: 160 }}>{e.art}</span>
+            <span style={{ color: '#a9b1d6' }}>{kurzfassung(e)}</span>
+          </button>
+          {offen === e.seq && (
+            <pre style={{ background: '#16161e', padding: 8, margin: '4px 0 8px 40px', fontSize: 12 }}>
+              {JSON.stringify(e.nutzlast, null, 2)}
+            </pre>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+```
+
+- [ ] **Step 12: Write `harness-window.tsx`**
+
+```tsx
+/**
+ * harness-window.tsx — React root for the harness window.
+ *
+ * Four channels, four callers, and nothing else. The file picker is deliberately plain: taking
+ * a file by drag&drop or pasting a screenshot is surface work for a later stretch, but the path
+ * has to reach the core now, or the canonical form's image and document blocks would sit in the
+ * repo with nothing producing them.
+ */
+import { StrictMode, useCallback, useEffect, useState } from 'react'
+import { createRoot } from 'react-dom/client'
+import {
+  HARNESS_LAUF_STARTEN, HARNESS_LAUF_LESEN, HARNESS_LAUF_ABBRECHEN, HARNESS_EREIGNIS,
+} from '../../shared/ipc-channels'
+import type { HarnessAntwort, HarnessEreignis } from '../../shared/harness-types'
+import { EreignisPanel } from '../components/harness/EreignisPanel'
+
+const api = () => window.cipherKeel
+
+function Fenster(): JSX.Element {
+  const [auftrag, setAuftrag] = useState('')
+  const [modellId, setModellId] = useState('')
+  const [wurzel, setWurzel] = useState('')
+  const [anhaenge, setAnhaenge] = useState<string[]>([])
+  const [laufId, setLaufId] = useState<string | null>(null)
+  const [ereignisse, setEreignisse] = useState<HarnessEreignis[]>([])
+  const [meldung, setMeldung] = useState<string | null>(null)
+
+  useEffect(() => {
+    // Live events for the running run.
+    return api().on(HARNESS_EREIGNIS, (_ev, e) => {
+      const ereignis = e as HarnessEreignis
+      setEreignisse(alt => (alt.length > 0 && alt[0].laufId !== ereignis.laufId ? [ereignis] : [...alt, ereignis]))
+    })
+  }, [])
+
+  const starten = useCallback(async () => {
+    setMeldung(null)
+    setEreignisse([])
+    const a = await api().invoke(HARNESS_LAUF_STARTEN, {
+      auftragstext: auftrag, modellId, wurzel, anhaenge,
+    }) as HarnessAntwort<string>
+    if (a.ok) setLaufId(a.wert)
+    else setMeldung(a.meldung)
+  }, [auftrag, modellId, wurzel, anhaenge])
+
+  const nachlesen = useCallback(async (id: string) => {
+    const a = await api().invoke(HARNESS_LAUF_LESEN, id) as HarnessAntwort<HarnessEreignis[]>
+    if (a.ok) setEreignisse(a.wert)
+    else setMeldung(a.meldung)
+  }, [])
+
+  const abbrechen = useCallback(async () => {
+    if (!laufId) return
+    const a = await api().invoke(HARNESS_LAUF_ABBRECHEN, laufId) as HarnessAntwort<true>
+    if (!a.ok) setMeldung(a.meldung)
+  }, [laufId])
+
+  const anhangWaehlen = useCallback(() => {
+    const feld = document.createElement('input')
+    feld.type = 'file'
+    feld.multiple = true
+    feld.onchange = () => {
+      // Electron exposes the absolute path on a File; the main process reads it.
+      const pfade = Array.from(feld.files ?? []).map(f => (f as File & { path: string }).path)
+      setAnhaenge(pfade)
+    }
+    feld.click()
+  }, [])
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ padding: 12, borderBottom: '1px solid #1f2335', display: 'grid', gap: 8 }}>
+        <textarea
+          value={auftrag} onChange={e => setAuftrag(e.target.value)} rows={3}
+          placeholder="Auftrag — etwa: Sieh dir src/main/model/ an und sag, wer warnungen() aufruft."
+          style={{ background: '#16161e', color: '#e0e0e0', border: '1px solid #292e42', padding: 8 }}
+        />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            value={modellId} onChange={e => setModellId(e.target.value)} placeholder="Modell-Id aus der Registry"
+            style={{ background: '#16161e', color: '#e0e0e0', border: '1px solid #292e42', padding: 6, flex: 1 }}
+          />
+          <input
+            value={wurzel} onChange={e => setWurzel(e.target.value)} placeholder="Projektwurzel"
+            style={{ background: '#16161e', color: '#e0e0e0', border: '1px solid #292e42', padding: 6, flex: 2 }}
+          />
+          <button onClick={anhangWaehlen}>Anhaenge ({anhaenge.length})</button>
+          <button onClick={starten}>Starten</button>
+          <button onClick={abbrechen} disabled={!laufId}>Abbrechen</button>
+          <button onClick={() => laufId && nachlesen(laufId)} disabled={!laufId}>Nachlesen</button>
+        </div>
+        {meldung && <p style={{ color: '#f7768e' }}>{meldung}</p>}
+      </div>
+      <EreignisPanel ereignisse={ereignisse} />
+    </div>
+  )
+}
+
+createRoot(document.getElementById('app')!).render(<StrictMode><Fenster /></StrictMode>)
+```
+
+- [ ] **Step 13: Add the click path in `ProjectView.tsx`**
+
+Neben dem vorhandenen Einstellungen-Knopf, im selben Muster:
+
+```tsx
+        <button onClick={() => window.cipherKeel.invoke(WINDOW_OPEN_HARNESS)}>Harness</button>
+```
+
+Dazu `WINDOW_OPEN_HARNESS` in die Importliste der Kanaele.
+
+- [ ] **Step 14: Run the guard test to verify it passes**
+
+Run: `npx vitest run tests/harness/ipc-kanaele.test.ts`
+Expected: PASS, 3 Tests — vier Kanaele, jeder mit Aufrufer und Handler
+
+- [ ] **Step 15: Full check and commit**
+
+```bash
+npm test && npm run typecheck && npm run lint
+git add src/shared/ src/main/harness-handlers.ts src/main/harness-praefix-quelle.ts src/main/window-manager.ts src/main/ipc-handlers.ts electron.vite.config.ts src/renderer/ tests/harness/ipc-kanaele.test.ts
+git commit -m "feat(harness): vier IPC-Kanaele, das Fenster und das Ereignis-Panel"
+```
+
+---
+
+### Task 14: Die restlichen Wächtertests und der Dokumenten-Nachzug
+
+**Files:**
+- Create: `tests/harness/waechter-kern.test.ts`
+- Modify: `docs/anpassbare-flaechen.md`
+- Modify: `tests/docs/anpassbare-flaechen.test.ts`
+- Modify: `src/main/worker/c-worker.ts` (Kommentar)
+
+**Interfaces:**
+- Consumes: alles Vorherige
+- Produces: nichts Neues — diese Aufgabe haelt fest, was die anderen gebaut haben
+
+- [ ] **Step 1: Write the failing guard tests**
+
+```ts
+// tests/harness/waechter-kern.test.ts
+import { describe, it, expect } from 'vitest'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { oeffneHarnessDb, anhaengen, lesen } from '../../src/main/harness/protokoll'
+import { projiziere } from '../../src/main/harness/projektion'
+import { baueStabilenTeil } from '../../src/main/harness/praefix'
+
+const HARNESS = join(__dirname, '..', '..', 'src', 'main', 'harness')
+
+function harnessDateien(): string[] {
+  return readdirSync(HARNESS, { recursive: true, encoding: 'utf-8' })
+    .filter(p => p.endsWith('.ts'))
+    .map(p => join(HARNESS, p))
+}
+
+describe('Waechter: der Kern kennt Electron nicht', () => {
+  it('kein Modul unter src/main/harness/ importiert electron — ohne Ausnahmeliste', () => {
+    const schuldige = harnessDateien().filter(p => {
+      const q = readFileSync(p, 'utf-8')
+      return /from\s+['"]electron['"]/.test(q) || /require\(['"]electron['"]\)/.test(q)
+    })
+    expect(schuldige).toEqual([])
+  })
+
+  it('findet ueberhaupt Module, damit ein leeres Verzeichnis den Waechter nicht gruen faerbt', () => {
+    expect(harnessDateien().length).toBeGreaterThan(10)
+  })
+})
+
+describe('Waechter: der Praefix ist rekonstruierbar', () => {
+  it('die Projektion aus dem Protokoll ist zeichengleich mit prompt.sent', () => {
+    const db = oeffneHarnessDb(':memory:')
+    const teile = {
+      body: 'BODY', capabilities: 'CAP', persona: 'PERS',
+      globaleRegeln: 'REGELN', auftragstext: 'auftrag',
+    }
+    const stummel = [{ name: 'datei_lesen', beschreibung: 'Liest eine Datei.' }]
+    const gesendet = baueStabilenTeil(teile, stummel)
+    anhaengen(db, 'l', 'prompt.sent', { text: gesendet })
+
+    // Rebuilt from the parts, compared against what actually went over the wire — that is only
+    // a check because prompt.sent stores the text literally rather than a reconstruction.
+    const nachgebaut = baueStabilenTeil(teile, stummel)
+    const abgelegt = String(lesen(db, 'l')[0].nutzlast.text)
+    expect(nachgebaut).toBe(abgelegt)
+  })
+})
+
+describe('Waechter: kein Effekt ohne Intent', () => {
+  it('vor jedem Abschluss steht ein Intent mit derselben Aufruf-Id', () => {
+    const db = oeffneHarnessDb(':memory:')
+    anhaengen(db, 'l', 'tool.intent', { aufrufId: 'c1', name: 'datei_lesen' })
+    anhaengen(db, 'l', 'tool.completed', { aufrufId: 'c1', name: 'datei_lesen', inhalt: [] })
+
+    const ereignisse = lesen(db, 'l')
+    const gesehen = new Set<string>()
+    for (const e of ereignisse) {
+      if (e.art === 'tool.intent') gesehen.add(String(e.nutzlast.aufrufId))
+      if (e.art === 'tool.completed' || e.art === 'tool.failed') {
+        expect(gesehen.has(String(e.nutzlast.aufrufId))).toBe(true)
+      }
+    }
+  })
+
+  it('ein Abschluss ohne Intent faellt auf', () => {
+    const db = oeffneHarnessDb(':memory:')
+    anhaengen(db, 'l', 'tool.completed', { aufrufId: 'c9', inhalt: [] })
+    const ereignisse = lesen(db, 'l')
+    const gesehen = new Set(ereignisse.filter(e => e.art === 'tool.intent').map(e => String(e.nutzlast.aufrufId)))
+    expect(gesehen.has('c9')).toBe(false)
+  })
+})
+
+describe('Waechter: der Vertrag bleibt an den Aussenkanten', () => {
+  it('weder die Zug-Funktion noch ein Codec noch ein Werkzeug sieht pflichtfelder', () => {
+    // M8 4.9 wants no required field to be able to shape an answer before it is thought. The
+    // Auftrag carries them because it *is* the outer edge; one level down nothing may.
+    const erlaubt = [join(HARNESS, 'lauf.ts')]
+    const schuldige = harnessDateien()
+      .filter(p => !erlaubt.includes(p))
+      .filter(p => readFileSync(p, 'utf-8').includes('pflichtfelder'))
+    expect(schuldige).toEqual([])
+  })
+
+  it('in lauf.ts steht pflichtfelder nur im Auftrag und im Abschluss', () => {
+    const q = readFileSync(join(HARNESS, 'lauf.ts'), 'utf-8')
+    const zeilen = q.split('\n').map((z, i) => [i + 1, z] as const)
+      .filter(([, z]) => z.includes('pflichtfelder'))
+    // Auftrag declaration, the call in `fahre`, the parameter and use in `beende`. If a fifth
+    // appears, something inside the loop started reading it.
+    expect(zeilen.length).toBeLessThanOrEqual(6)
+    expect(q).not.toMatch(/toWire\([^)]*pflichtfelder/)
+  })
+})
+
+describe('Waechter: der Verlauf traegt keine Drahtform', () => {
+  it('die Projektion enthaelt keinen anbieterspezifischen Bezeichner', () => {
+    const verlauf = projiziere([
+      { laufId: 'l', seq: 1, ts: 't', art: 'run.started', nutzlast: { auftragstext: 'a' } },
+      { laufId: 'l', seq: 2, ts: 't', art: 'model.answered', nutzlast: { bloecke: [{ art: 'text', text: 'b' }] } },
+    ])
+    const text = JSON.stringify(verlauf)
+    for (const fremd of ['tool_use', 'tool_calls', 'image_url', 'finish_reason', 'stop_reason']) {
+      expect(text).not.toContain(fremd)
+    }
+  })
+})
+```
+
+- [ ] **Step 2: Run tests to verify they pass or name a real gap**
+
+Run: `npx vitest run tests/harness/waechter-kern.test.ts`
+Expected: PASS, 8 Tests. Faellt einer, ist das ein Befund an den vorherigen Aufgaben, kein Anlass,
+den Waechter abzuschwaechen.
+
+- [ ] **Step 3: Add the price table to the inventory**
+
+In `docs/anpassbare-flaechen.md`, im selben Format wie die Bestandseintraege:
+
+```markdown
+### `harness.preise` — die Preistabelle der Kostenrechnung
+
+**Wo:** gebuendelte Vorgabe in `src/main/harness/preise.ts`, ueberschreibbar in der Config.
+**Wer liest sie:** `harness/budget.ts` nach jeder Antwort, fuer das Kostenbudget.
+**Wirkung einer Aenderung:** sofort, beim naechsten Lauf.
+**Warum sie anpassbar sein muss:** Preise aendern sich schneller als Releases. Ein Stand von
+gestern liesse das Kostenbudget an der falschen Stelle anschlagen — und der Abschlussgrund nennt
+den Tabellenstand mit, damit die Unsicherheit sichtbar bleibt statt weggeglaettet zu werden
+(M8 §4.8).
+**Was sie nicht kann:** ein unbekanntes Modell kostet null statt einer Schaetzung. Ein geratener
+Preis, der einen Lauf abbricht, sieht aus wie eine Messung.
+```
+
+- [ ] **Step 4: Extend the inventory test**
+
+In `tests/docs/anpassbare-flaechen.test.ts` den neuen Eintrag festnageln — im Muster der
+vorhandenen Faelle:
+
+```ts
+  it('fuehrt die Preistabelle des Harnesses', () => {
+    expect(inventar).toContain('harness.preise')
+    expect(inventar).toContain('src/main/harness/preise.ts')
+  })
+```
+
+- [ ] **Step 5: Correct the false comment in `c-worker.ts`**
+
+Der Kommentar „three niveaus are three runtimes" widerspricht der Preset-Schicht und ist seit dem
+M6-Nachtrag falsch. Er wird korrigiert, nicht fortgeschrieben:
+
+```ts
+/**
+ * Niveau is a capability filter over a role and says nothing about the model; the runtime is a
+ * separate choice in the `runtime` field (M8 section 6, ratified 2026-08-16). The earlier
+ * shorthand "three niveaus are three runtimes" described the build of August 2026, not the
+ * model, and contradicted the preset layer — it is corrected here rather than carried forward.
+ *
+ * This worker stays what it is: stateless, tool-less, one shot. That is its quality, which is
+ * why the harness loop stands beside it rather than in its place.
+ */
+```
+
+- [ ] **Step 6: Decide on `RUNTIMES_WITHOUT_ADAPTER`**
+
+`src/main/agent/registry.ts` fuehrt `keel-harness` in `RUNTIMES_WITHOUT_ADAPTER`. Nach dieser
+Strecke gibt es eine Schleife, aber keinen Adapter, der eine *Session* darueber startet — Tiers
+und Rollen fahren weiter ueber `fremdes-cli` und `ein-schuss`.
+
+**Der Eintrag bleibt also stehen**, und der Kommentar daneben wird praezisiert, damit die naechste
+Sitzung nicht denselben Halbsatz erneut pruefen muss:
+
+```ts
+  // The own loop exists since the harness stretch of 2026-08-18, but no adapter starts a session
+  // through it: that needs writing tools and a shell, which travel with the sandbox. Until then
+  // 'keel-harness' is a known runtime without a live adapter, and no slot in model/slots.ts
+  // offers it — a slot before its adapter would be a surface for a dummy.
+```
+
+Faellt in der naechsten Strecke der Adapter, faellt dieser Eintrag mit ihm.
+
+- [ ] **Step 7: Full check and commit**
+
+```bash
+npm test && npm run typecheck && npm run lint
+git add tests/harness/waechter-kern.test.ts docs/anpassbare-flaechen.md tests/docs/anpassbare-flaechen.test.ts src/main/worker/c-worker.ts src/main/agent/registry.ts
+git commit -m "test(harness): die restlichen Waechter, Inventareintrag, zwei Kommentare korrigiert"
+```
+
+---
+
+### Task 15: Das Messprotokoll — die eigentliche Abnahme
+
+**Files:**
+- Modify: `docs/superpowers/plans/2026-08-18-harness-kern.md` (dieser Plan, Abschnitt `## Messprotokoll 2026-08-18`)
+
+**Interfaces:**
+- Consumes: die laufende App
+- Produces: elf Belege, wörtlich
+
+> **Gruene Tests sagen in diesem Repo ueber eine Verdrahtung nichts aus.** Diese Aufgabe ist die
+> Abnahme, nicht ihre Zusammenfassung. Jeder Beleg wird **woertlich** nachgetragen — Kommando,
+> Beobachtung, Ergebnis —, und jeder mit **gueltiger und ungueltiger** Eingabe, damit auch das
+> laute Scheitern belegt ist und nicht nur der Erfolg.
+
+- [ ] **Step 1: Check that nothing is still running**
+
+```bash
+tmux list-sessions
+ps aux | grep -i "[c]ipher-keel"
+```
+
+Eine zweite Instanz teilt sonst Config und Datenbank. Was laeuft, wird beendet, bevor der Messlauf
+beginnt.
+
+- [ ] **Step 2: Prepare three registry entries**
+
+Ueber das Settings-Fenster, nicht ueber die Config-Datei — das ist zugleich eine Probe auf
+CK-NFR-012:
+
+- einen `api`-Eintrag mit `codec: 'anthropic'` auf `https://api.anthropic.com/v1`
+- einen `api`-Eintrag mit `codec: 'openai-chat'` auf einen Hoster
+- einen `local-http`-Eintrag mit `codec: 'openai-chat'` auf den Spark (`100.78.7.108:11434`)
+
+Fuer Beleg 3 zusaetzlich ein Eintrag mit `bilder: false`.
+
+- [ ] **Step 3: Run the eleven proofs**
+
+Gestartet wird ueber den Klickpfad aus dem Projektfenster:
+
+```bash
+.claude/skills/run-keel/launch.sh /tmp/keel-harness
+```
+
+1. Lauf ohne Werkzeugaufruf gegen ein echtes Modell → vollstaendige Ereignisfolge im Panel, ohne
+   Anbieternamen in der Darstellung. **Ungueltig:** leerer Auftrag → benannte Ablehnung.
+2. Derselbe Auftrag gegen alle drei Eintraege → dreimal vertragsgemaess; der Unterschied liegt
+   nachweislich nur in der Faehigkeitszeile. **Ungueltig:** ein Eintrag mit `codec: 'text'` →
+   Lauf startet nicht, Meldung nennt den Codec.
+3. Auftrag mit angehaengtem Bild und angehaengter Datei gegen zwei Anbieter; der dritte
+   (`bilder: false`) meldet Unvermoegen ausdruecklich. **Ungueltig:** ein Anhangpfad, den es nicht
+   gibt → Lauf startet nicht, Meldung nennt den Pfad.
+4. „Sieh dir `src/main/model/` an und sag, welche Datei die Warnregeln haelt und wer sie aufruft."
+   → mehrere Werkzeugaufrufe, ein belegter Befund. **Ungueltig:** Auftrag mit einem Werkzeugnamen,
+   den es nicht gibt → `tool.failed` nennt ihn, der Lauf laeuft weiter.
+5. `werkzeug_schema` wird geholt → `tool.schema_loaded` im Panel; das Schema steht im Verlauf, und
+   der stabile Praefix ist zeichengleich wie vorher (beide `prompt.sent` im Panel aufklappen und
+   vergleichen).
+6. Ein Aufruf auf einen Pfad ausserhalb der Wurzel, einer auf `~/.ssh` und einer auf ein `.env`
+   **innerhalb** der Wurzel → alle drei abgelehnt, Lauf laeuft weiter, das Modell reagiert.
+7. Ein Symlink in der Wurzel, der nach aussen zeigt:
+   ```bash
+   ln -s ~/.ssh /tmp/keel-harness-projekt/abkuerzung
+   ```
+   → Aufruf auf `abkuerzung/id_rsa` wird abgelehnt.
+8. Prozess **mitten in einem Werkzeugaufruf** hart beenden (`kill -9`), App neu starten, Lauf
+   fortsetzen → der offene Intent erscheint als „Ausfuehrung unbekannt"; kein Werkzeug laeuft ein
+   zweites Mal.
+9. Zweiter Lauf mit demselben Auftrag → Cache-Treffer, in den Usage-Feldern von `model.answered`
+   sichtbar.
+10. Budget kuenstlich auf zwei Runden → `fertig / runden-erschoepft` mit verwertbarem
+    Teilergebnis, keine Ausnahme; ein Werkzeugaufruf im Abschlusszug wird abgelehnt.
+11. ```bash
+    KEEL_KEEP_PROFILE=1 .claude/skills/run-keel/launch.sh /tmp/keel-harness
+    ```
+    → Start mit vorhandener Konfiguration und vorhandener `harness.db`; die Laeufe der vorigen
+    Sitzung sind ueber `Nachlesen` erreichbar.
+
+**Der Fehlerpfad wird absichtlich erzwungen** statt auf einen Zufallsfehler gewartet, und mit einem
+wirklich schwachen Modell belegt — ein starkes haette ihn nie gezeigt.
+
+- [ ] **Step 4: Write the protocol into this file**
+
+Abschnitt `## Messprotokoll 2026-08-18` ans Ende dieses Plans, je Beleg: was getan wurde, was
+beobachtet wurde, und ob es der Erwartung entsprach. **Ein Beleg, der aus dem falschen Grund
+besteht, ist teurer als ein fehlender** — er sieht aus wie eine Absicherung. Wo die Beobachtung
+weniger trug als erwartet, wird das so aufgeschrieben.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add docs/superpowers/plans/2026-08-18-harness-kern.md
+git commit -m "docs(plan): Messprotokoll -- elf Belege aus der laufenden App"
+```
