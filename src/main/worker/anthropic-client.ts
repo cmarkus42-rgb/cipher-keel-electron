@@ -16,8 +16,36 @@ import { resolveApiKey } from './api-keys'
 export const ANTHROPIC_TIMEOUT_MS = 120_000
 export const ANTHROPIC_VERSION = '2023-06-01'
 
+/**
+ * Fallback only. The Messages API requires `max_tokens` on every request, so the transport
+ * has to supply *something* — but the value belongs to the codec, which knows how long an
+ * answer the caller actually wants. This number exists purely so a request the codec left
+ * silent on the field still goes out; it must never overrule a value the codec set.
+ */
+export const ANTHROPIC_DEFAULT_MAX_TOKENS = 8192
+
 export function messagesUrl(endpoint: AnthropicEndpointSpec): string {
   return `${endpoint.baseUrl}/messages`
+}
+
+/**
+ * The wire body for a Messages API call.
+ *
+ * `model` is a transport fact — it comes from the endpoint the caller resolved, never from
+ * whatever the codec happened to write into the body — so it is applied after the spread and
+ * always wins. `max_tokens` is the opposite: it belongs to the codec, so a value already
+ * present in `koerper` survives untouched, and the module-level fallback only fills the gap
+ * when the field is absent. `??` rather than `||` is deliberate: an explicit `max_tokens: 0`
+ * would be a strange choice for a codec to make, but it is a stated one, not an omission —
+ * `||` would silently discard it, `??` only steps in for `undefined`/`null`.
+ */
+export function buildMessagesBody(koerper: unknown, endpoint: AnthropicEndpointSpec): string {
+  const koerperObj = koerper as Record<string, unknown>
+  return JSON.stringify({
+    ...koerperObj,
+    model: endpoint.model,
+    max_tokens: (koerperObj.max_tokens as number | undefined) ?? ANTHROPIC_DEFAULT_MAX_TOKENS,
+  })
 }
 
 export function describeAnthropicFailure(
@@ -58,7 +86,7 @@ export class AnthropicClient implements ModelClient {
       )
     }
 
-    const koerper = JSON.stringify({ ...(req.koerper as object), model: endpoint.model, max_tokens: 8192 })
+    const koerper = buildMessagesBody(req.koerper, endpoint)
     const url = new URL(messagesUrl(endpoint))
 
     return new Promise<unknown>((resolve, reject) => {
