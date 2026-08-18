@@ -78,8 +78,10 @@ describe('anthropicCodec.fromWire', () => {
   })
 
   it('begrenzt die Fehlermeldung auf 200 Zeichen Ausschnitt, wenn content fehlt', () => {
-    // Build a response with a very long field to ensure the JSON is > 200 chars
-    const longField = 'x'.repeat(500)
+    // Build a response with a very long field so the unbounded message would run into the
+    // thousands of characters — only then does the 500-char assertion actually discriminate
+    // between a bounded and an unbounded snippet.
+    const longField = 'x'.repeat(5000)
     const malformed = { [longField]: 'value', stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 } }
     let thrownMsg = ''
     try {
@@ -101,8 +103,10 @@ describe('anthropicCodec.fromWire', () => {
   })
 
   it('begrenzt die Fehlermeldung auf 200 Zeichen Ausschnitt, wenn content kein Array ist', () => {
-    // Build a response with content as a very long string (> 200 chars)
-    const longContent = 'y'.repeat(300)
+    // Build a response with content as a very long string so the unbounded message would run
+    // into the thousands of characters — only then does the 500-char assertion actually
+    // discriminate between a bounded and an unbounded snippet.
+    const longContent = 'y'.repeat(5000)
     const malformed = { content: longContent, stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 } }
     let thrownMsg = ''
     try {
