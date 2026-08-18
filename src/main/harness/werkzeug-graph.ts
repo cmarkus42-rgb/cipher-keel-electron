@@ -38,7 +38,7 @@ function alsText(wert: unknown): WerkzeugErgebnis {
   }
   const inhalt = [{ art: 'text' as const, text: txt }]
   if (gekuerzt) {
-    inhalt.push({ art: 'text' as const, text: `\n[Ergebnis gekürzt auf ${MAX_JSON_SIZE} Zeichen]` })
+    inhalt.push({ art: 'text' as const, text: `\n[Ergebnis gekürzt auf ${MAX_JSON_SIZE} Zeichen — nicht mehr als JSON lesbar]` })
   }
   return { ok: true, inhalt }
 }

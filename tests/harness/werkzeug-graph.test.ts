@@ -237,3 +237,64 @@ describe('Graph-Werkzeuge gegen echte DB', () => {
     })
   })
 })
+
+// ============================================================================
+// JSON-Größenschranke: Ergebnis wird gekürzt wenn es 8 KB überschreitet
+// ============================================================================
+
+describe('JSON-Groessenschranke (8 KB)', () => {
+  let db: Database.Database
+  let ktx: WerkzeugKontext
+
+  afterEach(() => { if (db?.open) db.close() })
+
+  it('kuerzt Ergebnisse die 8 KB ueberschreiten', async () => {
+    // Erstelle viele große Knoten, damit die Suche ein großes Ergebnis liefert
+    db = openGraphDb({ path: ':memory:' })
+    ktx = {
+      wache: { wurzel: '/tmp', heim: '/tmp', userDataPfad: '/tmp/ud' },
+      graphDb: db,
+    }
+
+    // Einfügen von 100 großen Knoten mit "test" im Titel
+    // Jeder Knoten: uid (5 chars) + title + body = ~1KB pro Knoten serialisiert
+    for (let i = 0; i < 100; i++) {
+      const bigBody = 'Lorem ipsum dolor sit amet. '.repeat(30) // ~840 Zeichen pro Knoten
+      db.prepare(`
+        INSERT INTO node (uid, kind, path, title, status, frontmatter, body, content_hash, erstellt)
+        VALUES (?, 'test', ?, ?, 'aktiv', '{}', ?, ?, '2026-01-01')
+      `).run(`n${i}`, `/n${i}.md`, `test article ${i}`, bigBody, `h${i}`)
+    }
+
+    // FTS indexieren
+    for (let i = 0; i < 100; i++) {
+      const bigBody = 'Lorem ipsum dolor sit amet. '.repeat(30)
+      db.prepare(`
+        INSERT INTO node_fts (uid, title, body) VALUES (?, ?, ?)
+      `).run(`n${i}`, `test article ${i}`, bigBody)
+    }
+
+    const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_suchen')!
+    const r = await w.ausfuehren({ query: 'test', limit: 100 }, ktx)
+    expect(r.ok).toBe(true)
+
+    if (r.ok) {
+      // Der Text sollte gekürzt sein
+      const textBlocks = r.inhalt.filter(i => i.art === 'text')
+      const textContent = textBlocks
+        .map(i => {
+          if (i.art === 'text') return i.text
+          return ''
+        })
+        .join('')
+      expect(textContent.length).toBeLessThanOrEqual(8192 + 200) // 8KB + Hinweis-Overhead
+
+      // Der Hinweis sollte da sein UND sagen, dass es nicht JSON-lesbar mehr ist
+      const hinweis = textBlocks.find(i => i.art === 'text' && i.text.includes('gekürzt'))
+      expect(hinweis).toBeDefined()
+      if (hinweis?.art === 'text') {
+        expect(hinweis.text).toContain('nicht mehr als JSON lesbar')
+      }
+    }
+  })
+})
