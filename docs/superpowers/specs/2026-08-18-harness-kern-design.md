@@ -423,11 +423,30 @@ export function pruefePfad(roh: string, wurzel: string):
 2. **Geschützte Pfade**, in jedem Modus, nicht überschreibbar: `~/.ssh`, Shell-Startdateien
    (`.zshrc`, `.zprofile`, `.bashrc`, `.bash_profile`, `.profile`), jedes `.git`-Verzeichnis,
    keels eigene Konfiguration (`app.getPath('userData')`) und `~/.cipher-*`.
-3. **Erlaubnis:** innerhalb von `auftrag.wurzel`. Alles außerhalb wird abgelehnt.
+3. **Verweigerungsregeln**, auch **innerhalb** der Wurzel: `.env` und `.env.*`, `*.pem`, `*.key`,
+   `id_rsa`/`id_ed25519` und Geschwister ohne `.pub`, `*.p12`, `*.keystore`.
+4. **Erlaubnis:** innerhalb von `auftrag.wurzel`. Alles außerhalb wird abgelehnt.
+
+Stufe 3 ist der Schritt, den der erste Entwurf dieser Spec ausgelassen hatte. Die Wurzel ist ein
+Projektverzeichnis, und Projektverzeichnisse tragen Geheimnisse — ein `.env`, das das Modell liest,
+geht mit dem nächsten Prompt zum Anbieter. Die Herkunft der Regel ist M8 §4.6, das
+Verweigerungsregeln ausdrücklich als eigene Stufe zwischen geschützten Pfaden und Erlaubnis führt.
 
 Die Ablehnung nennt den Grund und **nicht** den Inhalt: `Pfad liegt außerhalb der Wurzel` oder
 `Pfad ist geschützt`. Sie wird zu einem `werkzeug-ergebnis` mit `fehler: true`, nicht zu einem
 Laufabbruch — ein Modell, das versehentlich zu weit greift, soll es erfahren und weiterarbeiten.
+
+Sie nennt allerdings den **Dateinamen**, denn der stand ohnehin im Aufruf. Damit bleibt der Weg
+offen, den es geben muss: Braucht eine Aufgabe wirklich den Inhalt einer solchen Datei, hängt der
+Nutzer sie als Anhang an den Auftrag (§4.5) — Anhänge gehen bewusst nicht durch die Pfadwache. Die
+Entscheidung, ein Geheimnis in einen Prompt zu geben, bleibt so beim Menschen, statt beim Modell zu
+liegen.
+
+**Was diese Regel ausdrücklich nicht tut: sie verhindert keine SSH-Nutzung.** Einen privaten
+Schlüssel zu *lesen* und ihn zu *benutzen* sind verschiedene Dinge — `ssh(1)` liest ihn im eigenen
+Prozess, der Agent bekommt ihn nie zu sehen. Ein späteres `ssh`- oder `scp`-Kommando über die Shell
+ist von dieser Regel unberührt. Was sie verhindert, ist ausschließlich, dass Schlüsselmaterial über
+den Prompt zu einem Modellanbieter wandert.
 
 Diese Prüfung ist **keine** Ausführungsgrenze im Sinne von M8 §4.5 und ersetzt sie nicht. Sie
 trägt, solange kein Werkzeug einen Prozess startet. Kommt die Shell, kommt die Sandbox — die
@@ -797,8 +816,9 @@ nicht nur der Erfolg. Wörtlich nachzutragen im Plandokument unter `## Messproto
    die Warnregeln hält und wer sie aufruft." Mehrere Werkzeugaufrufe, ein belegter Befund
 5. `werkzeug_schema` wird geholt → `tool.schema_loaded` im Panel, das Schema steht im Verlauf und
    der stabile Präfix ist zeichengleich wie vorher
-6. Ein Werkzeugaufruf auf einen Pfad außerhalb der Wurzel und einer auf `~/.ssh` → beide abgelehnt,
-   der Lauf läuft weiter, das Modell reagiert auf die Ablehnung
+6. Ein Werkzeugaufruf auf einen Pfad außerhalb der Wurzel, einer auf `~/.ssh` und einer auf ein
+   `.env` **innerhalb** der Wurzel → alle drei abgelehnt, der Lauf läuft weiter, das Modell
+   reagiert auf die Ablehnung
 7. **Der Symlink-Fall in der laufenden App:** ein Link in der Wurzel, der nach außen zeigt → abgelehnt
 8. Prozess **mitten in einem Werkzeugaufruf** hart beendet, Lauf fortgesetzt → der offene Intent
    erscheint als „Ausführung unbekannt, Zustand prüfen"; kein Werkzeug läuft ein zweites Mal
@@ -833,6 +853,27 @@ Code ohne Aufrufer ist in diesem Projekt ein Prüfbefund — und es wird **nicht
 | Ein schreibender Aufruf in der Menge erzwingt sequenzielle Ausführung (Single-Writer auf Werkzeugebene) | M8 §1, §3.2 | schreibenden Werkzeugen |
 | Ein Shell-Aufruf auf einen nicht erlaubten Pfad scheitert **am Betriebssystem**, nicht an einer Prüfung im Harness | M8 §4.5, §10 | Shell und Sandbox |
 | Ein maskiertes Werkzeug behält seinen Stummel, sein Aufruf wird mit Begründung abgelehnt, die Liste bleibt zeichengleich | M8 §3.5 | dem ersten echten Maskierungsfall |
+
+### 13.2 Ein offener Punkt an M8, der jetzt notiert gehört
+
+**M8s Vorgabe-Sandbox blockiert Deployments, und das ist im Konzept nicht entschieden, sondern
+übersehen.** §4.5 gibt dem Arbeitslauf eine schmale Egress-Allowlist: „Modell-Endpunkte, die
+Tailscale-Adresse des Spark, localhost für den Graph-MCP-Server." Die Deploy-Ziele dieses Betriebs
+— MS-01 unter `100.67.95.13`, der Hostinger-VPS unter `100.64.99.118` — stehen dort nicht. Ein
+Arbeitslauf unter dem Vorgabe-Profil könnte also weder `ssh` noch `scp` dorthin.
+
+Das ist kein Fehler dieser Strecke: Ohne Shell gibt es nichts zu deployen. Aber es ist eine
+Entscheidung, die **in Strecke 2 fällt und nicht dort erst entdeckt werden sollte**:
+
+- Bekommt der Arbeitslauf die Deploy-Hosts in die Allowlist — womit ein kompromittierter Lauf
+  Schreibzugriff auf die Produktionsmaschinen hätte?
+- Oder gibt es ein drittes Sandbox-Profil für Deployments, so wie M8 §4.5 es für das „Schreiben
+  nach außen des Release Managers" bereits vorsieht — „vorgesehen und standardmäßig aus"?
+- Oder bleibt Deployment eine Handlung des Menschen, und der Agent bereitet sie nur vor?
+
+M8 §4.5 hält die dritte Profilart schon bereit; die Frage ist, wer sie bekommt und wann sie an ist.
+Nicht Gegenstand dieser Spec — hier steht sie, damit sie in Strecke 2 als Frage auf dem Tisch liegt
+statt als Überraschung.
 
 ## 14. Nachzuführende Dokumente
 
