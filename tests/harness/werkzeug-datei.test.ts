@@ -1,8 +1,12 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DATEI_WERKZEUGE } from '../../src/main/harness/werkzeug-datei'
+import {
+  DATEI_WERKZEUGE,
+  _testSetzeSuchZeitbudgetMs,
+  _testSuchZeitbudgetZuruecksetzen,
+} from '../../src/main/harness/werkzeug-datei'
 import { WerkzeugRegistry } from '../../src/main/harness/werkzeuge'
 
 let heim: string
@@ -56,6 +60,31 @@ describe('datei_lesen', () => {
   })
 })
 
+describe('datei_lesen — Zeilenbereich-Validierung', () => {
+  it('lehnt vonZeile: 0 ab, statt (heute) die letzte Zeile zu liefern', async () => {
+    const r = await werkzeug('datei_lesen').ausfuehren({ pfad: join(wurzel, 'a.ts'), vonZeile: 0 }, ktx)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.meldung).toContain('vonZeile')
+  })
+
+  it('lehnt nicht-ganzzahlige Zeilenangaben ab', async () => {
+    const r = await werkzeug('datei_lesen').ausfuehren({ pfad: join(wurzel, 'a.ts'), vonZeile: 1.5 }, ktx)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.meldung).toContain('vonZeile')
+  })
+
+  it('lehnt bisZeile kleiner als vonZeile ab, statt still eine leere Zeichenkette zu liefern', async () => {
+    const r = await werkzeug('datei_lesen').ausfuehren({ pfad: join(wurzel, 'a.ts'), vonZeile: 3, bisZeile: 1 }, ktx)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.meldung).toContain('bisZeile')
+  })
+
+  it('kuerzt einen Bereich, der ueber das Dateiende hinausgeht, statt ihn abzulehnen', async () => {
+    const r = await werkzeug('datei_lesen').ausfuehren({ pfad: join(wurzel, 'a.ts'), vonZeile: 2, bisZeile: 999 }, ktx)
+    expect(r).toEqual({ ok: true, inhalt: [{ art: 'text', text: 'zeile 2\nzeile 3\n' }] })
+  })
+})
+
 describe('verzeichnis_listen', () => {
   it('findet Dateien nach Muster, relativ zur Wurzel', async () => {
     const r = await werkzeug('verzeichnis_listen').ausfuehren({ muster: '**/*.ts' }, ktx)
@@ -92,6 +121,46 @@ describe('inhalt_suchen', () => {
   it('durchsucht geschuetzte Dateien nicht', async () => {
     const r = await werkzeug('inhalt_suchen').ausfuehren({ regex: 'geheim' }, ktx)
     if (r.ok) expect((r.inhalt[0] as { text: string }).text).not.toContain('.env')
+  })
+})
+
+describe('inhalt_suchen — Groessenschranke', () => {
+  it('ueberspringt eine zu grosse Datei, statt sie synchron einzulesen, und vermerkt das', async () => {
+    const grossePfad = join(wurzel, 'gross.log')
+    writeFileSync(grossePfad, 'warnungen\n'.repeat(100_000)) // deutlich ueber MAX_BYTES
+    try {
+      const r = await werkzeug('inhalt_suchen').ausfuehren({ regex: 'warnungen' }, ktx)
+      expect(r.ok).toBe(true)
+      if (r.ok) {
+        const text = (r.inhalt[0] as { text: string }).text
+        expect(text).not.toContain('gross.log')
+        expect(text.toLowerCase()).toContain('uebersprungen')
+      }
+    } finally {
+      rmSync(grossePfad)
+    }
+  })
+})
+
+describe('inhalt_suchen — Musterlaenge', () => {
+  it('lehnt ein zu langes Muster ab, statt es auszuwerten', async () => {
+    const zuLang = 'a'.repeat(1000)
+    const r = await werkzeug('inhalt_suchen').ausfuehren({ regex: zuLang }, ktx)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.meldung).toMatch(/\d+/)
+  })
+})
+
+describe('inhalt_suchen — Zeitbudget', () => {
+  afterEach(() => _testSuchZeitbudgetZuruecksetzen())
+
+  it('bricht die Suche ab, wenn das Zeitbudget ueberschritten ist, und sagt warum', async () => {
+    // Ein bereits (auch bei 0ms Verstreichen) ueberschrittenes Budget -- prueft, dass die
+    // Schranke selbst greift, ohne auf echtes katastrophales Backtracking angewiesen zu sein.
+    _testSetzeSuchZeitbudgetMs(-1)
+    const r = await werkzeug('inhalt_suchen').ausfuehren({ regex: 'warnungen' }, ktx)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.meldung.toLowerCase()).toContain('zeitbudget')
   })
 })
 
