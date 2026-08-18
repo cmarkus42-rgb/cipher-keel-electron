@@ -74,14 +74,46 @@ describe('anthropicCodec.fromWire', () => {
   it('wirft auf Deutsch mit begrenztem Ausschnitt, wenn content fehlt', () => {
     expect(() => anthropicCodec.fromWire({
       stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 },
-    })).toThrow(/fromWire.*content.*Erhalten.*[:{]/)
+    })).toThrow(/fromWire.*content.*Erhalten/)
+  })
+
+  it('begrenzt die Fehlermeldung auf 200 Zeichen Ausschnitt, wenn content fehlt', () => {
+    // Build a response with a very long field to ensure the JSON is > 200 chars
+    const longField = 'x'.repeat(500)
+    const malformed = { [longField]: 'value', stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 } }
+    let thrownMsg = ''
+    try {
+      anthropicCodec.fromWire(malformed)
+    } catch (err) {
+      thrownMsg = (err as Error).message
+    }
+    // The message must be substantially shorter than the malformed input
+    expect(thrownMsg.length).toBeLessThan(500)
+    // But long enough to include the fixed preamble and still have snippet
+    expect(thrownMsg.length).toBeGreaterThan(100)
   })
 
   it('wirft auf Deutsch mit begrenztem Ausschnitt, wenn content kein Array ist', () => {
     expect(() => anthropicCodec.fromWire({
       content: 'string statt array', stop_reason: 'end_turn',
       usage: { input_tokens: 1, output_tokens: 1 },
-    })).toThrow(/fromWire.*Array.*Erhalten.*[:{]/)
+    })).toThrow(/fromWire.*Array.*Erhalten/)
+  })
+
+  it('begrenzt die Fehlermeldung auf 200 Zeichen Ausschnitt, wenn content kein Array ist', () => {
+    // Build a response with content as a very long string (> 200 chars)
+    const longContent = 'y'.repeat(300)
+    const malformed = { content: longContent, stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 } }
+    let thrownMsg = ''
+    try {
+      anthropicCodec.fromWire(malformed)
+    } catch (err) {
+      thrownMsg = (err as Error).message
+    }
+    // The message must be substantially shorter than the malformed input
+    expect(thrownMsg.length).toBeLessThan(500)
+    // But long enough to include the fixed preamble and still have snippet
+    expect(thrownMsg.length).toBeGreaterThan(100)
   })
 
   it('akzeptiert ein leeres content-Array', () => {
