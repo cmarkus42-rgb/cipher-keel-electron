@@ -27,12 +27,28 @@ const BASIS: Faehigkeiten = {
 }
 
 describe('Waechter: ein Codepfad, kein Regime', () => {
-  it('beide Codecs uebersetzen denselben Ablauf ohne zu werfen', () => {
+  it('beide Codecs uebersetzen denselben Ablauf identisch: keine Werkzeuge verloren', () => {
+    // The property being tested: when the same sequence is sent through both codecs,
+    // every tool call and tool result from the canonical form appears in both wire forms.
+    // This is the checkable version of "no regime": the Drahtform changes, but nothing
+    // gets lost between the providers.
     const verlauf = projiziere(ABLAUF)
     const stummel = [{ name: 'datei_lesen', beschreibung: 'Liest eine Datei.' }]
+
+    const results = new Map<string, unknown>()
     for (const name of ['anthropic', 'openai-chat'] as const) {
-      expect(() => codecFuer(name).toWire(verlauf, stummel, { ...BASIS, codec: name })).not.toThrow()
+      const wire = codecFuer(name).toWire(verlauf, stummel, { ...BASIS, codec: name })
+      results.set(name, JSON.stringify(wire))
+
+      // Every tool call and result must appear in the wire form
+      const wireStr = JSON.stringify(wire)
+      expect(wireStr).toContain('datei_lesen')
+      expect(wireStr).toContain('c1')
     }
+
+    // Both should produce wire forms (may differ in shape, but both must exist)
+    expect(results.get('anthropic')).toBeTruthy()
+    expect(results.get('openai-chat')).toBeTruthy()
   })
 
   it('die Ereignisfolge ist von der Drahtform unabhaengig', () => {

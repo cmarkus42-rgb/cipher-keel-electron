@@ -30,6 +30,19 @@ describe('anthropicCodec.toWire', () => {
       type: 'thinking', thinking: 'ueberlegung', signature: 'sig-1',
     })
   })
+
+  it('uebersetzt einen Denkblock als Text, wenn denkbloecke: false', () => {
+    const KANN_KEIN_DENKEN = { ...KANN, denkbloecke: false }
+    const w = anthropicCodec.toWire(
+      [{ rolle: 'modell', bloecke: [{ art: 'denken', text: 'geheim', signatur: 'sig-1' }] }],
+      STUMMEL, KANN_KEIN_DENKEN,
+    ) as { messages: Array<{ content: Array<Record<string, unknown>> }> }
+    // Denkblock wird als Text mit deutschem Vorspann übersetzt
+    expect(w.messages[0].content[0]).toEqual({
+      type: 'text', text: expect.stringContaining('Denkspur'),
+    })
+    expect(w.messages[0].content[0].text).toContain('geheim')
+  })
 })
 
 describe('anthropicCodec.fromWire', () => {
@@ -56,5 +69,39 @@ describe('anthropicCodec.fromWire', () => {
     })
     expect(a.bloecke[0]).toEqual({ art: 'werkzeug-aufruf', id: 'c1', name: 'datei_lesen', eingabe: { pfad: 'a.ts' } })
     expect(a.stopGrund.normalisiert).toBe('werkzeug')
+  })
+
+  it('wirft, wenn content fehlt', () => {
+    expect(() => anthropicCodec.fromWire({
+      stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 },
+    })).toThrow()
+  })
+
+  it('wirft, wenn content kein Array ist', () => {
+    expect(() => anthropicCodec.fromWire({
+      content: 'string statt array', stop_reason: 'end_turn',
+      usage: { input_tokens: 1, output_tokens: 1 },
+    })).toThrow()
+  })
+
+  it('akzeptiert ein leeres content-Array', () => {
+    expect(() => anthropicCodec.fromWire({
+      content: [], stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 },
+    })).not.toThrow()
+    const a = anthropicCodec.fromWire({
+      content: [], stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 },
+    })
+    expect(a.bloecke).toEqual([])
+  })
+
+  it('uebersetzt unbekannte Blocktypen zu Text mit Hinweis', () => {
+    const a = anthropicCodec.fromWire({
+      content: [{ type: 'redacted_thinking', thinking: 'xxx' }],
+      stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 },
+    })
+    expect(a.bloecke[0]).toEqual({
+      art: 'text',
+      text: expect.stringContaining('redacted_thinking'),
+    })
   })
 })
