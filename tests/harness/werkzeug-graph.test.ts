@@ -279,22 +279,18 @@ describe('JSON-Groessenschranke (8 KB)', () => {
     expect(r.ok).toBe(true)
 
     if (r.ok) {
-      // Der Text sollte gekürzt sein
-      const textBlocks = r.inhalt.filter(i => i.art === 'text')
-      const textContent = textBlocks
-        .map(i => {
-          if (i.art === 'text') return i.text
-          return ''
-        })
-        .join('')
-      expect(textContent.length).toBeLessThanOrEqual(8192 + 200) // 8KB + Hinweis-Overhead
+      expect(r.inhalt).toHaveLength(1)
+      expect(r.inhalt[0].art).toBe('text')
+      const text = r.inhalt[0].art === 'text' ? r.inhalt[0].text : ''
 
-      // Der Hinweis sollte da sein UND sagen, dass es nicht JSON-lesbar mehr ist
-      const hinweis = textBlocks.find(i => i.art === 'text' && i.text.includes('gekürzt'))
-      expect(hinweis).toBeDefined()
-      if (hinweis?.art === 'text') {
-        expect(hinweis.text).toContain('nicht mehr als JSON lesbar')
-      }
+      // Das entscheidende Kriterium: es MUSS gueltiges JSON sein. Der alte Fehler war,
+      // dass hier der serialisierte String mitten im Wert abgeschnitten wurde.
+      const parsed = JSON.parse(text) as { gekuerzt: boolean; werkzeug: string; hinweis: string }
+
+      expect(parsed.gekuerzt).toBe(true)
+      expect(parsed.werkzeug).toBe('graph_suchen')
+      expect(parsed.hinweis.toLowerCase()).toContain('ersetzt')
+      expect(text.length).toBeLessThan(1000) // Ersatzobjekt ist klein, nicht die Rohdaten
     }
   })
 })
@@ -362,7 +358,7 @@ describe('Fix-Runde 3: Fehlerbehandlung und Validierung', () => {
   })
 
   describe('Finding 3: Rumpf wird gekürzt bevor serialisiert', () => {
-    it('kuerzt großen Rumpf nicht zu seiner vollstaendigen Groesse', async () => {
+    it('kuerzt großen Rumpf nicht zu seiner vollstaendigen Groesse — und bleibt gueltiges JSON', async () => {
       db = openGraphDb({ path: ':memory:' })
       ktx = {
         wache: { wurzel: '/tmp', heim: '/tmp', userDataPfad: '/tmp/ud' },
@@ -382,22 +378,154 @@ describe('Fix-Runde 3: Fehlerbehandlung und Validierung', () => {
       expect(r.ok).toBe(true)
 
       if (r.ok) {
-        // Prüfe: Der Rumpf ist nicht 120 KB lang in der Ausgabe
-        // (sondern höchstens ~100 KB + Marker, aber dann JSON-gekürzt)
-        const allText = r.inhalt
-          .filter(i => i.art === 'text')
-          .map(i => {
-            if (i.art === 'text') return i.text
-            return ''
-          })
-          .join('')
+        expect(r.inhalt).toHaveLength(1)
+        const text = r.inhalt[0].art === 'text' ? r.inhalt[0].text : ''
 
-        // Wenn der Rumpf NICHT gekürzt würde, wäre die JSON sehr groß
-        // Die Schranke sollte die Größe begrenzen
-        expect(allText.length).toBeLessThan(120000)
-        // Der Hinweis sollte zeigen, dass gekürzt wurde (Body oder JSON oder beide)
-        expect(allText.includes('[Rumpf gekürzt') || allText.includes('[Ergebnis gekürzt')).toBe(true)
+        // Das entscheidende Kriterium: JSON.parse darf nicht werfen.
+        const parsed = JSON.parse(text) as { body?: string; uid?: string }
+
+        expect(parsed.uid).toBe('large')
+        expect(parsed.body).toBeDefined()
+        // Der Rumpf ist gekuerzt (nicht die vollen 120000 Zeichen), aber die grosszuegige
+        // Body-Schranke laesst ihn ueberwiegend stehen.
+        expect(parsed.body!.length).toBeLessThan(120000)
+        expect(parsed.body!.length).toBeGreaterThan(100000)
+        expect(parsed.body).toContain('[Rumpf gekürzt')
       }
     })
+
+    it('reproduziert den urspruenglichen Fehlerfall: 40 KB Rumpf bleibt gueltiges JSON', async () => {
+      // Der Bericht (Fund 1) nennt genau diesen Fall: ein Rumpf mitten im typischen Bereich
+      // dieses Repos (25-180 KB Dokumente), weit unter der 100-KB-Body-Schranke, aber weit
+      // ueber der alten 8192-Zeichen-Schranke auf dem serialisierten String. Vor dem Fix
+      // schlug JSON.parse hier mit "Unterminated string in JSON at position 8192" fehl.
+      db = openGraphDb({ path: ':memory:' })
+      ktx = {
+        wache: { wurzel: '/tmp', heim: '/tmp', userDataPfad: '/tmp/ud' },
+        graphDb: db,
+      }
+
+      const body40k = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. '.repeat(700) // ~40.7 KB
+      db.prepare(`
+        INSERT INTO node (uid, kind, path, title, status, frontmatter, body, content_hash, erstellt)
+        VALUES (?, 'artefakt', ?, ?, 'aktiv', '{}', ?, ?, '2026-01-01')
+      `).run('mid', '/mid.md', 'Mittelgrosses Dokument', body40k, 'h2')
+
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_knoten_holen')!
+      const r = await w.ausfuehren({ uid: 'mid' }, ktx)
+      expect(r.ok).toBe(true)
+
+      if (r.ok) {
+        const text = r.inhalt[0].art === 'text' ? r.inhalt[0].text : ''
+        expect(() => JSON.parse(text)).not.toThrow()
+        const parsed = JSON.parse(text) as { body?: string }
+        // Unter der Body-Schranke (100 KB): unveraendert, kein Kuerzungsmarker.
+        expect(parsed.body).toBe(body40k)
+        expect(parsed.body).not.toContain('[Rumpf gekürzt')
+      }
+    })
+
+    it('faellt auf das Ersatzobjekt zurueck, wenn selbst der gekuerzte Rumpf plus Metadaten die Gesamtschranke reissen', async () => {
+      // Selbstpruefung der Gesamtschranke fuer graph_knoten_holen: eine grosse frontmatter
+      // zusaetzlich zu einem randvollen (aber schon body-gekuerzten) Rumpf muss den letzten
+      // Riegel (MAX_NODE_JSON_SIZE) ausloesen — und darf auch dann nicht mitten im JSON enden.
+      db = openGraphDb({ path: ':memory:' })
+      ktx = {
+        wache: { wurzel: '/tmp', heim: '/tmp', userDataPfad: '/tmp/ud' },
+        graphDb: db,
+      }
+
+      const bigBody = 'x'.repeat(120000) // wird auf 100 KB + Marker gekuerzt
+      const bigFrontmatter = JSON.stringify({ blob: 'y'.repeat(20000) }) // 20 KB Metadaten
+      db.prepare(`
+        INSERT INTO node (uid, kind, path, title, status, frontmatter, body, content_hash, erstellt)
+        VALUES (?, 'artefakt', ?, ?, 'aktiv', ?, ?, ?, '2026-01-01')
+      `).run('huge-meta', '/huge-meta.md', 'Riesige Metadaten', bigFrontmatter, bigBody, 'h3')
+
+      const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_knoten_holen')!
+      const r = await w.ausfuehren({ uid: 'huge-meta' }, ktx)
+      expect(r.ok).toBe(true)
+
+      if (r.ok) {
+        const text = r.inhalt[0].art === 'text' ? r.inhalt[0].text : ''
+        const parsed = JSON.parse(text) as { gekuerzt?: boolean; werkzeug?: string }
+        expect(parsed.gekuerzt).toBe(true)
+        expect(parsed.werkzeug).toBe('graph_knoten_holen')
+      }
+    })
+  })
+})
+
+// ============================================================================
+// Fund 1 (Fix-Runde 4): alle vier Werkzeuge liefern IMMER gueltiges JSON, auch wenn eine
+// lange Trefferliste die Gesamtschranke reisst — nicht nur graph_knoten_holen.
+// ============================================================================
+
+describe('Fund 1 (Fix-Runde 4): Groessenschranke bei allen vier Werkzeugen', () => {
+  let db: Database.Database
+  let ktx: WerkzeugKontext
+
+  afterEach(() => { if (db?.open) db.close() })
+
+  it('graph_ausweiten: viele Nachbarn reissen die Schranke, Ergebnis bleibt gueltiges JSON', async () => {
+    db = openGraphDb({ path: ':memory:' })
+    ktx = {
+      wache: { wurzel: '/tmp', heim: '/tmp', userDataPfad: '/tmp/ud' },
+      graphDb: db,
+    }
+
+    db.prepare(`
+      INSERT INTO node (uid, kind, path, title, status, frontmatter, body, content_hash, erstellt)
+      VALUES ('hub', 'artefakt', '/hub.md', 'Zentrum', 'aktiv', '{}', 'Body', 'h0', '2026-01-01')
+    `).run()
+    for (let i = 0; i < 300; i++) {
+      const titel = `Nachbar Nummer ${i} mit einem etwas laengeren Titel zum Auffuellen`
+      db.prepare(`
+        INSERT INTO node (uid, kind, path, title, status, frontmatter, body, content_hash, erstellt)
+        VALUES (?, 'artefakt', ?, ?, 'aktiv', '{}', 'Body', ?, '2026-01-01')
+      `).run(`nb${i}`, `/nb${i}.md`, titel, `hn${i}`)
+      db.prepare(`
+        INSERT INTO edge (src, dst, type, source, erstellt)
+        VALUES ('hub', ?, 'setzt_um', 'frontmatter', '2026-01-01')
+      `).run(`nb${i}`)
+    }
+
+    const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_ausweiten')!
+    const r = await w.ausfuehren({ uid: 'hub', depth: 1 }, ktx)
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      const text = r.inhalt[0].art === 'text' ? r.inhalt[0].text : ''
+      expect(() => JSON.parse(text)).not.toThrow()
+      const parsed = JSON.parse(text) as { gekuerzt?: boolean; werkzeug?: string }
+      expect(parsed.gekuerzt).toBe(true)
+      expect(parsed.werkzeug).toBe('graph_ausweiten')
+    }
+  })
+
+  it('graph_abfragen: viele Zeilen reissen die Schranke, Ergebnis bleibt gueltiges JSON', async () => {
+    db = openGraphDb({ path: ':memory:' })
+    ktx = {
+      wache: { wurzel: '/tmp', heim: '/tmp', userDataPfad: '/tmp/ud' },
+      graphDb: db,
+    }
+
+    for (let i = 0; i < 100; i++) {
+      const titel = `Anforderung ${i}: ` + 'ein langer Titel zum Auffuellen der Zeile '.repeat(4)
+      db.prepare(`
+        INSERT INTO node (uid, kind, path, title, status, frontmatter, body, content_hash, erstellt)
+        VALUES (?, 'anforderung', ?, ?, 'aktiv', '{}', 'Body', ?, '2026-01-01')
+      `).run(`req${i}`, `/req${i}.md`, titel, `hr${i}`)
+    }
+
+    const w = GRAPH_WERKZEUGE.find(w => w.name === 'graph_abfragen')!
+    const r = await w.ausfuehren({ template: 'nodes_by_kind', params: { kind: 'anforderung', limit: 100 } }, ktx)
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      const text = r.inhalt[0].art === 'text' ? r.inhalt[0].text : ''
+      expect(() => JSON.parse(text)).not.toThrow()
+      const parsed = JSON.parse(text) as { gekuerzt?: boolean; werkzeug?: string }
+      expect(parsed.gekuerzt).toBe(true)
+      expect(parsed.werkzeug).toBe('graph_abfragen')
+    }
   })
 })
