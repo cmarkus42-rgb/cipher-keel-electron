@@ -56,6 +56,35 @@ let db: ReturnType<typeof oeffneHarnessDb> | null = null
 const abbruchmarken = new Set<string>()
 
 /**
+ * Run ids for which a `fahre()` loop is currently executing in this process.
+ *
+ * `laufUebersicht` reports `endzustand: null` for a crashed run and a still-running one alike —
+ * there is no run table, only the log, and a running run has written no `run.finished` yet, same
+ * as a crashed one. Nothing before this distinguished "safe to resume" from "already resuming
+ * itself right now": a click on "Fortsetzen" for the run that is this process's own current run
+ * started a second `fahre()` loop over the same run id and the same database — every tool call
+ * doubled, two interleaved conversations in one append-only protocol, and the model endpoint
+ * billed twice. Set in both HARNESS_LAUF_STARTEN and HARNESS_LAUF_FORTSETZEN before the loop
+ * starts, deleted in the same `finally` that already cleans up `abbruchmarken` once it ends —
+ * same lifetime as the abort mark, checked in the main process, never trusted to the renderer
+ * merely hiding the button (same rule as every other decision in this file).
+ */
+const laufendeLaeufe = new Set<string>()
+
+/**
+ * The check itself, pulled out as a pure function so it is testable without electron — same
+ * pattern as `pruefeAnhaenge` above.
+ */
+export function pruefeLaufLaeuftNicht(
+  laufId: string, laufende: ReadonlySet<string>,
+): { ok: true } | { ok: false; meldung: string } {
+  if (laufende.has(laufId)) {
+    return { ok: false, meldung: `Der Lauf '${laufId}' laeuft bereits — Fortsetzen ist erst moeglich, wenn er sich beendet hat.` }
+  }
+  return { ok: true }
+}
+
+/**
  * Paths a human has actually picked, via a dialog *this* process opened. This is the boundary
  * for attachments, and it is deliberately not pfadwache.
  *
@@ -287,6 +316,11 @@ export function registerHarnessHandlers(services: AppServices): void {
       let markiereGestartet: (() => void) | null = null
       const wennGestartet = new Promise<void>((resolve) => { markiereGestartet = resolve })
 
+      // Marked running before the loop starts — see the comment on `laufendeLaeufe` above.
+      // A freshly minted id can never already be running, but the mark still has to land before
+      // starteLauf() so there is no window in which this run id looks resumable to a second call.
+      laufendeLaeufe.add(laufId)
+
       const laufPromise = starteLauf(
         {
           auftragstext: w.auftragstext,
@@ -306,7 +340,7 @@ export function registerHarnessHandlers(services: AppServices): void {
       // A bug in the loop past this point is reported through run.finished, not a rejection —
       // see lauf.ts's own try/catch around the transport call. This is only a safety net so an
       // exception nobody awaits does not become a silent unhandled rejection, plus cleanup of
-      // the abort mark so it does not outlive the run it was keyed to.
+      // the abort mark and the running-mark so neither outlives the run it was keyed to.
       laufPromise
         .catch((err) => {
           console.error(
@@ -314,7 +348,7 @@ export function registerHarnessHandlers(services: AppServices): void {
             err instanceof Error ? err.message : String(err),
           )
         })
-        .finally(() => { abbruchmarken.delete(laufId) })
+        .finally(() => { abbruchmarken.delete(laufId); laufendeLaeufe.delete(laufId) })
 
       await Promise.race([wennGestartet, laufPromise])
       return { ok: true, wert: laufId }
@@ -381,6 +415,12 @@ export function registerHarnessHandlers(services: AppServices): void {
       if (laufAbgeschlossen(ereignisse)) {
         return { ok: false, meldung: `Der Lauf '${laufId}' ist bereits abgeschlossen.` }
       }
+      // The gap laufAbgeschlossen() alone leaves open: `endzustand: null` in the run overview
+      // means "no run.finished yet", which is equally true for a crashed run and a run that is
+      // this very process's own loop, still executing right now. Checked here, in the main
+      // process — see the comment on `laufendeLaeufe` above.
+      const laufLaeuftPruefung = pruefeLaufLaeuftNicht(laufId, laufendeLaeufe)
+      if (!laufLaeuftPruefung.ok) return laufLaeuftPruefung
       const auftrag = auftragAusProtokoll(ereignisse)
       if (!auftrag) {
         return { ok: false, meldung: `Das Protokoll von '${laufId}' traegt keinen vollstaendigen Auftrag.` }
@@ -390,6 +430,10 @@ export function registerHarnessHandlers(services: AppServices): void {
 
       let markiereGestartet: (() => void) | null = null
       const wennGestartet = new Promise<void>((resolve) => { markiereGestartet = resolve })
+
+      // Marked running before the loop starts — same reasoning as HARNESS_LAUF_STARTEN above,
+      // and the very check this handler exists to make possible for the *next* resume attempt.
+      laufendeLaeufe.add(laufId)
 
       // setzeFort resolves only once the whole resumed run is done, exactly like starteLauf —
       // the same race against the loop's own first write, so the IPC round trip does not block
@@ -408,7 +452,7 @@ export function registerHarnessHandlers(services: AppServices): void {
             err instanceof Error ? err.message : String(err),
           )
         })
-        .finally(() => { abbruchmarken.delete(laufId) })
+        .finally(() => { abbruchmarken.delete(laufId); laufendeLaeufe.delete(laufId) })
 
       await Promise.race([wennGestartet, laufPromise])
       return { ok: true, wert: laufId }

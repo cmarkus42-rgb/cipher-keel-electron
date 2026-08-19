@@ -7,7 +7,7 @@ import { setzeFort } from '../../src/main/harness/lauf'
 import { WerkzeugRegistry, type Werkzeug } from '../../src/main/harness/werkzeuge'
 import type { ModelAntwort } from '../../src/main/harness/form'
 import type { ModellEintrag } from '../../src/main/model/entry'
-import { auftragAusProtokoll, laufAbgeschlossen } from '../../src/main/harness-handlers'
+import { auftragAusProtokoll, laufAbgeschlossen, pruefeLaufLaeuftNicht } from '../../src/main/harness-handlers'
 
 // auftragAusProtokoll and laufAbgeschlossen back HARNESS_LAUF_FORTSETZEN (Fix-Runde 3): the
 // handler itself is untestable here (no test in this repo reaches ipcMain), but the two pure
@@ -90,6 +90,27 @@ describe('laufAbgeschlossen', () => {
     anhaengen(db, 'l', 'run.started', { auftragstext: 'x', modellId: 'm', wurzel: '/tmp', budgets: BUDGETS })
     anhaengen(db, 'l', 'run.finished', { endzustand: 'fertig', grund: 'ziel-erreicht' })
     expect(laufAbgeschlossen(lesen(db, 'l'))).toBe(true)
+  })
+})
+
+// Regression: laufAbgeschlossen() alone cannot tell a crashed run apart from one that is this
+// very process's own loop, still executing right now -- both show endzustand: null, because
+// neither has written run.finished yet. Without this second check, clicking "Fortsetzen" on a
+// run that is already running started a second fahre() loop over the same run id and database:
+// every tool call doubled, two interleaved conversations in one append-only protocol.
+describe('pruefeLaufLaeuftNicht', () => {
+  it('laesst einen Lauf zu, der in keinem laufenden Verzeichnis steht', () => {
+    expect(pruefeLaufLaeuftNicht('l1', new Set())).toEqual({ ok: true })
+  })
+
+  it('lehnt einen Lauf ab, der bereits als laufend markiert ist, benannt', () => {
+    const ergebnis = pruefeLaufLaeuftNicht('l1', new Set(['l1', 'l2']))
+    expect(ergebnis.ok).toBe(false)
+    if (!ergebnis.ok) expect(ergebnis.meldung).toContain('l1')
+  })
+
+  it('laesst einen anderen Lauf zu, obwohl irgendein Lauf gerade laeuft', () => {
+    expect(pruefeLaufLaeuftNicht('l3', new Set(['l1', 'l2']))).toEqual({ ok: true })
   })
 })
 
