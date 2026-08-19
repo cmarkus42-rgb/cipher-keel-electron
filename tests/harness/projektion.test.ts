@@ -114,6 +114,73 @@ describe('projiziere', () => {
     expect(inhaltStr).toContain('Intent')
   })
 
+  // Regression for the schema-fetch poisoning bug: tool.schema_loaded used to force-close every
+  // open intent (via the shared ergebnisseAbschliessen()), so a completely normal meta-tool call
+  // told the model its own call had failed with "Ausfuehrung unbekannt", then contradicted itself
+  // once the real tool.completed arrived. A schema fetch is not a message boundary and must leave
+  // open intents alone.
+  it('laesst bei einem Schema-Nachladen offene Intents unangetastet — Intent, schema_loaded, completed ergibt genau ein sauberes Ergebnis', () => {
+    const v = projiziere([
+      ev(1, 'run.started', { auftragstext: 'a' }),
+      ev(2, 'model.answered', { bloecke: [
+        { art: 'werkzeug-aufruf', id: 'c1', name: 'werkzeug_schema', eingabe: { name: 'datei_lesen' } },
+      ] }),
+      ev(3, 'tool.intent', { aufrufId: 'c1', name: 'werkzeug_schema', eingabe: { name: 'datei_lesen' } }),
+      ev(4, 'tool.schema_loaded', { name: 'datei_lesen', schema: { typ: 'objekt' } }),
+      ev(5, 'tool.completed', {
+        aufrufId: 'c1', name: 'werkzeug_schema',
+        inhalt: [{ art: 'text', text: 'Schema fuer datei_lesen steht im Verlauf.' }],
+      }),
+    ])
+    // run.started, model.answered, schema-Nachricht, Ergebnis-Nachricht
+    expect(v).toHaveLength(4)
+    const ergebnisNachricht = v[3]
+    expect(ergebnisNachricht.rolle).toBe('nutzer')
+    expect(ergebnisNachricht.bloecke).toHaveLength(1)
+    expect(ergebnisNachricht.bloecke[0]).toMatchObject({
+      art: 'werkzeug-ergebnis', aufrufId: 'c1', fehler: false,
+    })
+    const inhaltStr = JSON.stringify(ergebnisNachricht.bloecke[0])
+    expect(inhaltStr).not.toContain('Ausfuehrung unbekannt')
+    expect(inhaltStr).not.toContain('widersprechen')
+  })
+
+  // The mixed-turn case named in the review: a real tool call still running (its intent already
+  // written) alongside a meta call whose synchronous path (no await) writes tool.intent,
+  // tool.schema_loaded and tool.completed all before the real call's own completion lands. Both
+  // must come out clean.
+  it('haelt einen echten Werkzeugaufruf sauber, waehrend ein gleichzeitiger Meta-Aufruf sein Schema nachlaedt', () => {
+    const v = projiziere([
+      ev(1, 'run.started', { auftragstext: 'a' }),
+      ev(2, 'model.answered', { bloecke: [
+        { art: 'werkzeug-aufruf', id: 'r1', name: 'datei_lesen', eingabe: { pfad: 'x' } },
+        { art: 'werkzeug-aufruf', id: 'm1', name: 'werkzeug_schema', eingabe: { name: 'datei_lesen' } },
+      ] }),
+      // Real call's intent lands first, then it awaits its own effect (see fuehreAus in lauf.ts).
+      ev(3, 'tool.intent', { aufrufId: 'r1', name: 'datei_lesen', eingabe: { pfad: 'x' } }),
+      // The meta path has no await, so its whole sequence runs synchronously before the real
+      // call's completion is written.
+      ev(4, 'tool.intent', { aufrufId: 'm1', name: 'werkzeug_schema', eingabe: { name: 'datei_lesen' } }),
+      ev(5, 'tool.schema_loaded', { name: 'datei_lesen', schema: { typ: 'objekt' } }),
+      ev(6, 'tool.completed', {
+        aufrufId: 'm1', name: 'werkzeug_schema',
+        inhalt: [{ art: 'text', text: 'Schema fuer datei_lesen steht im Verlauf.' }],
+      }),
+      ev(7, 'tool.completed', { aufrufId: 'r1', name: 'datei_lesen', inhalt: [{ art: 'text', text: 'echter Dateiinhalt' }] }),
+    ])
+    const ergebnisNachricht = v[v.length - 1]
+    expect(ergebnisNachricht.rolle).toBe('nutzer')
+    expect(ergebnisNachricht.bloecke).toHaveLength(2)
+    for (const block of ergebnisNachricht.bloecke) {
+      expect(block).toMatchObject({ fehler: false })
+      const inhaltStr = JSON.stringify(block)
+      expect(inhaltStr).not.toContain('Ausfuehrung unbekannt')
+      expect(inhaltStr).not.toContain('widersprechen')
+    }
+    const real = ergebnisNachricht.bloecke.find((b) => 'aufrufId' in b && b.aufrufId === 'r1')
+    expect(JSON.stringify(real)).toContain('echter Dateiinhalt')
+  })
+
   it('unterscheidet zwischen Zwangsabschluss und echter Doppelantwort im Hinweis', () => {
     const v = projiziere([
       ev(1, 'run.started', { auftragstext: 'a' }),

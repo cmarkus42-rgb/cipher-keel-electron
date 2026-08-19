@@ -19,15 +19,29 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[] {
   let ergebnisse: Block[] = []
   const beantwortetAufrufe = new Map<string, 'zwangsabschluss' | 'ergebnis' | 'fehler'>()
 
-  const ergebnisseAbschliessen = (): void => {
+  // `schliesseOffeneIntents` tells apart two very different callers. `model.answered` and the
+  // end of the log are genuine message boundaries: a turn is over, and an intent still open at
+  // that point really did die between effect and write (M8 section 3.4) — it is forced closed as
+  // "execution unknown". `tool.schema_loaded` is not a message boundary in that sense: it is the
+  // meta tool's own result landing mid-turn, alongside whichever real tools are running
+  // concurrently in the same turn. Forcing it closed there force-closed every concurrently open
+  // intent too — including real tool calls whose `tool.completed`/`tool.failed` had not been
+  // written yet purely because the meta path has no `await` and runs synchronously ahead of them
+  // (see fuehreAus in lauf.ts). Every schema fetch then told the model its own call — and any
+  // sibling call in the same turn — had failed with "execution unknown", followed by a
+  // contradiction notice once the real result did arrive. `false` here only flushes results
+  // already sitting in `ergebnisse`, and leaves `offeneIntents` untouched.
+  const ergebnisseAusspuelen = (schliesseOffeneIntents: boolean): void => {
     // An intent without a result means a hard death between effect and write. The call is not
     // repeated — M8 section 3.4. Repeating it would be harmless for today's reading tools and
     // wrong for the first writing one, and nobody would go looking for the exception then.
-    for (const aufrufId of offeneIntents) {
-      ergebnisse.push({ art: 'werkzeug-ergebnis', aufrufId, inhalt: [{ art: 'text', text: UNBEKANNT }], fehler: true })
-      beantwortetAufrufe.set(aufrufId, 'zwangsabschluss')
+    if (schliesseOffeneIntents) {
+      for (const aufrufId of offeneIntents) {
+        ergebnisse.push({ art: 'werkzeug-ergebnis', aufrufId, inhalt: [{ art: 'text', text: UNBEKANNT }], fehler: true })
+        beantwortetAufrufe.set(aufrufId, 'zwangsabschluss')
+      }
+      offeneIntents = []
     }
-    offeneIntents = []
     if (ergebnisse.length > 0) {
       verlauf.push({ rolle: 'nutzer', bloecke: ergebnisse })
       ergebnisse = []
@@ -43,7 +57,7 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[] {
         break
       }
       case 'model.answered': {
-        ergebnisseAbschliessen()
+        ergebnisseAusspuelen(true)
         verlauf.push({ rolle: 'modell', bloecke: (e.nutzlast.bloecke as Block[]) ?? [] })
         break
       }
@@ -94,7 +108,9 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[] {
         break
       }
       case 'tool.schema_loaded': {
-        ergebnisseAbschliessen()
+        // Only flushes results already collected — never force-closes open intents. See the
+        // comment on `ergebnisseAusspuelen` above for why this is not a message boundary.
+        ergebnisseAusspuelen(false)
         // Appended to the history, never written into the stable prefix — otherwise every
         // deferred load would invalidate the cache the mechanism exists to protect.
         verlauf.push({
@@ -109,6 +125,6 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[] {
     }
   }
 
-  ergebnisseAbschliessen()
+  ergebnisseAusspuelen(true)
   return verlauf
 }
