@@ -5,6 +5,7 @@ import { WerkzeugRegistry } from '../../src/main/harness/werkzeuge'
 import type { ModellEintrag } from '../../src/main/model/entry'
 import type { ModelAntwort } from '../../src/main/harness/form'
 import type { Ereignis } from '../../src/main/harness/ereignisse'
+import { laufAbgeschlossen } from '../../src/main/harness-handlers'
 
 const EINTRAG: ModellEintrag = {
   id: 'test-modell', name: 'Testmodell', art: 'api',
@@ -264,6 +265,34 @@ describe('starteLauf', () => {
     expect(ende?.nutzlast).toMatchObject({ endzustand: 'abgebrochen', grund: 'auftrag-unvereinbar' })
     // The reason the run ended is legible in the log, not swallowed.
     expect(String(ende?.nutzlast.anweisung)).toMatch(/bild/)
+  })
+
+  it('beendet einen bereits offenen Lauf benannt, wenn pruefeStartbedingungen beim Fortsetzen wirft', async () => {
+    // The realistic case from the task: a user edits the capability row of an entry -- here to
+    // an unbuilt codec -- while a run is still open, then resumes it. Unlike starteLauf(), a
+    // run.started already exists at this point: before this fix, pruefeStartbedingungen()
+    // throwing inside setzeFort() fell straight out past fahre(), with no run.finished ever
+    // written, and the run stayed "laeuft" forever exactly like the toWire bug above.
+    const db = oeffneHarnessDb(':memory:')
+    const laufId = 'lauf-startbedingungen-wirft'
+    anhaengen(db, laufId, 'run.started', {
+      auftragstext: AUFTRAG.auftragstext, modellId: AUFTRAG.modellId, werkzeuge: [],
+    })
+
+    const eintrag = { ...EINTRAG, faehigkeiten: { ...EINTRAG.faehigkeiten!, codec: 'ollama-native' as const } }
+    const u = { ...umgebungMit([antwort('sollte nie gesendet werden')]), db, eintrag }
+    await setzeFort(laufId, AUFTRAG, u)
+
+    const ereignisse = lesen(db, laufId)
+    // The model was never reached -- the failure happened before fahre() sent anything.
+    expect(ereignisse.map(e => e.art)).not.toContain('model.answered')
+    const ende = ereignisse.at(-1)
+    expect(ende?.art).toBe('run.finished')
+    expect(ende?.nutzlast).toMatchObject({ endzustand: 'abgebrochen', grund: 'auftrag-unvereinbar' })
+    // The reason the run ended is legible in the log, not swallowed.
+    expect(String(ende?.nutzlast.anweisung)).toMatch(/ollama-native/)
+    // The actual assertion, not just that an event exists: the run no longer counts as running.
+    expect(laufAbgeschlossen(lesen(db, laufId))).toBe(true)
   })
 
   it('rechnet den Verbrauch bei der Fortsetzung aus dem Protokoll neu, statt bei null zu beginnen', async () => {

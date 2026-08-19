@@ -155,7 +155,25 @@ export async function starteLauf(
 
 /** Same entry point after a restart: read, project, carry on. No second implementation. */
 export async function setzeFort(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise<void> {
-  pruefeStartbedingungen(u.eintrag)
+  // Unlike starteLauf() (where this same throw is fine: no run.started exists yet, so nothing is
+  // left hanging, and the rejection reaches the caller, which reports it to the UI), a resumed
+  // run already has an open protocol. The realistic trigger is a user editing an entry's
+  // capability row -- to an unbuilt codec, or to werkzeugmodus 'text' -- while a run on that
+  // entry is still open, then resuming it. Before this fix the throw fell straight out of
+  // setzeFort() past this function's caller with no run.finished ever written, leaving the run
+  // "laeuft" forever -- the same class of bug as CodecKannNicht escaping toWire() in fahre()
+  // (see the comment on that catch below). 'auftrag-unvereinbar' fits for the same reason: the
+  // entry cannot carry this order at all, decided before anything is sent, and would fail
+  // identically on the next resumption attempt too.
+  try {
+    pruefeStartbedingungen(u.eintrag)
+  } catch (err) {
+    beende(u, laufId, lesen(u.db, laufId), {
+      code: 'auftrag-unvereinbar', endzustand: 'abgebrochen',
+      anweisung: err instanceof Error ? err.message : String(err),
+    }, '')
+    return
+  }
   await fahre(laufId, auftrag, u)
 }
 
