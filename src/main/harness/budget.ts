@@ -23,6 +23,12 @@ export type EndzustandCode =
   | 'ziel-erreicht'
   | 'runden-erschoepft' | 'zeit-erschoepft' | 'kosten-erschoepft' | 'kontext-erschoepft'
   | 'transportfehler' | 'abgebrochen-von-aussen'
+  // A codec that cannot translate the order for this model (CodecKannNicht, e.g. an image block
+  // against 'bilder: false') is decided before anything is sent — it is not a transport problem
+  // and would fail identically on a tenth retry. It gets its own code rather than reusing
+  // 'transportfehler' so a reader of the run can tell "try again later" from "this order and
+  // this model do not fit, ever" (see lauf.ts, the toWire call in fahre()).
+  | 'auftrag-unvereinbar'
 
 export interface Abschlussgrund {
   code: EndzustandCode

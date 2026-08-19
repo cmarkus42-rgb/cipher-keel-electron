@@ -238,6 +238,34 @@ describe('starteLauf', () => {
     await expect(starteLauf(AUFTRAG, { ...u, eintrag })).rejects.toThrow(/Text-Protokoll/)
   })
 
+  it('beendet den Lauf benannt, wenn der Codec beim Uebersetzen wirft, statt die Ausnahme aus fahre() fallen zu lassen', async () => {
+    // Same construction as the resumption test below: seed run.started directly so the projected
+    // history already carries an image block, then flip 'bilder' off so the openai-chat codec's
+    // toWire throws CodecKannNicht on the very first turn -- before 'sende' is ever reached. This
+    // is the bug itself: toWire used to be called outside any try, so this exception used to fall
+    // out of fahre() and starteLauf()/setzeFort() with no run.finished ever written.
+    const db = oeffneHarnessDb(':memory:')
+    const laufId = 'lauf-codec-wirft'
+    anhaengen(db, laufId, 'run.started', {
+      auftragstext: AUFTRAG.auftragstext, modellId: AUFTRAG.modellId, werkzeuge: [],
+      anhangBloecke: [{ art: 'bild', medientyp: 'image/png', daten: 'QQ==' }],
+    })
+
+    const eintrag = { ...EINTRAG, faehigkeiten: { ...EINTRAG.faehigkeiten!, bilder: false } }
+    const u = { ...umgebungMit([antwort('sollte nie gesendet werden')]), db, eintrag }
+    await setzeFort(laufId, AUFTRAG, u)
+
+    const ereignisse = lesen(db, laufId)
+    // The model was never reached -- the failure happened while assembling the wire body.
+    expect(ereignisse.map(e => e.art)).not.toContain('model.answered')
+    // The whole point of the fix: the run is not stuck at "laeuft" forever, but ends named.
+    const ende = ereignisse.at(-1)
+    expect(ende?.art).toBe('run.finished')
+    expect(ende?.nutzlast).toMatchObject({ endzustand: 'abgebrochen', grund: 'auftrag-unvereinbar' })
+    // The reason the run ended is legible in the log, not swallowed.
+    expect(String(ende?.nutzlast.anweisung)).toMatch(/bild/)
+  })
+
   it('rechnet den Verbrauch bei der Fortsetzung aus dem Protokoll neu, statt bei null zu beginnen', async () => {
     // A run that already spent its one round before a crash must recognise the exhausted
     // budget on the very next turn after resuming — not rediscover it a full round later.

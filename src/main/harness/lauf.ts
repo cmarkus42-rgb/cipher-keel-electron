@@ -183,7 +183,26 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
 
     // The stable part first, byte-identical every turn; the volatile progress object last.
     const praefix = [stabil, baueFortschritt([], erledigte(ereignisse))].filter(t => t !== '').join('\n\n')
-    const koerper = codec.toWire(verlauf, abschlussVorab ? [] : stummel, f)
+
+    let koerper: unknown
+    try {
+      koerper = codec.toWire(verlauf, abschlussVorab ? [] : stummel, f)
+    } catch (err) {
+      // toWire throws CodecKannNicht when the capability row cannot carry a block type the order
+      // does carry (codec.ts) — the exact refusal this whole harness is built around never being
+      // silent. Before this fix that exception fell straight out of fahre(), past starteLauf(),
+      // with no run.finished ever written: the run stayed "laeuft" forever and the very message
+      // meant to explain why never reached the event log. Catching it here and ending the run
+      // named closes that gap the same way a transport failure already does below — except the
+      // reason must not say 'transportfehler': a capability mismatch is not a network problem,
+      // it is settled before anything is sent and would fail the same way on a tenth attempt.
+      // See the 'auftrag-unvereinbar' comment in budget.ts.
+      beende(u, laufId, ereignisse, {
+        code: 'auftrag-unvereinbar', endzustand: 'abgebrochen',
+        anweisung: err instanceof Error ? err.message : String(err),
+      }, '')
+      return
+    }
 
     if (abschlussVorab) {
       // A hit budget is a closing mode, not an exception: one last turn without tools.
