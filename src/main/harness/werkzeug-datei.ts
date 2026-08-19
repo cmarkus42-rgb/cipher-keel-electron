@@ -5,8 +5,10 @@
  * justifies this stretch having no sandbox: the moment a command is assembled, checking its
  * arguments is theatre again.
  *
- * Every path passes pfadwache first. A rejection becomes a tool result with fehler: true — the
+ * Every path passes pfadwache first. A rejection becomes a tool result with ok: false — the
  * run continues, and the model learns why. A model that reaches too far should find out, not die.
+ * (It only turns into a block with fehler: true once lauf.ts's fuehreAus() and projektion.ts
+ * translate the WerkzeugErgebnis into the canonical form — that field name lives there, not here.)
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs'
