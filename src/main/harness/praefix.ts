@@ -3,8 +3,10 @@
  *
  * The stable part must be byte-identical across turns or the provider's prompt cache misses and
  * every turn pays full price for the same opening. That is why there are no timestamps, no
- * counters and no round numbers in it, why keys are serialised sorted, and why a deferred tool
- * schema is appended to the *history* and never written back in here (M8 section 3.5).
+ * counters and no round numbers in it, and why a deferred tool schema is appended to the
+ * *history* and never written back in here (M8 section 3.5). The stable part itself never
+ * serialises anything — it is plain strings joined together (see `baueStabilenTeil` below) — so
+ * there is nothing here whose key order could threaten the cache in the first place.
  *
  * Stubs only: name plus one line. The full schema is fetched on demand.
  */
@@ -17,39 +19,6 @@ export interface PraefixTeile {
   persona: string
   globaleRegeln: string
   auftragstext: string
-}
-
-/** Sorted keys, everywhere, so two equal objects have one spelling. */
-export function serialisiereDeterministisch(wert: unknown): string {
-  const besucht = new WeakSet<object>()
-  return _serialisiere(wert, besucht)
-}
-
-function _serialisiere(wert: unknown, besucht: WeakSet<object>): string {
-  // Cycle detection for any object or array, before checking type.
-  if (wert !== null && typeof wert === 'object') {
-    if (besucht.has(wert)) {
-      throw new Error('Die Eingabe enthaelt einen Zyklus und ist nicht deterministisch serialisierbar.')
-    }
-    besucht.add(wert)
-  }
-
-  try {
-    if (Array.isArray(wert)) {
-      return `[${wert.map(item => _serialisiere(item, besucht)).join(',')}]`
-    }
-    if (wert !== null && typeof wert === 'object') {
-      const o = wert as Record<string, unknown>
-      const paare = Object.keys(o).sort().map(k => `${JSON.stringify(k)}:${_serialisiere(o[k], besucht)}`)
-      return `{${paare.join(',')}}`
-    }
-    return JSON.stringify(wert) ?? 'null'
-  } finally {
-    // Remove from visited set so the same object or array can appear in sibling positions.
-    if (wert !== null && typeof wert === 'object') {
-      besucht.delete(wert)
-    }
-  }
 }
 
 export function baueStabilenTeil(teile: PraefixTeile, werkzeuge: WerkzeugStummel[]): string {

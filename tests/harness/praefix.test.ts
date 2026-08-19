@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  baueStabilenTeil, serialisiereDeterministisch, baueFortschritt,
+  baueStabilenTeil, baueFortschritt,
 } from '../../src/main/harness/praefix'
 
 const TEILE = {
@@ -45,44 +45,6 @@ describe('baueStabilenTeil', () => {
     const p = baueStabilenTeil(TEILE, STUMMEL)
     expect(p).not.toMatch(/\d{4}-\d{2}-\d{2}/)
     expect(p).not.toMatch(/Runde\s*\d/)
-  })
-})
-
-describe('serialisiereDeterministisch', () => {
-  it('sortiert Schluessel, damit zwei gleiche Objekte gleich aussehen', () => {
-    expect(serialisiereDeterministisch({ b: 1, a: 2 }))
-      .toBe(serialisiereDeterministisch({ a: 2, b: 1 }))
-  })
-
-  it('sortiert auch geschachtelte Schluessel', () => {
-    expect(serialisiereDeterministisch({ x: { d: 1, c: 2 } }))
-      .toBe('{"x":{"c":2,"d":1}}')
-  })
-
-  it('laesst Array-Reihenfolge unangetastet', () => {
-    expect(serialisiereDeterministisch([2, 1])).toBe('[2,1]')
-  })
-
-  it('wirft einen benannten Fehler bei einem zyklischen Objekt', () => {
-    const zyklisch: Record<string, unknown> = { a: 1 }
-    zyklisch.self = zyklisch
-    expect(() => serialisiereDeterministisch(zyklisch)).toThrow(/Zyklus/)
-  })
-
-  it('erlaubt dasselbe Objekt zweimal nebeneinander in einem Array', () => {
-    const obj = { x: 1 }
-    expect(() => serialisiereDeterministisch([obj, obj])).not.toThrow()
-  })
-
-  it('wirft einen benannten Fehler bei einem zyklischen Array', () => {
-    const arr: unknown[] = [1, 2]
-    arr.push(arr)
-    expect(() => serialisiereDeterministisch(arr)).toThrow(/Zyklus/)
-  })
-
-  it('erlaubt dasselbe Array zweimal nebeneinander in einer aeusseren Liste', () => {
-    const arr = [1, 2]
-    expect(() => serialisiereDeterministisch([arr, arr])).not.toThrow()
   })
 })
 
