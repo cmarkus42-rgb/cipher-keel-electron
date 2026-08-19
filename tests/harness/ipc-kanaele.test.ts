@@ -40,7 +40,7 @@ const HARNESS_KANAELE = Object.entries(kanaele)
 
 describe('Waechter: kein Harness-Kanal ohne Aufrufer', () => {
   it('kennt ueberhaupt Harness-Kanaele', () => {
-    expect(HARNESS_KANAELE.length).toBe(5)
+    expect(HARNESS_KANAELE.length).toBe(6)
   })
 
   it('jeder Kanal hat einen echten Aufrufer im Renderer (invoke/on, nicht nur eine Erwaehnung)', () => {

@@ -137,6 +137,11 @@ export async function starteLauf(
   schreibe(u, laufId, 'run.started', {
     auftragstext: auftrag.auftragstext,
     modellId: auftrag.modellId,
+    // Carried so a resumed run can rebuild the same Auftrag from this one event instead of a
+    // second, possibly different one the caller assembles fresh (see harness-handlers.ts's
+    // auftragAusProtokoll). Attachments are deliberately not carried the same way — they
+    // already land in `anhangBloecke` below and need no separate path reconstructed from it.
+    wurzel: auftrag.wurzel,
     codec: f.codec,
     werkzeuge: stummel.map(s => s.name),
     budgets: auftrag.budgets,

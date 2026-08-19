@@ -5,7 +5,7 @@
  * move. Nothing here touches Electron; the IPC surface lives in src/main/harness-handlers.ts.
  */
 
-export { starteLauf } from './lauf'
+export { starteLauf, setzeFort, type Auftrag, type LaufUmgebung } from './lauf'
 export { oeffneHarnessDb, lesen, laufIds } from './protokoll'
 export { WerkzeugRegistry } from './werkzeuge'
 export { DATEI_WERKZEUGE } from './werkzeug-datei'

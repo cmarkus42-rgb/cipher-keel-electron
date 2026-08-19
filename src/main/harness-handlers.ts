@@ -34,8 +34,8 @@ import { join } from 'node:path'
 import { statSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import {
-  HARNESS_LAUF_STARTEN, HARNESS_LAUF_LESEN, HARNESS_LAUF_ABBRECHEN, HARNESS_ANHAENGE_WAEHLEN,
-  HARNESS_EREIGNIS,
+  HARNESS_LAUF_STARTEN, HARNESS_LAUF_LESEN, HARNESS_LAUF_ABBRECHEN, HARNESS_LAUF_FORTSETZEN,
+  HARNESS_ANHAENGE_WAEHLEN, HARNESS_EREIGNIS,
 } from '../shared/ipc-channels'
 import type { HarnessAntwort, HarnessEreignis, LaufAnzeige, LaufStartWunsch } from '../shared/harness-types'
 import { broadcast } from './event-bus'
@@ -45,10 +45,10 @@ import { toModelEndpoint, type Faehigkeiten, type ModellEintrag } from './model/
 import { clientForEndpoint } from './worker/model-client'
 import { assemblePraefixTeile } from './harness-praefix-quelle'
 import {
-  starteLauf, oeffneHarnessDb, lesen, laufIds, codecFuer,
+  starteLauf, setzeFort, oeffneHarnessDb, lesen, laufIds, codecFuer,
   WerkzeugRegistry, DATEI_WERKZEUGE, GRAPH_WERKZEUGE,
 } from './harness'
-import type { ModelAntwort } from './harness'
+import type { ModelAntwort, Auftrag, LaufUmgebung } from './harness'
 import type { AppServices } from './window-manager'
 
 let db: ReturnType<typeof oeffneHarnessDb> | null = null
@@ -129,6 +129,80 @@ function sendeUeberTransport(eintrag: ModellEintrag) {
     })
     return codecFuer(f.codec).fromWire(roh)
   }
+}
+
+/**
+ * The one place a LaufUmgebung gets built — starting a run and resuming one use exactly this
+ * construction, not two that could drift apart. `aufJedesEreignis` is called with every event
+ * `strom` sees; the caller decides what "the run has visibly started" means for its own race
+ * against the loop's full completion (see HARNESS_LAUF_STARTEN and HARNESS_LAUF_FORTSETZEN).
+ */
+function baueLaufUmgebung(
+  laufId: string, eintrag: ModellEintrag, auftragstext: string, wurzel: string,
+  services: AppServices, aufJedesEreignis: (ev: HarnessEreignis) => void,
+): LaufUmgebung {
+  return {
+    db: harnessDb(),
+    eintrag,
+    praefixTeile: assemblePraefixTeile(auftragstext),
+    wache: { wurzel, heim: homedir(), userDataPfad: app.getPath('userData') },
+    graphDb: services.graphDb,
+    registry: new WerkzeugRegistry([...DATEI_WERKZEUGE, ...GRAPH_WERKZEUGE]),
+    strom: (ev) => {
+      broadcast(HARNESS_EREIGNIS, ev as HarnessEreignis)
+      aufJedesEreignis(ev as HarnessEreignis)
+    },
+    uhr: () => Date.now(),
+    abgebrochen: () => abbruchmarken.has(laufId),
+    sende: sendeUeberTransport(eintrag),
+  }
+}
+
+/**
+ * Reconstructs the Auftrag a run was originally given, from its own run.started event — the
+ * honest source for a resumed run: the same order it started with, not a second one reassembled
+ * from whatever the renderer happens to send today (see the comment lauf.ts's starteLauf now
+ * carries next to `wurzel` in that event). `anhaenge` and `pflichtfelder` are deliberately left
+ * out of the rebuilt Auftrag:
+ *
+ * - Attachments already live in run.started's own `anhangBloecke` field and reach the projected
+ *   history through `projiziere()` on every turn, including the first one after a resume.
+ *   `anhangBloecke()` — the function that actually reads a file from disk and base64-encodes it
+ *   — is called exactly once, from `starteLauf`, and never from `setzeFort`/`fahre`. There is no
+ *   code path on which a resumed run re-reads an attachment path, whether or not one is passed
+ *   back in here — so leaving `anhaenge` unset costs nothing and avoids inviting a future change
+ *   to wire a second read that was never needed.
+ * - `pflichtfelder` is not carried in run.started today and HARNESS_LAUF_STARTEN never sets it
+ *   on the initial Auftrag either (it is exercised only by direct callers of `starteLauf`, not
+ *   by this IPC surface) — so there is nothing to lose here that a fresh start would have had.
+ */
+export function auftragAusProtokoll(ereignisse: ReturnType<typeof lesen>): Auftrag | null {
+  const gestartet = ereignisse.find((e) => e.art === 'run.started')
+  if (!gestartet) return null
+  const n = gestartet.nutzlast
+  if (typeof n.auftragstext !== 'string' || n.auftragstext === '') return null
+  if (typeof n.modellId !== 'string' || n.modellId === '') return null
+  if (typeof n.wurzel !== 'string' || n.wurzel === '') return null
+  const b = n.budgets as Partial<Auftrag['budgets']> | undefined
+  if (
+    !b || typeof b.runden !== 'number' || typeof b.wanduhrMs !== 'number' ||
+    typeof b.kostenCent !== 'number' || typeof b.kontextAnteil !== 'number'
+  ) {
+    return null
+  }
+  return {
+    auftragstext: n.auftragstext,
+    modellId: n.modellId,
+    wurzel: n.wurzel,
+    budgets: {
+      runden: b.runden, wanduhrMs: b.wanduhrMs, kostenCent: b.kostenCent, kontextAnteil: b.kontextAnteil,
+    },
+  }
+}
+
+/** A run with no run.finished event is still resumable; one that has it is done. */
+export function laufAbgeschlossen(ereignisse: ReturnType<typeof lesen>): boolean {
+  return ereignisse.some((e) => e.art === 'run.finished')
 }
 
 /**
@@ -221,27 +295,11 @@ export function registerHarnessHandlers(services: AppServices): void {
           anhaenge: angeforderteAnhaenge.length > 0 ? angeforderteAnhaenge : undefined,
           budgets: STANDARD_BUDGETS,
         },
-        {
-          db: harnessDb(),
-          eintrag,
-          praefixTeile: assemblePraefixTeile(w.auftragstext),
-          wache: {
-            wurzel: w.wurzel,
-            heim: homedir(),
-            userDataPfad: app.getPath('userData'),
-          },
-          graphDb: services.graphDb,
-          registry: new WerkzeugRegistry([...DATEI_WERKZEUGE, ...GRAPH_WERKZEUGE]),
-          strom: (ev) => {
-            broadcast(HARNESS_EREIGNIS, ev as HarnessEreignis)
-            // The first appended event is always run.started — see lauf.ts's starteLauf, which
-            // writes it before entering the loop. Once it lands, startup has succeeded.
-            if (markiereGestartet) { markiereGestartet(); markiereGestartet = null }
-          },
-          uhr: () => Date.now(),
-          abgebrochen: () => abbruchmarken.has(laufId),
-          sende: sendeUeberTransport(eintrag),
-        },
+        // The first appended event is always run.started — see lauf.ts's starteLauf, which
+        // writes it before entering the loop. Once it lands, startup has succeeded.
+        baueLaufUmgebung(laufId, eintrag, w.auftragstext, w.wurzel, services, () => {
+          if (markiereGestartet) { markiereGestartet(); markiereGestartet = null }
+        }),
         laufId,
       )
 
@@ -304,5 +362,58 @@ export function registerHarnessHandlers(services: AppServices): void {
     // "already finished" apart from "never existed" is not worth a second query here.
     abbruchmarken.add(laufId)
     return { ok: true, wert: true }
+  })
+
+  ipcMain.handle(HARNESS_LAUF_FORTSETZEN, async (_e, roh: unknown): Promise<HarnessAntwort<string>> => {
+    try {
+      if (typeof roh !== 'string' || roh === '') {
+        return { ok: false, meldung: 'Es ist kein Lauf genannt.' }
+      }
+      const laufId = roh
+      const datenbank = harnessDb()
+      const ereignisse = lesen(datenbank, laufId)
+      if (ereignisse.length === 0) {
+        return { ok: false, meldung: `Kein Lauf mit der Id '${laufId}'.` }
+      }
+      // Checked here, in the main process — not only by the renderer hiding the button once a
+      // run's endzustand is set in its own list. The renderer is not trusted with this decision,
+      // same rule as every other harness handler in this file.
+      if (laufAbgeschlossen(ereignisse)) {
+        return { ok: false, meldung: `Der Lauf '${laufId}' ist bereits abgeschlossen.` }
+      }
+      const auftrag = auftragAusProtokoll(ereignisse)
+      if (!auftrag) {
+        return { ok: false, meldung: `Das Protokoll von '${laufId}' traegt keinen vollstaendigen Auftrag.` }
+      }
+      const eintrag = eintragNachId(auftrag.modellId)
+      if (!eintrag) return { ok: false, meldung: `Kein Registry-Eintrag '${auftrag.modellId}'.` }
+
+      let markiereGestartet: (() => void) | null = null
+      const wennGestartet = new Promise<void>((resolve) => { markiereGestartet = resolve })
+
+      // setzeFort resolves only once the whole resumed run is done, exactly like starteLauf —
+      // the same race against the loop's own first write, so the IPC round trip does not block
+      // for the run's entire remaining duration.
+      const laufPromise = setzeFort(
+        laufId, auftrag,
+        baueLaufUmgebung(laufId, eintrag, auftrag.auftragstext, auftrag.wurzel, services, () => {
+          if (markiereGestartet) { markiereGestartet(); markiereGestartet = null }
+        }),
+      )
+
+      laufPromise
+        .catch((err) => {
+          console.error(
+            `[harness-handlers] Fortgesetzter Lauf '${laufId}' endete mit einem unbehandelten Fehler:`,
+            err instanceof Error ? err.message : String(err),
+          )
+        })
+        .finally(() => { abbruchmarken.delete(laufId) })
+
+      await Promise.race([wennGestartet, laufPromise])
+      return { ok: true, wert: laufId }
+    } catch (err) {
+      return fehler(err)
+    }
   })
 }

@@ -18,8 +18,8 @@
 import { StrictMode, useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
-  HARNESS_LAUF_STARTEN, HARNESS_LAUF_LESEN, HARNESS_LAUF_ABBRECHEN, HARNESS_ANHAENGE_WAEHLEN,
-  HARNESS_EREIGNIS,
+  HARNESS_LAUF_STARTEN, HARNESS_LAUF_LESEN, HARNESS_LAUF_ABBRECHEN, HARNESS_LAUF_FORTSETZEN,
+  HARNESS_ANHAENGE_WAEHLEN, HARNESS_EREIGNIS,
 } from '../../shared/ipc-channels'
 import type { HarnessAntwort, HarnessEreignis, LaufAnzeige } from '../../shared/harness-types'
 import { EreignisPanel } from '../components/harness/EreignisPanel'
@@ -83,6 +83,18 @@ function Fenster() {
     if (!a.ok) setMeldung(a.meldung)
   }, [laufId])
 
+  const fortsetzen = useCallback(async (id: string) => {
+    setMeldung(null)
+    setEreignisse([])
+    const a = await api().invoke(HARNESS_LAUF_FORTSETZEN, id) as HarnessAntwort<string>
+    if (a.ok) {
+      setLaufId(a.wert)
+      void laeufeLaden()
+    } else {
+      setMeldung(a.meldung)
+    }
+  }, [laeufeLaden])
+
   const anhangWaehlen = useCallback(async () => {
     const a = await api().invoke(HARNESS_ANHAENGE_WAEHLEN) as HarnessAntwort<string[]>
     if (!a.ok) {
@@ -128,23 +140,45 @@ function Fenster() {
         <div style={{ overflowY: 'auto', flex: 1 }}>
           {laeufe.length === 0 && <p style={{ padding: 10, color: '#414868' }}>Noch kein Lauf.</p>}
           {[...laeufe].reverse().map(l => (
-            <button
+            <div
               key={l.laufId}
-              onClick={() => void nachlesen(l.laufId)}
-              title={l.laufId}
               style={{
-                display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer',
-                background: l.laufId === laufId ? '#1f2335' : 'transparent', border: 'none',
-                borderBottom: '1px solid #1a1b26', color: '#e0e0e0', font: 'inherit', padding: '6px 10px',
+                display: 'flex', alignItems: 'stretch',
+                background: l.laufId === laufId ? '#1f2335' : 'transparent',
+                borderBottom: '1px solid #1a1b26',
               }}
             >
-              <div style={{ color: '#a9b1d6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {l.modellId || l.laufId.slice(0, 8)}
-              </div>
-              <div style={{ color: l.endzustand ? '#565f89' : '#9ece6a', fontSize: 11 }}>
-                {l.endzustand ?? 'laeuft'}
-              </div>
-            </button>
+              <button
+                onClick={() => void nachlesen(l.laufId)}
+                title={l.laufId}
+                style={{
+                  display: 'block', flex: 1, minWidth: 0, textAlign: 'left', cursor: 'pointer',
+                  background: 'transparent', border: 'none', color: '#e0e0e0', font: 'inherit', padding: '6px 10px',
+                }}
+              >
+                <div style={{ color: '#a9b1d6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {l.modellId || l.laufId.slice(0, 8)}
+                </div>
+                <div style={{ color: l.endzustand ? '#565f89' : '#9ece6a', fontSize: 11 }}>
+                  {l.endzustand ?? 'laeuft'}
+                </div>
+              </button>
+              {/* Only a run without run.finished may be resumed — the main process re-checks this
+                  itself (HARNESS_LAUF_FORTSETZEN), this is only what decides whether the button
+                  is offered at all. */}
+              {l.endzustand === null && (
+                <button
+                  onClick={() => void fortsetzen(l.laufId)}
+                  title="Lauf fortsetzen"
+                  style={{
+                    background: 'transparent', border: 'none', color: '#9ece6a', cursor: 'pointer',
+                    padding: '0 8px', fontSize: 11,
+                  }}
+                >
+                  Fortsetzen
+                </button>
+              )}
+            </div>
           ))}
         </div>
       </div>
