@@ -35,13 +35,23 @@ M8 §7 koppelt Zeile 9 an Zeile 10, und die Begründung ist wörtlich:
 > `npm run` mit verändertem Skript und `$(...)` gehen daran vorbei.
 
 Das gilt für schreibende und ausführende Werkzeuge. Ein Satz aus *lesen, suchen, Graph lesen*
-verändert nichts, startet keinen Prozess, und sein einziger Netzweg ist der Modell-Endpunkt, den
-`c-worker.ts` heute schon benutzt. Von den drei Zutaten der gefährlichen Konstellation aus M8 §4.6
-— Zugriff auf Privates, fremde Inhalte im Kontext, Kanal nach draußen — fehlt damit die dritte.
+verändert nichts und startet keinen Prozess — er hat aber trotzdem einen Kanal nach draußen: der
+Modell-Endpunkt, den `c-worker.ts` heute schon benutzt, ist genau das. §5.4 macht diesen Satz
+wörtlich: „der Modell-Endpunkt ist der Kanal nach draußen" — deshalb gibt es die Pfadwache
+überhaupt. Von den drei Zutaten der gefährlichen Konstellation aus M8 §4.6 — Zugriff auf Privates,
+fremde Inhalte im Kontext, Kanal nach draußen — fehlt also **keine**; alle drei sind da, sobald ein
+lesendes Werkzeug existiert. (Eine frühere Fassung dieses Abschnitts behauptete das Gegenteil —
+die dritte Zutat fehle —, im Widerspruch zu §5.4. Das war falsch und ist hier korrigiert; die
+Schlussfolgerung dieses Abschnitts trägt allein durch das folgende Argument.)
 
-Der Unterschied, auf den es ankommt: Eine Prüfung ist Theater gegen eine **Shell**, weil dort
-`$(...)` und ein verändertes Skript daran vorbeigehen. Gegen ein **Pfad-Argument, das das Werkzeug
-selbst auflöst**, ist sie die Sache selbst — vorausgesetzt, sie löst vorher Symlinks auf (§5.4).
+Was den Verzicht auf die Sandbox trotzdem rechtfertigt, ist nicht eine fehlende Zutat der Gefahr,
+sondern die Bedingung, die eine Zeichenketten-Prüfung erst zu Theater macht: eine **Shell**. Dort
+gehen `$(...)` und ein verändertes Skript an jeder Prüfung vorbei, gleich wie sorgfältig sie
+argumentiert. Gegen ein **Pfad-Argument, das das Werkzeug selbst auflöst**, ist eine Prüfung nicht
+Theater, sondern die Sache selbst — vorausgesetzt, sie löst vorher Symlinks auf (§5.4). Ohne Shell
+und ohne Schreiben bleibt der Kanal nach draußen (der Modell-Endpunkt) zwar bestehen, aber die
+Pfadwache trägt gegen ihn: Sie entscheidet, was ein lesendes Werkzeug überhaupt in den Kontext
+holen kann, bevor dieser Kontext den Endpunkt erreicht.
 
 M8 hat diesen Zwischenschnitt nicht betrachtet, verbietet ihn aber auch nicht: §4.1 legt den
 Werkzeugzuschnitt ausdrücklich **außerhalb** des Harnesses fest, in der Preset-Schicht — das
@@ -452,6 +462,27 @@ Diese Prüfung ist **keine** Ausführungsgrenze im Sinne von M8 §4.5 und ersetz
 trägt, solange kein Werkzeug einen Prozess startet. Kommt die Shell, kommt die Sandbox — die
 Pfadwache bleibt daneben stehen, weil sie dann die Werkzeug-Argumente prüft und die Sandbox den
 Prozess.
+
+### 5.4.1 Die tatsächliche Lesefläche ist größer als `auftrag.wurzel` — die Graph-Werkzeuge
+
+Die Pfadwache bindet **nur die drei Datei-Werkzeuge** an `auftrag.wurzel`. Die vier Graph-Werkzeuge
+(§5.1) laufen über eine andere Tür: `baueLaufUmgebung` (`harness-handlers.ts`) reicht
+`services.graphDb` unverändert durch, ohne jede Prüfung gegen `auftrag.wurzel` — der
+Knowledge-Graph ist prozessweit einer, nicht auf ein Projektverzeichnis eingeschränkt.
+`graph_knoten_holen` liefert damit bis zu 100 KB Rumpf (`MAX_BODY_SIZE`,
+`werkzeug-graph.ts`) eines **beliebigen** indizierten Vault-Dokuments, solange dessen `uid` bekannt
+oder über `graph_suchen`/`graph_ausweiten` auffindbar ist — unabhängig davon, ob dieses Dokument
+irgendetwas mit `auftrag.wurzel` zu tun hat. Was das Werkzeug liefert, geht mit dem nächsten Prompt
+zum Modell-Endpunkt (§5.4, der Kanal nach draußen).
+
+**Die effektive Lesefläche eines Laufs ist damit `auftrag.wurzel` ∪ der gesamte indizierte Vault**,
+nicht `auftrag.wurzel` allein — der Kommentar `wurzel: string // Projektwurzel — die
+Leseerlaubnis` in §3.5 benennt nur die Hälfte davon. Das ist kein Versehen in der Umsetzung
+gegenüber dieser Spec, sondern eine Lücke der Spec selbst, die hier benannt wird, damit sie nicht
+als „wurzel ist die Leseerlaubnis" missverstanden bleibt: Für die drei Datei-Werkzeuge stimmt das;
+für die vier Graph-Werkzeuge nicht. Eine Wurzelbindung für die Graph-Werkzeuge — etwa über einen
+`pfad`-Filter auf Knoten unterhalb von `auftrag.wurzel` — ist nicht Teil dieser Strecke und bleibt
+offen für eine folgende.
 
 ### 5.5 Stummelliste und aufgeschobenes Laden
 
