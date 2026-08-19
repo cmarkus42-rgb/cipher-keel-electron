@@ -4870,7 +4870,7 @@ vollstaendig zurueckgebaut.
 | 4 | Symlink-Fall | belegt (im zweiten, korrigierten Versuch) |
 | 5 | Wiederaufnahme | belegt, mit dokumentierter methodischer Abweichung |
 | 6 | Cache-Treffer | offen — Ollama liefert kein unterscheidendes Feld |
-| 7 | Budget | Mechanismus belegt, Teilergebnis-Anspruch offen |
+| 7 | Budget | Mechanismus belegt, Anspruch offen — `ergebnis` blieb in allen fuenf beobachteten Abschlusszuegen dieser Sitzung leer |
 | 8 | `KEEL_KEEP_PROFILE=1` | belegt |
 
 ---
@@ -5028,19 +5028,32 @@ src/main/model/eignung.ts?" gegen alle drei Eintraege, in identischer Formulieru
   Runners (\`laeufer\`) und eines Leistungsniveaus (\`niveau\`) resultieren."` — inhaltlich
   zutreffend (`eignung.ts`s `warnungen(eintrag, laeufer, niveau)`-Signatur stimmt).
 
-**Der Unterschied liegt nachweislich nur in der Faehigkeitszeile — so wurde das geprueft, nicht
-nur behauptet:** alle drei `run.started`-Nutzlasten wurden verglichen, mit `codec`, `modellId`
-und `werkzeuge` herausgenommen. Der Rest (`auftragstext`, `wurzel`, `budgets`, `hinweise`,
-`anhangBloecke`) ist **zeichengleich** ueber alle drei. Einzige Unterschiede: `codec`
-(`"anthropic"` vs. zweimal `"openai-chat"` — direkt aus `faehigkeiten.codec` des jeweiligen
-Eintrags) und die Laenge der `werkzeuge`-Liste (Anthropic und Spark: 8, inklusive
-`werkzeug_schema`; OpenRouter: 7, ohne — weil `openrouter-qwen3-coder`s
-`faehigkeiten.aufgeschobenesLaden` unveraendert `false` blieb, waehrend die anderen beiden fuer
-diese Sitzung auf `true` gesetzt wurden). Direkter Beleg dafuer, dass dieser Unterschied
-ausschliesslich aus der Faehigkeitszeile kommt und nicht aus verzweigtem Code: der
+**Genau formuliert, nicht ueberzeichnet:** Alle drei `run.started`-Nutzlasten wurden verglichen,
+mit `codec`, `modellId` und `werkzeuge` herausgenommen. Der Rest (`auftragstext`, `wurzel`,
+`budgets`, `hinweise`, `anhangBloecke`) ist **zeichengleich** ueber alle drei. Einzige
+Unterschiede: `codec` (`"anthropic"` vs. zweimal `"openai-chat"` — direkt aus
+`faehigkeiten.codec` des jeweiligen Eintrags) und die Laenge der `werkzeuge`-Liste (Anthropic
+und Spark: 8, inklusive `werkzeug_schema`; OpenRouter: 7, ohne — weil
+`openrouter-qwen3-coder`s `faehigkeiten.aufgeschobenesLaden` unveraendert `false` blieb,
+waehrend die anderen beiden fuer diese Sitzung auf `true` gesetzt wurden). Der
 `prompt.sent`-Text von Anthropic und Spark — unterschiedlicher Codec, unterschiedlicher
 Transport, aber gleiche `aufgeschobenesLaden`-Einstellung — ist **zeichengleich**
 (`ps(anthropic) === ps(spark)` bei direktem String-Vergleich, wahr).
+
+Was diese Messung nicht zeigt, weil es nicht gezeigt werden kann: dass Praefix und Auftrag am
+Codec **verzweigen wuerden, wenn sie es koennten**, aber es nicht tun. `baueStabilenTeil`
+(`praefix.ts`) nimmt keinen Codec-Parameter entgegen und wird von `fahre()` (`lauf.ts`) genau
+einmal pro Lauf berechnet, **bevor** `codec.toWire()` ueberhaupt laeuft. Der stabile Teil kann
+also unmoeglich vom Codec abhaengen, unabhaengig davon, was diese Probe zeigt — die
+Zeichengleichheit ist durch die Funktionssignatur erzwungen, nicht durch beobachtetes Verhalten
+bewiesen. Genau formuliert: der Praefix und der Auftrag verzweigen nachweislich nicht am Codec;
+die Codec-Haelfte des Pfades selbst ist gegen genau **einen** Dialekt belegt. Der
+`anthropic`-Lauf scheiterte am fehlenden Schluessel noch im Transport (`AnthropicClient.chat`
+wirft, bevor ein Socket geoeffnet wird) — `anthropicCodec.fromWire()`, das Gegenstueck zu
+`codec.toWire()` fuer diesen Dialekt, hat in dieser gesamten Session **keine einzige echte
+Anthropic-Antwort** gesehen und ist ausschliesslich durch Unit-Tests
+(`tests/harness/codec-anthropic.test.ts`) gedeckt. Das wird hier ausdruecklich als unbelegt
+gefuehrt, nicht stillschweigend mitbehauptet.
 
 **Ungueltig:** `harness:lauf-starten` mit `modellId: 'nicht-existierendes-modell-xyz'`.
 Beobachtet: `{"ok":false,"meldung":"Kein Registry-Eintrag 'nicht-existierendes-modell-xyz'."}` —
@@ -5171,5 +5184,5 @@ ungueltigen Versuch), danach sofort wieder sauber gestoppt.
 | Vorbereitung | Anthropic-Eintrag ueber das Settings-Fenster-Formular | belegt — schliesst die CK-NFR-012-Luecke der vorigen Sitzung |
 | 1 (Wiederholung) | Echte Arbeit gegen den Spark nach dem Pfad-Fix | belegt, vollstaendig — Werkzeugaufrufe und ein gegen die Datei verifizierter Befund |
 | 1 (neu) | Lauf ohne Werkzeugaufruf, kein Anbietername in der Darstellung | belegt, vollstaendig |
-| 2 | Derselbe Auftrag gegen drei Anbieter | Mechanismus belegt (Unterschied nachweislich nur in der Faehigkeitszeile); zwei von drei Anbietern liefern kein Ergebnis mangels Schluessel — offen |
+| 2 | Derselbe Auftrag gegen drei Anbieter | Praefix/Auftrag verzweigen nachweislich nicht am Codec (durch die Signatur erzwungen, nicht nur durch Verhalten gezeigt); die Codec-Haelfte des Pfades ist nur fuer `openai-chat` end-to-end belegt — `anthropicCodec.fromWire()` sah keine echte Antwort, unbelegt; zwei von drei Anbietern liefern kein Ergebnis mangels Schluessel — offen |
 | 3 | Bild und Datei | Ungueltig-Fall belegt; „bilder: false" meldet zwar korrekt, aber die Meldung erreicht nie das Ereignisprotokoll — eigenstaendiger, wichtiger Fund; beide „kann beides"-Anbieter liefern kein Ergebnis (Schluessel fehlt bzw. Ollama lehnt den Dokumenttyp ab) |
