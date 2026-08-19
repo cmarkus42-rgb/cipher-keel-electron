@@ -53,6 +53,9 @@ const ARTEN = new Set<string>(['cli-harness', 'local-http', 'api'])
 const OERTLICHKEITEN = new Set<string>(['lokal', 'eigenes-netz', 'fremdes-netz'])
 const QUELLEN = new Set<string>(['gemessen', 'vermutet', 'herstellerangabe'])
 
+/** The Faehigkeiten fields that must be a whole number greater than zero. */
+const GANZZAHL_FELDER = ['nutzbaresKontextfenster', 'werkzeugObergrenze', 'rundenbudget'] as const
+
 /** Everything a capability row does not state. Never `gemessen` — that is the canary's word. */
 const FAEHIGKEITEN_RUECKFALL: Faehigkeiten = {
   codec: 'text',
@@ -116,6 +119,18 @@ export function normaliseEintrag(raw: unknown): ModellEintrag {
   let faehigkeiten: Faehigkeiten | undefined
   if (r.faehigkeiten) {
     faehigkeiten = { ...FAEHIGKEITEN_RUECKFALL, ...r.faehigkeiten }
+    // A budget or a context limit that is NaN is worse than a missing one: every comparison
+    // against NaN is false, so whatever check the harness builds on this field goes silently
+    // inert instead of failing loudly (Review-Runde 1, Fund 2). Number.isInteger already
+    // implies finite, so this one check catches NaN, Infinity, non-integers and non-numbers.
+    for (const feld of GANZZAHL_FELDER) {
+      const wert = faehigkeiten[feld]
+      if (typeof wert !== 'number' || !Number.isInteger(wert) || wert <= 0) {
+        throw new Error(
+          `Eintrag '${r.id}': faehigkeiten.${feld} muss eine ganze Zahl groesser als 0 sein, gesehen: ${String(wert)}`
+        )
+      }
+    }
     if (!QUELLEN.has(faehigkeiten.quelle)) {
       throw new Error(
         `Eintrag '${r.id}': unbekannte quelle '${faehigkeiten.quelle}' — ` +
