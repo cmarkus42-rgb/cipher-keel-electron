@@ -162,6 +162,12 @@ export const SETTINGS_RUECKFALL_ENDPUNKT_SETZEN = 'settings:rueckfall-endpunkt-s
 export const HARNESS_LAUF_STARTEN = 'harness:lauf-starten' as const
 export const HARNESS_LAUF_LESEN = 'harness:lauf-lesen' as const
 export const HARNESS_LAUF_ABBRECHEN = 'harness:lauf-abbrechen' as const
+/**
+ * Opens a native file dialog in the main process and remembers the chosen paths as
+ * user-attested. HARNESS_LAUF_STARTEN accepts an `anhaenge` path only if it was returned by
+ * this channel — see the comment on `dialogAusgewaehlt` in harness-handlers.ts for why.
+ */
+export const HARNESS_ANHAENGE_WAEHLEN = 'harness:anhaenge-waehlen' as const
 /** Main -> Renderer: one event of a running run, as it is appended. */
 export const HARNESS_EREIGNIS = 'harness:ereignis' as const
 export const WINDOW_OPEN_HARNESS = 'window:open-harness' as const
@@ -289,4 +295,5 @@ export type RendererToMainChannel =
   | typeof HARNESS_LAUF_STARTEN
   | typeof HARNESS_LAUF_LESEN
   | typeof HARNESS_LAUF_ABBRECHEN
+  | typeof HARNESS_ANHAENGE_WAEHLEN
   | typeof WINDOW_OPEN_HARNESS

@@ -2,10 +2,15 @@
  * harness-handlers — the harness's IPC surface.
  *
  * It lives *outside* src/main/harness/ on purpose. settings/handlers.ts imports electron from
- * inside its feature directory, and copying that here would mean an exception in the guard test
- * that checks the core knows no Electron. An exception list is how a guard quietly stops
- * guarding — this project had that exact failure this month. So the rule stays "no module under
- * src/main/harness/ imports electron", with no addendum, and the surface lives here.
+ * inside its feature directory, and copying that here would mean an exception to the rule that
+ * no module under src/main/harness/ imports electron. An exception list is how a guard quietly
+ * stops guarding — this project had that exact failure this month. So the rule stays "no module
+ * under src/main/harness/ imports electron", with no addendum, and the surface lives here.
+ * Today that boundary is checked only by hand (`grep -rn "from 'electron'" src/main/harness/`,
+ * confirmed clean in this file's own review); Task 14 is where it becomes an automated guard
+ * test. Until that test exists, a comment claiming one is protecting this boundary would be
+ * asserting a safety net that is not actually strung up yet — which is worse than admitting the
+ * gap, so this note says plainly what holds today and what is still pending.
  *
  * Both rules of the settings handlers hold: validate in main, never trust the renderer; and
  * broadcast through event-bus, never through a captured BrowserWindow.
@@ -24,13 +29,14 @@
  * through the broadcast stream and the abort mark.
  */
 
-import { ipcMain, app } from 'electron'
+import { ipcMain, app, dialog, BrowserWindow } from 'electron'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { statSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import {
-  HARNESS_LAUF_STARTEN, HARNESS_LAUF_LESEN, HARNESS_LAUF_ABBRECHEN, HARNESS_EREIGNIS,
+  HARNESS_LAUF_STARTEN, HARNESS_LAUF_LESEN, HARNESS_LAUF_ABBRECHEN, HARNESS_ANHAENGE_WAEHLEN,
+  HARNESS_EREIGNIS,
 } from '../shared/ipc-channels'
 import type { HarnessAntwort, HarnessEreignis, LaufAnzeige, LaufStartWunsch } from '../shared/harness-types'
 import { broadcast } from './event-bus'
@@ -49,6 +55,31 @@ import type { AppServices } from './window-manager'
 let db: ReturnType<typeof oeffneHarnessDb> | null = null
 /** Run ids marked for cancellation. Read at the loop's turn boundary, never mid-request (9.1). */
 const abbruchmarken = new Set<string>()
+
+/**
+ * Paths a human has actually picked, via a dialog *this* process opened. This is the boundary
+ * for attachments, and it is deliberately not pfadwache.
+ *
+ * pfadwache (see pfadwache.ts's own header) exists to stop the *model* from walking the
+ * filesystem through a reading tool — its boundary is a directory, the project root, because a
+ * tool call is the model's act. An attachment is different in kind, not degree: the spec says
+ * "Anhaenge gehen nicht durch die Pfadwache — sie sind eine Handlung des Nutzers, keine des
+ * Modells", and that sentence is only true if the path really did come from the user. Over IPC,
+ * `HARNESS_LAUF_STARTEN` receives nothing but a string; the main process cannot tell "chosen in
+ * a file dialog" apart from "typed by whoever controls the renderer" by looking at the string
+ * itself — and because the renderer runs with `sandbox: true` and `nodeIntegration: false`, it
+ * has no filesystem access of its own, so the main process is the one that actually opens,
+ * reads and base64-encodes the file before it goes to a model endpoint. Applying pfadwache here
+ * would also be the wrong fix even if the provenance problem did not exist: a real attachment
+ * (a screenshot on the Desktop, a PDF in Downloads) legitimately lives outside the project root,
+ * and pfadwache's whole point is to refuse exactly that location.
+ *
+ * So the line is not drawn by *where* the file is, but by *how the path arrived*: only a path
+ * this process itself handed back from `dialog.showOpenDialog` — proof a human clicked it in a
+ * native, OS-owned dialog the renderer cannot script — is accepted. `HARNESS_LAUF_STARTEN`
+ * rejects anything else by name, not by pretending it belongs to a directory it does not.
+ */
+const dialogAusgewaehlt = new Set<string>()
 
 /** Placeholder until the harness window can set its own budgets — every run gets the same one. */
 const STANDARD_BUDGETS = { runden: 12, wanduhrMs: 900_000, kostenCent: 200, kontextAnteil: 0.8 }
@@ -101,6 +132,28 @@ function sendeUeberTransport(eintrag: ModellEintrag) {
   }
 }
 
+/**
+ * The provenance check itself, pulled out as a pure function so it is testable without
+ * electron: it takes the requested paths and the set of dialog-attested ones as plain
+ * arguments rather than reaching into module state. Deliberately takes no `wurzel` and applies
+ * no directory containment — see the comment on `dialogAusgewaehlt` above for why a path
+ * legitimately outside the project root (a Desktop screenshot) must still pass here as long as
+ * a human picked it in the dialog.
+ */
+export function pruefeAnhaenge(
+  angefordert: readonly string[], dialogAusgewaehlt: ReadonlySet<string>,
+): { ok: true } | { ok: false; meldung: string } {
+  const nichtAusDemDialog = angefordert.filter((a) => !dialogAusgewaehlt.has(a))
+  if (nichtAusDemDialog.length > 0) {
+    return {
+      ok: false,
+      meldung: `Anhang stammt aus keinem vom Hauptprozess geoeffneten Dateidialog: ` +
+        `'${nichtAusDemDialog[0]}'.`,
+    }
+  }
+  return { ok: true }
+}
+
 /** Every run's summary, oldest first — same order as `laufIds()`. There is no run table; this
  *  reads each run's own log, exactly as `laufIds()` itself derives the id list from it. */
 function laufUebersicht(datenbank: ReturnType<typeof oeffneHarnessDb>): LaufAnzeige[] {
@@ -143,6 +196,17 @@ export function registerHarnessHandlers(services: AppServices): void {
       const eintrag = eintragNachId(w.modellId)
       if (!eintrag) return { ok: false, meldung: `Kein Registry-Eintrag '${w.modellId}'.` }
 
+      const angeforderteAnhaenge = Array.isArray(w.anhaenge)
+        ? w.anhaenge.filter((a): a is string => typeof a === 'string')
+        : []
+      // The provenance check that makes "Anhaenge sind eine Handlung des Nutzers" true instead
+      // of assumed — see the comment on `dialogAusgewaehlt` above. A path that never came back
+      // from HARNESS_ANHAENGE_WAEHLEN is refused by name, not silently dropped: a silently
+      // shortened attachment list would look like success while sending less than the user
+      // thought they attached.
+      const anhaengePruefung = pruefeAnhaenge(angeforderteAnhaenge, dialogAusgewaehlt)
+      if (!anhaengePruefung.ok) return anhaengePruefung
+
       // Minted here, not inside starteLauf: the abort mark is keyed by it, and a run that
       // cannot be cancelled during its first turn is a run that cannot be cancelled.
       const laufId = randomUUID()
@@ -155,7 +219,7 @@ export function registerHarnessHandlers(services: AppServices): void {
           auftragstext: w.auftragstext,
           modellId: w.modellId,
           wurzel: w.wurzel,
-          anhaenge: Array.isArray(w.anhaenge) ? w.anhaenge.filter((a): a is string => typeof a === 'string') : undefined,
+          anhaenge: angeforderteAnhaenge.length > 0 ? angeforderteAnhaenge : undefined,
           budgets: STANDARD_BUDGETS,
         },
         {
@@ -214,6 +278,21 @@ export function registerHarnessHandlers(services: AppServices): void {
     } catch (err) {
       return fehler(err)
     }
+  })
+
+  ipcMain.handle(HARNESS_ANHAENGE_WAEHLEN, async (event): Promise<HarnessAntwort<string[]>> => {
+    // A parent window makes the dialog modal to the harness window instead of floating
+    // unanchored; falling back to the parentless form if the sender's window is somehow gone
+    // rather than failing the whole pick.
+    const fenster = BrowserWindow.fromWebContents(event.sender)
+    const ergebnis = fenster
+      ? await dialog.showOpenDialog(fenster, { properties: ['openFile', 'multiSelections'] })
+      : await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] })
+    if (ergebnis.canceled) return { ok: true, wert: [] }
+    // This is the one place a path is admitted into dialogAusgewaehlt — the dialog itself is
+    // the user's attested act; nothing else may add to this set.
+    for (const pfad of ergebnis.filePaths) dialogAusgewaehlt.add(pfad)
+    return { ok: true, wert: ergebnis.filePaths }
   })
 
   ipcMain.handle(HARNESS_LAUF_ABBRECHEN, (_e, laufId: unknown): HarnessAntwort<true> => {

@@ -1,18 +1,25 @@
 /**
  * harness-window.tsx — React root for the harness window.
  *
- * Four channels, four callers, and nothing else besides the run overview that
+ * Five channels, five callers, and nothing else besides the run overview that
  * HARNESS_LAUF_LESEN's no-argument form exists for: without it, closing this window while a run
  * is in progress (the run itself keeps going in the main process — nothing here aborts it) would
- * leave no way back to that run's log after reopening. The file picker is deliberately plain:
- * taking a file by drag&drop or pasting a screenshot is surface work for a later stretch, but
- * the path has to reach the core now, or the canonical form's image and document blocks would
- * sit in the repo with nothing producing them.
+ * leave no way back to that run's log after reopening.
+ *
+ * The attachment picker calls HARNESS_ANHAENGE_WAEHLEN rather than an `<input type="file">` —
+ * not a style choice. This renderer runs with `sandbox: true` and `nodeIntegration: false`, so
+ * it has no filesystem access of its own; a plain file input would still hand the *path* back
+ * here, and the main process would then read whatever path arrived over IPC with no way to tell
+ * a human's click apart from a scripted string. HARNESS_LAUF_STARTEN only accepts a path the
+ * main process itself watched a native dialog return — see the comment on `dialogAusgewaehlt` in
+ * harness-handlers.ts. This component never sees a filesystem path it did not get back from
+ * that same dialog call.
  */
 import { StrictMode, useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
-  HARNESS_LAUF_STARTEN, HARNESS_LAUF_LESEN, HARNESS_LAUF_ABBRECHEN, HARNESS_EREIGNIS,
+  HARNESS_LAUF_STARTEN, HARNESS_LAUF_LESEN, HARNESS_LAUF_ABBRECHEN, HARNESS_ANHAENGE_WAEHLEN,
+  HARNESS_EREIGNIS,
 } from '../../shared/ipc-channels'
 import type { HarnessAntwort, HarnessEreignis, LaufAnzeige } from '../../shared/harness-types'
 import { EreignisPanel } from '../components/harness/EreignisPanel'
@@ -76,16 +83,15 @@ function Fenster() {
     if (!a.ok) setMeldung(a.meldung)
   }, [laufId])
 
-  const anhangWaehlen = useCallback(() => {
-    const feld = document.createElement('input')
-    feld.type = 'file'
-    feld.multiple = true
-    feld.onchange = () => {
-      // Electron exposes the absolute path on a File; the main process reads it.
-      const pfade = Array.from(feld.files ?? []).map(f => (f as File & { path: string }).path)
-      setAnhaenge(pfade)
+  const anhangWaehlen = useCallback(async () => {
+    const a = await api().invoke(HARNESS_ANHAENGE_WAEHLEN) as HarnessAntwort<string[]>
+    if (!a.ok) {
+      setMeldung(a.meldung)
+      return
     }
-    feld.click()
+    // An empty result means the dialog was cancelled — the previous selection, if any, stands
+    // rather than being cleared by a change of mind in the dialog.
+    if (a.wert.length > 0) setAnhaenge(a.wert)
   }, [])
 
   return (
@@ -106,7 +112,7 @@ function Fenster() {
               value={wurzel} onChange={e => setWurzel(e.target.value)} placeholder="Projektwurzel"
               style={{ background: '#16161e', color: '#e0e0e0', border: '1px solid #292e42', padding: 6, flex: 2 }}
             />
-            <button onClick={anhangWaehlen}>Anhaenge ({anhaenge.length})</button>
+            <button onClick={() => void anhangWaehlen()}>Anhaenge ({anhaenge.length})</button>
             <button onClick={starten}>Starten</button>
             <button onClick={abbrechen} disabled={!laufId}>Abbrechen</button>
           </div>
