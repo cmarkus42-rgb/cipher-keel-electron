@@ -155,7 +155,7 @@ endlichen Wert.
 
 | Fläche | Herkunft | Leser | Wirkung | Änderungen |
 |---|---|---|---|---|
-| Modellpreise (Cent pro Million Token, Eingabe und Ausgabe getrennt) | `src/main/harness/preise.ts`, Objekt `VORGABE_PREISE` | `src/main/harness/budget.ts` nach jeder Antwort des Modells, für das Kostenbudget | sofort — beim nächsten Lauf werden Kosten gegen die neue Tabelle gerechnet | Preise ändern sich schneller als Releases; ein alter Stand würde das Kostenbudget an der falschen Stelle abbrechen. Der Abschlussgrund nennt deshalb immer den Datum der Preistabelle (`PREISTABELLE_STAND`), damit die Versionsungewissheit sichtbar bleibt statt weggeglättet zu werden. |
+| Modellpreise (Cent pro Million Token, Eingabe und Ausgabe getrennt) | `src/main/harness/preise.ts`, Objekt `VORGABE_PREISE` | `src/main/harness/lauf.ts`, Funktion `verbrauchAusEreignissen`, rekonstruiert nach jeder Antwort des Modells aus dem Ereignisprotokoll neu; `src/main/harness/budget.ts`s `pruefeBudgets` vergleicht danach nur noch das Ergebnis gegen das Kostenbudget | sofort — beim nächsten Lauf werden Kosten gegen die neue Tabelle gerechnet | Preise ändern sich schneller als Releases; ein alter Stand würde das Kostenbudget an der falschen Stelle abbrechen. Der Abschlussgrund nennt deshalb immer das Datum der Preistabelle (`PREISTABELLE_STAND`), damit die Versionsungewissheit sichtbar bleibt statt weggeglättet zu werden. |
 
 **Wichtige Einschränkung:** Ein unbekanntes Modell kostet null, nicht geschätzt. Ein geratener Preis, der einen Lauf abbricht, sähe aus wie eine Messung und ist schlimmer als gar keine Kostenbremse. Ist ein Modell nicht in der Tabelle, läuft das Kostenbudget nicht für es an.
 

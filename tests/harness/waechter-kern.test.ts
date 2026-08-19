@@ -1,9 +1,17 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { oeffneHarnessDb, anhaengen, lesen } from '../../src/main/harness/protokoll'
 import { projiziere } from '../../src/main/harness/projektion'
 import { baueStabilenTeil } from '../../src/main/harness/praefix'
+import { starteLauf } from '../../src/main/harness/lauf'
+import { WerkzeugRegistry } from '../../src/main/harness/werkzeuge'
+import { DATEI_WERKZEUGE } from '../../src/main/harness/werkzeug-datei'
+import { effekteOhneIntent } from '../../src/main/harness/intent-vor-effekt'
+import type { Ereignis } from '../../src/main/harness/ereignisse'
+import type { ModelAntwort } from '../../src/main/harness/form'
+import type { ModellEintrag } from '../../src/main/model/entry'
 
 const HARNESS = join(__dirname, '..', '..', 'src', 'main', 'harness')
 
@@ -46,28 +54,90 @@ describe('Waechter: der Praefix ist rekonstruierbar', () => {
   })
 })
 
-describe('Waechter: kein Effekt ohne Intent', () => {
-  it('vor jedem Abschluss steht ein Intent mit derselben Aufruf-Id', () => {
-    const db = oeffneHarnessDb(':memory:')
-    anhaengen(db, 'l', 'tool.intent', { aufrufId: 'c1', name: 'datei_lesen' })
-    anhaengen(db, 'l', 'tool.completed', { aufrufId: 'c1', name: 'datei_lesen', inhalt: [] })
+// Same pattern as tests/harness/lauf-werkzeuge.test.ts's own `umgebung`/`ruft`/`sagt`/`AUFTRAG` —
+// deliberately not imported (that file does not export them), but not reinvented either: this is
+// the minimal setup needed to drive `starteLauf` through one real tool call and a closing turn.
+const EINTRAG: ModellEintrag = {
+  id: 'test-modell', name: 'Testmodell', art: 'api',
+  erreichbarkeit: { art: 'api', baseUrl: 'https://x/v1', model: 'm', keyRef: 'k' },
+  oertlichkeit: 'fremdes-netz', erklaertext: '', empfehlung: '',
+  faehigkeiten: {
+    codec: 'openai-chat', werkzeugmodus: 'nativ', paralleleAufrufe: true, denkbloecke: false,
+    bilder: true, dokumente: true, aufgeschobenesLaden: true, werkzeugObergrenze: 20,
+    nutzbaresKontextfenster: 100_000, vertragsStrenge: { schemaTiefe: 2, reparaturversuche: 1 },
+    rundenbudget: 12, gemessenAm: null, gemessenMit: null, quelle: 'vermutet',
+  },
+}
 
-    const ereignisse = lesen(db, 'l')
-    const gesehen = new Set<string>()
-    for (const e of ereignisse) {
-      if (e.art === 'tool.intent') gesehen.add(String(e.nutzlast.aufrufId))
-      if (e.art === 'tool.completed' || e.art === 'tool.failed') {
-        expect(gesehen.has(String(e.nutzlast.aufrufId))).toBe(true)
-      }
+function umgebung(wurzel: string, antworten: ModelAntwort[]) {
+  let i = 0, t = 0
+  return {
+    db: oeffneHarnessDb(':memory:'),
+    eintrag: EINTRAG,
+    praefixTeile: { body: 'BODY', capabilities: '', persona: '', globaleRegeln: '', auftragstext: 'a' },
+    wache: { wurzel, heim: wurzel, userDataPfad: join(wurzel, 'ud') },
+    graphDb: null,
+    registry: new WerkzeugRegistry(DATEI_WERKZEUGE),
+    strom: () => {},
+    uhr: () => (t += 1000),
+    abgebrochen: () => false,
+    sende: async (): Promise<ModelAntwort> => antworten[i++],
+  }
+}
+
+const ruft = (name: string, eingabe: Record<string, unknown>, id = 'c1'): ModelAntwort => ({
+  bloecke: [{ art: 'werkzeug-aufruf', id, name, eingabe }],
+  stopGrund: { normalisiert: 'werkzeug', roh: 'tool_calls' },
+  usage: { eingabeToken: 100, ausgabeToken: 10, roh: null },
+})
+
+const sagt = (text: string): ModelAntwort => ({
+  bloecke: [{ art: 'text', text }],
+  stopGrund: { normalisiert: 'ende', roh: 'stop' },
+  usage: { eingabeToken: 100, ausgabeToken: 10, roh: null },
+})
+
+const AUFTRAG = (wurzel: string) => ({
+  auftragstext: 'lies a.ts', modellId: 'test-modell', wurzel,
+  budgets: { runden: 6, wanduhrMs: 60_000, kostenCent: 100, kontextAnteil: 0.9 },
+})
+
+describe('Waechter: kein Effekt ohne Intent', () => {
+  it('ein echter Lauf mit einem Werkzeugaufruf verletzt die Regel nicht', async () => {
+    // Drives the actual loop in lauf.ts, not a hand-built event array — a guard for "the log
+    // lauf.ts writes obeys the rule" has to look at a log lauf.ts actually wrote. Swapping the
+    // two `schreibe()` calls in `fuehreAus` (src/main/harness/lauf.ts) would turn this red; see
+    // the self-check note in task-14-report.md for the probe that confirms it.
+    const wurzel = mkdtempSync(join(tmpdir(), 'keel-waechter-'))
+    try {
+      writeFileSync(join(wurzel, 'a.ts'), 'inhalt')
+      const u = umgebung(wurzel, [ruft('datei_lesen', { pfad: join(wurzel, 'a.ts') }), sagt('fertig')])
+      const laufId = await starteLauf(AUFTRAG(wurzel), u)
+      const ereignisse = lesen(u.db, laufId)
+      expect(ereignisse.some(e => e.art === 'tool.completed')).toBe(true)
+      expect(effekteOhneIntent(ereignisse)).toEqual([])
+    } finally {
+      rmSync(wurzel, { recursive: true, force: true })
     }
   })
 
-  it('ein Abschluss ohne Intent faellt auf', () => {
-    const db = oeffneHarnessDb(':memory:')
-    anhaengen(db, 'l', 'tool.completed', { aufrufId: 'c9', inhalt: [] })
-    const ereignisse = lesen(db, 'l')
-    const gesehen = new Set(ereignisse.filter(e => e.art === 'tool.intent').map(e => String(e.nutzlast.aufrufId)))
-    expect(gesehen.has('c9')).toBe(false)
+  it('effekteOhneIntent findet ein tool.completed ohne vorherigen tool.intent', () => {
+    // The checker itself, tested against data it did not construct to pass — this is what makes
+    // the guard above meaningful: the rule lives in production code, not restated in the test.
+    const ereignisse: Ereignis[] = [
+      { laufId: 'l', seq: 1, ts: 't', art: 'tool.completed', nutzlast: { aufrufId: 'c9', inhalt: [] } },
+    ]
+    const verletzungen = effekteOhneIntent(ereignisse)
+    expect(verletzungen).toHaveLength(1)
+    expect(verletzungen[0].nutzlast.aufrufId).toBe('c9')
+  })
+
+  it('effekteOhneIntent laesst einen Intent gefolgt von seinem Completed durch', () => {
+    const ereignisse: Ereignis[] = [
+      { laufId: 'l', seq: 1, ts: 't', art: 'tool.intent', nutzlast: { aufrufId: 'c1', name: 'datei_lesen' } },
+      { laufId: 'l', seq: 2, ts: 't', art: 'tool.completed', nutzlast: { aufrufId: 'c1', inhalt: [] } },
+    ]
+    expect(effekteOhneIntent(ereignisse)).toEqual([])
   })
 })
 
