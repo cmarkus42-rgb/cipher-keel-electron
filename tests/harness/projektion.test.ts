@@ -132,14 +132,19 @@ describe('projiziere', () => {
         inhalt: [{ art: 'text', text: 'Schema fuer datei_lesen steht im Verlauf.' }],
       }),
     ])
-    // run.started, model.answered, schema-Nachricht, Ergebnis-Nachricht
-    expect(v).toHaveLength(4)
-    const ergebnisNachricht = v[3]
+    // run.started, model.answered, eine Nutzernachricht mit Ergebnis und Schema darin.
+    // Das Schema bekommt bewusst keine eigene Nachricht — siehe
+    // tests/harness/verlauf-anbietervertrag.test.ts fuer die Regel, an der das haengt.
+    expect(v).toHaveLength(3)
+    const ergebnisNachricht = v[2]
     expect(ergebnisNachricht.rolle).toBe('nutzer')
-    expect(ergebnisNachricht.bloecke).toHaveLength(1)
+    expect(ergebnisNachricht.bloecke).toHaveLength(2)
+    // Das Ergebnis fuehrt, das Schema folgt.
     expect(ergebnisNachricht.bloecke[0]).toMatchObject({
       art: 'werkzeug-ergebnis', aufrufId: 'c1', fehler: false,
     })
+    expect(ergebnisNachricht.bloecke[1]).toMatchObject({ art: 'text' })
+    expect(JSON.stringify(ergebnisNachricht.bloecke[1])).toContain('Schema fuer datei_lesen')
     const inhaltStr = JSON.stringify(ergebnisNachricht.bloecke[0])
     expect(inhaltStr).not.toContain('Ausfuehrung unbekannt')
     expect(inhaltStr).not.toContain('widersprechen')
@@ -170,9 +175,14 @@ describe('projiziere', () => {
     ])
     const ergebnisNachricht = v[v.length - 1]
     expect(ergebnisNachricht.rolle).toBe('nutzer')
-    expect(ergebnisNachricht.bloecke).toHaveLength(2)
-    for (const block of ergebnisNachricht.bloecke) {
-      expect(block).toMatchObject({ fehler: false })
+    // Zwei Ergebnisse, dann das nachgeladene Schema als Text — alles in einer Nachricht, und die
+    // Ergebnisse fuehren. Ein Schema in eigener Nachricht wuerde den Anbietervertrag brechen.
+    expect(ergebnisNachricht.bloecke).toHaveLength(3)
+    const ergebnisBloecke = ergebnisNachricht.bloecke.slice(0, 2)
+    expect(ergebnisNachricht.bloecke[2]).toMatchObject({ art: 'text' })
+    expect(JSON.stringify(ergebnisNachricht.bloecke[2])).toContain('Schema fuer datei_lesen')
+    for (const block of ergebnisBloecke) {
+      expect(block).toMatchObject({ art: 'werkzeug-ergebnis', fehler: false })
       const inhaltStr = JSON.stringify(block)
       expect(inhaltStr).not.toContain('Ausfuehrung unbekannt')
       expect(inhaltStr).not.toContain('widersprechen')

@@ -17,6 +17,14 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[] {
   const verlauf: Nachricht[] = []
   let offeneIntents: string[] = []
   let ergebnisse: Block[] = []
+  // Deferred schemas wait here until the turn's results are written, and then ride in the same
+  // user message, behind them. They may not become a message of their own: Anthropic requires a
+  // `tool_use` to be followed immediately by a user message whose leading blocks are the matching
+  // `tool_result`s, and it rejects two user messages in a row. A schema in its own message
+  // violated both at once — the first real run against Anthropic died on
+  // "messages.4: `tool_use` ids were found without `tool_result` blocks immediately after",
+  // because the schema had wedged itself between the meta call and its own result.
+  let nachgeladeneSchemata: Block[] = []
   const beantwortetAufrufe = new Map<string, 'zwangsabschluss' | 'ergebnis' | 'fehler'>()
 
   // `schliesseOffeneIntents` tells apart two very different callers. `model.answered` and the
@@ -42,9 +50,11 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[] {
       }
       offeneIntents = []
     }
-    if (ergebnisse.length > 0) {
-      verlauf.push({ rolle: 'nutzer', bloecke: ergebnisse })
+    // Results first, schemas behind them — that order is the adjacency rule, not a preference.
+    if (ergebnisse.length > 0 || nachgeladeneSchemata.length > 0) {
+      verlauf.push({ rolle: 'nutzer', bloecke: [...ergebnisse, ...nachgeladeneSchemata] })
       ergebnisse = []
+      nachgeladeneSchemata = []
     }
   }
 
@@ -108,16 +118,11 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[] {
         break
       }
       case 'tool.schema_loaded': {
-        // Only flushes results already collected — never force-closes open intents. See the
-        // comment on `ergebnisseAusspuelen` above for why this is not a message boundary.
-        ergebnisseAusspuelen(false)
-        // Appended to the history, never written into the stable prefix — otherwise every
-        // deferred load would invalidate the cache the mechanism exists to protect.
-        verlauf.push({
-          rolle: 'nutzer',
-          bloecke: [{ art: 'text', text:
-            `Schema fuer ${String(e.nutzlast.name)}:\n${JSON.stringify(e.nutzlast.schema, null, 2)}` }],
-        })
+        // Buffered, not written — a schema fetch is not a message boundary, and the schema is not
+        // a message. It goes into the history (never into the stable prefix, which is the whole
+        // point of deferred loading) at the next flush, behind the turn's tool results.
+        nachgeladeneSchemata.push({ art: 'text', text:
+          `Schema fuer ${String(e.nutzlast.name)}:\n${JSON.stringify(e.nutzlast.schema, null, 2)}` })
         break
       }
       default:
