@@ -12,9 +12,10 @@
  */
 
 import type { ModelAntwort } from './form'
-import { kostenCent, PREISTABELLE_STAND, VORGABE_PREISE, type Preis } from './preise'
-// `Preis` and `VORGABE_PREISE` are only used in verbrauchNach; pruefeBudgets compares,
-// not calculates. Costs are already tracked in the Verbrauch object.
+import { PREISTABELLE_STAND } from './preise'
+// pruefeBudgets only compares against the already-tracked Verbrauch; the pricing table and
+// the arithmetic over it live in lauf.ts's verbrauchAusEreignissen, the module that actually
+// reconstructs consumption from the event log.
 
 export type Endzustand = 'fertig' | 'abgebrochen'
 
@@ -97,17 +98,5 @@ export function grundFuerStopGrund(s: ModelAntwort['stopGrund']): Abschlussgrund
     code: 'transportfehler', endzustand: 'abgebrochen',
     anweisung: `Die Antwort wurde abgeschnitten (${s.roh}). Das ist ein Transportfehler; ` +
       `ein Reparaturversuch loest ihn nicht.`,
-  }
-}
-
-export function verbrauchNach(
-  v: Verbrauch, modellId: string, a: ModelAntwort, begonnenMs: number, jetztMs: number,
-  tabelle: Record<string, Preis> = VORGABE_PREISE,
-): Verbrauch {
-  return {
-    runden: v.runden + 1,
-    verstricheneMs: jetztMs - begonnenMs,
-    kostenCent: v.kostenCent + kostenCent(modellId, a.usage, tabelle),
-    letzteEingabeToken: a.usage.eingabeToken,
   }
 }

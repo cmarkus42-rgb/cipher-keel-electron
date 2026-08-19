@@ -24,10 +24,15 @@ export const RUNTIME_TO_ADAPTER_ID: ReadonlyMap<string, string> = new Map([
 
 /**
  * Runtime values that KNOWN_RUNTIMES (src/main/preset/schema.ts) accepts as valid but
- * that have no entry in RUNTIME_TO_ADAPTER_ID yet — the harness behind them has not been
- * built. Declared explicitly so the gap between "valid preset value" and "resolvable
- * adapter" is an intentional, named fact rather than an accident that getForRuntime
- * would otherwise mask with a false "unknown runtime" error.
+ * that have no entry in RUNTIME_TO_ADAPTER_ID yet. Declared explicitly so the gap between
+ * "valid preset value" and "resolvable adapter" is an intentional, named fact rather than
+ * an accident that getForRuntime would otherwise mask with a false "unknown runtime" error.
+ *
+ * The own loop exists since the harness stretch of 2026-08-18, but no adapter starts a session
+ * through it: that needs writing tools and a shell, which travel with the sandbox. Until then
+ * 'keel-harness' is a known runtime without a live adapter, and no slot in model/slots.ts
+ * offers it — a slot before its adapter would be a surface for a dummy. If the adapter lands
+ * in a later stretch, this entry falls with it.
  *
  * When an adapter for one of these lands, add it to RUNTIME_TO_ADAPTER_ID and remove it
  * from here — the guard test in tests/agent/runtime-registry-completeness.test.ts fails

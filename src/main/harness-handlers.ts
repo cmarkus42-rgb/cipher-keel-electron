@@ -6,11 +6,10 @@
  * no module under src/main/harness/ imports electron. An exception list is how a guard quietly
  * stops guarding — this project had that exact failure this month. So the rule stays "no module
  * under src/main/harness/ imports electron", with no addendum, and the surface lives here.
- * Today that boundary is checked only by hand (`grep -rn "from 'electron'" src/main/harness/`,
- * confirmed clean in this file's own review); Task 14 is where it becomes an automated guard
- * test. Until that test exists, a comment claiming one is protecting this boundary would be
- * asserting a safety net that is not actually strung up yet — which is worse than admitting the
- * gap, so this note says plainly what holds today and what is still pending.
+ * The boundary is an automated guard now: `tests/harness/waechter-kern.test.ts` scans every
+ * module under src/main/harness/ for an `electron` import, with no exception list, and a second
+ * check that the scan actually finds files — so an empty or misspelled directory cannot make the
+ * guard pass by finding nothing.
  *
  * Both rules of the settings handlers hold: validate in main, never trust the renderer; and
  * broadcast through event-bus, never through a captured BrowserWindow.
