@@ -4488,3 +4488,387 @@ weniger trug als erwartet, wird das so aufgeschrieben.
 git add docs/superpowers/plans/2026-08-18-harness-kern.md
 git commit -m "docs(plan): Messprotokoll -- elf Belege aus der laufenden App"
 ```
+
+---
+
+## Messprotokoll 2026-08-19
+
+Ausgefuehrt gegen `harness-kern`, HEAD `3e3d8b2`, Baum sauber, 2196 Tests gruen. Umfang: acht der
+elf Belege aus Task 15 — die drei, die einen externen Anbieter brauchen (Anthropic-API,
+API-Hoster; Punkte 1-3 der urspruenglichen Aufzaehlung oben) kosten Geld und schicken Prompts nach
+draussen und sind **ausdruecklich nicht** Teil dieses Laufs; der Nutzer gibt sie separat frei. Die
+Nummerierung unten folgt dem tatsaechlichen Auftrag (acht Belege), nicht der Liste in Step 3 oben.
+
+Werkzeug: `run-keel`-Skill (`launch.sh`, `driver.mjs`, `stop.sh`). Vor dem Start: `tmux
+list-sessions` zeigte nur `cmux-cipher-grow-kit-ryz0` und `cmux-debugger-xp3g` — beides fremde
+Multiplexer-Sitzungen (keel selbst legt `cipher-keel-control` an, nicht `cmux-*`), `ps aux | grep
+cipher-keel` war leer. Keine zweite Instanz im Weg.
+
+Profil: `/tmp/keel-harness` (frisch gestartet). Projektwurzel fuer alle Laeufe:
+`/tmp/keel-harness-projekt`, eine Kopie von `src/main/model/*.ts` aus diesem Repo plus einer
+`.env`-Datei mit einem Fake-Secret, angelegt eigens fuer die Pfadwache- und Symlink-Proben.
+
+### Vorbereitung: Fähigkeitszeile über das Settings-Fenster (Beleg 1, Teil 1 — CK-NFR-012)
+
+Die Registry-Vorgabe (`src/main/model/defaults.ts`) traegt `spark-gemma4-26b` und
+`spark-gpt-oss-120b` mit `codec: 'ollama-native'`, `werkzeugmodus: 'text'` — beides in dieser
+Ausbaustufe nicht gebaut. Das Settings-Fenster geoeffnet (`window:open-settings`), dann
+`settings:eintrag-speichern` mit der vollen Fassung beider Eintraege aufgerufen, geaendert nur in
+`faehigkeiten.codec: 'openai-chat'` und `faehigkeiten.werkzeugmodus: 'nativ'` (plus
+`aufgeschobenesLaden: true`, um `werkzeug_schema` ueberhaupt anzubieten — fuer Beleg 2 gebraucht).
+
+**Ehrlicher Befund zur UI:** `EintragFormular.tsx` hat *kein* Feld fuer die Faehigkeitszeile — sie
+wird beim Speichern nur unveraendert durchgereicht (`faehigkeiten: vorlage?.faehigkeiten`). Ein
+Mensch kann eine Faehigkeitszeile durch Klicken im sichtbaren Formular nicht anlegen oder aendern.
+Was tatsaechlich existiert und geprueft wurde: der IPC-Kanal `settings:eintrag-speichern`, den das
+Settings-Fenster selbst benutzt, nimmt ein beliebiges `faehigkeiten`-Objekt entgegen und validiert
+es serverseitig ueber `normaliseEintrag` — genau die CK-NFR-012-Eigenschaft ("Config-Aenderungen
+laufen validiert durchs Fenster, nicht durch Dateibearbeitung"). Aufgerufen wurde dieser Kanal
+ueber `driver.mjs` im offenen Settings-Fenster (`settings-window` als CDP-Ziel), nicht durch
+Bearbeiten von `cipher-keel-config.json` direkt. Das ist der ehrliche Mittelweg: durch das Fenster,
+aber nicht durch das sichtbare Formular, weil Letzteres die Faehigkeit gar nicht anbietet — eine
+Luecke im Formular, kein Umweg um die Schreibvalidierung.
+
+```
+window.cipherKeel.invoke('settings:eintrag-speichern', {
+  id: 'spark-gemma4-26b', ..., faehigkeiten: { codec: 'openai-chat', werkzeugmodus: 'nativ', ... }
+}) → { ok: true }
+```
+Bestaetigt per `settings:ansicht`: `faehigkeiten.codec === 'openai-chat'`,
+`faehigkeiten.werkzeugmodus === 'nativ'`. Die Datei `cipher-keel-config.json` wurde dabei
+tatsaechlich veraendert (`grep` bestaetigt den neuen Eintrag), aber als *Folge* des validierten
+Schreibkanals, nicht als direkter Edit. Beide Modelle sind ueber den Spark erreichbar (`curl
+http://100.78.7.108:11434/v1/models` liefert u.a. `gemma4:26b` und `gpt-oss:120b` mit
+`"capabilities":["completion","tools",...]`).
+
+**Ergebnis:** entspricht der Erwartung, mit einer Einschraenkung, die staerker wiegt als eine
+Fussnote: die UI-Luecke (kein Formularfeld fuer die Faehigkeitszeile) ist ein echter, unbelegter
+Bereich von CK-NFR-012 — die Probe bestand nur, weil der IPC-Kanal direkt angesprochen wurde, nicht
+weil ein Mensch das im Fenster hatte klicken koennen.
+
+---
+
+### Beleg 1 — Echte Arbeit gegen den Spark
+
+**Ungueltig, Fall a (`werkzeugmodus: 'text'`):** `harness:lauf-starten` gegen `spark-gpt-oss-120b`
+unveraendert (Vorgabe, `werkzeugmodus: 'text'`) mit demselben Auftragstext.
+Beobachtet: `{"ok":false,"meldung":"'spark-gpt-oss-120b' braucht das Text-Protokoll fuer
+Werkzeuge. Das ist in dieser Ausbaustufe nicht gebaut — es kommt als eigener Codec."}` — Lauf
+startet nicht, kein `run.started` im Protokoll.
+
+**Ungueltig, Fall b (`codec: 'text'`):** Scratch-Eintrag `probe-codec-text` angelegt
+(`werkzeugmodus: 'nativ'`, `codec: 'text'`, sonst Spark-Zieladresse), Lauf gestartet.
+Beobachtet: `{"ok":false,"meldung":"Der Codec 'text' ist in dieser Ausbaustufe nicht gebaut —
+verfuegbar sind anthropic und openai-chat."}` — nennt den Codec ausdruecklich, wie gefordert.
+Eintrag danach ueber `settings:eintrag-loeschen` wieder entfernt.
+
+**Gueltig:** Auftrag `„Sieh dir src/main/model/ an und sag, welche Datei die Warnregeln haelt und
+wer sie aufruft."` gegen `spark-gemma4-26b` (Lauf `c7cc302a-11a5-4788-ba0e-c238626fc5a8`) und
+zusaetzlich gegen `spark-gpt-oss-120b` (Lauf `b771f2b7-b27c-4f64-936d-de1467255623`), beide mit
+Wurzel `/tmp/keel-harness-projekt`. Vorher per Code-Lesen festgestellter Sollwert: `eignung.ts`
+haelt `warnungen()`, `ansicht.ts` ist laut eigenem Kopfkommentar "the only caller of `warnungen` in
+the project".
+
+Beobachtet (`c7cc302a`, gemma4:26b): 13 Runden, echte Werkzeugaufrufe gegen den Spark
+(`verzeichnis_listen`, `inhalt_suchen`, `werkzeug_schema`, `datei_lesen`-Versuche), darunter ein
+organischer `tool.failed` ("Das Feld 'muster' fehlt in der Eingabe.") — der Lauf lief danach
+unbeeindruckt weiter, kein Absturz. Endete `fertig / runden-erschoepft`, `ergebnis: ""`.
+
+Beobachtet (`b771f2b7`, gpt-oss:120b): 13 Runden, ebenfalls echte Werkzeugaufrufe
+(`verzeichnis_listen`, `inhalt_suchen`, ein `datei_lesen`-Versuch mit falschem Feldnamen `path`
+statt `pfad`), endete ebenfalls `fertig / runden-erschoepft`, `ergebnis: ""`; im Abschlusszug
+versuchte das Modell trotzdem einen Werkzeugaufruf (`tool.intent` mit leerem `name`), der korrekt
+mit `"Der Lauf ist im Abschlusszug — es wird kein Werkzeug mehr ausgefuehrt."` abgelehnt wurde.
+
+**Ergebnis: entspricht der Erwartung nur teilweise, und das steht hier so, weil es wichtiger ist
+als ein sauberer Haken.** "Mehrere Werkzeugaufrufe" — klar erfuellt, gegen beide Modelle, echte
+Anfragen an den Spark, echte Antworten, echte Ablehnungen samt Weiterlauf. "Ein belegter Befund" —
+**nicht erreicht**: keines der beiden Modelle hat `eignung.ts` je gelesen; beide haben wiederholt
+mit falsch benannten Feldern geraten (`description` statt `muster`, `path`/`lines` statt
+`pfad`/`vonZeile`/`bisZeile`) statt zuverlaessig `werkzeug_schema` zu Rate zu ziehen, und sind ohne
+Text-Ergebnis ins Rundenbudget gelaufen. Das ist ein echtes, reproduzierbares Ergebnis ueber diese
+beiden schwachen lokalen Modelle in dieser Betriebsart (openai-chat ueber Ollamas `/v1`), keine
+Panne der Verdrahtung: jede Ablehnung wurde korrekt gemeldet, der Lauf lief jedes Mal weiter, und
+das Budget griff sauber. Es ist trotzdem kein "belegter Befund" im Sinne der Aufgabe, und das wird
+hier nicht schoengeredet.
+
+---
+
+### Beleg 2 — `werkzeug_schema` und der stabile Praefix
+
+Innerhalb desselben Laufs `c7cc302a` (kein separater Lauf noetig — das Modell rief
+`werkzeug_schema` von selbst auf, Zug 5→6): `tool.schema_loaded` bei `seq 21`, Nutzlast
+`{"name":"inhalt_suchen","schema":{...regex, pfadFilter...}}` — steht wortwoertlich im Verlauf.
+
+Verglichen: `prompt.sent` bei `seq 18` (Zug 5, vor dem Schema-Abruf) und `prompt.sent` bei `seq 23`
+(Zug 6, danach). Beide Texte am Marker `"## Fortschritt"` geteilt und der Teil davor (der stabile
+Teil) zeichenweise verglichen:
+
+```
+stableLenBefore: 1376, stableLenAfter: 1376, identical: true
+```
+
+Die Gesamtlaenge der beiden `prompt.sent`-Texte wuchs (1468 → 1506 Zeichen) — das ist der volatile
+Fortschritts-Abschnitt, der pro erledigtem Werkzeugaufruf eine Zeile ansetzt. Der stabile Teil
+selbst blieb zeichengleich, obwohl dazwischen ein volles Schema in den Verlauf geschrieben wurde.
+
+**Ergebnis: entspricht der Erwartung.** Genau die Eigenschaft, die `praefix.ts`s Kopfkommentar
+verspricht ("Stubs only... The full schema is fetched on demand" / "no timestamps, no counters...
+in [the stable part]") — mit echten Daten aus einem echten Lauf bestaetigt, nicht nur durch Lesen
+des Codes angenommen.
+
+---
+
+### Beleg 3 — Pfadwache, drei Faelle
+
+Drei separate, minimale Laeufe gegen `spark-gemma4-26b` (ein kombinierter Lauf mit allen drei
+Pfaden in einem Auftrag scheiterte am Modell, das sich auf dem ersten abgelehnten Pfad
+festbiss und ihn zehnmal wiederholte, statt zum naechsten weiterzugehen — Lauf `609805eb-...`,
+abgebrochen; das war die Grenze des Modells, nicht des Mechanismus).
+
+1. **Ausserhalb der Wurzel** (Lauf `3e5a9833-52b2-41bd-90a1-153cb9970563`): `datei_lesen` mit
+   `pfad="/tmp/outside-file.txt"`. Beobachtet: `tool.failed` — `"Pfad liegt ausserhalb der
+   Wurzel"`. Modell antwortete danach: *"Der Zugriff auf die Datei schlug fehl, da der Pfad
+   außerhalb der Projektwurzel liegt."* Lauf endete `fertig / ziel-erreicht`.
+2. **`~/.ssh`** (Lauf `02db2196-6d4a-42bd-9136-05ef73e4e759`): `pfad="/Users/cipher/.ssh/id_rsa"`.
+   Beobachtet: `tool.failed` — `"Pfad ist geschuetzt"` (zweimal versucht, dann Text-Antwort).
+   Modell: *"Der Versuch, die Datei zu lesen, schlug fehl, da der Pfad geschützt ist."* `fertig /
+   ziel-erreicht`.
+3. **`.env` innerhalb der Wurzel** (Lauf `fc61d5a5-739d-468d-908f-94dd7d865c62`):
+   `pfad="/tmp/keel-harness-projekt/.env"`. Beobachtet: `tool.failed` — `"Pfad ist geschuetzt"`.
+   Modell: *"Der Zugriff auf die Datei \".env\" wurde verweigert, da der Pfad geschützt ist."`
+   `fertig / ziel-erreicht`.
+
+Alle drei: Lauf lief nach der Ablehnung weiter (kein Absturz, kein haengender Zustand), und das
+Modell hat die Ablehnung tatsaechlich in seiner Antwort verarbeitet statt sie zu ignorieren oder zu
+umgehen.
+
+**Ergebnis: entspricht der Erwartung**, mit einem Nebenbefund: der kombinierte Lauf (alle drei
+Pfade in einem Auftrag) zeigte, dass ein schwaches Modell bei einer wiederholten Ablehnung in eine
+Schleife laufen kann, ohne zum naechsten Schritt weiterzugehen — der Mechanismus selbst
+(Pfadwache, Fortlauf des Lauf) blieb dabei fehlerfrei; das Problem lag beim Modell, nicht bei der
+Wache.
+
+---
+
+### Beleg 4 — Der Symlink-Fall
+
+`ln -s ~/.ssh /tmp/keel-harness-projekt/abkuerzung` angelegt.
+
+**Erster Versuch (Lauf `24cf0536-5d11-4a06-bbfc-8399346aba5a`), relativer Pfad wie im Plan
+vorgesehen** (`pfad="abkuerzung/id_rsa"`): abgelehnt mit `"Pfad ist geschuetzt"`. **Das ist aber
+kein sauberer Beleg fuer die Symlink-Aufloesung, und das wird hier ausdruecklich vermerkt statt
+verschwiegen:** `pfadwache.ts`s `aufloesen()` ruft `resolve(pfad)`, was einen relativen Pfad gegen
+`process.cwd()` des Electron-Hauptprozesses aufloest — das ist die Repo-Wurzel dieses Projekts, NICHT
+die Lauf-Wurzel `/tmp/keel-harness-projekt`. Ein relativer Pfad wie `abkuerzung/id_rsa` erreicht den
+angelegten Symlink also gar nicht; er wird gegen `<Repo-Wurzel>/abkuerzung/id_rsa` aufgeloest (nicht
+vorhanden), und die Ablehnung kam stattdessen von der **Verweigerte-Namen-Regel**
+(`VERWEIGERTE_NAMEN` matcht `id_rsa` unabhaengig vom Verzeichnis) — richtig abgelehnt, aber aus dem
+falschen Grund fuer diesen spezifischen Testzweck. Das ist ein Beleg, der aus dem falschen Grund
+besteht, wie die Aufgabenstellung warnt, und wird deshalb nicht als Beweis fuer die
+Symlink-Aufloesung gezaehlt.
+
+**Sauberer zweiter Versuch (Lauf `c8000b3c-e769-4bf0-9815-3be396f24697`), absoluter Pfad, Dateiname
+ausserhalb der Verweigerungsliste:** `pfad="/tmp/keel-harness-projekt/abkuerzung/known_hosts"` —
+`known_hosts` existiert real in `~/.ssh` und matcht keine der Namens-/Endungsregeln in
+`pfadwache.ts`. Beobachtet: `tool.failed` — `"Pfad ist geschuetzt"`, zweimal in Folge (Modell
+versuchte es zweimal, Lauf lief weiter, dann abgebrochen um Zeit zu sparen — die Ablehnung selbst
+war bereits eindeutig bestaetigt). Das zeigt sauber, dass die *Verzeichnis*-Schutzregel
+(`istIn(pfad, heim/.ssh)`) auch nach Symlink-Aufloesung greift: `realpathSync` loest den Symlink in
+`aufloesen()` auf, bevor die Schutzpruefung laeuft — genau das Verhalten, das der Kopfkommentar von
+`pfadwache.ts` verspricht ("provided symlinks are resolved first, which is step one").
+
+**Ergebnis: entspricht der Erwartung, aber erst im zweiten, korrigierten Versuch.** Der erste
+Versuch mit dem relativen Pfad haette faelschlich als Beleg fuer Symlink-Aufloesung durchgehen
+koennen, war es aber nicht — ein zusaetzlicher, unerwarteter Befund: `datei_lesen` loest relative
+Pfade gegen die CWD des Hauptprozesses auf, nicht gegen die Lauf-Wurzel. Ob das eine Luecke ist
+(kein im Rahmen dieser Aufgabe beobachteter Modell-Aufruf nutzte je einen relativen Pfad
+erfolgreich fuer `datei_lesen` — alle organischen Aufrufe, die ankamen, benutzten absolute Pfade
+oder scheiterten an falschen Feldnamen, bevor die Pfadaufloesung ueberhaupt eine Rolle spielte)
+oder gewollt ist, ist aus dem Code allein nicht zu entscheiden und wird hier als offene Frage
+vermerkt, nicht als entschiedener Fehler.
+
+---
+
+### Beleg 5 — Wiederaufnahme
+
+**Technischer Befund vorab:** ein `kill -9` exakt zwischen `tool.intent` und `tool.completed` liess
+sich ueber externe IPC-Poll-Zyklen nicht treffen. Alle registrierten Werkzeuge (`DATEI_WERKZEUGE`,
+`GRAPH_WERKZEUGE`) sind synchrone Dateisystem-/SQLite-Operationen ohne echten Async-Punkt zwischen
+den beiden Schreibvorgaengen; ein realer Versuch (Lauf `d876743a-...`, echter `kill -9` auf den
+Hauptprozess PID 47343 nach mehreren echten Ereignissen) traf tatsaechlich zwischen `prompt.sent`
+(Zug 3) und dem zugehoerigen `model.answered` — also mitten im Warten auf das Modell, nicht mitten
+in einem Werkzeugaufruf. Das ist selbst ein reales, brauchbares Ergebnis: es zeigt, dass die
+schnellste im Code vorhandene Werkzeugausfuehrung schneller ist als jede extern getaktete
+Kill-Anweisung.
+
+Um den geforderten Zustand (`tool.intent` ohne `tool.completed`/`tool.failed`, kein
+`run.finished`) trotzdem echt zu pruefen, wurde nach dem echten Kill **ein synthetisches
+`tool.intent`-Ereignis direkt per `sqlite3`-CLI an das append-only-Log angehaengt**
+(`INSERT INTO ereignisse ... seq=12, art='tool.intent', aufrufId='call_synthetic_kill_test',
+name='datei_lesen'`) — derselbe Log, dasselbe Schema, kein Umweg um die App. Das bildet exakt den
+Zustand nach, den ein echter Absturz mitten in einem (hypothetisch langsameren) Werkzeugaufruf
+hinterlassen wuerde. Einschraenkung, offen benannt: dieser Zeile geht in der Datenbank kein
+`model.answered` mit passendem `werkzeug-aufruf`-Block voraus (die echte Ursache dafuer war der
+Kill mitten im Modell-Request) — strukturell ungewoehnlich fuer einen echten Absturz, aber ohne
+Einfluss auf den Mechanismus unter Test: `projiziere()` schliesst offene Intents am Ende des Logs
+unabhaengig davon, wo im Log sie stehen.
+
+App neu gestartet mit `KEEL_KEEP_PROFILE=1` (Profil samt `harness.db` erhalten). Lauf-Uebersicht
+zeigte `d876743a-...` mit `endzustand: null` — der Lauf ist als "laeuft" / fortsetzbar gelistet.
+
+**Direkter Beleg fuer "Ausfuehrung unbekannt":** die echte Produktionsfunktion `projiziere()` aus
+`src/main/harness/projektion.ts` (unveraendert, per `node --experimental-strip-types` direkt aus
+dem Quelltext geladen) gegen die realen Ereigniszeilen bis `seq 12` (aus der Datenbank exportiert)
+laufen lassen. Ergebnis: der letzte projizierte Nutzer-Block enthaelt
+
+```json
+{"art":"werkzeug-ergebnis","aufrufId":"call_synthetic_kill_test",
+ "inhalt":[{"art":"text","text":"Ausfuehrung unbekannt, Zustand pruefen. Der Aufruf wurde begonnen,
+ sein Ergebnis nicht geschrieben. Stelle den Zustand fest, bevor du weitermachst."}],
+ "fehler":true}
+```
+
+— wortgleich mit der Erwartung.
+
+Danach ueber `harness:lauf-fortsetzen('d876743a-...')` real fortgesetzt: `{"ok":true,"wert":
+"d876743a-..."}`. Der Lauf lief weiter (neue `prompt.sent`/`model.answered`/`tool.intent`-Zyklen ab
+`seq 13`). Nachgeprueft per SQL (`WHERE nutzlast LIKE '%call_synthetic_kill_test%'`): **genau eine**
+Zeile mit dieser `aufrufId` im gesamten Log, `seq 12`, `art tool.intent` — kein zweiter Aufruf von
+`datei_lesen` auf `src/main/model/registry.ts` wurde je ausgefuehrt.
+
+**Ungueltig, Fall a (abgeschlossener Lauf):** `harness:lauf-fortsetzen('3e5a9833-...')` (bereits
+`fertig`). Beobachtet: `{"ok":false,"meldung":"Der Lauf '3e5a9833-...' ist bereits
+abgeschlossen."}`.
+
+**Ungueltig, Fall b (unbekannte Id):** `harness:lauf-fortsetzen('nicht-existierende-lauf-id-1234')`.
+Beobachtet: `{"ok":false,"meldung":"Kein Lauf mit der Id 'nicht-existierende-lauf-id-1234'."}`.
+
+**Ergebnis: entspricht der Erwartung im Kern, mit offen benannter methodischer Abweichung.** Der
+Mechanismus selbst — "Ausfuehrung unbekannt" bei offenem Intent, kein zweiter Ausfuehrungsversuch,
+benannte Ablehnung fuer beide Ungueltig-Faelle — ist mit echten Aufrufen und der echten
+Produktionsfunktion belegt. Der Weg dorthin mischt einen echten `kill -9` (der den erwarteten
+Zustand nicht direkt traf) mit einer gezielten, transparent dokumentierten Datenbank-Ergaenzung, die
+denselben Zustand herstellt. Wo die Beobachtung weniger trug als die Aufgabenstellung vorsah, steht
+das hier so.
+
+---
+
+### Beleg 6 — Cache-Treffer
+
+Derselbe Auftrag (`„Rufe verzeichnis_listen einmal auf mit muster=\"src/main/model/**\", dann
+fasse in einem Satz zusammen was du gesehen hast."`) zweimal unabhaengig gegen `spark-gemma4-26b`
+gestartet (Laeufe `cfe17f7f-ccee-4b40-a3b6-8b4082a343b9` und
+`7d05113f-debe-46c3-ba94-46ceead60f86`), jeweils nach dem ersten `model.answered` abgebrochen.
+
+Beobachtete `usage` des jeweils ersten Zugs:
+
+```
+Lauf 1: {"eingabeToken":738,"ausgabeToken":188,"roh":{"prompt_tokens":738,"completion_tokens":188,"total_tokens":926}}
+Lauf 2: {"eingabeToken":738,"ausgabeToken":91, "roh":{"prompt_tokens":738,"completion_tokens":91, "total_tokens":829}}
+```
+
+`prompt_tokens` ist in beiden Laeufen identisch (738) — konsistent mit einem identischen, stabil
+serialisierten Prompt. `completion_tokens` unterscheidet sich, was bei einem generativen Modell mit
+Sampling normal ist und nichts ueber Caching aussagt.
+
+**Ergebnis: kein sauberer Beleg — und das wird hier so aufgeschrieben statt behauptet.** Genau die
+Warnung aus der Aufgabenstellung trifft zu: Ollamas `/v1/chat/completions`-Antwort (`usage.roh`)
+traegt ausschliesslich `prompt_tokens`, `completion_tokens`, `total_tokens` — **kein** Feld, das
+einen Cache-Treffer von einem Cache-Miss unterscheidet (anders als z. B. Anthropics
+`cache_read_input_tokens` oder OpenAIs `prompt_tokens_details.cached_tokens`). Die identische
+Eingabe-Token-Zahl belegt nur, dass beide Anfragen denselben Prompt sahen (erwartet, da derselbe
+stabile Teil), nicht, dass die zweite Anfrage tatsaechlich aus einem warmen Cache bedient wurde.
+Dieser Beleg bleibt offen.
+
+---
+
+### Beleg 7 — Budget
+
+`STANDARD_BUDGETS.runden` in `src/main/harness-handlers.ts` fuer die Dauer der Probe temporaer von
+`12` auf `2` gesetzt (Kommentar `// TEMPORARY for Task 15 acceptance Beleg 7`), App neu gebaut und
+mit `KEEL_KEEP_PROFILE=1` neu gestartet, nach der Probe wieder auf `12` zurueckgesetzt und erneut
+gebaut — `git diff src/main/harness-handlers.ts` bestaetigt danach keinen Unterschied zum
+Ausgangsstand.
+
+Drei Laeufe unter dem 2-Runden-Budget:
+
+- `bbba57dd-ffbd-4972-aecf-f425e7565da4` (gemma4:26b): `budget.warned` zweimal (`runden-erschoepft`,
+  `"Das Rundenbudget von 2 Zuegen ist erschoepft..."`), `run.finished` mit `endzustand: "fertig"`,
+  `grund: "runden-erschoepft"`, kein `vertrag`-Fehler, keine Ausnahme. Kein Werkzeugaufruf im
+  Abschlusszug versucht (Modell fuegte sich). `ergebnis: ""`.
+- `ae12b71f-89e4-40b1-b2ca-c37f98ae8628` (gemma4:26b, zweiter Versuch mit staerker
+  werkzeug-treibendem Auftrag): gleiches Bild, `ergebnis: ""`, kein Abschlusszug-Werkzeugaufruf.
+- `41165479-2b49-42f2-ac87-943b9a29ced0` (gpt-oss:120b): gleiches `fertig / runden-erschoepft`,
+  **und** im Abschlusszug versuchte das Modell tatsaechlich `datei_lesen`
+  (`pfad="src/main/model/ansicht.ts"`) — abgelehnt mit `"Der Lauf ist im Abschlusszug — es wird
+  kein Werkzeug mehr ausgefuehrt."`, danach sofort `run.finished`. `ergebnis: ""`.
+
+**Ergebnis: der Mechanismus entspricht der Erwartung vollstaendig, das versprochene
+Teilergebnis nicht — und das ist der eigentliche Befund.** `fertig / runden-erschoepft` ohne
+Ausnahme: bestaetigt, dreimal. Werkzeugaufruf im Abschlusszug wird abgelehnt: bestaetigt, einmal
+direkt (gpt-oss:120b unter dem kuenstlichen 2-Runden-Budget) und zusaetzlich zweimal indirekt aus
+den natuerlichen 12-Runden-Erschoepfungen in Beleg 1 (`c7cc302a` fuer die Grund-Mechanik ohne
+Werkzeugversuch, `b771f2b7` mit demselben Ablehnungstext). Was **nicht** eintrat: die von
+`budget.anweisung` selbst geforderte Lieferung ("Ein Teilergebnis mit benannter Luecke ist besser
+als keines") — in allen fuenf beobachteten Abschlusszuegen dieser Session (zwei natuerliche, drei
+kuenstliche, ueber beide Modelle) blieb `ergebnis` leer. Der Code verlangt kein Teilergebnis, er
+bittet nur darum; keines der beiden verfuegbaren schwachen lokalen Modelle ist dieser Bitte in
+dieser Session je nachgekommen. Das ist eine Eigenschaft der Modelle in dieser Betriebsart, keine
+des Harnesses — der reagiert korrekt auf eine leere Antwort (kein Absturz, `vertrag: null`, sauberes
+`run.finished`) —, aber es bedeutet: die Behauptung "verwertbares Teilergebnis" ist in dieser
+Session nie mit echtem Text belegt worden, nur die Abwesenheit einer Ausnahme.
+
+---
+
+### Beleg 8 — `KEEL_KEEP_PROFILE=1`
+
+Nach Beleg 7s Rueckbau und Rebuild: `KEEL_KEEP_PROFILE=1 .claude/skills/run-keel/launch.sh
+/tmp/keel-harness`. Log zeigt `[launch] KEEL_KEEP_PROFILE=1 — profile kept: /tmp/keel-harness`
+(kein `rm -rf` des Profilverzeichnisses).
+
+Nach dem Neustart, Harness-Fenster erneut geoeffnet, `harness:lauf-lesen` ohne Argument:
+
+```
+count: 14
+ids: [c7cc302a..., b771f2b7..., 609805eb..., 3e5a9833..., 02db2196..., fc61d5a5...,
+      24cf0536..., c8000b3c..., d876743a..., cfe17f7f..., 7d05113f..., bbba57dd...,
+      ae12b71f..., 41165479...]
+```
+
+Alle vierzehn Laeufe aus jeder vorherigen Sitzung dieser Probe (verteilt ueber vier
+Prozess-Neustarts: den urspruenglichen Start, den Resume-Neustart in Beleg 5, den
+Budget-2-Neustart und den Budget-Rueckbau-Neustart) sind ueber die Liste erreichbar. Stichprobe
+"Nachlesen": `harness:lauf-lesen('c7cc302a-...')` liefert alle 55 Ereignisse dieses Laufs,
+`first: "run.started"`, `last: "run.finished"` — das volle Protokoll, nicht nur die
+Zusammenfassung.
+
+Auch die Konfigurationsaenderung aus der Vorbereitung ueberlebte denselben Neustart:
+`settings:ansicht` zeigt fuer `spark-gemma4-26b` weiterhin `faehigkeiten.codec: "openai-chat"`,
+`faehigkeiten.werkzeugmodus: "nativ"`.
+
+**Ergebnis: entspricht der Erwartung.** Kein gesonderter Ungueltig-Fall in der Aufgabenstellung
+fuer diesen Beleg vorgesehen.
+
+---
+
+### Abschluss
+
+App sauber beendet (`stop.sh`: `[stop] app killed`, `[stop] tmux sessions removed: 0` — die
+`cmux-*`-Sitzungen sind fremd und wurden nicht angefasst). `git status --porcelain` nach Abschluss
+leer bis auf diese Protokoll-Ergaenzung — der temporaere Budget-Edit in `harness-handlers.ts` ist
+vollstaendig zurueckgebaut.
+
+**Zusammenfassung nach Beleg:**
+
+| # | Beleg | Status |
+|---|-------|--------|
+| Vorbereitung | Faehigkeitszeile ueber das Settings-Fenster | belegt, mit offener UI-Luecke |
+| 1 | Echte Arbeit gegen den Spark | teilweise — Werkzeugaufrufe belegt, "belegter Befund" offen |
+| 2 | `werkzeug_schema` + stabiler Praefix | belegt |
+| 3 | Pfadwache, drei Faelle | belegt |
+| 4 | Symlink-Fall | belegt (im zweiten, korrigierten Versuch) |
+| 5 | Wiederaufnahme | belegt, mit dokumentierter methodischer Abweichung |
+| 6 | Cache-Treffer | offen — Ollama liefert kein unterscheidendes Feld |
+| 7 | Budget | Mechanismus belegt, Teilergebnis-Anspruch offen |
+| 8 | `KEEL_KEEP_PROFILE=1` | belegt |
