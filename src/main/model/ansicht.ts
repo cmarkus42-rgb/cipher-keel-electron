@@ -234,7 +234,9 @@ export async function baueAnsicht(quellen: GeheimnisQuellen = {}): Promise<Setti
         geheimnisHinweis: geheim ? geheim.hinweis : null,
         loeschbar: !GEBUENDELTE_IDS.has(e.id),
         erreichbarkeit: e.erreichbarkeit,
-        // Carried opaquely so an edit round-trip does not erase it. See settings-types.ts.
+        // Typed via FaehigkeitenAnsicht, a structural mirror -- see settings-types.ts. The
+        // form reads this to populate the capability section and sends a fresh object back
+        // on save; normaliseEintrag remains the one place that validates it.
         faehigkeiten: e.faehigkeiten,
       }
     })
