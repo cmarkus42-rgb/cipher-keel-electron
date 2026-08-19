@@ -44,7 +44,8 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'src/renderer/index.html'),
           'project-window': resolve(__dirname, 'src/renderer/windows/project-window.html'),
-          'settings-window': resolve(__dirname, 'src/renderer/windows/settings-window.html')
+          'settings-window': resolve(__dirname, 'src/renderer/windows/settings-window.html'),
+          'harness-window': resolve(__dirname, 'src/renderer/windows/harness-window.html')
         }
       }
     }
