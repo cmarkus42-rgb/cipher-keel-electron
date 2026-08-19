@@ -4872,3 +4872,304 @@ vollstaendig zurueckgebaut.
 | 6 | Cache-Treffer | offen — Ollama liefert kein unterscheidendes Feld |
 | 7 | Budget | Mechanismus belegt, Teilergebnis-Anspruch offen |
 | 8 | `KEEL_KEEP_PROFILE=1` | belegt |
+
+---
+
+## Messprotokoll 2026-08-19 — Fortsetzung: die drei kostenpflichtigen Belege plus Wiederholung
+
+Ausgefuehrt gegen `harness-kern`, HEAD `96b1641`, Baum sauber, 2212 Tests gruen — der Nutzer hat
+fuer diesen Lauf ausdruecklich freigegeben, dass Prompts an externe Anbieter gehen und Kosten
+entstehen. Umfang: die vier Belege, die im obigen Abschnitt ausdruecklich ausgespart wurden
+(Beleg 1 wiederholt nach dem Pfad-Fix `0c30772`, Beleg 1 neu ohne Werkzeugaufruf, Beleg 2 gegen
+drei Anbieter, Beleg 3 mit Bild und Datei). HEAD traegt gegenueber der vorigen Sitzung zwei weitere
+Commits: `0c30772` (der Pfad-Fix, der Beleg 1 diesmal ueberhaupt erst tragen soll) und
+`90b89fd`/`96b1641` (die Faehigkeitszeile im Eintrags-Formular — genau die UI-Luecke, die die
+vorige Sitzung als offenen Bereich von CK-NFR-012 vermerkt hatte).
+
+Vor dem Start: `tmux list-sessions` zeigte nur die fremden `cmux-*`-Sitzungen, `ps aux | grep
+cipher-keel` war leer. Profil `/tmp/keel-harness`, frisch gestartet (kein `KEEL_KEEP_PROFILE`
+beim ersten Start dieser Sitzung). Projektwurzel fuer alle Laeufe weiterhin
+`/tmp/keel-harness-projekt` (Kopie von `src/main/model/*.ts`, `.env`, `.ssh_decoy`, Symlink
+`abkuerzung`) — dieselbe, bereits vom fruehen Beleg-Lauf desselben Tages angelegte Wurzel, unveraendert
+weiterverwendet.
+
+### Vorbereitung: der Anthropic-Eintrag ueber das Settings-Fenster (CK-NFR-012)
+
+Zuerst geprueft, ob ein Schluessel ueberhaupt auflösbar waere, bevor irgendein Eintrag angelegt
+wird: `security find-generic-password -s cipher-keel-api-anthropic` und
+`security find-generic-password -s cipher-keel-api-openrouter` — beide `SecKeychainSearchCopyNext:
+The specified item could not be found`, ebenso `CIPHER_KEEL_API_ANTHROPIC` und
+`CIPHER_KEEL_API_OPENROUTER` in der Umgebung leer. Kein Schluessel gelesen, keiner zitiert — nur
+auf Vorhandensein einer benannten Schluesselbund-Eintragung geprueft, nie auf ihren Inhalt.
+
+Der Eintrag wurde trotzdem angelegt — ueber `window:open-settings`, dann echte Klicks im
+Formular per `driver.mjs`-Skript (native Setter auf `HTMLInputElement`/`HTMLSelectElement`, mit
+`input`/`change`-Events, damit React sie sieht; Checkboxen ueber den `checked`-Setter). Kein
+direkter `settings:eintrag-speichern`-Aufruf fuer diesen Eintrag — das Formular selbst hat
+gespeichert. Felder: Kennung `anthropic-claude-haiku`, Anbieterart `api`, Basis-URL
+`https://api.anthropic.com/v1`, Modell `claude-haiku-4-5`, Schluesselname `anthropic` (der
+Schluessel selbst wurde nirgendwo eingetragen — das Formular bietet dafuer bewusst kein Feld,
+siehe `EintragFormular.tsx`s Kopfkommentar), Codec `anthropic`, Werkzeugmodus `nativ`, dazu
+`bilder`/`dokumente`/`aufgeschobenesLaden`/`paralleleAufrufe` angehakt fuer Beleg 3.
+
+**Ehrlicher Zwischenfall, der zur eigentlichen Probe wurde:** der erste Speicherversuch schlug
+fehl (`"Endpunkt ohne model — es muss benannt sein, welches Modell antworten soll"`), weil mein
+Automatisierungsskript das Feld per Label-Text `"Modell"` suchte und — die Seite traegt *drei*
+Felder mit demselben Label (zwei Rueckfall-Endpunkte unter „Zuordnungen" plus das Formularfeld
+selbst) — das falsche traf. Kein Produktfehler: ein Mensch, der das sichtbare Formular anschaut,
+sieht die drei Felder raeumlich getrennt und trifft nie das falsche; es ist eine Eigenheit
+skriptgesteuerter Label-Suche. Behoben, indem die Feldsuche auf den Container um den
+„Speichern"-Knopf eingeschraenkt wurde. Danach: `settings:ansicht` zeigt den Eintrag korrekt mit
+allen zehn Faehigkeitszeile-Feldern, `geheimnisStatus: "fehlt"`,
+`geheimnisHinweis: "Weder im Schluesselbund noch in CIPHER_KEEL_API_ANTHROPIC gefunden — ohne
+Schluessel bleibt dieser Eintrag unerreichbar."` — dieselbe Formulierung, die auch fuer den
+bestehenden `openrouter-qwen3-coder`-Eintrag steht (`geheimnisStatus: "fehlt"`, exakt
+symmetrischer Hinweistext mit `CIPHER_KEEL_API_OPENROUTER`).
+
+**Ergebnis: entspricht der Erwartung, und schliesst die Luecke, die die letzte Sitzung offen
+liess.** Der Eintrag wurde tatsaechlich durch das sichtbare Formular angelegt — nicht nur durch
+den IPC-Kanal, den das Formular benutzt (wie beim letzten Mal, mangels Formularfeld). Ein Mensch
+haette exakt diese Klicks machen koennen. Das ist der vollstaendige CK-NFR-012-Beleg, den die
+vorige Sitzung nicht erbringen konnte.
+
+Fuer Beleg 1 und 2 wurden zusaetzlich `spark-gemma4-26b` und `spark-gpt-oss-120b` erneut auf
+`codec: 'openai-chat'`, `werkzeugmodus: 'nativ'`, `aufgeschobenesLaden: true` gesetzt (das Profil
+ist frisch, die Aenderung aus der letzten Sitzung lebte nicht im neuen Profil weiter) — diesmal
+ueber den `settings:eintrag-speichern`-Kanal direkt aus dem Settings-Fenster-Kontext, wie in der
+letzten Sitzung. Zusaetzlich ein neuer Eintrag `spark-qwen3-vl-30b` fuer Beleg 3 (dazu dort mehr).
+
+---
+
+### Beleg 1 (Wiederholung) — echte Arbeit gegen den Spark, nach dem Pfad-Fix
+
+Derselbe Auftrag wie beim gescheiterten ersten Anlauf: „Sieh dir `src/main/model/` an und sag,
+welche Datei die Warnregeln haelt und wer sie aufruft." gegen `spark-gemma4-26b`
+(Lauf `78ae683d-60d9-4a76-8aec-77d17d2859bd`).
+
+Beobachtet, 20 Ereignisse: `verzeichnis_listen` (`muster: "src/main/model/*"`) im ersten Zug
+mit fehlendem Feld abgelehnt (`tool.failed`, organischer Tippfehler des Modells, keine
+Pfadwache-Ablehnung), im zweiten Versuch mit korrektem Feldnamen erfolgreich. Danach zweimal
+`inhalt_suchen` — erst mit falschem Feldnamen (`pattern` statt `regex`) abgelehnt, dann mit
+`regex: "Warnregeln|warn"` erfolgreich. **Kein einziger `tool.failed` mit „Pfad liegt ausserhalb
+der Wurzel" oder „Pfad ist geschuetzt"** — genau die Ablehnung, die den ersten Anlauf zum
+Scheitern brachte (`verzeichnis_listen` gab wurzelrelative Pfade zurueck, `datei_lesen` wies sie
+als "ausserhalb der Wurzel" zurueck), trat diesmal kein einziges Mal auf, obwohl das Modell
+mehrfach mit Pfaden aus der Werkzeugausgabe weiterarbeitete. Endete `fertig / ziel-erreicht` mit
+Text-Ergebnis:
+
+```
+Die Funktion `warnungen`, welche die Warnregeln enthält, befindet sich in der Datei
+`src/main/model/eignung.ts` (Zeile 93). Aufgerufen wird sie in `src/main/model/ansicht.ts`
+(Zeile 135 und Zeilen 143, 187, 212 indirekt über die Zuweisung an das Objekt).
+```
+
+Gegen die Wurzel geprueft (nicht nur gegen das Original-Repo, sondern gegen die tatsaechliche
+Kopie in `/tmp/keel-harness-projekt`, die das Modell durchsucht hat):
+`grep -n warnungen src/main/model/eignung.ts` → `93:export function warnungen(`;
+`grep -n warnungen src/main/model/ansicht.ts` → Treffer exakt bei Zeile 135
+(`? warnungen(eintrag, slot.laeufer, slot.niveau)`) sowie 143, 187, 212. Jede einzelne vom Modell
+genannte Zeilennummer stimmt zeichengenau.
+
+**Ergebnis: entspricht der Erwartung, vollstaendig.** Das Modell fand die Datei diesmal — nicht
+weil das Modell staerker geworden waere (dasselbe `gemma4:26b` wie beim gescheiterten Anlauf),
+sondern weil der Pfad-Fix genau die Klasse Fehler beseitigt hat, an der der erste Anlauf scheiterte.
+Das ist der eigentliche Beweis, dass `0c30772` gewirkt hat: **mehrere Werkzeugaufrufe** (vier,
+zwei davon organische Fehlschlaege mit sauberem Weiterlauf) **und ein belegter Befund** (beide
+Zeilennummern gegen die Datei verifiziert) — beide Teile der Aufgabenstellung erfuellt, anders als
+beim vorigen Anlauf, wo nur der erste Teil erreichbar war.
+
+---
+
+### Beleg 1 (neu) — Lauf ohne Werkzeugaufruf, ohne Anbietername in der Darstellung
+
+**Gueltig:** Auftrag „Antworte in genau einem kurzen Satz, ohne irgendein Werkzeug zu benutzen:
+was ist 7 mal 6?" gegen `spark-gemma4-26b` (Lauf `12aa1489-0f0f-431e-8368-6dbc2c3a8fc0`).
+Beobachtet: vier Ereignisse — `run.started`, `prompt.sent`, `model.answered`
+(`bloecke: [{art: "text", text: "7 mal 6 ist 42."}]`, `stopGrund.normalisiert: "ende"`),
+`run.finished` (`endzustand: "fertig"`, `grund: "ziel-erreicht"`, `ergebnis: "7 mal 6 ist 42."`).
+Vollstaendige Ereignisfolge, kein einziger Werkzeugaufruf, korrekte Antwort.
+
+**Kein Anbietername in der Darstellung:** `harness:lauf-lesen` liefert exakt das, was
+`EreignisPanel.tsx` rendert. Das `run.started`-Ereignis traegt `modellId: "spark-gemma4-26b"`
+(die selbstgewaehlte Registry-Kennung, nicht der Name eines Anbieters) und `codec: "openai-chat"`
+— kein Feld nennt einen Host, eine Firma oder einen Vertriebsnamen. Das deckt sich mit dem
+Kopfkommentar der Komponente selbst ("It knows no provider name. What it shows comes out of the
+event stream"): gepruefte, echte Daten aus einem echten Lauf bestaetigen die Behauptung des
+Kommentars, statt sie nur beim Lesen des Codes zu glauben.
+
+**Ungueltig:** Auftrag `''` (leerer String) gegen `spark-gemma4-26b`. Beobachtet:
+`{"ok":false,"meldung":"Der Auftrag ist leer."}` — Lauf startet nicht, kein `run.started` im
+Protokoll, benannte Ablehnung noch vor jedem Modellkontakt.
+
+**Ergebnis: entspricht der Erwartung, vollstaendig.**
+
+---
+
+### Beleg 2 — derselbe Auftrag gegen drei Anbieter
+
+Auftrag „Antworte in einem kurzen Satz: was macht die Funktion warnungen in
+src/main/model/eignung.ts?" gegen alle drei Eintraege, in identischer Formulierung:
+
+- **Anthropic** (`anthropic-claude-haiku`, Lauf `97d77935-9c9e-4210-972f-faa3e91463ee`):
+  `run.finished` — `endzustand: "abgebrochen"`, `grund: "transportfehler"`,
+  `anweisung: "Fuer 'claude-haiku-4-5' ist kein API-Schluessel hinterlegt — erwartet im Keychain
+  oder als Umgebungsvariable; siehe docs/anpassbare-flaechen.md"`. Kein Schluessel, keine
+  Anfrage ging tatsaechlich an `api.anthropic.com` — der Fehler wird lokal aus dem Fehlen der
+  Anmeldedaten erzeugt (`resolveApiKey` liefert `null`, `AnthropicClient.chat` wirft, bevor ein
+  Socket geoeffnet wird).
+- **OpenRouter** (`openrouter-qwen3-coder`, Lauf `70fa7c48-ac3b-4274-a472-68dbf6daee23`):
+  dasselbe Bild — `transportfehler`, `"Für 'qwen/qwen3-coder' ist kein API-Schlüssel hinterlegt
+  — ..."`. Auch dieser Schluessel war schon vor dem Lauf als `geheimnisStatus: "fehlt"` in
+  `settings:ansicht` sichtbar (bestehender Eintrag, nicht neu angelegt).
+- **Spark** (`spark-gemma4-26b`, Lauf `f17782ca-f1d1-4d76-9abf-bb78e95fbf1c`, kein Schluessel
+  noetig — `local-http` mit leerem `keyRef`): `fertig / ziel-erreicht`,
+  `ergebnis: "Die Funktion \`warnungen\` ermittelt potenzielle Risiken (als Liste von
+  \`Warnung\`-Objekten), die aus der spezifischen Kombination eines Modells (\`eintrag\`), eines
+  Runners (\`laeufer\`) und eines Leistungsniveaus (\`niveau\`) resultieren."` — inhaltlich
+  zutreffend (`eignung.ts`s `warnungen(eintrag, laeufer, niveau)`-Signatur stimmt).
+
+**Der Unterschied liegt nachweislich nur in der Faehigkeitszeile — so wurde das geprueft, nicht
+nur behauptet:** alle drei `run.started`-Nutzlasten wurden verglichen, mit `codec`, `modellId`
+und `werkzeuge` herausgenommen. Der Rest (`auftragstext`, `wurzel`, `budgets`, `hinweise`,
+`anhangBloecke`) ist **zeichengleich** ueber alle drei. Einzige Unterschiede: `codec`
+(`"anthropic"` vs. zweimal `"openai-chat"` — direkt aus `faehigkeiten.codec` des jeweiligen
+Eintrags) und die Laenge der `werkzeuge`-Liste (Anthropic und Spark: 8, inklusive
+`werkzeug_schema`; OpenRouter: 7, ohne — weil `openrouter-qwen3-coder`s
+`faehigkeiten.aufgeschobenesLaden` unveraendert `false` blieb, waehrend die anderen beiden fuer
+diese Sitzung auf `true` gesetzt wurden). Direkter Beleg dafuer, dass dieser Unterschied
+ausschliesslich aus der Faehigkeitszeile kommt und nicht aus verzweigtem Code: der
+`prompt.sent`-Text von Anthropic und Spark — unterschiedlicher Codec, unterschiedlicher
+Transport, aber gleiche `aufgeschobenesLaden`-Einstellung — ist **zeichengleich**
+(`ps(anthropic) === ps(spark)` bei direktem String-Vergleich, wahr).
+
+**Ungueltig:** `harness:lauf-starten` mit `modellId: 'nicht-existierendes-modell-xyz'`.
+Beobachtet: `{"ok":false,"meldung":"Kein Registry-Eintrag 'nicht-existierendes-modell-xyz'."}` —
+Lauf startet nicht, benannte Ablehnung.
+
+**Ergebnis: der Mechanismus entspricht der Erwartung vollstaendig — dreimal dieselbe Behandlung,
+der Unterschied gemessen statt vermutet —, aber zwei der drei Anbieter liefern kein
+vertragsgemaesses Ergebnis, weil kein Schluessel hinterlegt ist.** Das ist kein Fund ueber den
+Harness: die Fehlerbehandlung selbst ist sauber (keine Ausnahme, kein Absturz, ein prazise
+benannter, geheimnisfreier Fehlertext, der Lauf endet ordentlich mit `run.finished`). Es ist ein
+offener Punkt ueber die Betriebsumgebung dieser Sitzung — weder im Schluesselbund noch als
+Umgebungsvariable war unter den erwarteten Namen (`cipher-keel-api-anthropic`,
+`cipher-keel-api-openrouter` bzw. `CIPHER_KEEL_API_ANTHROPIC`, `CIPHER_KEEL_API_OPENROUTER`) ein
+Schluessel auffindbar, trotz der Ansage, der Login sei frisch. Nur der dritte, schluessellose
+Anbieter (Spark) lieferte tatsaechlich ein inhaltlich geprueftes Ergebnis. Das „dreimal
+vertragsgemaess" aus der Aufgabenstellung ist damit **nicht** erreicht; **einmal
+vertragsgemaess plus zweimal derselbe, sauber gemeldete, geheimnisfreie Fehlklasse** ist das
+ehrliche Bild dieser Sitzung.
+
+---
+
+### Beleg 3 — Bild und Datei
+
+**Vorbereitung:** ein echter Screenshot (`screencapture -x`, 2560×1440, spaeter auf 400px
+verkleinert) und ein echtes PDF (`echo ... | cupsfilter`, ein Textabsatz, `PDF document, version
+1.3`). Vorab per `curl` direkt gegen den Spark geprueft, **bevor** Registry-Eintraege oder Laeufe
+davon abhingen: ein `image_url`-Block wird von `qwen3-vl:30b-a3b` korrekt verarbeitet (echte
+Bildbeschreibung zurueck), ein `file`-Block (das Format, das `codec-openai-chat.ts` fuer
+Dokumente sendet) wird von Ollamas `/v1/chat/completions` mit `HTTP 400 "invalid message
+format"` **abgelehnt** — unabhaengig davon, ob er allein oder zusammen mit einem gueltigen
+Bild-Block geschickt wird. Diese Erkenntnis kam vor jedem Harness-Lauf und hat den ganzen Beleg
+geformt: **kein derzeit erreichbarer Anbieter kann in dieser Sitzung Bild und Datei tatsaechlich
+beides gleichzeitig verarbeiten**, aus zwei verschiedenen, unabhaengigen Gruenden (Anthropic:
+Schluessel fehlt; Spark: Ollama selbst weist den Dokumenttyp zurueck). Das wird hier offen
+aufgeschrieben, nicht kaschiert.
+
+Drei Registry-Eintraege fuer diesen Beleg: `anthropic-claude-haiku` (`bilder: true`,
+`dokumente: true`, wie in der Vorbereitung angelegt), neu `spark-qwen3-vl-30b` (`bilder: true`,
+`dokumente: true` — echte Vision-Capability laut Sparks `/api/tags`, das `dokumente: true` erwies
+sich als zu optimistisch, siehe unten), und `spark-gemma4-26b` (`bilder: false`, unveraendert,
+echte Eigenschaft — `gemma4:26b` traegt laut `/api/tags` keine `vision`-Capability).
+
+**Anhaenge echt ueber den Dateidialog des Hauptprozesses gewaehlt:** `harness:anhaenge-waehlen`
+zweimal ausgeloest (einmal je Datei), der native `NSOpenPanel`-Sheet per `System
+Events`/Accessibility-Automatisierung bedient (Cmd+Shift+G, exakter Dateipfad eingetragen,
+zweimal Return — einmal zur Navigation/Auswahl, einmal zum Bestaetigen des Dialogs) — echte
+Klicks in einem echten, vom Betriebssystem gezeichneten Dialog, kein Umweg um die IPC-Grenze.
+Beide Pfade landeten dadurch in `dialogAusgewaehlt` und waren fuer alle folgenden Laeufe
+gueltig.
+
+**Ungueltig (Dateidialog-Herkunft):** `harness:lauf-starten` mit
+`anhaenge: ['/tmp/keel-harness-belege/beleg3-quelle.txt']` — einer Datei, die nie durch den
+Dialog lief. Beobachtet: `{"ok":false,"meldung":"Anhang stammt aus keinem vom Hauptprozess
+geoeffneten Dateidialog: '/tmp/keel-harness-belege/beleg3-quelle.txt'."}` — Lauf startet nicht,
+Meldung nennt den abgelehnten Pfad wortwoertlich.
+
+**Lauf 1 (Anthropic, Bild+Datei, Lauf `4c49b181-3d1c-4117-8d4b-ec8cc857c838`):** dieselbe
+Schluessel-Ablehnung wie in Beleg 2, unveraendert durch die Anhaenge — die Faehigkeitszeile
+(`bilder: true`, `dokumente: true`) laesst `codec.toWire()` beide Bloecke widerspruchslos
+uebersetzen, der Lauf scheitert sauber erst beim Transport
+(`transportfehler`, „kein API-Schluessel hinterlegt"). Offener Beleg, wie Beleg 2.
+
+**Lauf 2 (Spark-Vision, Bild+Datei, Lauf `8467f78e-98fd-494b-b7c4-ededfec9bd1f`):** der Codec
+liess auch hier beide Bloecke durch (`dokumente: true` in der Faehigkeitszeile), aber die echte
+Anfrage an den Spark kam mit `HTTP 400: invalid message format` zurueck — sauber als
+`transportfehler` gemeldet, Lauf endet ordentlich (`endzustand: "abgebrochen"`), keine Ausnahme.
+Genau die Diskrepanz, die die Vorab-Probe per `curl` vorhergesagt hatte: die Faehigkeitszeile
+sagt, das Modell koenne Dokumente verarbeiten; der tatsaechliche Transport (Ollamas
+OpenAI-kompatible Chat-Completions-Route) kennt den `file`-Blocktyp nicht. Ein echter, wichtiger
+Fund: **eine `vermutete` Faehigkeitszeile kann falsch sein, und wenn sie es ist, scheitert der
+Lauf sauber statt falsch zu antworten** — aber `dokumente: true` fuer `spark-qwen3-vl-30b` war
+in dieser Sitzung eine unbegruendete Vermutung, keine gepruefte Tatsache, und das steht hier so.
+
+**Lauf 3 (Spark-gemma4, `bilder: false`, Bild+Datei, Lauf `d4052b85-a0a4-4751-9ef8-758ac381becc`)
+— der eigentlich wichtigste Fund dieses Belegs, und kein sauberer:** Das Log zeigt die erwartete
+Ablehnung wortwoertlich: `[harness-handlers] Lauf 'd4052b85-...' endete mit einem unbehandelten
+Fehler: Das Modell nimmt keine Bloecke der Art 'bild' — die Faehigkeitszeile sagt bilder: false
+(Quelle: vermutet). Der Auftrag traegt einen solchen Block.` — `CodecKannNicht` wurde exakt so
+geworfen, wie `codec-openai-chat.ts` es verspricht. **Aber dieser Fehler erreicht nie ein
+`run.finished`-Ereignis.** `harness:lauf-lesen` fuer diesen Lauf zeigt bis heute nur ein einziges
+Ereignis (`run.started`); `harness:lauf-lesen` ohne Argument fuehrt ihn dauerhaft mit
+`endzustand: null` — also als „laeuft" — obwohl der Prozess laengst fertig damit ist. Der Grund,
+im Code nachvollzogen: `lauf.ts`s `fahre()` baut `koerper = codec.toWire(...)` bei Zeile 186,
+**ausserhalb** und **vor** dem `try { antwort = await u.sende(koerper, praefix) } catch`-Block
+bei Zeile 197/198. Eine `CodecKannNicht`-Ausnahme aus `toWire()` selbst — genau der Fall „Anhang
+mit einer Blockart, die die Faehigkeitszeile ausschliesst" — wird von diesem `try/catch` also gar
+nicht erst gesehen. Sie faellt als unbehandelte Promise-Ablehnung durch, landet nur im
+`.catch()`-Sicherheitsnetz von `harness-handlers.ts` (das ausdruecklich nur Konsole-Logging und
+Aufraeumen der Abbruchmarke macht, kein Ereignis schreibt) und verschwindet dort in die
+Konsole — sichtbar fuer niemanden, der nicht die Server-Logs liest. Das widerspricht der eigenen
+Regel des Plans ("Kein stilles Verschlucken. Was ein Modell nicht kann, wird gemeldet, nicht
+weggelassen") an genau der Stelle, wo sie am woertlichsten gilt: die Meldung wird erzeugt, aber
+nie gemeldet.
+
+**Ergebnis: gemischt, und das absichtlich nicht schoengeredet.** Der Ungueltig-Fall
+(Dateidialog-Herkunft) ist sauber belegt. Die beiden Anbieter, die „beides koennen" sollten,
+liefern in dieser Sitzung **kein** vertragsgemaesses Ergebnis fuer die Kombination aus Bild und
+Datei — einer, weil kein Schluessel vorliegt (offener Beleg wie in Beleg 2), der andere, weil
+seine Faehigkeitszeile fuer `dokumente` in dieser Sitzung unbegruendet war und der echte
+Transport das aufdeckte (ein sauber gemeldeter, aber negativer Befund). Der dritte Anbieter
+(`bilder: false`) meldet Unvermoegen zwar **ausdruecklich und korrekt** in der erzeugten
+Fehlermeldung — aber diese Meldung erreicht das Ereignisprotokoll nie, der Lauf haengt fuer immer
+als „laeuft" fest. Das ist der wichtigste Fund dieser Sitzung: eine Luecke zwischen
+`codec.toWire()` und dem `try/catch`, die um die Meldepflicht fuer Anhang-Faehigkeitsverstoesse
+herumfuehrt. Eine ergaenzende, nicht im Plan geforderte Probe (nur Bild, kein Dokument, gegen
+`spark-qwen3-vl-30b`) sollte zumindest einen echten Erfolgsfall fuer Bildverarbeitung zeigen,
+scheiterte aber zweimal am 120-Sekunden-Transport-Zeitlimit (`ANTHROPIC_TIMEOUT_MS`/
+`API_TIMEOUT_MS`, beide 120000 ms) — sowohl mit dem 2,2-MB-Originalscreenshot als auch mit der
+auf 96 KB verkleinerten Fassung. Die fruehe `curl`-Probe mit einem trivialen 1×1-Pixel-Bild lief
+in unter zwei Sekunden durch; ein reales Bild scheint auf dieser Hardware deutlich laenger zu
+brauchen als das Zeitbudget erlaubt. Das bleibt offen — nicht Teil der geforderten vier Belege,
+aber ein zusaetzlicher, unerwarteter Fund, der hier nicht verschwiegen wird.
+
+---
+
+### Abschluss (Fortsetzung)
+
+App sauber beendet (`stop.sh`: `[stop] app killed`). `git status --porcelain` danach leer bis auf
+diese Protokoll-Ergaenzung. Fuer Beleg 2s fehlenden Ungueltig-Fall wurde die App ein zweites Mal
+kurz mit `KEEL_KEEP_PROFILE=1` gestartet (Konfiguration und alle elf vorherigen Laeufe dieser
+Sitzung blieben erhalten — `harness:lauf-lesen` zeigte `count: 11` vor dem zwoelften,
+ungueltigen Versuch), danach sofort wieder sauber gestoppt.
+
+**Zusammenfassung nach Beleg:**
+
+| # | Beleg | Status |
+|---|-------|--------|
+| Vorbereitung | Anthropic-Eintrag ueber das Settings-Fenster-Formular | belegt — schliesst die CK-NFR-012-Luecke der vorigen Sitzung |
+| 1 (Wiederholung) | Echte Arbeit gegen den Spark nach dem Pfad-Fix | belegt, vollstaendig — Werkzeugaufrufe und ein gegen die Datei verifizierter Befund |
+| 1 (neu) | Lauf ohne Werkzeugaufruf, kein Anbietername in der Darstellung | belegt, vollstaendig |
+| 2 | Derselbe Auftrag gegen drei Anbieter | Mechanismus belegt (Unterschied nachweislich nur in der Faehigkeitszeile); zwei von drei Anbietern liefern kein Ergebnis mangels Schluessel — offen |
+| 3 | Bild und Datei | Ungueltig-Fall belegt; „bilder: false" meldet zwar korrekt, aber die Meldung erreicht nie das Ereignisprotokoll — eigenstaendiger, wichtiger Fund; beide „kann beides"-Anbieter liefern kein Ergebnis (Schluessel fehlt bzw. Ollama lehnt den Dokumenttyp ab) |
