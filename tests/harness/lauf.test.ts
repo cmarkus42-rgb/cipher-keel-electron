@@ -52,6 +52,15 @@ function antwort(text: string, stop: 'ende' | 'laenge' = 'ende'): ModelAntwort {
   }
 }
 
+/** A turn the model answered without any text block — the case Fund 2 is about. */
+function antwortLeer(): ModelAntwort {
+  return {
+    bloecke: [],
+    stopGrund: { normalisiert: 'ende', roh: 'stop' },
+    usage: { eingabeToken: 100, ausgabeToken: 10, roh: null },
+  }
+}
+
 describe('starteLauf', () => {
   it('schreibt run.started, prompt.sent, model.answered und run.finished', async () => {
     const u = umgebungMit([antwort('hallo')])
@@ -104,6 +113,31 @@ describe('starteLauf', () => {
     const ende = lesen(u.db, laufId).at(-1)
     expect(ende?.nutzlast).toMatchObject({ endzustand: 'fertig', grund: 'runden-erschoepft' })
     expect(String(ende?.nutzlast.ergebnis)).toContain('Teilergebnis')
+  })
+
+  it('Fund 2: liefert bei Text im Abschlusszug genau diesen Text, unmarkiert', async () => {
+    const u = umgebungMit([antwort('erster Zug'), antwort('Abschlusstext')])
+    const laufId = await starteLauf({ ...AUFTRAG, budgets: { ...AUFTRAG.budgets, runden: 1 } }, u)
+    const ende = lesen(u.db, laufId).at(-1)
+    expect(ende?.nutzlast.ergebnis).toBe('Abschlusstext')
+  })
+
+  it('Fund 2: faellt bei textlosem Abschlusszug auf den letzten fruehreren Text zurueck, gekennzeichnet', async () => {
+    // The closing turn itself carries no text (empty block list) — but an earlier turn did.
+    const u = umgebungMit([antwort('fruehere Erkenntnis'), antwortLeer()])
+    const laufId = await starteLauf({ ...AUFTRAG, budgets: { ...AUFTRAG.budgets, runden: 1 } }, u)
+    const ende = lesen(u.db, laufId).at(-1)
+    const ergebnis = String(ende?.nutzlast.ergebnis)
+    expect(ergebnis).toContain('fruehere Erkenntnis')
+    // Must be distinguishable from a genuine answer to the closing instruction, not identical to it.
+    expect(ergebnis).not.toBe('fruehere Erkenntnis')
+  })
+
+  it('Fund 2: bleibt leer, wenn im ganzen Lauf nie Text produziert wurde', async () => {
+    const u = umgebungMit([antwortLeer(), antwortLeer()])
+    const laufId = await starteLauf({ ...AUFTRAG, budgets: { ...AUFTRAG.budgets, runden: 1 } }, u)
+    const ende = lesen(u.db, laufId).at(-1)
+    expect(ende?.nutzlast.ergebnis).toBe('')
   })
 
   it("lehnt stopGrund 'werkzeug' ohne Werkzeugaufruf als Vertragsbruch ab", async () => {

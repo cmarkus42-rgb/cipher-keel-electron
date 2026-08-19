@@ -14,7 +14,7 @@
  */
 
 import { realpathSync } from 'node:fs'
-import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 export interface WacheKontext {
   /** The run's project root — the only place reading is allowed. */
@@ -67,7 +67,17 @@ function aufloesen(pfad: string): string {
 }
 
 export function pruefePfad(roh: string, ktx: WacheKontext): WacheErgebnis {
-  const pfad = aufloesen(roh)
+  // A relative path is resolved against the run's root, not the main process's CWD. The two
+  // listing tools (`verzeichnis_listen`, `inhalt_suchen`) hand the model back exactly
+  // `relative(wurzel, pfad)` — root-relative paths — and a model that lists files then reads one
+  // resubmits precisely that string. Resolving it against `process.cwd()` instead would answer
+  // every such path with "outside the root" (or silently read the wrong file, if the process
+  // happens to share a name with something under its own CWD): the very tool that discovers a
+  // path and the one that opens it would disagree about what the path means. This runs *before*
+  // symlink resolution, which still applies to the joined, now-absolute path exactly as before.
+  // An already-absolute path is untouched by this step.
+  const eingabe = isAbsolute(roh) ? roh : join(ktx.wurzel, roh)
+  const pfad = aufloesen(eingabe)
   const name = basename(pfad)
   // One lowercased form, used for every name comparison below. The rules protect a namespace,
   // not a specific on-disk file — on a case-sensitive filesystem `.ENV` names a different file

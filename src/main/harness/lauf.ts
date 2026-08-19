@@ -167,7 +167,9 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
 
   for (;;) {
     if (u.abgebrochen()) {
-      beende(u, laufId, VON_AUSSEN, '')
+      // No turn-scoped `ereignisse` exists yet on this iteration — read fresh so a fallback
+      // result (see `beende`) can still draw on whatever the model said in earlier turns.
+      beende(u, laufId, lesen(u.db, laufId), VON_AUSSEN, '')
       return
     }
 
@@ -195,7 +197,7 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
     try {
       antwort = await u.sende(koerper, praefix)
     } catch (err) {
-      beende(u, laufId, {
+      beende(u, laufId, ereignisse, {
         code: 'transportfehler', endzustand: 'abgebrochen',
         anweisung: err instanceof Error ? err.message : String(err),
       }, '')
@@ -209,7 +211,7 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
     // Truncation is read before any repair decision — no amount of thinking fixes it.
     const transport = grundFuerStopGrund(antwort.stopGrund)
     if (transport) {
-      beende(u, laufId, transport, nurText(antwort.bloecke))
+      beende(u, laufId, ereignisse, transport, nurText(antwort.bloecke))
       return
     }
 
@@ -231,7 +233,7 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
             meldung: 'Der Lauf ist im Abschlusszug — es wird kein Werkzeug mehr ausgefuehrt.',
           })
         }
-        beende(u, laufId, abschlussVorab, nurText(antwort.bloecke), auftrag.pflichtfelder)
+        beende(u, laufId, ereignisse, abschlussVorab, nurText(antwort.bloecke), auftrag.pflichtfelder)
         return
       }
       // All tools in this stretch read, so all calls of a turn may run concurrently. The
@@ -249,7 +251,7 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
     }
 
     if (abschlussVorab) {
-      beende(u, laufId, abschlussVorab, nurText(antwort.bloecke), auftrag.pflichtfelder)
+      beende(u, laufId, ereignisse, abschlussVorab, nurText(antwort.bloecke), auftrag.pflichtfelder)
       return
     }
 
@@ -258,7 +260,7 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
     // Letting either through as ziel-erreicht would be exactly the silent swallowing this loop
     // must not do.
     if (antwort.stopGrund.normalisiert !== 'ende') {
-      beende(u, laufId, {
+      beende(u, laufId, ereignisse, {
         code: 'transportfehler', endzustand: 'abgebrochen',
         anweisung: antwort.stopGrund.normalisiert === 'werkzeug'
           ? `Das Modell meldete Stop-Grund 'werkzeug' (roh: ${antwort.stopGrund.roh}), schickte ` +
@@ -278,7 +280,7 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
       continue
     }
 
-    beende(u, laufId, ZIEL_ERREICHT, nurText(antwort.bloecke), auftrag.pflichtfelder)
+    beende(u, laufId, ereignisse, ZIEL_ERREICHT, nurText(antwort.bloecke), auftrag.pflichtfelder)
     return
   }
 }
@@ -369,20 +371,53 @@ function schreibe(
   return e
 }
 
+// Marks a fallback result so it is never mistaken for an answer to the closing instruction —
+// the two are different things (one answered what was asked, the other did not answer at all),
+// and a reader (human or the next resumed turn) needs to be able to tell them apart at a glance.
+const RUECKFALL_HINWEIS =
+  'Rueckfall auf die letzte Modellantwort mit Text aus einem frueheren Zug — der Abschlusszug ' +
+  'selbst lieferte keinen Text. '
+
+/**
+ * The last non-empty text any `model.answered` event in this run carried, read straight from the
+ * events — the same source the projection itself reads, not a second store. Walked from the end
+ * so the closing turn's own (here: empty) answer is skipped in favour of whatever came before it.
+ */
+function letzterModellText(ereignisse: Ereignis[]): string {
+  for (let i = ereignisse.length - 1; i >= 0; i -= 1) {
+    const e = ereignisse[i]
+    if (e.art !== 'model.answered') continue
+    const text = nurText((e.nutzlast.bloecke as Block[] | undefined) ?? [])
+    if (text !== '') return text
+  }
+  return ''
+}
+
 function beende(
-  u: LaufUmgebung, laufId: string, grund: Abschlussgrund, ergebnis: string,
+  u: LaufUmgebung, laufId: string, ereignisse: Ereignis[], grund: Abschlussgrund, ergebnis: string,
   pflichtfelder?: string[],
 ): void {
+  // The spec promises a usable partial result once a budget trips (M8 section 8.4) — but a
+  // closing turn that answers with no text at all (an empty block list, or only a tool call that
+  // gets masked) leaves `ergebnis` empty on its own. Falling back to the last text the model did
+  // produce, anywhere in the run, keeps that promise for a weak model that ignores the closing
+  // instruction instead of quietly breaking it. When no turn in the whole run ever produced text,
+  // the fallback also finds nothing — and stays empty rather than inventing a summary nobody
+  // wrote; a fabricated result would be worse than none (see module doc).
+  const endgueltigesErgebnis = ergebnis !== '' ? ergebnis : (() => {
+    const frueher = letzterModellText(ereignisse)
+    return frueher === '' ? '' : RUECKFALL_HINWEIS + frueher
+  })()
   // The contract is checked at the outer edge only, and never enforced: a visibly failed run
   // beats valid nonsense (M8 section 4.9).
   const vertrag = pflichtfelder && pflichtfelder.length > 0
-    ? checkWorkerAnswer(ergebnis, pflichtfelder)
+    ? checkWorkerAnswer(endgueltigesErgebnis, pflichtfelder)
     : null
   schreibe(u, laufId, 'run.finished', {
     endzustand: grund.endzustand,
     grund: grund.code,
     anweisung: grund.anweisung,
-    ergebnis,
+    ergebnis: endgueltigesErgebnis,
     vertrag: vertrag ? (vertrag.ok ? { ok: true } : { ok: false, grund: vertrag.reason }) : null,
   })
 }

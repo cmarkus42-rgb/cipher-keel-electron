@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { pruefePfad } from '../../src/main/harness/pfadwache'
 
 let heim: string
@@ -125,6 +125,38 @@ describe('pruefePfad', () => {
     // case-sensitivity bug in the .cipher- prefix check.
     const ktxImHeim = { wurzel: heim, heim, userDataPfad }
     expect(pruefePfad(join(heim, '.CIPHER-webhook.env'), ktxImHeim).ok).toBe(false)
+  })
+})
+
+// Fund 1: `verzeichnis_listen` and `inhalt_suchen` hand a model back `relative(wurzel, pfad)`.
+// `datei_lesen` (via `pruefePfad`) must accept exactly that string back — not reject it as
+// "outside the root" because it was resolved against the wrong base.
+describe('pruefePfad – relative Pfade loesen gegen die Wurzel auf, nicht gegen process.cwd()', () => {
+  it('laesst einen relativen Pfad innerhalb der Wurzel durch', () => {
+    const e = pruefePfad('quelle.ts', ktx)
+    expect(e.ok).toBe(true)
+    if (e.ok) expect(e.pfad).toBe(join(wurzel, 'quelle.ts'))
+  })
+
+  it('lehnt einen relativen Pfad ab, der ueber .. aus der Wurzel herausfuehrt', () => {
+    const e = pruefePfad(join('..', 'ausserhalb.txt'), ktx)
+    expect(e).toEqual({ ok: false, grund: 'Pfad liegt ausserhalb der Wurzel' })
+  })
+
+  it('loest einen absoluten Pfad unveraendert auf, wie zuvor', () => {
+    const e = pruefePfad(join(wurzel, 'quelle.ts'), ktx)
+    expect(e.ok).toBe(true)
+    if (e.ok) expect(e.pfad).toBe(join(wurzel, 'quelle.ts'))
+  })
+
+  it('oeffnet, was verzeichnis_listen/inhalt_suchen zurueckgeben — die beiden Werkzeuge stimmen ueberein', () => {
+    // This is exactly what werkzeug-datei.ts's listing tools compute for a hit:
+    // relative(ktx.wache.wurzel, absoluterTreffer). A model reads that string and hands it
+    // straight back to datei_lesen.
+    const wieVerzeichnisListenEsZurueckgibt = relative(wurzel, join(wurzel, 'quelle.ts'))
+    const e = pruefePfad(wieVerzeichnisListenEsZurueckgibt, ktx)
+    expect(e.ok).toBe(true)
+    if (e.ok) expect(e.pfad).toBe(join(wurzel, 'quelle.ts'))
   })
 })
 

@@ -252,11 +252,15 @@ describe('Werkzeugausfuehrung', () => {
     // written; only the absence of a completion proves nothing ran.
     expect(ev.some(e => e.art === 'tool.completed' && e.nutzlast.aufrufId === 'c-abschluss')).toBe(false)
 
-    // 3. The run ends on the original closing reason, with the model's own text as the result --
-    // exactly one closing turn, not a retry loop.
+    // 3. The run ends on the original closing reason, exactly one closing turn, not a retry
+    // loop. The closing turn itself carried no text (only the masked tool call) -- Fund 2's
+    // fallback kicks in and the result is the earlier turn's text, marked as a fallback rather
+    // than left empty or silently passed off as an answer to the closing instruction.
     const ende = ev.at(-1)
     expect(ende?.nutzlast).toMatchObject({ endzustand: 'fertig', grund: 'runden-erschoepft' })
-    expect(String(ende?.nutzlast.ergebnis)).toBe('')
+    const ergebnis = String(ende?.nutzlast.ergebnis)
+    expect(ergebnis).toContain('erster Zug')
+    expect(ergebnis).not.toBe('erster Zug')
     expect(ev.filter(e => e.art === 'model.answered')).toHaveLength(2)
     rmSync(w, { recursive: true, force: true })
   })
