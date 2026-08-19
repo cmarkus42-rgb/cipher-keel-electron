@@ -89,8 +89,13 @@ export class OpenAiCompatibleClient implements ModelClient {
       throw new Error('OpenAiCompatibleClient wurde mit einem fremden Endpunkt aufgerufen')
     }
     const endpoint = req.endpoint
-    const key = await resolveApiKey(endpoint.keyRef)
-    if (!key) {
+    // An empty keyRef means the endpoint needs no key — Ollama's /v1 surface and vLLM. A named
+    // keyRef that resolves to nothing stays a named failure. Same rule as chat() below; this
+    // method used to call resolveApiKey('') unconditionally and throw "kein API-Schlüssel
+    // hinterlegt" for exactly the endpoints that declared they need none — every local-http
+    // entry with codec: 'openai-chat' routing a one-shot role (note tagging) through generate().
+    const key = endpoint.keyRef === '' ? null : await resolveApiKey(endpoint.keyRef)
+    if (endpoint.keyRef !== '' && !key) {
       throw new Error(
         `Für '${endpoint.model}' ist kein API-Schlüssel hinterlegt — erwartet im Keychain ` +
         `oder als Umgebungsvariable; siehe docs/anpassbare-flaechen.md`
@@ -100,6 +105,11 @@ export class OpenAiCompatibleClient implements ModelClient {
     const body = buildChatBody(req.prompt, endpoint)
     const url = new URL(chatCompletionsUrl(endpoint))
     const transport = url.protocol === 'http:' ? http : https
+    const headers: Record<string, string | number> = {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(body),
+    }
+    if (key) headers.Authorization = `Bearer ${key}`
 
     return new Promise<string>((resolve, reject) => {
       const request = transport.request(
@@ -108,11 +118,7 @@ export class OpenAiCompatibleClient implements ModelClient {
           port: url.port || (url.protocol === 'http:' ? 80 : 443),
           path: url.pathname + url.search,
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(body),
-            Authorization: `Bearer ${key}`,
-          },
+          headers,
           timeout: req.timeoutMs ?? API_TIMEOUT_MS,
         },
         (res) => {

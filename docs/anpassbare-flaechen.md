@@ -151,6 +151,16 @@ Ladezeit bezahlen, und die trifft denjenigen, der keel zuerst anspricht. Wer Mod
 durchmisst, ohne sie behalten zu wollen — eine Benchmark-Strecke —, setzt pro Auftrag einen
 endlichen Wert.
 
+**Diese Fläche fällt lautlos weg, sobald ein `local-http`-Eintrag den Codec `openai-chat`
+trägt.** `toModelEndpoint` (`src/main/model/entry.ts`) leitet einen solchen Eintrag über die
+`/v1`-Fläche und den OpenAI-kompatiblen Transport (`api-client.ts`) statt über
+`ollama-client.ts` — und `OpenAiCompatibleEndpointSpec`/`GenerateRequest` an dieser Stelle
+kennen kein `keep_alive`-Feld, weil ein API-Anbieter kein lokales Modell zum Warmhalten hat.
+Das Modell bleibt über denselben Ollama-Daemon erreichbar, aber jeder Aufruf läuft jetzt ohne
+`keep_alive`-Vorgabe — Ollama entscheidet serverseitig nach seinem eigenen Default, nicht mehr
+nach dem `-1` dieser App. Heute nicht editierbar und nicht einmal sichtbar: kein Warnhinweis
+im Settings-Fenster, wenn eine Faehigkeitszeile diesen Codec waehlt.
+
 ## Kostenbudget — versionierte Preistabelle
 
 | Fläche | Herkunft | Leser | Wirkung | Änderungen |

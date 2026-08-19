@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest'
+import { createServer } from 'node:http'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
   buildChatBody,
   extractChatText,
   describeApiFailure,
   chatCompletionsUrl,
+  OpenAiCompatibleClient,
 } from '../../src/main/worker/api-client'
 import {
   normaliseEndpoint,
@@ -91,5 +94,64 @@ describe('describeApiFailure', () => {
 
   it('survives a non-JSON error body', () => {
     expect(describeApiFailure(503, 'Service Unavailable', EP)).toContain('503')
+  })
+})
+
+/**
+ * Regression for the review finding: `chat()` treats `keyRef === ''` as "this endpoint needs no
+ * key" (Ollama's /v1 surface, vLLM), but `generate()` used to call `resolveApiKey('')`
+ * unconditionally and throw "kein API-Schlüssel hinterlegt" regardless — exactly the path a
+ * `local-http` entry with `codec: 'openai-chat'` takes for a one-shot role such as note tagging.
+ * A real local HTTP server stands in for the endpoint so both transport methods are exercised
+ * end to end, not just the key-resolution branch in isolation.
+ */
+async function mitLokalemServer(
+  antwort: (req: IncomingMessage, res: ServerResponse) => void,
+  lauf: (baseUrl: string) => Promise<void>,
+): Promise<{ gesehenerAuthHeader: string | undefined }> {
+  let gesehenerAuthHeader: string | undefined
+  const server = createServer((req, res) => {
+    gesehenerAuthHeader = req.headers.authorization
+    antwort(req, res)
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const adresse = server.address()
+  if (adresse === null || typeof adresse === 'string') throw new Error('unerwartete Server-Adresse im Test')
+  try {
+    await lauf(`http://127.0.0.1:${adresse.port}`)
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+  return { gesehenerAuthHeader }
+}
+
+function antworteMitEinerNachricht(req: IncomingMessage, res: ServerResponse): void {
+  const chunks: Buffer[] = []
+  req.on('data', (c: Buffer) => chunks.push(c))
+  req.on('end', () => {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ choices: [{ message: { content: 'hallo' } }] }))
+  })
+}
+
+describe('generate() und chat() behandeln einen leeren keyRef gleich', () => {
+  it('generate() wirft nicht "kein API-Schluessel hinterlegt" bei leerem keyRef und sendet keine Authorization', async () => {
+    let text = ''
+    const { gesehenerAuthHeader } = await mitLokalemServer(antworteMitEinerNachricht, async (baseUrl) => {
+      const endpoint = apiEndpoint({ baseUrl, keyRef: '' })
+      text = await new OpenAiCompatibleClient().generate({ prompt: 'x', endpoint })
+    })
+    expect(text).toBe('hallo')
+    expect(gesehenerAuthHeader).toBeUndefined()
+  })
+
+  it('chat() sendet bei leerem keyRef ebenfalls keine Authorization — dieselbe Behandlung wie generate()', async () => {
+    let roh: unknown
+    const { gesehenerAuthHeader } = await mitLokalemServer(antworteMitEinerNachricht, async (baseUrl) => {
+      const endpoint = apiEndpoint({ baseUrl, keyRef: '' })
+      roh = await new OpenAiCompatibleClient().chat({ koerper: { messages: [] }, endpoint })
+    })
+    expect(roh).toEqual({ choices: [{ message: { content: 'hallo' } }] })
+    expect(gesehenerAuthHeader).toBeUndefined()
   })
 })

@@ -180,6 +180,15 @@ export function toModelEndpoint(e: Erreichbarkeit, codec?: Faehigkeiten['codec']
     case 'local-http':
       // Driven through the /v1 surface when the capability row asks for the openai-chat codec.
       // That is how the Spark is reachable before ollama-native exists. No key: Ollama wants none.
+      //
+      // A named loss, not an oversight: `keepAliveSeconds` (the keep-warm surface documented in
+      // docs/anpassbare-flaechen.md, "Zum Festhalten geladener Modelle") is a field on
+      // `GenerateRequest`/`ollama-client.ts`'s request body only — `OpenAiCompatibleEndpointSpec`
+      // and `api-client.ts` carry no such field at all, because an API provider has no local
+      // model to keep resident. Routing a `local-http` entry through this branch therefore drops
+      // keep-alive control silently: the same Ollama daemon stays reachable, but every call now
+      // goes through the OpenAI-compatible transport, which never sends `keep_alive` and leaves
+      // Ollama to its own server-side default instead of this app's `-1` (pin indefinitely).
       if (codec === 'openai-chat') {
         return normaliseEndpoint({
           kind: 'openai-compatible', baseUrl: `http://${e.host}:${e.port}/v1`, model: e.model, keyRef: '',
