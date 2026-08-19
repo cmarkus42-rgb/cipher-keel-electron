@@ -31,7 +31,7 @@ import {
 } from './budget'
 import { kostenCent, VORGABE_PREISE, type Preis } from './preise'
 import type { WacheKontext } from './pfadwache'
-import type { WerkzeugRegistry } from './werkzeuge'
+import { META_WERKZEUG_NAME, type WerkzeugRegistry } from './werkzeuge'
 
 export interface Auftrag {
   auftragstext: string
@@ -208,20 +208,43 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
       return
     }
 
-    if (abschlussVorab) {
-      beende(u, laufId, abschlussVorab, nurText(antwort.bloecke), auftrag.pflichtfelder)
-      return
+    const aufrufe = werkzeugAufrufe(antwort.bloecke)
+
+    if (aufrufe.length > 0) {
+      if (abschlussVorab) {
+        // The closing turn is exactly one turn, not a loop of its own — the model already had
+        // its turn to comply. `continue` here would send another closing prompt, and a model
+        // that keeps calling tools would keep tripping this branch: an unbounded loop bounded
+        // only by a round budget that is already spent. Masking exists so the refusal lands in
+        // the log instead of vanishing inside nurText() — that is the whole fix, not a second
+        // chance. The run ends on this turn regardless, with the reason it was closing on and
+        // whatever text the model delivered alongside the refused calls.
+        for (const a of aufrufe) {
+          schreibe(u, laufId, 'tool.intent', { aufrufId: a.id, name: a.name, eingabe: a.eingabe })
+          schreibe(u, laufId, 'tool.failed', {
+            aufrufId: a.id, name: a.name,
+            meldung: 'Der Lauf ist im Abschlusszug — es wird kein Werkzeug mehr ausgefuehrt.',
+          })
+        }
+        beende(u, laufId, abschlussVorab, nurText(antwort.bloecke), auftrag.pflichtfelder)
+        return
+      }
+      // All tools in this stretch read, so all calls of a turn may run concurrently. The
+      // Single-Writer rule from M8 section 3.2 holds trivially: no call writes. The mechanism
+      // for it arrives with the writing tools.
+      await Promise.all(aufrufe.map(a => fuehreAus(u, laufId, a)))
+      // Wall-clock time moved while the tools ran even though no new model.answered event did —
+      // reconstructed again, not carried, same rule as everywhere else in this loop.
+      const verbrauchNachWerkzeugen = verbrauchAusEreignissen(ereignisse, auftrag.modellId, u.uhr())
+      const nachWerkzeug = pruefeBudgets(auftrag.budgets, verbrauchNachWerkzeugen, f.nutzbaresKontextfenster)
+      if (nachWerkzeug) {
+        schreibe(u, laufId, 'budget.warned', { grund: nachWerkzeug.code, anweisung: nachWerkzeug.anweisung })
+      }
+      continue
     }
 
-    const aufrufe = werkzeugAufrufe(antwort.bloecke)
-    if (aufrufe.length > 0) {
-      // Task 12 turns this into execution. Until then a call is a named contract break rather
-      // than something quietly ignored.
-      beende(u, laufId, {
-        code: 'transportfehler', endzustand: 'abgebrochen',
-        anweisung: `Das Modell rief '${aufrufe[0].name}' auf, obwohl keine Werkzeugliste ` +
-          `gesendet wurde.`,
-      }, nurText(antwort.bloecke), undefined, `Das Modell rief '${aufrufe[0].name}' auf.`)
+    if (abschlussVorab) {
+      beende(u, laufId, abschlussVorab, nurText(antwort.bloecke), auftrag.pflichtfelder)
       return
     }
 
@@ -252,6 +275,59 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
 
     beende(u, laufId, ZIEL_ERREICHT, nurText(antwort.bloecke), auftrag.pflichtfelder)
     return
+  }
+}
+
+/**
+ * One tool call, with the intent written *before* the effect.
+ *
+ * That order is the whole point: a hard death between effect and result leaves an intent without
+ * a completion, and the projection turns that into "execution unknown" rather than repeating the
+ * call. Writing the intent afterwards would make the two states indistinguishable.
+ */
+async function fuehreAus(
+  u: LaufUmgebung, laufId: string, a: Extract<Block, { art: 'werkzeug-aufruf' }>,
+): Promise<void> {
+  schreibe(u, laufId, 'tool.intent', { aufrufId: a.id, name: a.name, eingabe: a.eingabe })
+
+  if (a.name === META_WERKZEUG_NAME) {
+    const gesucht = typeof a.eingabe.name === 'string' ? a.eingabe.name : ''
+    const schema = u.registry.schemaVon(gesucht)
+    if (!schema) {
+      schreibe(u, laufId, 'tool.failed', {
+        aufrufId: a.id, name: a.name,
+        meldung: `Es gibt kein Werkzeug '${gesucht}'.`,
+      })
+      return
+    }
+    // Appended to the history, never written into the stable prefix.
+    schreibe(u, laufId, 'tool.schema_loaded', { name: gesucht, schema })
+    schreibe(u, laufId, 'tool.completed', {
+      aufrufId: a.id, name: a.name,
+      inhalt: [{ art: 'text', text: `Schema fuer ${gesucht} steht im Verlauf.` }],
+    })
+    return
+  }
+
+  const werkzeug = u.registry.finde(a.name)
+  if (!werkzeug) {
+    schreibe(u, laufId, 'tool.failed', {
+      aufrufId: a.id, name: a.name,
+      meldung: `Es gibt kein Werkzeug '${a.name}'. Verfuegbar sind: ` +
+        u.registry.alle().map(w => w.name).join(', ') + '.',
+    })
+    return
+  }
+
+  try {
+    const r = await werkzeug.ausfuehren(a.eingabe, { wache: u.wache, graphDb: u.graphDb })
+    if (r.ok) schreibe(u, laufId, 'tool.completed', { aufrufId: a.id, name: a.name, inhalt: r.inhalt })
+    else schreibe(u, laufId, 'tool.failed', { aufrufId: a.id, name: a.name, meldung: r.meldung })
+  } catch (err) {
+    schreibe(u, laufId, 'tool.failed', {
+      aufrufId: a.id, name: a.name,
+      meldung: err instanceof Error ? err.message : String(err),
+    })
   }
 }
 
@@ -290,7 +366,7 @@ function schreibe(
 
 function beende(
   u: LaufUmgebung, laufId: string, grund: Abschlussgrund, ergebnis: string,
-  pflichtfelder?: string[], hinweis?: string,
+  pflichtfelder?: string[],
 ): void {
   // The contract is checked at the outer edge only, and never enforced: a visibly failed run
   // beats valid nonsense (M8 section 4.9).
@@ -303,6 +379,5 @@ function beende(
     anweisung: grund.anweisung,
     ergebnis,
     vertrag: vertrag ? (vertrag.ok ? { ok: true } : { ok: false, grund: vertrag.reason }) : null,
-    ...(hinweis ? { hinweis } : {}),
   })
 }

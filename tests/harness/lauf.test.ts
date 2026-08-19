@@ -96,17 +96,6 @@ describe('starteLauf', () => {
     expect(gesendet[1].startsWith(gesendet[0].split('## Fortschritt')[0])).toBe(true)
   })
 
-  it('lehnt einen Werkzeugaufruf ab, solange keine Werkzeugliste gesendet wurde', async () => {
-    const werkzeugAntwort: ModelAntwort = {
-      bloecke: [{ art: 'werkzeug-aufruf', id: 'c1', name: 'zaubern', eingabe: {} }],
-      stopGrund: { normalisiert: 'werkzeug', roh: 'tool_calls' },
-      usage: { eingabeToken: 100, ausgabeToken: 10, roh: null },
-    }
-    const u = umgebungMit([werkzeugAntwort])
-    const laufId = await starteLauf(AUFTRAG, u)
-    expect(String(lesen(u.db, laufId).at(-1)?.nutzlast.hinweis)).toContain('zaubern')
-  })
-
   it('faehrt nach erschoepftem Rundenbudget einen Abschlusszug und endet fertig', async () => {
     // Two ordinary turns, both stopping naturally — no tool calls involved. The first turn
     // exhausts the round budget, the second is the closing turn that delivers the partial result.
