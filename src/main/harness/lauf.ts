@@ -24,7 +24,7 @@ import { codecFuer } from './codec'
 import type { Block, ModelAntwort } from './form'
 import { nurText, werkzeugAufrufe } from './form'
 import { projiziere } from './projektion'
-import { baueFortschritt, baueStabilenTeil, type PraefixTeile } from './praefix'
+import { baueFortschritt, baueStabilenTeil, type PraefixTeile, type PraefixText } from './praefix'
 import {
   grundFuerStopGrund, pruefeBudgets, VON_AUSSEN, ZIEL_ERREICHT,
   type Abschlussgrund, type Budgets, type Verbrauch,
@@ -54,7 +54,7 @@ export interface LaufUmgebung {
   uhr: () => number
   abgebrochen: () => boolean
   /** Wire body in, raw answer already decoded by the codec, out. */
-  sende: (koerper: unknown, praefix: string) => Promise<ModelAntwort>
+  sende: (koerper: unknown, praefix: PraefixText) => Promise<ModelAntwort>
 }
 
 /**
@@ -200,7 +200,12 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
     const abschlussVorab = pruefeBudgets(auftrag.budgets, verbrauchVorab, f.nutzbaresKontextfenster)
 
     // The stable part first, byte-identical every turn; the volatile progress object last.
-    const praefix = [stabil, baueFortschritt([], erledigte(ereignisse))].filter(t => t !== '').join('\n\n')
+    // Handed to the transport as two pieces, not one text: the cache breakpoint belongs between
+    // them, and a transport that only sees the joined string would have to cut it back apart on
+    // a heading it does not own. `prompt.sent` still records both together — that is what went
+    // out (spec 6.3).
+    const fluechtig = baueFortschritt([], erledigte(ereignisse))
+    const praefix = [stabil, fluechtig].filter(t => t !== '').join('\n\n')
 
     let koerper: unknown
     try {
@@ -232,7 +237,7 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
 
     let antwort: ModelAntwort
     try {
-      antwort = await u.sende(koerper, praefix)
+      antwort = await u.sende(koerper, { stabil, fluechtig })
     } catch (err) {
       beende(u, laufId, ereignisse, {
         code: 'transportfehler', endzustand: 'abgebrochen',

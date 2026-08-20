@@ -44,6 +44,7 @@ import { eintragNachId } from './model/registry'
 import { toModelEndpoint, type Faehigkeiten, type ModellEintrag } from './model/entry'
 import { clientForEndpoint } from './worker/model-client'
 import { assemblePraefixTeile } from './harness-praefix-quelle'
+import type { PraefixText } from './harness/praefix'
 import {
   starteLauf, setzeFort, oeffneHarnessDb, lesen, laufIds, codecFuer,
   WerkzeugRegistry, DATEI_WERKZEUGE, GRAPH_WERKZEUGE,
@@ -127,17 +128,39 @@ function fehler(err: unknown): HarnessAntwort<never> {
 }
 
 /**
- * Folds the volatile praefix into the wire body. Neither codec's `toWire()` writes a system
- * field — it only knows the conversation and the tool stubs — so the transport is where the two
- * pieces the loop hands over separately (`koerper`, `praefix`) become the one request a provider
- * actually expects: Anthropic as its own top-level field, OpenAI-compatible dialects as the
- * first message.
+ * Folds the praefix into the wire body. Neither codec's `toWire()` writes a system field — it only
+ * knows the conversation and the tool stubs — so the transport is where the pieces the loop hands
+ * over separately (`koerper`, `praefix`) become the one request a provider actually expects:
+ * Anthropic as its own top-level field, OpenAI-compatible dialects as the first message.
+ *
+ * This is also where the cache breakpoint is set, and why the loop hands the praefix over in two
+ * pieces. Anthropic caches nothing without an explicit `cache_control` marker; the first real run
+ * reported `cache_read_input_tokens: 0` on every turn and paid the full opening each time,
+ * although the stable part was byte-identical throughout. The marker goes on the stable block and
+ * on nothing else — everything up to and including a marked block is cached, so a marker behind
+ * the progress object would miss on every turn in which a tool ran. Tools are sent before the
+ * system field, so the tool stubs sit inside the cached range as well.
+ *
+ * OpenAI-compatible dialects cache their prefix by themselves and are left exactly as they were:
+ * an unknown field in that body risks an HTTP 400 across the whole dialect for no gain.
  */
-function mitSystemPraefix(koerper: unknown, praefix: string, codec: Faehigkeiten['codec']): unknown {
+export function mitSystemPraefix(
+  koerper: unknown, praefix: PraefixText, codec: Faehigkeiten['codec'],
+): unknown {
   const k = koerper as Record<string, unknown>
-  if (codec === 'anthropic') return { ...k, system: praefix }
+  if (codec === 'anthropic') {
+    const bloecke: Array<Record<string, unknown>> = []
+    // Empty blocks are never written: Anthropic rejects a text block with an empty string, and a
+    // marker on an empty block would cache nothing while looking like it cached something.
+    if (praefix.stabil !== '') {
+      bloecke.push({ type: 'text', text: praefix.stabil, cache_control: { type: 'ephemeral' } })
+    }
+    if (praefix.fluechtig !== '') bloecke.push({ type: 'text', text: praefix.fluechtig })
+    return { ...k, system: bloecke }
+  }
+  const zusammen = [praefix.stabil, praefix.fluechtig].filter(t => t !== '').join('\n\n')
   const nachrichten = Array.isArray(k.messages) ? k.messages : []
-  return { ...k, messages: [{ role: 'system', content: praefix }, ...nachrichten] }
+  return { ...k, messages: [{ role: 'system', content: zusammen }, ...nachrichten] }
 }
 
 /**
@@ -150,7 +173,7 @@ function mitSystemPraefix(koerper: unknown, praefix: string, codec: Faehigkeiten
  * first thing to fail.
  */
 function sendeUeberTransport(eintrag: ModellEintrag) {
-  return async (koerper: unknown, praefix: string): Promise<ModelAntwort> => {
+  return async (koerper: unknown, praefix: PraefixText): Promise<ModelAntwort> => {
     const f = eintrag.faehigkeiten!
     const endpunkt = toModelEndpoint(eintrag.erreichbarkeit, f.codec)
     const roh = await clientForEndpoint(endpunkt).chat({

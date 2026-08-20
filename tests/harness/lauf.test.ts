@@ -5,6 +5,7 @@ import { WerkzeugRegistry } from '../../src/main/harness/werkzeuge'
 import type { ModellEintrag } from '../../src/main/model/entry'
 import type { ModelAntwort } from '../../src/main/harness/form'
 import type { Ereignis } from '../../src/main/harness/ereignisse'
+import type { PraefixText } from '../../src/main/harness/praefix'
 import { laufAbgeschlossen } from '../../src/main/harness-handlers'
 
 const EINTRAG: ModellEintrag = {
@@ -25,7 +26,7 @@ const AUFTRAG = {
 }
 
 /** A transport stand-in: the loop must not know it is not talking to a network. */
-function umgebungMit(antworten: ModelAntwort[], gesendet: string[] = []) {
+function umgebungMit(antworten: ModelAntwort[], gesendet: PraefixText[] = []) {
   let i = 0
   let t = 0
   return {
@@ -38,7 +39,7 @@ function umgebungMit(antworten: ModelAntwort[], gesendet: string[] = []) {
     strom: () => {},
     uhr: () => (t += 1000),
     abgebrochen: () => false,
-    sende: async (_koerper: unknown, praefix: string): Promise<ModelAntwort> => {
+    sende: async (_koerper: unknown, praefix: PraefixText): Promise<ModelAntwort> => {
       gesendet.push(praefix)
       return antworten[i++]
     },
@@ -71,11 +72,15 @@ describe('starteLauf', () => {
   })
 
   it('legt den gesendeten Prompt woertlich und vollstaendig ab', async () => {
-    const gesendet: string[] = []
+    const gesendet: PraefixText[] = []
     const u = umgebungMit([antwort('hallo')], gesendet)
     const laufId = await starteLauf(AUFTRAG, u)
     const ev = lesen(u.db, laufId).find(e => e.art === 'prompt.sent')
-    expect(ev?.nutzlast.text).toBe(gesendet[0])
+    // Seit der Transport beide Teile getrennt bekommt, ist der abgelegte Text ihre Zusammen-
+    // setzung. Zusammengesetzt wird hier nur die Verbindung der beiden Stuecke, nicht ihr Inhalt
+    // — der kommt weiter aus dem, was `sende` wirklich bekommen hat, nicht aus einem zweiten Bau.
+    const zusammen = [gesendet[0].stabil, gesendet[0].fluechtig].filter(t => t !== '').join('\n\n')
+    expect(ev?.nutzlast.text).toBe(zusammen)
     expect(String(ev?.nutzlast.text)).toContain('BODY')
   })
 
@@ -99,11 +104,17 @@ describe('starteLauf', () => {
   it('haelt den stabilen Praefix ueber die Zuege zeichengleich', async () => {
     // The second turn comes from the closing mode, not from a tool call — a run without tools
     // still gets two prompt.sent events once its round budget is hit.
-    const gesendet: string[] = []
+    const gesendet: PraefixText[] = []
     const u = umgebungMit([antwort('erster Zug'), antwort('Abschluss')], gesendet)
     await starteLauf({ ...AUFTRAG, budgets: { ...AUFTRAG.budgets, runden: 1 } }, u)
-    // Every sent prompt starts with the identical stable part — that is what the provider caches.
-    expect(gesendet[1].startsWith(gesendet[0].split('## Fortschritt')[0])).toBe(true)
+    expect(gesendet).toHaveLength(2)
+    // Nicht gegen Leer verglichen: zwei leere Zeichenketten waeren auch zeichengleich.
+    expect(gesendet[0].stabil).toContain('BODY')
+    // Das ist, was der Anbieter zwischenspeichert. Der Test faellt, sobald jemand den stabilen
+    // Teil pro Zug neu baut — frueher wurde dafuer die gesendete Zeichenkette an der Ueberschrift
+    // '## Fortschritt' aufgeschnitten; seit der Transport beide Teile getrennt bekommt, braucht
+    // es diese Chirurgie nicht mehr.
+    expect(gesendet[1].stabil).toBe(gesendet[0].stabil)
   })
 
   it('faehrt nach erschoepftem Rundenbudget einen Abschlusszug und endet fertig', async () => {

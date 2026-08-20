@@ -21,6 +21,20 @@ export interface PraefixTeile {
   auftragstext: string
 }
 
+/**
+ * Was der Transport braucht, um den Zwischenspeicher-Haltepunkt richtig zu setzen: die beiden
+ * Teile getrennt, nicht als ein Text. Der Haltepunkt gehoert *zwischen* sie — hinter beiden
+ * gesetzt wuerde er bei jedem Werkzeugaufruf verfehlen, also genau dann, wenn er sich lohnt.
+ * Der Schleife selbst bleibt der zusammengesetzte Text erhalten: `prompt.sent` haelt fest, was
+ * wirklich abging (Spec 6.3), und das ist beides zusammen.
+ */
+export interface PraefixText {
+  /** Zeichengleich ueber alle Zuege — das ist der Teil, der zwischengespeichert wird. */
+  stabil: string
+  /** Das Fortschrittsobjekt. Aendert sich mit jedem Werkzeugaufruf. Leer, solange keiner lief. */
+  fluechtig: string
+}
+
 export function baueStabilenTeil(teile: PraefixTeile, werkzeuge: WerkzeugStummel[]): string {
   const abschnitte = [
     teile.body,
