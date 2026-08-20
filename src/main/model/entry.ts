@@ -53,6 +53,9 @@ const ARTEN = new Set<string>(['cli-harness', 'local-http', 'api'])
 const OERTLICHKEITEN = new Set<string>(['lokal', 'eigenes-netz', 'fremdes-netz'])
 const QUELLEN = new Set<string>(['gemessen', 'vermutet', 'herstellerangabe'])
 
+/** The Faehigkeiten fields that must be a whole number greater than zero. */
+const GANZZAHL_FELDER = ['nutzbaresKontextfenster', 'werkzeugObergrenze', 'rundenbudget'] as const
+
 /** Everything a capability row does not state. Never `gemessen` — that is the canary's word. */
 const FAEHIGKEITEN_RUECKFALL: Faehigkeiten = {
   codec: 'text',
@@ -116,6 +119,18 @@ export function normaliseEintrag(raw: unknown): ModellEintrag {
   let faehigkeiten: Faehigkeiten | undefined
   if (r.faehigkeiten) {
     faehigkeiten = { ...FAEHIGKEITEN_RUECKFALL, ...r.faehigkeiten }
+    // A budget or a context limit that is NaN is worse than a missing one: every comparison
+    // against NaN is false, so whatever check the harness builds on this field goes silently
+    // inert instead of failing loudly (Review-Runde 1, Fund 2). Number.isInteger already
+    // implies finite, so this one check catches NaN, Infinity, non-integers and non-numbers.
+    for (const feld of GANZZAHL_FELDER) {
+      const wert = faehigkeiten[feld]
+      if (typeof wert !== 'number' || !Number.isInteger(wert) || wert <= 0) {
+        throw new Error(
+          `Eintrag '${r.id}': faehigkeiten.${feld} muss eine ganze Zahl groesser als 0 sein, gesehen: ${String(wert)}`
+        )
+      }
+    }
     if (!QUELLEN.has(faehigkeiten.quelle)) {
       throw new Error(
         `Eintrag '${r.id}': unbekannte quelle '${faehigkeiten.quelle}' — ` +
@@ -147,17 +162,43 @@ export function normaliseEintrag(raw: unknown): ModellEintrag {
   }
 }
 
-export function toModelEndpoint(e: Erreichbarkeit): ModelEndpoint {
+/**
+ * The endpoint a registry entry resolves to.
+ *
+ * The optional codec is what tells an `api` entry apart from an Anthropic one, and it is the
+ * only thing that does — a second `dialekt` field would be the same fact written twice, with a
+ * consistency rule as the running cost. `normaliseEintrag` calls this without a codec, because
+ * at that point `faehigkeiten` is not merged yet and the question there is only whether
+ * baseUrl and keyRef are present — the same question for both dialects.
+ */
+export function toModelEndpoint(e: Erreichbarkeit, codec?: Faehigkeiten['codec']): ModelEndpoint {
   switch (e.art) {
     case 'cli-harness':
       // The reason a cli-harness entry is different lives in eignung.ts (sperrgrund) —
       // this is the transport fact only, not a restatement of the rule.
       throw new Error(`Ein cli-harness-Eintrag hat keinen Endpunkt`)
     case 'local-http':
+      // Driven through the /v1 surface when the capability row asks for the openai-chat codec.
+      // That is how the Spark is reachable before ollama-native exists. No key: Ollama wants none.
+      //
+      // A named loss, not an oversight: `keepAliveSeconds` (the keep-warm surface documented in
+      // docs/anpassbare-flaechen.md, "Zum Festhalten geladener Modelle") is a field on
+      // `GenerateRequest`/`ollama-client.ts`'s request body only — `OpenAiCompatibleEndpointSpec`
+      // and `api-client.ts` carry no such field at all, because an API provider has no local
+      // model to keep resident. Routing a `local-http` entry through this branch therefore drops
+      // keep-alive control silently: the same Ollama daemon stays reachable, but every call now
+      // goes through the OpenAI-compatible transport, which never sends `keep_alive` and leaves
+      // Ollama to its own server-side default instead of this app's `-1` (pin indefinitely).
+      if (codec === 'openai-chat') {
+        return normaliseEndpoint({
+          kind: 'openai-compatible', baseUrl: `http://${e.host}:${e.port}/v1`, model: e.model, keyRef: '',
+        })
+      }
       return normaliseEndpoint({ kind: 'ollama', host: e.host, port: e.port, model: e.model })
     case 'api':
       return normaliseEndpoint({
-        kind: 'openai-compatible', baseUrl: e.baseUrl, model: e.model, keyRef: e.keyRef,
+        kind: codec === 'anthropic' ? 'anthropic' : 'openai-compatible',
+        baseUrl: e.baseUrl, model: e.model, keyRef: e.keyRef,
       })
   }
 }

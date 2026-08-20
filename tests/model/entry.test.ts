@@ -90,6 +90,59 @@ describe('normaliseEintrag', () => {
       faehigkeiten: { codec: 'ollama-native', werkzeugmodus: 'text', quelle: 'geraten' },
     })).toThrow("unbekannte quelle 'geraten'")
   })
+
+  // Fund 2 (Review-Runde 1): the three numeric fields went unchecked. NaN is the dangerous
+  // case -- every comparison against NaN is false, so a budget/context check built on it goes
+  // silently inert rather than failing loudly.
+  describe('numerische Faehigkeiten-Felder', () => {
+    it('rejects NaN in nutzbaresKontextfenster', () => {
+      expect(() => normaliseEintrag({
+        ...LOCAL,
+        faehigkeiten: { codec: 'ollama-native', werkzeugmodus: 'text', nutzbaresKontextfenster: NaN },
+      })).toThrow("faehigkeiten.nutzbaresKontextfenster muss eine ganze Zahl groesser als 0 sein")
+    })
+
+    it('rejects a rundenbudget of 0', () => {
+      expect(() => normaliseEintrag({
+        ...LOCAL,
+        faehigkeiten: { codec: 'ollama-native', werkzeugmodus: 'text', rundenbudget: 0 },
+      })).toThrow("faehigkeiten.rundenbudget muss eine ganze Zahl groesser als 0 sein")
+    })
+
+    it('rejects a negative werkzeugObergrenze', () => {
+      expect(() => normaliseEintrag({
+        ...LOCAL,
+        faehigkeiten: { codec: 'ollama-native', werkzeugmodus: 'text', werkzeugObergrenze: -3 },
+      })).toThrow('faehigkeiten.werkzeugObergrenze')
+    })
+
+    it('rejects a non-integer rundenbudget', () => {
+      expect(() => normaliseEintrag({
+        ...LOCAL,
+        faehigkeiten: { codec: 'ollama-native', werkzeugmodus: 'text', rundenbudget: 3.5 },
+      })).toThrow('faehigkeiten.rundenbudget')
+    })
+
+    it('rejects a non-numeric nutzbaresKontextfenster', () => {
+      expect(() => normaliseEintrag({
+        ...LOCAL,
+        faehigkeiten: { codec: 'ollama-native', werkzeugmodus: 'text', nutzbaresKontextfenster: '8192' },
+      })).toThrow('faehigkeiten.nutzbaresKontextfenster')
+    })
+
+    it('accepts positive integers for all three fields', () => {
+      const e = normaliseEintrag({
+        ...LOCAL,
+        faehigkeiten: {
+          codec: 'ollama-native', werkzeugmodus: 'text',
+          nutzbaresKontextfenster: 4096, werkzeugObergrenze: 6, rundenbudget: 20,
+        },
+      })
+      expect(e.faehigkeiten?.nutzbaresKontextfenster).toBe(4096)
+      expect(e.faehigkeiten?.werkzeugObergrenze).toBe(6)
+      expect(e.faehigkeiten?.rundenbudget).toBe(20)
+    })
+  })
 })
 
 describe('toModelEndpoint', () => {
@@ -111,5 +164,31 @@ describe('toModelEndpoint', () => {
   it('refuses to build an endpoint for a cli-harness entry', () => {
     expect(() => toModelEndpoint({ art: 'cli-harness', cli: 'claude', handle: 'opus' }))
       .toThrow('hat keinen Endpunkt')
+  })
+})
+
+describe('toModelEndpoint mit Codec', () => {
+  it('macht aus local-http plus openai-chat einen /v1-Endpunkt ohne Schluessel', () => {
+    const ep = toModelEndpoint(
+      { art: 'local-http', host: '100.78.7.108', port: 11434, model: 'gemma4:26b' },
+      'openai-chat',
+    )
+    expect(ep).toEqual({
+      kind: 'openai-compatible', baseUrl: 'http://100.78.7.108:11434/v1',
+      model: 'gemma4:26b', keyRef: '',
+    })
+  })
+
+  it('macht aus api plus anthropic einen Anthropic-Endpunkt', () => {
+    const ep = toModelEndpoint(
+      { art: 'api', baseUrl: 'https://api.anthropic.com/v1', model: 'claude-opus-5', keyRef: 'anthropic' },
+      'anthropic',
+    )
+    expect(ep.kind).toBe('anthropic')
+  })
+
+  it('bleibt ohne Codec beim bisherigen Verhalten', () => {
+    const ep = toModelEndpoint({ art: 'local-http', host: 'h', port: 1, model: 'm' })
+    expect(ep.kind).toBe('ollama')
   })
 })

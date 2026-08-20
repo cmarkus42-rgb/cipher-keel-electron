@@ -86,6 +86,14 @@ function ProjectApp() {
     }
   }, [])
 
+  const handleOpenHarness = useCallback(async () => {
+    try {
+      await api().invoke('window:open-harness')
+    } catch (err) {
+      console.error('[project-window] window:open-harness failed:', err)
+    }
+  }, [])
+
   if (loading) {
     return (
       <div style={styles.loading}>
@@ -117,6 +125,13 @@ function ProjectApp() {
               Grid oeffnen
             </button>
           )}
+          <button
+            style={styles.settingsBtn}
+            onClick={handleOpenHarness}
+            title="Harness oeffnen — eigene Agenten-Schleife fuer einen Auftrag starten"
+          >
+            Harness
+          </button>
           <button
             style={styles.settingsBtn}
             onClick={handleOpenSettings}

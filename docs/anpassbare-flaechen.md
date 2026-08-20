@@ -151,6 +151,35 @@ Ladezeit bezahlen, und die trifft denjenigen, der keel zuerst anspricht. Wer Mod
 durchmisst, ohne sie behalten zu wollen — eine Benchmark-Strecke —, setzt pro Auftrag einen
 endlichen Wert.
 
+**Diese Fläche fällt lautlos weg, sobald ein `local-http`-Eintrag den Codec `openai-chat`
+trägt.** `toModelEndpoint` (`src/main/model/entry.ts`) leitet einen solchen Eintrag über die
+`/v1`-Fläche und den OpenAI-kompatiblen Transport (`api-client.ts`) statt über
+`ollama-client.ts` — und `OpenAiCompatibleEndpointSpec`/`GenerateRequest` an dieser Stelle
+kennen kein `keep_alive`-Feld, weil ein API-Anbieter kein lokales Modell zum Warmhalten hat.
+Das Modell bleibt über denselben Ollama-Daemon erreichbar, aber jeder Aufruf läuft jetzt ohne
+`keep_alive`-Vorgabe — Ollama entscheidet serverseitig nach seinem eigenen Default, nicht mehr
+nach dem `-1` dieser App. Heute nicht editierbar und nicht einmal sichtbar: kein Warnhinweis
+im Settings-Fenster, wenn eine Faehigkeitszeile diesen Codec waehlt.
+
+## Kostenbudget — versionierte Preistabelle
+
+| Fläche | Herkunft | Leser | Wirkung | Änderungen |
+|---|---|---|---|---|
+| Modellpreise (Cent pro Million Token, Eingabe und Ausgabe getrennt) | `src/main/harness/preise.ts`, Objekt `VORGABE_PREISE` | `src/main/harness/lauf.ts`, Funktion `verbrauchAusEreignissen`, rekonstruiert nach jeder Antwort des Modells aus dem Ereignisprotokoll neu; `src/main/harness/budget.ts`s `pruefeBudgets` vergleicht danach nur noch das Ergebnis gegen das Kostenbudget | sofort — beim nächsten Lauf werden Kosten gegen die neue Tabelle gerechnet | Preise ändern sich schneller als Releases; ein alter Stand würde das Kostenbudget an der falschen Stelle abbrechen. Der Abschlussgrund nennt deshalb immer das Datum der Preistabelle (`PREISTABELLE_STAND`), damit die Versionsungewissheit sichtbar bleibt statt weggeglättet zu werden. |
+
+**Wichtige Einschränkung:** Ein unbekanntes Modell kostet null, nicht geschätzt. Ein geratener Preis, der einen Lauf abbricht, sähe aus wie eine Messung und ist schlimmer als gar keine Kostenbremse. Ist ein Modell nicht in der Tabelle, läuft das Kostenbudget nicht für es an.
+
+## Die vier Lauf-Budgets — heute hart verdrahtet
+
+| Fläche | Herkunft | Wirkung | In der App sichtbar | Editierbar |
+|---|---|---|---|---|
+| `STANDARD_BUDGETS` (Runden, Wanduhr in ms, Kosten in Cent, Kontextanteil 0..1) | `src/main/harness-handlers.ts`, Konstante `STANDARD_BUDGETS` | Jeder Lauf ueber `HARNESS_LAUF_STARTEN` bekommt exakt dieselben vier Budgets — es gibt noch kein Fenster-Feld, das sie je Lauf setzt (siehe Kommentar an der Konstante: „Placeholder until the harness window can set its own budgets"). `src/main/harness/budget.ts`s `pruefeBudgets` prueft danach gegen genau diese Werte. | nein | **nein — heute nur durch Aendern der Konstante und Neubau der App.** Der Beleg dafuer steht im Messprotokoll (`docs/superpowers/plans/2026-08-18-harness-kern.md`, Beleg 7): fuer die Budget-Probe wurde `STANDARD_BUDGETS.runden` von `12` auf `2` gesetzt, die App neu gebaut, geprueft, danach zurueckgesetzt und erneut gebaut. |
+
+Das ist eine anpassbare Flaeche ohne Oberflaeche im Sinne von CK-NFR-012, ehrlich gefuehrt statt
+verschwiegen: Wer ein Rundenbudget, ein Zeitbudget, ein Kostenbudget oder einen Kontextanteil
+abweichend vom Vorgabewert braucht, muss heute Quelltext aendern und die App neu bauen. Ein
+Budget-Feld im Harness-Fenster ist Folgearbeit, keine dieser Strecke.
+
 ---
 
 # Einrichtung ist Teil des Ergebnisses (CK-NFR-013)

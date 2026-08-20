@@ -67,6 +67,7 @@ import {
   PROJECT_GET_CURRENT,
   WINDOW_OPEN_GRID,
   WINDOW_OPEN_SETTINGS,
+  WINDOW_OPEN_HARNESS,
   KANBAN_LIST,
   KANBAN_CREATE,
   KANBAN_UPDATE,
@@ -103,9 +104,10 @@ import { graphMaintain } from './graph/maintain'
 import type { GraphWriter } from './graph/writer'
 import { ProjectManager } from './project/project-manager'
 import type { CreateKanbanItemInput, UpdateKanbanItemInput } from '../shared/kanban-types'
-import { createMainWindow, createSettingsWindow } from './window-manager'
+import { createMainWindow, createSettingsWindow, createHarnessWindow } from './window-manager'
 import type { AppServices } from './window-manager'
 import { registerSettingsHandlers } from './settings/handlers'
+import { registerHarnessHandlers } from './harness-handlers'
 import { registerWindow, broadcast } from './event-bus'
 import { normalizeToP1Format } from './p1/normalizer'
 import { getEntityDefinition, getEntityRahmen } from './preset/registry'
@@ -127,6 +129,8 @@ import { describeMissingTool } from './util/missing-tool'
 let activeGridWindow: BrowserWindow | null = null
 // Tracks the active settings window for focus-or-create logic
 let activeSettingsWindow: BrowserWindow | null = null
+// Tracks the active harness window for focus-or-create logic
+let activeHarnessWindow: BrowserWindow | null = null
 
 export function registerIpcHandlers(services: AppServices): void {
   // The registry demands its config reader — see Task 6. This is the one place that has
@@ -722,6 +726,21 @@ export function registerIpcHandlers(services: AppServices): void {
   })
 
   registerSettingsHandlers()
+
+  ipcMain.handle(WINDOW_OPEN_HARNESS, () => {
+    if (!activeHarnessWindow || activeHarnessWindow.isDestroyed()) {
+      activeHarnessWindow = createHarnessWindow(services)
+      registerWindow(activeHarnessWindow)
+      activeHarnessWindow.on('closed', () => {
+        activeHarnessWindow = null
+      })
+    } else {
+      activeHarnessWindow.focus()
+    }
+    return { ok: true }
+  })
+
+  registerHarnessHandlers(services)
 
   // ---------------------------------------------------------------------------
   // GitHub handlers (Phase 3b — GH-001..GH-005, GH-014, GH-015)

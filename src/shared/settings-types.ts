@@ -30,6 +30,31 @@ export type ErreichbarkeitAnsicht =
   | { art: 'local-http'; host: string; port: number; model: string }
   | { art: 'api'; baseUrl: string; model: string; keyRef: string }
 
+/**
+ * A mirror of src/main/model/entry.ts's `Faehigkeiten`, not an import of it, same discipline
+ * as `ErreichbarkeitAnsicht` above. The form reads and writes the fields a human can
+ * reasonably guess at (codec, werkzeugmodus, the booleans, the three budgets) but never
+ * `quelle`: that stays `'vermutet'` on every write this window makes, because the only other
+ * value a human write could produce is `'herstellerangabe'`, and this window does not offer
+ * it either -- `'gemessen'` is the canary job's word, not a checkbox (spec section 7).
+ */
+export interface FaehigkeitenAnsicht {
+  codec: 'anthropic' | 'openai-chat' | 'ollama-native' | 'text'
+  werkzeugmodus: 'nativ' | 'text'
+  paralleleAufrufe: boolean
+  denkbloecke: boolean
+  bilder: boolean
+  dokumente: boolean
+  aufgeschobenesLaden: boolean
+  werkzeugObergrenze: number
+  nutzbaresKontextfenster: number
+  vertragsStrenge: { schemaTiefe: number; reparaturversuche: number }
+  rundenbudget: number
+  gemessenAm: string | null
+  gemessenMit: string | null
+  quelle: 'gemessen' | 'vermutet' | 'herstellerangabe'
+}
+
 export interface EintragAnsicht {
   id: string
   name: string
@@ -47,13 +72,11 @@ export interface EintragAnsicht {
   /** False for a bundled entry: those cannot be deleted, only overridden. */
   loeschbar: boolean
   /**
-   * The measured capability row, opaque and untyped on purpose. The form never edits it
-   * (Kanarienauftrag territory, spec 5.4) -- it only has to echo this back unmodified when
-   * saving an edit, so an unrelated field change stops erasing a row that was already
-   * there. `unknown` rather than `Faehigkeiten` keeps that boundary honest: nothing on this
-   * side is meant to read it, only carry it.
+   * The capability row. Undefined for a cli-harness entry (it has none) and for any other
+   * entry that has not had one set yet -- the form treats that the same as a row full of
+   * fallback values, so editing such an entry is how one gets attached.
    */
-  faehigkeiten: unknown
+  faehigkeiten: FaehigkeitenAnsicht | undefined
   /**
    * What is actually configured, so an edit form can start from the real values instead
    * of blanks. Without this an edit either fails validation for fields the user never

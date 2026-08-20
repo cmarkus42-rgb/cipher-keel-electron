@@ -157,6 +157,29 @@ export const SETTINGS_EINFACHFELD_SETZEN = 'settings:einfachfeld-setzen' as cons
 export const SETTINGS_RUECKFALL_ENDPUNKT_SETZEN = 'settings:rueckfall-endpunkt-setzen' as const
 
 // ---------------------------------------------------------------------------
+// Harness channels (M8 — the own agent loop)
+// ---------------------------------------------------------------------------
+export const HARNESS_LAUF_STARTEN = 'harness:lauf-starten' as const
+export const HARNESS_LAUF_LESEN = 'harness:lauf-lesen' as const
+export const HARNESS_LAUF_ABBRECHEN = 'harness:lauf-abbrechen' as const
+/**
+ * Resumes a run that has not written run.finished — a crash mid-run, or the app quitting while
+ * one was still going. The main process rejects this for a run that is already finished or does
+ * not exist; the renderer hiding the button for a finished run is a courtesy, not the boundary
+ * ("validate in main, never trust the renderer" — same rule as every other harness handler).
+ */
+export const HARNESS_LAUF_FORTSETZEN = 'harness:lauf-fortsetzen' as const
+/**
+ * Opens a native file dialog in the main process and remembers the chosen paths as
+ * user-attested. HARNESS_LAUF_STARTEN accepts an `anhaenge` path only if it was returned by
+ * this channel — see the comment on `dialogAusgewaehlt` in harness-handlers.ts for why.
+ */
+export const HARNESS_ANHAENGE_WAEHLEN = 'harness:anhaenge-waehlen' as const
+/** Main -> Renderer: one event of a running run, as it is appended. */
+export const HARNESS_EREIGNIS = 'harness:ereignis' as const
+export const WINDOW_OPEN_HARNESS = 'window:open-harness' as const
+
+// ---------------------------------------------------------------------------
 // App lifecycle channels
 // ---------------------------------------------------------------------------
 export const APP_READY = 'app:ready' as const
@@ -197,6 +220,7 @@ export type MainToRendererChannel =
   | typeof KANBAN_CHANGED
   | typeof APP_READY
   | typeof SERVICES_STATUS_CHANGED
+  | typeof HARNESS_EREIGNIS
 
 export type RendererToMainChannel =
   | typeof SESSION_CREATE
@@ -275,3 +299,9 @@ export type RendererToMainChannel =
   | typeof DIALOG_OPEN_DIR
   | typeof PROJECT_KICKOFF
   | typeof SERVICES_STATUS
+  | typeof HARNESS_LAUF_STARTEN
+  | typeof HARNESS_LAUF_LESEN
+  | typeof HARNESS_LAUF_ABBRECHEN
+  | typeof HARNESS_LAUF_FORTSETZEN
+  | typeof HARNESS_ANHAENGE_WAEHLEN
+  | typeof WINDOW_OPEN_HARNESS

@@ -1,22 +1,37 @@
 /**
  * EintragFormular — create or edit one registry entry.
  *
- * No capability row here: that is the canary job's territory, and a hand-filled row would
- * carry `vermutet` anyway, which is exactly what the fallback already gives. The form does
- * not read or edit `vorlage.faehigkeiten` either -- it only echoes it back unchanged on
- * save, so editing an entry cannot destroy a capability row that was already there.
+ * Includes the capability row (CK-NFR-012: what is meant to be adjustable in the app has to
+ * be adjustable in the app, not only by editing the config file by hand). A cli-harness
+ * entry gets no such section -- the CLI owns its own protocol, and normaliseEintrag rejects
+ * a faehigkeiten object there. `quelle` is never a form field the user picks from -- there is
+ * no dropdown for it. But it is not always `'vermutet'` either: `baueFaehigkeitenPayload`
+ * carries `quelle`/`gemessenAm`/`gemessenMit`/`vertragsStrenge` through from the entry's
+ * existing row unchanged, because a form must only change what it displays. Those four fields
+ * are not shown here, so an edit that only touches, say, Empfehlung must not silently turn a
+ * canary-measured row back into a guess (Review-Runde 1, Fund 3).
  *
  * Validation is not repeated on this side. The form assembles a raw object and lets
  * normaliseEintrag in main reject it — that function's German messages are precise, and a
- * second validator here would be a second truth.
+ * second validator here would be a second truth. The one exception is telling the user in
+ * advance that a choice is guaranteed to fail: `codecFuer` in src/main/harness/codec.ts only
+ * builds `anthropic` and `openai-chat`, so this form still offers `ollama-native` and `text`
+ * (existing entries use `ollama-native`, and hiding the option would show an unexplained blank
+ * select for them) but warns under both, the same way it already did for the text
+ * werkzeugmodus.
  */
 import { useState } from 'react'
-import type { EintragAnsicht, Schreiber } from '../../../shared/settings-types'
+import type { EintragAnsicht, FaehigkeitenAnsicht, Schreiber } from '../../../shared/settings-types'
 
 type Art = 'cli-harness' | 'local-http' | 'api'
 type Oertlichkeit = 'lokal' | 'eigenes-netz' | 'fremdes-netz'
+type Codec = FaehigkeitenAnsicht['codec']
+type Werkzeugmodus = FaehigkeitenAnsicht['werkzeugmodus']
 
-interface Felder {
+/** Codecs no run can actually use yet -- see codecFuer in src/main/harness/codec.ts. */
+const UNGEBAUTE_CODECS = new Set<Codec>(['ollama-native', 'text'])
+
+export interface Felder {
   id: string
   name: string
   art: Art
@@ -30,21 +45,46 @@ interface Felder {
   model: string
   baseUrl: string
   keyRef: string
-}
-
-const LEER: Felder = {
-  id: '', name: '', art: 'local-http', oertlichkeit: 'eigenes-netz',
-  erklaertext: '', empfehlung: '',
-  cli: 'claude', handle: '', host: '', port: '11434', model: '', baseUrl: '', keyRef: '',
+  fCodec: Codec
+  fWerkzeugmodus: Werkzeugmodus
+  fParalleleAufrufe: boolean
+  fDenkbloecke: boolean
+  fBilder: boolean
+  fDokumente: boolean
+  fAufgeschobenesLaden: boolean
+  fWerkzeugObergrenze: string
+  fNutzbaresKontextfenster: string
+  fRundenbudget: string
 }
 
 /**
- * An existing entry's fields, including the transport ones.
+ * Same fallback values as `FAEHIGKEITEN_RUECKFALL` in src/main/model/entry.ts -- kept as a
+ * separate constant because the renderer may not import from src/main, not because the
+ * values are meant to drift. A new entry starts here, same as a saved one that never had a
+ * capability row would if normaliseEintrag had to fill it in.
+ */
+export const LEER: Felder = {
+  id: '', name: '', art: 'local-http', oertlichkeit: 'eigenes-netz',
+  erklaertext: '', empfehlung: '',
+  cli: 'claude', handle: '', host: '', port: '11434', model: '', baseUrl: '', keyRef: '',
+  fCodec: 'text', fWerkzeugmodus: 'text',
+  fParalleleAufrufe: false, fDenkbloecke: false, fBilder: false, fDokumente: false,
+  fAufgeschobenesLaden: false,
+  fWerkzeugObergrenze: '8', fNutzbaresKontextfenster: '8192', fRundenbudget: '12',
+}
+
+/**
+ * An existing entry's fields, including the transport ones and the capability row.
  *
  * Reading `erreichbarkeit` is the point: without it an edit would start from blanks and
  * either fail validation or, once the blocking field was filled in, quietly overwrite the
  * untouched ones with defaults. The view model carries these precisely so the form can
  * show what is actually configured.
+ *
+ * `v.faehigkeiten` is undefined both for a cli-harness entry and for any other entry that
+ * has not had a capability row attached yet -- both cases fall through to LEER's fallback
+ * values, which is exactly right: an unfilled section should show the same numbers
+ * normaliseEintrag would fill in on its own.
  */
 function ausVorlage(v: EintragAnsicht): Felder {
   const basis: Felder = {
@@ -56,14 +96,63 @@ function ausVorlage(v: EintragAnsicht): Felder {
     erklaertext: v.erklaertext,
     empfehlung: v.empfehlung,
   }
+  const mitFaehigkeiten: Felder = v.faehigkeiten
+    ? {
+        ...basis,
+        fCodec: v.faehigkeiten.codec,
+        fWerkzeugmodus: v.faehigkeiten.werkzeugmodus,
+        fParalleleAufrufe: v.faehigkeiten.paralleleAufrufe,
+        fDenkbloecke: v.faehigkeiten.denkbloecke,
+        fBilder: v.faehigkeiten.bilder,
+        fDokumente: v.faehigkeiten.dokumente,
+        fAufgeschobenesLaden: v.faehigkeiten.aufgeschobenesLaden,
+        fWerkzeugObergrenze: String(v.faehigkeiten.werkzeugObergrenze),
+        fNutzbaresKontextfenster: String(v.faehigkeiten.nutzbaresKontextfenster),
+        fRundenbudget: String(v.faehigkeiten.rundenbudget),
+      }
+    : basis
   const e = v.erreichbarkeit
   switch (e.art) {
     case 'cli-harness':
-      return { ...basis, cli: e.cli, handle: e.handle }
+      return { ...mitFaehigkeiten, cli: e.cli, handle: e.handle }
     case 'local-http':
-      return { ...basis, host: e.host, port: String(e.port), model: e.model }
+      return { ...mitFaehigkeiten, host: e.host, port: String(e.port), model: e.model }
     case 'api':
-      return { ...basis, baseUrl: e.baseUrl, model: e.model, keyRef: e.keyRef }
+      return { ...mitFaehigkeiten, baseUrl: e.baseUrl, model: e.model, keyRef: e.keyRef }
+  }
+}
+
+/**
+ * The capability row this form sends, or none for cli-harness. No hooks, no DOM -- a plain
+ * function so this specific behaviour (which fields are overwritten and which survive) is
+ * unit-testable without a React render environment. See tests/renderer/eintrag-formular.test.ts.
+ *
+ * `bestehend` is the entry's capability row as it existed before this edit (undefined for a
+ * new entry, for a cli-harness entry, or for an entry that never had one). Only the ten fields
+ * the section actually shows come from `f`; `quelle`, `gemessenAm`, `gemessenMit` and
+ * `vertragsStrenge` come from `bestehend` unchanged -- a fresh row (no `bestehend`) still gets
+ * `quelle: 'vermutet'` with no measurement fields and the rueckfall `vertragsStrenge` (by
+ * omitting the key and letting normaliseEintrag's merge fill it in), but an existing
+ * `gemessen` row keeps its measurement through any edit this form makes, including one that
+ * never touches the capability section at all.
+ */
+export function baueFaehigkeitenPayload(f: Felder, bestehend: FaehigkeitenAnsicht | undefined): unknown {
+  if (f.art === 'cli-harness') return undefined
+  return {
+    codec: f.fCodec,
+    werkzeugmodus: f.fWerkzeugmodus,
+    paralleleAufrufe: f.fParalleleAufrufe,
+    denkbloecke: f.fDenkbloecke,
+    bilder: f.fBilder,
+    dokumente: f.fDokumente,
+    aufgeschobenesLaden: f.fAufgeschobenesLaden,
+    werkzeugObergrenze: Number(f.fWerkzeugObergrenze),
+    nutzbaresKontextfenster: Number(f.fNutzbaresKontextfenster),
+    rundenbudget: Number(f.fRundenbudget),
+    quelle: bestehend?.quelle ?? 'vermutet',
+    gemessenAm: bestehend?.gemessenAm ?? null,
+    gemessenMit: bestehend?.gemessenMit ?? null,
+    ...(bestehend?.vertragsStrenge ? { vertragsStrenge: bestehend.vertragsStrenge } : {}),
   }
 }
 
@@ -80,6 +169,9 @@ export function EintragFormular({
 
   const setze = (k: keyof Felder) => (e: { target: { value: string } }) =>
     setF(alt => ({ ...alt, [k]: e.target.value }))
+
+  const setzeKontrollkaestchen = (k: keyof Felder) => (e: { target: { checked: boolean } }) =>
+    setF(alt => ({ ...alt, [k]: e.target.checked }))
 
   const erreichbarkeit = (): unknown => {
     if (f.art === 'cli-harness') return { art: 'cli-harness', cli: f.cli, handle: f.handle }
@@ -98,10 +190,7 @@ export function EintragFormular({
       oertlichkeit: f.oertlichkeit,
       erklaertext: f.erklaertext,
       empfehlung: f.empfehlung,
-      // Opaque passthrough, not a field this form edits: without it, saving an edit would
-      // send no faehigkeiten at all and erase whatever capability row the entry already
-      // had. Undefined for a new entry, same as before this passthrough existed.
-      faehigkeiten: vorlage?.faehigkeiten,
+      faehigkeiten: baueFaehigkeitenPayload(f, vorlage?.faehigkeiten),
     })
     // Only on success. Closing after a rejected write would look exactly like a saved
     // one, and the only sign of trouble would be a banner above the tab.
@@ -177,6 +266,88 @@ export function EintragFormular({
         </>
       )}
 
+      {f.art !== 'cli-harness' && (
+        <div style={styles.faehigkeitenBlock}>
+          <h4 style={styles.faehigkeitenTitel}>Faehigkeitszeile</h4>
+          <div style={styles.hinweis}>
+            Legt fest, ob und wie dieses Modell ueber die eigene Schleife laeuft — ohne diese
+            Angaben startet kein Lauf mit diesem Eintrag.
+          </div>
+
+          <label style={styles.marke}>Codec (Uebersetzung und Transport)</label>
+          <select value={f.fCodec} onChange={setze('fCodec')} style={styles.eingabe}>
+            <option value="anthropic">Anthropic-Format</option>
+            <option value="openai-chat">OpenAI-Chat-Format</option>
+            <option value="ollama-native">Ollama, natives Format</option>
+            <option value="text">nur Text, kein eigenes Protokoll</option>
+          </select>
+          {UNGEBAUTE_CODECS.has(f.fCodec) && (
+            <div style={styles.warnung}>
+              Der Codec „{f.fCodec}" ist in dieser Ausbaustufe nicht gebaut — ein Lauf mit
+              diesem Eintrag wuerde beim Start abgelehnt. Gebaut sind Anthropic-Format und
+              OpenAI-Chat-Format.
+            </div>
+          )}
+
+          <label style={styles.marke}>Werkzeugmodus</label>
+          <select value={f.fWerkzeugmodus} onChange={setze('fWerkzeugmodus')} style={styles.eingabe}>
+            <option value="nativ">nativ — das Modell ruft Werkzeuge ueber sein eigenes Protokoll auf</option>
+            <option value="text">textvermittelt</option>
+          </select>
+          {f.fWerkzeugmodus === 'text' && (
+            <div style={styles.warnung}>
+              Textvermittelter Werkzeugmodus ist in dieser Ausbaustufe nicht gebaut — ein Lauf
+              mit diesem Eintrag wuerde beim Start abgelehnt.
+            </div>
+          )}
+
+          <label style={styles.kontrollkaestchenZeile}>
+            <input type="checkbox" checked={f.fParalleleAufrufe} onChange={setzeKontrollkaestchen('fParalleleAufrufe')} />
+            Kann mehrere Werkzeugaufrufe gleichzeitig stellen
+          </label>
+          <label style={styles.kontrollkaestchenZeile}>
+            <input type="checkbox" checked={f.fDenkbloecke} onChange={setzeKontrollkaestchen('fDenkbloecke')} />
+            Liefert sichtbare Denkbloecke (Reasoning)
+          </label>
+          <label style={styles.kontrollkaestchenZeile}>
+            <input type="checkbox" checked={f.fBilder} onChange={setzeKontrollkaestchen('fBilder')} />
+            Kann Bilder verarbeiten
+          </label>
+          <label style={styles.kontrollkaestchenZeile}>
+            <input type="checkbox" checked={f.fDokumente} onChange={setzeKontrollkaestchen('fDokumente')} />
+            Kann Dokumente verarbeiten
+          </label>
+          <label style={styles.kontrollkaestchenZeile}>
+            <input type="checkbox" checked={f.fAufgeschobenesLaden} onChange={setzeKontrollkaestchen('fAufgeschobenesLaden')} />
+            Laedt Werkzeugdefinitionen erst bei Bedarf nach
+          </label>
+
+          {/*
+            type="number" and min="1" only steer the input widget -- they make a bad value
+            harder to type, nothing more. normaliseEintrag in main is still the one place that
+            actually rejects a non-integer, a zero or a NaN (Review-Runde 1, Fund 2); a second
+            check here would be a second truth.
+          */}
+          <label style={styles.marke}>Nutzbares Kontextfenster (Token)</label>
+          <input type="number" min={1} value={f.fNutzbaresKontextfenster} onChange={setze('fNutzbaresKontextfenster')} style={styles.eingabe} />
+
+          <label style={styles.marke}>Werkzeug-Obergrenze (gleichzeitig angebotene Werkzeuge)</label>
+          <input type="number" min={1} value={f.fWerkzeugObergrenze} onChange={setze('fWerkzeugObergrenze')} style={styles.eingabe} />
+
+          <label style={styles.marke}>Rundenbudget (Schleifendurchlaeufe je Lauf)</label>
+          <input type="number" min={1} value={f.fRundenbudget} onChange={setze('fRundenbudget')} style={styles.eingabe} />
+
+          <div style={styles.hinweis}>
+            {vorlage?.faehigkeiten?.quelle === 'gemessen'
+              ? `Quelle: gemessen am ${vorlage.faehigkeiten.gemessenAm} mit ${vorlage.faehigkeiten.gemessenMit}. ` +
+                'Diese Angabe bleibt beim Speichern erhalten -- ein Mensch kann sie hier nicht setzen, nur die ' +
+                'zehn Felder oben aendern.'
+              : 'Quelle: vermutet. Ein Mensch kann diese Zeile nur schaetzen, nicht messen — die ' +
+                'Messung uebernimmt ein spaeterer Kanarienauftrag.'}
+          </div>
+        </div>
+      )}
+
       <label style={styles.marke}>Erklaertext</label>
       <textarea value={f.erklaertext} onChange={setze('erklaertext')} rows={2} style={styles.eingabe} />
 
@@ -200,9 +371,18 @@ const styles = {
     color: '#ddd', padding: '4px 6px', fontSize: 12,
   },
   hinweis: { color: '#6a8fa8', fontSize: 11, marginTop: 6 },
+  warnung: { color: '#d9b25f', fontSize: 11, marginTop: 4 },
   ueberschreibung: {
     padding: 8, background: '#1a1710', border: '1px solid #3d332a',
     borderRadius: 3, color: '#d9b25f', fontSize: 11, marginBottom: 8,
+  },
+  faehigkeitenBlock: {
+    marginTop: 12, padding: 10, background: '#0d1114', border: '1px solid #232f36', borderRadius: 3,
+  },
+  faehigkeitenTitel: { color: '#ccc', fontSize: 12, margin: 0, fontWeight: 500 as const },
+  kontrollkaestchenZeile: {
+    display: 'flex' as const, alignItems: 'center' as const, gap: 6,
+    color: '#ddd', fontSize: 12, margin: '6px 0',
   },
   knopfzeile: { display: 'flex' as const, gap: 8, marginTop: 12 },
   knopf: {

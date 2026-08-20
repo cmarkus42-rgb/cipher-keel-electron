@@ -17,6 +17,6 @@ import { toModelEndpoint } from './entry'
 
 export function endpointForRole(role: LlmRole): ModelEndpoint {
   const eintrag = eintragFuerRolle(role)
-  if (eintrag) return toModelEndpoint(eintrag.erreichbarkeit)
+  if (eintrag) return toModelEndpoint(eintrag.erreichbarkeit, eintrag.faehigkeiten?.codec)
   return normaliseEndpoint(configStore.get('llm')[role])
 }
