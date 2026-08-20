@@ -912,6 +912,37 @@ Entscheidung, die **in Strecke 2 fällt und nicht dort erst entdeckt werden soll
 
 M8 §4.5 hält die dritte Profilart schon bereit; die Frage ist, wer sie bekommt und wann sie an ist.
 Nicht Gegenstand dieser Spec — hier steht sie, damit sie in Strecke 2 als Frage auf dem Tisch liegt
+
+### 13.3 Anhangformate jenseits von Bild, PDF und Text — eine eigene Strecke
+
+Aus der Abnahme vom 2026-08-20. Diese Strecke trägt Bilder, PDF und Textformate; alles andere wird
+seit `451c0ec` **benannt abgelehnt** statt als `application/octet-stream` geraten und trotzdem
+verschickt. Damit ist der stille Griff weg, aber das Bedürfnis bleibt: `.docx`, `.odt`, `.xlsx`,
+`.pptx` sind der Normalfall echter Arbeit.
+
+Drei Dinge müssen zusammen entworfen werden, nicht nacheinander:
+
+**Portabilität ist eine Vorbedingung, keine Politur.** `textutil` ist auf dem Mac an Bord und
+wandelt `.docx` sauber in Text — und es gibt ihn unter Linux nicht. Das Ziel ist beides. Eine
+Lösung, die auf `textutil` aufbaut und Linux später nachrüstet, wird zweimal gebaut. Der Entwurf
+beginnt also bei der Frage, was auf beiden Systemen verfügbar ist (Pandoc, LibreOffice headless,
+reine Bibliotheken ohne Systemabhängigkeit) und was davon eine Anwendung mitliefern darf.
+
+**Textdokumente und Tabellen sind nicht derselbe Fall.** Ein `.docx` in Text zu wandeln ist
+richtig — das Modell will den Fließtext. Eine `.xlsx` mit acht Blättern als Textklumpen ist
+wertlos; dort will ein Modell *fragen* können: welche Blätter gibt es, gib mir Blatt 3, Zeilen 1
+bis 50. Das ist ein Werkzeug, kein Konverter, und es fällt damit in dieselbe Ordnung wie
+`datei_lesen`.
+
+**Umwandeln an der Grenze oder als Werkzeug.** An der Grenze heißt: aus dem Anhang wird ein
+Textblock, bevor er ein Block wird, und das Modell merkt nichts. Als Werkzeug heißt: das Modell
+fragt nach, die Umwandlung passiert im Aufruf. Für Tabellen ist nur das Zweite brauchbar; für
+Fließtext ist das Erste einfacher. Beides ist vertretbar, aber die Wahl gehört in einen Entwurf.
+
+Ein Baustein liegt dafür schon bereit: `dialogAusgewaehlt` in `harness-handlers.ts` weiß, welche
+Pfade ein Mensch im Dateidialog gewählt hat. Ein Umwandlungswerkzeug bräuchte damit keine Ausnahme
+in der Pfadwache — es dürfte genau die Dateien öffnen, die entweder in der Wurzel liegen oder vom
+Nutzer bezeugt sind.
 statt als Überraschung.
 
 ## 14. Nachzuführende Dokumente
