@@ -5186,3 +5186,168 @@ ungueltigen Versuch), danach sofort wieder sauber gestoppt.
 | 1 (neu) | Lauf ohne Werkzeugaufruf, kein Anbietername in der Darstellung | belegt, vollstaendig |
 | 2 | Derselbe Auftrag gegen drei Anbieter | Praefix/Auftrag verzweigen nachweislich nicht am Codec (durch die Signatur erzwungen, nicht nur durch Verhalten gezeigt); die Codec-Haelfte des Pfades ist nur fuer `openai-chat` end-to-end belegt — `anthropicCodec.fromWire()` sah keine echte Antwort, unbelegt; zwei von drei Anbietern liefern kein Ergebnis mangels Schluessel — offen |
 | 3 | Bild und Datei | Ungueltig-Fall belegt; „bilder: false" meldet zwar korrekt, aber die Meldung erreicht nie das Ereignisprotokoll — eigenstaendiger, wichtiger Fund; beide „kann beides"-Anbieter liefern kein Ergebnis (Schluessel fehlt bzw. Ollama lehnt den Dokumenttyp ab) |
+
+---
+
+## Messprotokoll 2026-08-20 — die Belege mit echten Schluesseln, und zwei Fehler, die sie zutage foerderten
+
+Der Nutzer hat die API-Schluessel fuer `anthropic` und `openrouter` ueber das Settings-Fenster im
+Schluesselbund hinterlegt (`geheimnisStatus: "schluesselbund"` fuer beide Eintraege, gelesen ueber
+`settings:ansicht`; die Schluessel selbst wurden nicht gelesen und nicht zitiert). Damit waren zum
+ersten Mal die Belege fahrbar, die in der vorigen Sitzung mangels Schluessel offen bleiben mussten.
+
+Startzustand: HEAD `9c5b2d4`, 2214 Tests gruen, Baum sauber. Profil `/tmp/keel-harness` mit
+`KEEL_KEEP_PROFILE=1` weiterverwendet, damit die Registry-Eintraege der vorigen Sitzung erhalten
+bleiben. Vor dem Start `ps aux | grep cipher-keel` leer. Neue Projektwurzel `/tmp/keel-beleg` mit
+einer `README.md`, die den Anker `4711-ANKER` traegt, und einem Unterordner.
+
+### Fund A: das aufgeschobene Laden machte jeden Anthropic-Lauf unmoeglich
+
+Der allererste Lauf gegen `anthropic-claude-haiku` (`c863a1d0-2ec3-4f3c-9bf6-5fe6f1b7709c`) endete
+mit `abgebrochen / transportfehler`:
+
+```
+api.anthropic.com antwortete mit HTTP 400: messages.4: `tool_use` ids were found without
+`tool_result` blocks immediately after: toolu_01GcvucSEDTNtehPS8xYvcCK
+```
+
+Ursache: `projiziere()` schrieb ein nachgeladenes Schema als **eigene** Nutzernachricht. Damit
+stand es zwischen dem `tool_use` des Meta-Aufrufs und dessen eigenem `tool_result`, und erzeugte
+nebenbei zwei Nutzernachrichten hintereinander. Anthropic weist beides ab. Der Mechanismus, der
+den Praefix billig halten soll, machte damit genau den Normalfall unmoeglich: jeden Lauf, in dem
+ein Modell ein Schema nachlaedt.
+
+**Warum keiner der 2214 Tests das sah:** `tests/harness/projektion.test.ts` hatte die kaputte Form
+woertlich festgeschrieben — `expect(v).toHaveLength(4)` mit dem Kommentar
+„run.started, model.answered, schema-Nachricht, Ergebnis-Nachricht". Der Test prueft die Form, die
+wir erzeugen, und hat nie gefragt, ob ein Anbieter sie annimmt. Das ist derselbe Fehlermodus, der
+diese Strecke durchzieht: gruen aus einem Nebengrund.
+
+Behoben in `fb32237`. Neu dazu `tests/harness/verlauf-anbietervertrag.test.ts` — der prueft nicht
+unsere Struktur, sondern die Regel des Anbieters (Nachbarschaft von `tool_use` und `tool_result`,
+keine doppelte Rolle), indem er die echten Codecs ueber eine echte Projektion laufen laesst. Alle
+fuenf waren vor der Behebung rot. **Gegenprobe:** laesst man das Schema ganz weg, werden genau die
+zwei Zustell-Tests rot und die Nachbarschaftstests bleiben gruen — die faule Behebung waere
+aufgefallen.
+
+### Beleg 1 — echte Arbeit gegen ein echtes Modell — belegt, vollstaendig
+
+Lauf `40b657d8-70f2-4d77-a8bb-78458db6482c`, `anthropic-claude-haiku`, Wurzel `/tmp/keel-beleg`.
+Sechzehn Ereignisse, lueckenlos:
+
+```
+run.started, prompt.sent, model.answered, tool.intent, tool.failed, prompt.sent, model.answered,
+tool.intent, tool.schema_loaded, tool.completed, prompt.sent, model.answered, tool.intent,
+tool.completed, prompt.sent, model.answered, run.finished
+```
+
+Das Modell rief `datei_lesen` zuerst **ohne** `pfad` auf → `tool.failed` mit „Das Feld 'pfad' fehlt
+in der Eingabe." Danach holte es `werkzeug_schema` (`tool.schema_loaded` mit dem vollstaendigen
+Schema im Protokoll), rief korrekt mit `{"pfad":"README.md"}` auf, und antwortete
+`fertig / ziel-erreicht` mit `4711-ANKER`. Der laute Ablehnungspfad ist damit an einem echten
+Anbieter belegt, nicht nur im Test — und zwar so, dass das Modell sich daran korrigiert hat.
+
+### Beleg 2 — derselbe Auftrag gegen drei Anbieter — belegt, vollstaendig
+
+Wortgleicher Auftrag, drei Eintraege, drei Codecs:
+
+| Eintrag | Codec | Lauf | Ende |
+|---|---|---|---|
+| `anthropic-claude-haiku` | `anthropic` | `40b657d8-…` | fertig / ziel-erreicht |
+| `openrouter-qwen3-coder` | `openai-chat` (Hoster) | `741fce81-…` | fertig / ziel-erreicht |
+| `spark-qwen3-vl-30b` | `openai-chat` (lokal) | `6da13659-…` | fertig / ziel-erreicht |
+
+Alle drei nannten `4711-ANKER`. **`anthropicCodec.fromWire()` ist damit belegt** — in der vorigen
+Sitzung stand es ausdruecklich als unbelegt im Protokoll, weil es nie eine echte Antwort gesehen
+hatte; hier hat es vier verarbeitet.
+
+Nebenbefund aus dem Spark-Lauf: das Modell rief `datei_lesen` mit `{"pfade":["README.md"]}` auf,
+bekam „Das Feld 'pfad' fehlt in der Eingabe." und korrigierte sich — der Ablehnungspfad ein zweites
+Mal, an einem anderen Anbieter.
+
+Ein Ungueltig-Fall fiel unfreiwillig an: der erste Hoster-Lauf (`9d85d751-…`) endete mit
+`abgebrochen / transportfehler` und „openrouter.ai ist nicht erreichbar: Client network socket
+disconnected before secure TLS connection was established". `curl` gegen dieselbe Domain lieferte
+zeitgleich HTTP 200; der Wiederholungslauf ging durch. Also ein fluechtiger Netzfehler — und der
+Punkt ist, dass er **benannt und mit `run.finished` beendet** wurde statt den Lauf haengen zu
+lassen.
+
+### Fund B: die Praefix-Ordnung war umsonst — es fehlte die Bitte
+
+Beim Durchsehen der `usage`-Felder von Beleg 1 fiel auf, dass Anthropic ueber **alle vier Zuege**
+meldete:
+
+```
+Zug 1  input=1619  cache_creation=0  cache_read=0
+Zug 2  input=1716  cache_creation=0  cache_read=0
+Zug 3  input=2021  cache_creation=0  cache_read=0
+Zug 4  input=2204  cache_creation=0  cache_read=0
+```
+
+`cache_control` kam im gesamten Code nicht vor. Die Ordnung des Praefixes war nie das Problem —
+keine Zeitstempel, sortierte Stummel, zeichengleich; es fehlte die Bitte. Anthropic legt nichts in
+den Zwischenspeicher, solange kein Haltepunkt gesetzt ist. Bei OpenAI-kompatiblen Anbietern greift
+das Praefix-Caching von allein, weshalb es nie auffiel — und **weshalb Beleg 6 der vorigen Sitzung
+mit dem falschen Grund offen blieb** („Ollama liefert kein unterscheidendes Feld"). Anthropic
+liefert das Feld sehr genau und meldete Null.
+
+Behoben in `478d9af`. Der Haltepunkt gehoert *zwischen* den stabilen Teil und das
+Fortschrittsobjekt: Anthropic speichert alles bis einschliesslich des markierten Blocks, ein
+Haltepunkt dahinter haette bei jedem Werkzeugaufruf verfehlt — also immer dann, wenn er sich lohnt.
+Dafuer bekommt der Transport die beiden Teile jetzt getrennt (`LaufUmgebung.sende` nimmt
+`PraefixText {stabil, fluechtig}` statt einer Zeichenkette), statt den zusammengesetzten Text an
+der Ueberschrift `## Fortschritt` wieder aufzuschneiden. `prompt.sent` legt weiter beide Teile
+zusammen ab — das ist, was abging (Spec 6.3).
+
+**Gegenproben:** Haltepunkt hinter den Fortschritt geschoben → vier der acht neuen Tests rot.
+Stabilen Teil pro Zug neu gebaut → die zwei Praefix-Tests in `lauf.test.ts` rot.
+
+### Beleg 6/9 — Cache-Treffer — belegt, mit gemessener Bedingung
+
+Erster Versuch nach der Behebung (Lauf `78291e59-…`, derselbe kurze Auftrag): weiterhin
+`cache_read=0` auf allen vier Zuegen, obwohl `grep cache_control dist/main/index.js` den Haltepunkt
+im Build nachwies. Verdacht: Anthropics Mindestlaenge fuer zwischenspeicherbare Praefixe (bei den
+Haiku-Modellen 2048 Token), unser stabiler Teil lag darunter.
+
+Geprueft, indem der Auftragstext — er gehoert zum stabilen Teil — auf 31494 Zeichen verlaengert
+wurde (`/tmp/keel-beleg/auftrag-lang.txt`, 60 durchnummerierte Arbeitsregeln plus dieselbe
+Aufgabe). Lauf `b9458d79-25a1-4ed4-85f0-117e0c22ba15`:
+
+```
+Zug 1  input=11035  cache_creation=11908  cache_read=0
+Zug 2  input=11249  cache_creation=0      cache_read=11908
+Zug 3  input=11562  cache_creation=0      cache_read=11908
+Zug 4  input=11760  cache_creation=0      cache_read=11908
+```
+
+Der entscheidende Teil ist nicht, dass gelesen wurde, sondern dass `cache_read` ueber die Zuege 2
+bis 4 **exakt 11908 bleibt**, obwohl dazwischen Werkzeuge liefen und das Fortschrittsobjekt sich
+aenderte. Saesse der Haltepunkt hinter dem fluechtigen Teil, waere er beim ersten Werkzeugaufruf
+auf Null gefallen. Das ist der Beleg fuer die *Stelle* des Haltepunkts, nicht nur fuer seine
+Existenz.
+
+Zweiter Lauf, eigene Lauf-ID, eigene Protokollzeilen (`ce0a453c-3b9c-4a64-bdbd-56a3275343a5`):
+
+```
+Zug 1  input=11035  cache_creation=0  cache_read=11908
+```
+
+Damit ist der Wortlaut der Spec eingeloest: **„Ein zweiter Lauf meldet einen Cache-Treffer."** Der
+stabile Teil war nicht nur innerhalb eines Laufs zeichengleich, sondern ueber Laeufe hinweg.
+
+**Was dieser Beleg nicht sagt:** unterhalb der Mindestlaenge des Anbieters bringt der Haltepunkt
+nichts. Bei einem kleinen Auftrag ohne Persona und ohne viele Werkzeuge — wie dem kurzen aus
+Beleg 1 — bleibt `cache_read` bei Null, und das ist Anbieterverhalten, kein Fehler bei uns. Die
+Praefix-Oekonomie traegt also erst ab einer gewissen Groesse, und genau ab wo, haengt am Modell.
+Das steht hier als gemessenes Ergebnis, nicht als Vermutung.
+
+### Zusammenfassung nach Beleg
+
+| # | Beleg | Status |
+|---|-------|--------|
+| 1 | Echte Arbeit gegen ein echtes Modell | belegt, vollstaendig — sechzehn Ereignisse, Ablehnungspfad und Schema-Nachladen inbegriffen |
+| 2 | Derselbe Auftrag gegen drei Anbieter | belegt, vollstaendig — drei Codecs, dreimal derselbe Anker; `anthropicCodec.fromWire()` ist damit nicht mehr unbelegt |
+| 6/9 | Cache-Treffer | belegt — mit der gemessenen Bedingung, dass der Praefix die Mindestlaenge des Anbieters erreichen muss |
+| 3 | Bild und Dokument | **offen** — der Dateidialog braucht eine menschliche Hand, und das soll er: die Herkunftspruefung nimmt nur Pfade an, die aus einem Dialog kamen, den der Hauptprozess selbst geoeffnet hat. Anhaenge liegen bereit unter `/tmp/keel-beleg/anhaenge/` (`bild-beleg.png` mit dem Anker `8172-KOMPASS`, `dokument-beleg.pdf` mit `3390-SEEZEICHEN`). Zuordnung steht: `anthropic-claude-haiku` und `spark-qwen3-vl-30b` koennen beides, `openrouter-qwen3-coder` keines von beidem und muss die Unfaehigkeit melden. |
+
+Stand nach dieser Sitzung: HEAD `478d9af`, 2227 Tests gruen, Typecheck und Lint sauber.
