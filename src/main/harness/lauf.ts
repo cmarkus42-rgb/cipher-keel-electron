@@ -25,6 +25,7 @@ import type { Block, ModelAntwort } from './form'
 import { nurText, werkzeugAufrufe } from './form'
 import { projiziere } from './projektion'
 import { baueFortschritt, baueStabilenTeil, type PraefixTeile, type PraefixText } from './praefix'
+import { anhangBlock } from './anhang'
 import {
   grundFuerStopGrund, pruefeBudgets, VON_AUSSEN, ZIEL_ERREICHT,
   type Abschlussgrund, type Budgets, type Verbrauch,
@@ -389,19 +390,13 @@ function erledigte(ereignisse: Ereignis[]): string[] {
 async function anhangBloecke(auftrag: Auftrag): Promise<Block[]> {
   if (!auftrag.anhaenge || auftrag.anhaenge.length === 0) return []
   const { readFileSync } = await import('node:fs')
-  const { basename, extname } = await import('node:path')
-  const TYPEN: Record<string, string> = {
-    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
-    '.webp': 'image/webp', '.pdf': 'application/pdf',
-  }
   return auftrag.anhaenge.map(pfad => {
     // Attachments deliberately bypass pfadwache: they are the user's act, not the model's.
-    // A path that cannot be read stops the run instead of being silently skipped.
+    // A path that cannot be read stops the run instead of being silently skipped — and so does
+    // one whose type this stretch cannot carry (anhang.ts). Both throw before `run.started` is
+    // written, so nothing hangs: the start fails with a message naming the file.
     const daten = readFileSync(pfad).toString('base64')
-    const medientyp = TYPEN[extname(pfad).toLowerCase()] ?? 'application/octet-stream'
-    return medientyp.startsWith('image/')
-      ? { art: 'bild' as const, medientyp, daten }
-      : { art: 'dokument' as const, medientyp, name: basename(pfad), daten }
+    return anhangBlock(pfad, daten)
   })
 }
 
