@@ -5348,6 +5348,47 @@ Das steht hier als gemessenes Ergebnis, nicht als Vermutung.
 | 1 | Echte Arbeit gegen ein echtes Modell | belegt, vollstaendig — sechzehn Ereignisse, Ablehnungspfad und Schema-Nachladen inbegriffen |
 | 2 | Derselbe Auftrag gegen drei Anbieter | belegt, vollstaendig — drei Codecs, dreimal derselbe Anker; `anthropicCodec.fromWire()` ist damit nicht mehr unbelegt |
 | 6/9 | Cache-Treffer | belegt — mit der gemessenen Bedingung, dass der Praefix die Mindestlaenge des Anbieters erreichen muss |
-| 3 | Bild und Dokument | **offen** — der Dateidialog braucht eine menschliche Hand, und das soll er: die Herkunftspruefung nimmt nur Pfade an, die aus einem Dialog kamen, den der Hauptprozess selbst geoeffnet hat. Anhaenge liegen bereit unter `/tmp/keel-beleg/anhaenge/` (`bild-beleg.png` mit dem Anker `8172-KOMPASS`, `dokument-beleg.pdf` mit `3390-SEEZEICHEN`). Zuordnung steht: `anthropic-claude-haiku` und `spark-qwen3-vl-30b` koennen beides, `openrouter-qwen3-coder` keines von beidem und muss die Unfaehigkeit melden. |
+| 3 | Bild und Dokument | belegt — siehe Nachtrag unten |
 
 Stand nach dieser Sitzung: HEAD `478d9af`, 2227 Tests gruen, Typecheck und Lint sauber.
+
+
+### Nachtrag: Beleg 3 — Bild und Dokument — belegt
+
+Der Nutzer hat `bild-beleg.png` und `dokument-beleg.pdf` im nativen Dateidialog ausgewaehlt; die
+Herkunftspruefung gab beide Pfade in ihrer aufgeloesten Form zurueck
+(`/private/tmp/keel-beleg/anhaenge/...`).
+
+| Anbieter | Lauf | Verhalten |
+|---|---|---|
+| `anthropic-claude-haiku` | `60ab4195-…` | `fertig / ziel-erreicht`. Nannte „Dreieck", `8172-KOMPASS` und `3390-SEEZEICHEN` — die beiden Anker stehen ausschliesslich in den Anhaengen, also sind sie wirklich angekommen |
+| `openrouter-qwen3-coder` | `a00080a1-…` | `run.started, run.finished` — **nichts ging raus**. `auftrag-unvereinbar`: „Das Modell nimmt keine Bloecke der Art 'bild' — die Faehigkeitszeile sagt bilder: false (Quelle: vermutet). Der Auftrag traegt einen solchen Block." |
+
+Der Ablehnungsfall ist der wertvollere: er nennt die Faehigkeitszeile *und* ihre Quelle und kostet
+keinen Token, weil er vor dem Senden faellt.
+
+**Nebenbefund, nicht Teil des Belegs:** `spark-qwen3-vl-30b` traegt `bilder: true, dokumente: true`
+mit `quelle: vermutet`, und beides stimmt fuer diesen Endpunkt nicht. Mit Dokument antwortete
+Ollamas /v1-Flaeche `HTTP 400: invalid message format` (laut, benannt, `run.finished` geschrieben);
+mit Bild allein nahm der Draht die Anfrage an, das Modell antwortete aber, es sei ein
+„Text-Only-Assistent" und koenne das Bild nicht sehen. Der zweite Fall ist der unangenehmere: der
+Lauf endet `fertig / ziel-erreicht`, weil das Modell natuerlich aufhoerte — der Anhang ist
+unterwegs verschwunden, ohne dass irgendeine Schicht es meldet. Das ist kein Fehler der Schleife
+(sie kann nicht beurteilen, ob eine Antwort gut ist), sondern der Beleg dafuer, dass eine
+`vermutet`-Faehigkeitszeile tragend ist und niemand sie misst. Der Kanarienauftrag, der genau das
+tun soll, ist in Spec 13 ausdruecklich nicht Teil dieser Strecke. Ueber API ist der Fall damit
+erledigt; der Spark ist hier Kuer.
+
+### Nachtrag: die Typgrenze fuer Anhaenge (`451c0ec`)
+
+Beim Nachsehen fiel auf, dass die gesamte Typzuordnung fuenf Bildformate und PDF kannte und alles
+andere zu `application/octet-stream` **riet und trotzdem verschickte** — auch `.txt`, `.md`,
+`.csv`, `.json`. Behoben: drei Ausgaenge, getragen / als Text getragen / benannt abgelehnt, mit
+Grund bei bekannten Formaten. Gegenprobe: baut man das Raten wieder ein, werden sechs der neun
+neuen Tests rot.
+
+Der Weg durch die laufende App wurde dafuer **nicht** noch einmal gefahren — das haette eine
+weitere Auswahl im Dateidialog gebraucht, und die Grenze ist ohne Dateisystem pruefbar, weil sie
+Pfad und base64-Daten entgegennimmt statt selbst zu lesen. Das steht hier, statt es zu behaupten.
+
+Stand: HEAD `00bb6a8`, 2236 Tests gruen, Typecheck und Lint sauber.
