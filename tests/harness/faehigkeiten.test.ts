@@ -142,3 +142,53 @@ describe('leseFaehigkeiten', () => {
     expect(befund.uebersprungen).toEqual([])
   })
 })
+
+/**
+ * Nachtrag aus der Abschlusspruefung des Zweigs. Der `catch` um `readdirSync` behandelte jeden
+ * Fehler wie ein fehlendes Verzeichnis. Der Pruefer hat es nachgemessen: Wurzel mit einem
+ * gueltigen Skill angelegt, `chmod 000` gesetzt, Ergebnis `faehigkeiten: 0, uebersprungen: []` —
+ * die Faehigkeiten verschwanden, ohne dass irgendwo ein Pfad genannt wurde. Genau der Ausgang,
+ * den der Modulkopf als den schlimmsten benennt.
+ *
+ * Ausgeloest wird hier mit ENOTDIR statt EACCES: eine Datei anstelle des Verzeichnisses wirkt
+ * deterministisch und haengt nicht daran, unter welchem Benutzer die Suite laeuft — ein Test, der
+ * als root gruen wird, weil root alles lesen darf, waere genau die Art Test, die dieses Repo
+ * schon zu oft hatte.
+ */
+describe('leseFaehigkeiten — eine unlesbare Wurzel wird benannt, nicht verschluckt', () => {
+  it('meldet eine Wurzel, die gar kein Verzeichnis ist', () => {
+    mkdirSync(join(wurzel, '.claude'), { recursive: true })
+    writeFileSync(join(wurzel, '.claude', 'skills'), 'ich bin eine Datei', 'utf-8')
+
+    const befund = leseFaehigkeiten(wurzel)
+
+    expect(befund.uebersprungen).toHaveLength(1)
+    expect(befund.uebersprungen[0].pfad).toBe('.claude/skills')
+    // Der Grund muss den Systemfehler durchreichen, nicht durch eine eigene Prosa ersetzen —
+    // sonst steht im Log etwas anderes als das, was das Betriebssystem gesagt hat.
+    expect(befund.uebersprungen[0].grund).toMatch(/ENOTDIR|not a directory|kein Verzeichnis/i)
+  })
+
+  it('meldet eine fehlende Wurzel weiterhin gar nicht — das ist der Normalfall', () => {
+    lege('skills', 'lesen', '---\nname: lesen\ndescription: Liest etwas.\n---\n\nRumpf.\n')
+
+    const befund = leseFaehigkeiten(wurzel)
+
+    // `.claude/capabilities` gibt es hier nicht. Es darf nicht als uebersprungen auftauchen,
+    // sonst wuerde jedes normale Projekt eine Warnung erzeugen und die Meldung nutzt sich ab.
+    expect(befund.uebersprungen).toEqual([])
+    expect(befund.faehigkeiten).toHaveLength(1)
+  })
+
+  it('liest die zweite Wurzel weiter, wenn die erste unlesbar ist', () => {
+    mkdirSync(join(wurzel, '.claude'), { recursive: true })
+    writeFileSync(join(wurzel, '.claude', 'skills'), 'Datei statt Verzeichnis', 'utf-8')
+    lege('capabilities', 'graben', '---\nname: graben\ndescription: Graebt.\n---\n\nRumpf.\n')
+
+    const befund = leseFaehigkeiten(wurzel)
+
+    // Eine kaputte Wurzel darf die andere nicht mitnehmen.
+    expect(befund.faehigkeiten.map(f => f.name)).toEqual(['graben'])
+    expect(befund.uebersprungen).toHaveLength(1)
+  })
+})

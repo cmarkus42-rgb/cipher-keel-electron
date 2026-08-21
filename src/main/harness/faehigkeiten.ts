@@ -123,9 +123,24 @@ export function leseFaehigkeiten(projektwurzel: string): FaehigkeitenBefund {
     let eintraege
     try {
       eintraege = readdirSync(wurzel, { withFileTypes: true })
-    } catch {
-      // Kein solches Verzeichnis: kein Befund, keine Meldung. Die allermeisten Projekte haben
-      // hoechstens eine der beiden Wurzeln.
+    } catch (err) {
+      // Genau ein Fehler ist der Normalfall: das Verzeichnis gibt es nicht. Die allermeisten
+      // Projekte haben hoechstens eine der beiden Wurzeln, und eine Meldung dafuer wuerde sich
+      // abnutzen, bis niemand mehr hinsieht.
+      //
+      // Alles andere ist es nicht. Vorher fing dieser `catch` jeden Fehler und machte `continue`
+      // — ein EACCES oder ENOTDIR liess damit *alle* Faehigkeiten darunter verschwinden, ohne
+      // einen Eintrag in `uebersprungen` und ohne eine Zeile im Log. Das widerspricht der
+      // Zusicherung im Modulkopf, und der Ausgang ist der dort benannte schlimmste: das Modell
+      // sieht die Faehigkeit nicht in der Liste, kann sie also nicht vermissen, und der Mensch
+      // sucht den Fehler beim Modell. Ein Nextcloud-Share mit verrutschten Rechten reicht dafuer.
+      const code = (err as NodeJS.ErrnoException)?.code
+      if (code !== 'ENOENT') {
+        uebersprungen.push({
+          pfad: `.claude/${wurzelName}`,
+          grund: err instanceof Error ? err.message : String(err),
+        })
+      }
       continue
     }
 

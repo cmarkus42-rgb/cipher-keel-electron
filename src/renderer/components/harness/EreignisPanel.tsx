@@ -7,7 +7,10 @@
 import { useState } from 'react'
 import type { HarnessEreignis } from '../../../shared/harness-types'
 
-const FARBE: Record<string, string> = {
+// Jede Art in EREIGNIS_ARTEN braucht hier einen Eintrag und unten einen Fall in `kurzfassung`.
+// Der Waechter dafuer steht in tests/renderer/ereignis-panel.test.ts — der Compiler faengt es
+// nicht, weil `art` an der IPC-Grenze `string` ist.
+export const FARBE: Record<string, string> = {
   'run.started': '#7aa2f7',
   'prompt.sent': '#565f89',
   'model.answered': '#9ece6a',
@@ -15,11 +18,12 @@ const FARBE: Record<string, string> = {
   'tool.completed': '#73daca',
   'tool.failed': '#f7768e',
   'tool.schema_loaded': '#bb9af7',
+  'skill.geladen': '#c0caf5',
   'budget.warned': '#ff9e64',
   'run.finished': '#7dcfff',
 }
 
-function kurzfassung(e: HarnessEreignis): string {
+export function kurzfassung(e: HarnessEreignis): string {
   const n = e.nutzlast
   switch (e.art) {
     case 'run.started':
@@ -36,6 +40,10 @@ function kurzfassung(e: HarnessEreignis): string {
       return `${String(n.name)}: ${String(n.meldung)}`
     case 'tool.schema_loaded':
       return String(n.name)
+    case 'skill.geladen':
+      // Der Name genuegt, aber die Laenge gehoert dazu: bei M7 will man auf einen Blick sehen,
+      // ob ein Rumpf ueberhaupt Substanz hatte oder nur eine Ueberschrift war.
+      return `${String(n.name)} · ${String(n.text ?? '').length} Zeichen`
     case 'budget.warned':
       return String(n.grund)
     case 'run.finished':

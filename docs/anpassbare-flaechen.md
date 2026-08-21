@@ -53,7 +53,8 @@ Einstellung.
 | Body je Entität | `src/main/preset/*/[…]-body.md` | ja — Prompt-Vorschau | nein — Folgephase |
 | Persona | `src/main/preset/shared/personas/` | ja — Prompt-Vorschau | nein — Folgephase. `resolvePersona` kennt einen Nutzerverzeichnis-Zweig, der nie aufgerufen wird |
 | GlobalRules | `src/main/preset/global-rules.ts` | ja — Prompt-Vorschau | nein — Folgephase |
-| Capability-`SKILL.md` | `src/main/preset/*/capabilities/*/SKILL.md` | ja — Prompt-Vorschau | nein — Folgephase |
+| Capability-`SKILL.md` (Preset-Quelle) | `src/main/preset/*/capabilities/*/SKILL.md` | ja — Prompt-Vorschau | nein — Folgephase |
+| **Fähigkeiten des Harness-Laufs** | `<Projektwurzel>/.claude/skills/<name>/SKILL.md` und `<Projektwurzel>/.claude/capabilities/<name>/SKILL.md` — gelesen von `src/main/harness/faehigkeiten.ts` | ja — als Abschnitt `## Fähigkeiten` im stabilen Präfix jedes Laufs, und im Ereignisprotokoll bei `skill.geladen` | **ja — mit einem Texteditor, ohne die App.** Eine neue `SKILL.md` unter der Projektwurzel ändert ab dem nächsten Lauf das Verhalten des Modells |
 | PhaseInput | Graph — `phasenoutput`-Artefakte der Vorgängerphase, aufgelöst über `phasenBindung` | ja — Prompt-Vorschau, sobald der Graph Artefakte trägt | mittelbar — ja, über die Artefakte im Graphen; es gibt keine Einstellung dafür |
 
 Der `phaseninput` (M2 §9.1 und §17.4) trägt keine Inhalte, sondern **Zeiger**: Titel, uid

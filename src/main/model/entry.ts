@@ -122,7 +122,13 @@ const FAEHIGKEITEN_RUECKFALL: Faehigkeiten = {
   bilder: false,
   dokumente: false,
   aufgeschobenesLaden: false,
-  werkzeugObergrenze: 8,
+  // 10, nicht 8. Der Harness liefert heute 9 Stummel aus (3 Datei- + 4 Graph-Werkzeuge +
+  // `faehigkeit_lesen` + `werkzeug_schema`, letzteres nur bei aufgeschobenem Laden). Mit dem alten
+  // Rueckfall 8 haette jeder Eintrag, der aufgeschobenes Laden einschaltet, bei *jedem* Lauf einen
+  // Hinweis in `run.started` geschrieben — eine Warnung, die bei der Vorgabekonfiguration immer
+  // anschlaegt, nutzt sich ab, bis niemand mehr hinsieht. Die Zahl ist in
+  // tests/harness/werkzeugliste.test.ts festgenagelt, damit sie nicht still auseinanderlaeuft.
+  werkzeugObergrenze: 10,
   nutzbaresKontextfenster: 8192,
   vertragsStrenge: { schemaTiefe: 1, reparaturversuche: 1 },
   rundenbudget: 12,
