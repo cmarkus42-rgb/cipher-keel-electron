@@ -27,6 +27,8 @@ type Art = 'cli-harness' | 'local-http' | 'api'
 type Oertlichkeit = 'lokal' | 'eigenes-netz' | 'fremdes-netz'
 type Codec = FaehigkeitenAnsicht['codec']
 type Werkzeugmodus = FaehigkeitenAnsicht['werkzeugmodus']
+/** Empty string means "keine Stufe angeben" -- the field stays out of the payload entirely. */
+type Denkstufe = '' | 'low' | 'medium' | 'high'
 
 /** Codecs no run can actually use yet -- see codecFuer in src/main/harness/codec.ts. */
 const UNGEBAUTE_CODECS = new Set<Codec>(['ollama-native', 'text'])
@@ -55,6 +57,19 @@ export interface Felder {
   fWerkzeugObergrenze: string
   fNutzbaresKontextfenster: string
   fRundenbudget: string
+  /**
+   * Whether this entry carries a sampler block at all. A separate flag rather than four empty
+   * strings, because "no block" and "a block of defaults" are different things on the wire:
+   * without the block the codec sends nothing and Ollama's /v1 forces temperature and top_p to
+   * 1.0; with it, whatever stands here goes out. A form that always sent the block would give
+   * every existing entry samplers nobody chose, on the first save that touched anything else.
+   */
+  fSamplerAn: boolean
+  fTemperature: string
+  fTopP: string
+  fPresencePenalty: string
+  fMaxTokens: string
+  fReasoningEffort: Denkstufe
 }
 
 /**
@@ -71,6 +86,13 @@ export const LEER: Felder = {
   fParalleleAufrufe: false, fDenkbloecke: false, fBilder: false, fDokumente: false,
   fAufgeschobenesLaden: false,
   fWerkzeugObergrenze: '8', fNutzbaresKontextfenster: '8192', fRundenbudget: '12',
+  // The starting values are the Thinking-Satz an Ollama ships for this class of model, so a
+  // freshly ticked box does not silently change behaviour beyond pinning what was already meant
+  // to hold. maxTokens 8192 rather than 4096: a lower budget cuts off before `</think>` at high
+  // effort, and the client then sees no content at all, only finish_reason "length".
+  fSamplerAn: false,
+  fTemperature: '1.0', fTopP: '0.95', fPresencePenalty: '0.0', fMaxTokens: '8192',
+  fReasoningEffort: '',
 }
 
 /**
@@ -109,6 +131,16 @@ function ausVorlage(v: EintragAnsicht): Felder {
         fWerkzeugObergrenze: String(v.faehigkeiten.werkzeugObergrenze),
         fNutzbaresKontextfenster: String(v.faehigkeiten.nutzbaresKontextfenster),
         fRundenbudget: String(v.faehigkeiten.rundenbudget),
+        ...(v.faehigkeiten.sampler
+          ? {
+              fSamplerAn: true,
+              fTemperature: String(v.faehigkeiten.sampler.temperature),
+              fTopP: String(v.faehigkeiten.sampler.topP),
+              fPresencePenalty: String(v.faehigkeiten.sampler.presencePenalty),
+              fMaxTokens: String(v.faehigkeiten.sampler.maxTokens),
+              fReasoningEffort: v.faehigkeiten.sampler.reasoningEffort ?? '',
+            }
+          : {}),
       }
     : basis
   const e = v.erreichbarkeit
@@ -128,8 +160,8 @@ function ausVorlage(v: EintragAnsicht): Felder {
  * unit-testable without a React render environment. See tests/renderer/eintrag-formular.test.ts.
  *
  * `bestehend` is the entry's capability row as it existed before this edit (undefined for a
- * new entry, for a cli-harness entry, or for an entry that never had one). Only the ten fields
- * the section actually shows come from `f`; `quelle`, `gemessenAm`, `gemessenMit` and
+ * new entry, for a cli-harness entry, or for an entry that never had one). Only the fields the
+ * section actually shows come from `f`; `quelle`, `gemessenAm`, `gemessenMit` and
  * `vertragsStrenge` come from `bestehend` unchanged -- a fresh row (no `bestehend`) still gets
  * `quelle: 'vermutet'` with no measurement fields and the rueckfall `vertragsStrenge` (by
  * omitting the key and letting normaliseEintrag's merge fill it in), but an existing
@@ -153,6 +185,20 @@ export function baueFaehigkeitenPayload(f: Felder, bestehend: FaehigkeitenAnsich
     gemessenAm: bestehend?.gemessenAm ?? null,
     gemessenMit: bestehend?.gemessenMit ?? null,
     ...(bestehend?.vertragsStrenge ? { vertragsStrenge: bestehend.vertragsStrenge } : {}),
+    // Key omitted entirely when the box is off -- not `sampler: undefined`. normaliseEintrag
+    // merges raw over the fallback, and an explicit undefined would still be a present key
+    // there. Omitting it is what keeps an untouched entry's wire body identical to before.
+    ...(f.fSamplerAn
+      ? {
+          sampler: {
+            temperature: Number(f.fTemperature),
+            topP: Number(f.fTopP),
+            presencePenalty: Number(f.fPresencePenalty),
+            maxTokens: Number(f.fMaxTokens),
+            ...(f.fReasoningEffort ? { reasoningEffort: f.fReasoningEffort } : {}),
+          },
+        }
+      : {}),
   }
 }
 
@@ -337,11 +383,68 @@ export function EintragFormular({
           <label style={styles.marke}>Rundenbudget (Schleifendurchlaeufe je Lauf)</label>
           <input type="number" min={1} value={f.fRundenbudget} onChange={setze('fRundenbudget')} style={styles.eingabe} />
 
+          <label style={styles.kontrollkaestchenZeile}>
+            <input type="checkbox" checked={f.fSamplerAn} onChange={setzeKontrollkaestchen('fSamplerAn')} />
+            Sampler selbst setzen
+          </label>
+          {!f.fSamplerAn && (
+            <div style={styles.hinweis}>
+              Ohne eigene Sampler schickt keel keine mit. Bei einem Ollama-Eintrag ueber den
+              Codec „openai-chat" heisst das aber <em>nicht</em>, dass die Werte des Servers
+              gelten: Ollamas /v1-Flaeche setzt Temperatur und Top-P dann zwangsweise auf 1.0,
+              auch wenn im Modelfile etwas anderes steht.
+            </div>
+          )}
+          {f.fSamplerAn && (
+            <>
+              <label style={styles.marke}>Temperatur</label>
+              <input type="number" step="0.05" min={0} value={f.fTemperature} onChange={setze('fTemperature')} style={styles.eingabe} />
+
+              <label style={styles.marke}>Top-P</label>
+              <input type="number" step="0.01" min={0} max={1} value={f.fTopP} onChange={setze('fTopP')} style={styles.eingabe} />
+
+              <label style={styles.marke}>Wiederholungsbremse (presence_penalty, 0 bis 2)</label>
+              <input type="number" step="0.1" min={0} max={2} value={f.fPresencePenalty} onChange={setze('fPresencePenalty')} style={styles.eingabe} />
+              <div style={styles.hinweis}>
+                Gegen Endlosschleifen. Der Preis steht in der Model Card: ein hoeherer Wert kann
+                Sprachmischung und etwas schwaechere Leistung bringen.
+              </div>
+
+              <label style={styles.marke}>Antwortlaenge (max_tokens)</label>
+              <input type="number" min={1} value={f.fMaxTokens} onChange={setze('fMaxTokens')} style={styles.eingabe} />
+              {Number(f.fMaxTokens) < 2048 && (
+                <div style={styles.warnung}>
+                  Unter 2048 schneidet ein Denkmodell ab, bevor es mit dem Denken fertig ist —
+                  die Antwort kommt dann ganz ohne Text an und sieht wie ein Netzproblem aus.
+                </div>
+              )}
+
+              <label style={styles.marke}>Denkstufe</label>
+              <select value={f.fReasoningEffort} onChange={setze('fReasoningEffort')} style={styles.eingabe}>
+                <option value="">keine Angabe — das Modell entscheidet selbst</option>
+                <option value="low">low — kurz denken</option>
+                <option value="medium">medium — Vorgabe fuer Agentenlaeufe</option>
+                <option value="high">high — lange denken</option>
+              </select>
+              {/*
+                Deliberately only these three. Ollamas Renderer kennt je nach Serverversion mehr
+                Namen, aber `xhigh` faellt dort in den default-Zweig und kostet einen 400 mitten
+                im Lauf. Was das Formular nicht anbietet, kann auch niemand hineinschreiben --
+                normaliseEintrag weist es zusaetzlich ab, falls es von Hand in die Datei kommt.
+              */}
+              <div style={styles.hinweis}>
+                Drei Sampler fehlen hier mit Absicht: top_k, min_p und repeat_penalty erreichen
+                ueber die /v1-Flaeche keinen Ollama-Server — sie muessen im Modelfile auf dem
+                Server stehen. Ein Regler dafuer waere eine Attrappe.
+              </div>
+            </>
+          )}
+
           <div style={styles.hinweis}>
             {vorlage?.faehigkeiten?.quelle === 'gemessen'
               ? `Quelle: gemessen am ${vorlage.faehigkeiten.gemessenAm} mit ${vorlage.faehigkeiten.gemessenMit}. ` +
                 'Diese Angabe bleibt beim Speichern erhalten -- ein Mensch kann sie hier nicht setzen, nur die ' +
-                'zehn Felder oben aendern.'
+                'Felder oben aendern.'
               : 'Quelle: vermutet. Ein Mensch kann diese Zeile nur schaetzen, nicht messen — die ' +
                 'Messung uebernimmt ein spaeterer Kanarienauftrag.'}
           </div>

@@ -20,6 +20,37 @@ export type Erreichbarkeit =
   | { art: 'local-http'; host: string; port: number; model: string }
   | { art: 'api'; baseUrl: string; model: string; keyRef: string }
 
+/**
+ * Was der Codec je Anfrage an Samplern mitschickt — oder eben nicht.
+ *
+ * Der Block ist optional, aber sein Weglassen ist keine Enthaltung: Ollamas `/v1`-Schicht
+ * setzt `temperature` und `top_p` **zwangsweise auf 1.0**, wenn der Client sie nicht sendet
+ * (`openai.go` L663/L681). Ein Modell mit empfohlenem `top_p 0.95` laeuft ohne diesen Block
+ * also auf 1.0, und nirgends steht, dass das passiert ist.
+ *
+ * **Warum genau diese fuenf Felder und keine weiteren:** `top_k`, `min_p` und `repeat_penalty`
+ * fehlen mit Absicht. Ollamas `/v1`-Flaeche kennt sie nicht und verwirft sie stillschweigend —
+ * ein Regler dafuer waere eine Attrappe, die etwas verspricht, das nie den Server erreicht.
+ * Fuer einen Ollama-Eintrag stehen diese drei im Modelfile auf dem Server und nur dort; das ist
+ * so in `docs/anpassbare-flaechen.md` gefuehrt (CK-NFR-012: eine anpassbare Flaeche ausserhalb
+ * der App muss benannt sein, gerade weil sie hier nicht editierbar ist).
+ *
+ * CK-NFR-012: das hier ist eine anpassbare Flaeche. Sie hat einen Eintrag im Inventar, ein Feld
+ * im Settings-Formular, und `tests/docs/anpassbare-flaechen.test.ts` haelt den Eintrag fest.
+ */
+export interface Sampler {
+  temperature: number
+  topP: number
+  presencePenalty: number
+  maxTokens: number
+  /**
+   * keel-Namen, nicht Ollama-Namen. `'xhigh'` darf hier nie stehen: Ollamas Renderer faellt
+   * damit in den default-Zweig und antwortet `unsupported Qwen3.8 reasoning effort "xhigh"`.
+   * `normaliseEintrag` weist es vor dem Request ab, nicht erst im Wiederholungsversuch.
+   */
+  reasoningEffort?: 'low' | 'medium' | 'high'
+}
+
 export interface Faehigkeiten {
   codec: 'anthropic' | 'openai-chat' | 'ollama-native' | 'text'
   werkzeugmodus: 'nativ' | 'text'
@@ -35,6 +66,8 @@ export interface Faehigkeiten {
   gemessenAm: string | null
   gemessenMit: string | null
   quelle: 'gemessen' | 'vermutet' | 'herstellerangabe'
+  /** Fehlt bei jedem Eintrag, der bisher keinen hatte — der Codec sendet dann keine Sampler. */
+  sampler?: Sampler
 }
 
 export interface ModellEintrag {
@@ -52,6 +85,17 @@ export interface ModellEintrag {
 const ARTEN = new Set<string>(['cli-harness', 'local-http', 'api'])
 const OERTLICHKEITEN = new Set<string>(['lokal', 'eigenes-netz', 'fremdes-netz'])
 const QUELLEN = new Set<string>(['gemessen', 'vermutet', 'herstellerangabe'])
+
+/**
+ * Die einzigen Denkstufen, die keel hinausgibt.
+ *
+ * Bewusst enger als das, was ein Ollama-Server je nach Version annimmt (0.20.4 kennt nur
+ * high/medium/low/none, spaeter kamen minimal/max/xhigh/ultra dazu). Die teure Falle ist
+ * `'xhigh'`: es sieht wie ein gueltiger Wert aus, faellt in Ollamas default-Zweig und kostet
+ * einen 400 mitten im Lauf. Eine Liste, die an der Serverversion haengt, ist keine Wache —
+ * also nimmt keel die drei, die ueberall gelten, und weist alles andere hier ab.
+ */
+const DENKSTUFEN = new Set<string>(['low', 'medium', 'high'])
 
 /** The Faehigkeiten fields that must be a whole number greater than zero. */
 const GANZZAHL_FELDER = ['nutzbaresKontextfenster', 'werkzeugObergrenze', 'rundenbudget'] as const
@@ -146,6 +190,17 @@ export function normaliseEintrag(raw: unknown): ModellEintrag {
     } else if (faehigkeiten.gemessenAm !== null || faehigkeiten.gemessenMit !== null) {
       throw new Error(
         `Eintrag '${r.id}': quelle ist '${faehigkeiten.quelle}', darf dann aber keine Messdaten tragen`
+      )
+    }
+    // Vor dem Request, nicht im Wiederholungsversuch: eine unbekannte Denkstufe geht sonst als
+    // `reasoning_effort` hinaus und Ollamas Renderer antwortet mit
+    // `unsupported Qwen3.8 reasoning effort "xhigh"` — ein 400 mitten im Lauf, der wie ein
+    // Transportfehler aussieht, obwohl er in der Konfiguration steht.
+    const stufe = faehigkeiten.sampler?.reasoningEffort
+    if (stufe !== undefined && !DENKSTUFEN.has(stufe)) {
+      throw new Error(
+        `Eintrag '${r.id}': unbekannte sampler.reasoningEffort '${stufe}' — ` +
+          'bekannt sind low, medium, high'
       )
     }
   }

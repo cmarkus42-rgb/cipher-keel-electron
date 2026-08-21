@@ -42,6 +42,25 @@ describe('CK-NFR-012 — the adjustable-surface inventory', () => {
     }
   })
 
+  it('documents the sampler block on the capability row', () => {
+    // Ollamas /v1 forces temperature and top_p to 1.0 when the client omits them, so this is
+    // an adjustable surface with teeth: leaving it out does not mean "server default", it
+    // means 1.0. CK-NFR-012 wants it named.
+    expect(INVENTORY).toContain('faehigkeiten.sampler')
+    expect(INVENTORY).toContain('presencePenalty')
+    expect(INVENTORY).toContain('reasoningEffort')
+  })
+
+  it('names top_k, min_p and repeat_penalty as a surface outside the app', () => {
+    // The honest half of the same entry: these three exist, they matter, and no field in
+    // this app can reach them -- Ollamas /v1 discards them. They live in the Modelfile on
+    // the server. A slider for them would be a prop, which is the pattern CK-NFR-012 fights.
+    expect(INVENTORY).toContain('top_k')
+    expect(INVENTORY).toContain('min_p')
+    expect(INVENTORY).toContain('repeat_penalty')
+    expect(INVENTORY).toContain('Modelfile')
+  })
+
   it('documents the cost budget price table', () => {
     // The price table is adjustable because rates change faster than releases.
     // It must be documented, and the key constraint — unknown models cost zero,

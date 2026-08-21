@@ -105,6 +105,23 @@ export const openAiChatCodec: Codec = {
     }
 
     const körper: Record<string, unknown> = { messages, stream: false }
+    // Nur wenn die Faehigkeitszeile den Block traegt. Ein Eintrag ohne ihn muss byteweise
+    // denselben Koerper erzeugen wie vor dieser Aenderung — sonst wuerden bestehende Eintraege
+    // stillschweigend anders laufen als bisher.
+    //
+    // Umgekehrt gilt: ist der Block da, gehen alle vier Zahlen hinaus, auch die Nullen. Ollamas
+    // /v1 setzt ein weggelassenes `temperature` oder `top_p` zwangsweise auf 1.0 (openai.go
+    // L663/L681) — ein Feld wegzulassen heisst hier also nicht „Serverwert behalten", sondern
+    // „mit 1.0 ueberschreiben". Ein `if (wert)` statt der Existenzpruefung wuerde genau das
+    // ausloesen, sobald jemand presencePenalty auf 0 stellt.
+    const s = f.sampler
+    if (s) {
+      körper.temperature = s.temperature
+      körper.top_p = s.topP
+      körper.presence_penalty = s.presencePenalty
+      körper.max_tokens = s.maxTokens
+      if (s.reasoningEffort !== undefined) körper.reasoning_effort = s.reasoningEffort
+    }
     if (werkzeuge.length > 0) {
       körper.tools = werkzeuge.map(w => ({
         type: 'function',

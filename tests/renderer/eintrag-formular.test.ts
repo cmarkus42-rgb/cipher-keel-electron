@@ -69,4 +69,44 @@ describe('baueFaehigkeitenPayload', () => {
     expect(payload.codec).toBe('openai-chat')
     expect(payload.rundenbudget).toBe(20)
   })
+
+  // Der sampler-Block ist optional und muss es bleiben. Ein Formular, das ihn immer mitsendet,
+  // wuerde jeden bestehenden Eintrag beim ersten Speichern mit Samplern versehen, die niemand
+  // gewaehlt hat — und die Ollama dann statt seiner eigenen Werte benutzt.
+  describe('sampler', () => {
+    it('sendet keinen sampler-Block, solange das Kaestchen aus ist', () => {
+      const f: Felder = { ...LEER, art: 'local-http' }
+      const payload = baueFaehigkeitenPayload(f, undefined) as Record<string, unknown>
+      expect('sampler' in payload).toBe(false)
+    })
+
+    it('sendet die keel-Namen als Zahlen, wenn das Kaestchen an ist', () => {
+      const f: Felder = {
+        ...LEER, art: 'local-http', fSamplerAn: true,
+        fTemperature: '1.0', fTopP: '0.95', fPresencePenalty: '0.0', fMaxTokens: '8192',
+        fReasoningEffort: 'medium',
+      }
+      const payload = baueFaehigkeitenPayload(f, undefined) as Record<string, unknown>
+      expect(payload.sampler).toEqual({
+        temperature: 1.0, topP: 0.95, presencePenalty: 0.0, maxTokens: 8192,
+        reasoningEffort: 'medium',
+      })
+    })
+
+    it('laesst reasoningEffort weg, wenn keine Stufe gewaehlt ist', () => {
+      const f: Felder = {
+        ...LEER, art: 'local-http', fSamplerAn: true,
+        fTemperature: '0.7', fTopP: '0.8', fPresencePenalty: '1.5', fMaxTokens: '2048',
+        fReasoningEffort: '',
+      }
+      const payload = baueFaehigkeitenPayload(f, undefined) as Record<string, unknown>
+      expect(payload.sampler).toEqual({
+        temperature: 0.7, topP: 0.8, presencePenalty: 1.5, maxTokens: 2048,
+      })
+    })
+
+    it('bietet xhigh gar nicht erst an — LEER kennt nur die drei zulaessigen Stufen', () => {
+      expect(['', 'low', 'medium', 'high']).toContain(LEER.fReasoningEffort)
+    })
+  })
 })

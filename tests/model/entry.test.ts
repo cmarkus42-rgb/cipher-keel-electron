@@ -143,6 +143,59 @@ describe('normaliseEintrag', () => {
       expect(e.faehigkeiten?.rundenbudget).toBe(20)
     })
   })
+
+  describe('sampler.reasoningEffort', () => {
+    const SAMPLER = { temperature: 1.0, topP: 0.95, presencePenalty: 0.0, maxTokens: 8192 }
+
+    it("weist 'xhigh' benannt ab, statt es an den Renderer durchzureichen", () => {
+      expect(() => normaliseEintrag({
+        ...LOCAL,
+        faehigkeiten: {
+          codec: 'openai-chat', werkzeugmodus: 'nativ',
+          sampler: { ...SAMPLER, reasoningEffort: 'xhigh' },
+        },
+      })).toThrow(/sampler\.reasoningEffort 'xhigh'/)
+    })
+
+    it('nennt in der Meldung die drei zulaessigen Stufen', () => {
+      expect(() => normaliseEintrag({
+        ...LOCAL,
+        faehigkeiten: {
+          codec: 'openai-chat', werkzeugmodus: 'nativ',
+          sampler: { ...SAMPLER, reasoningEffort: 'max' },
+        },
+      })).toThrow(/low, medium, high/)
+    })
+
+    it('laesst low, medium und high durch', () => {
+      for (const stufe of ['low', 'medium', 'high'] as const) {
+        const e = normaliseEintrag({
+          ...LOCAL,
+          faehigkeiten: {
+            codec: 'openai-chat', werkzeugmodus: 'nativ',
+            sampler: { ...SAMPLER, reasoningEffort: stufe },
+          },
+        })
+        expect(e.faehigkeiten?.sampler?.reasoningEffort).toBe(stufe)
+      }
+    })
+
+    it('laesst einen sampler-Block ohne reasoningEffort durch', () => {
+      const e = normaliseEintrag({
+        ...LOCAL,
+        faehigkeiten: { codec: 'openai-chat', werkzeugmodus: 'nativ', sampler: SAMPLER },
+      })
+      expect(e.faehigkeiten?.sampler).toEqual(SAMPLER)
+    })
+
+    it('laesst eine Faehigkeitszeile ganz ohne sampler-Block durch', () => {
+      const e = normaliseEintrag({
+        ...LOCAL,
+        faehigkeiten: { codec: 'openai-chat', werkzeugmodus: 'nativ' },
+      })
+      expect(e.faehigkeiten?.sampler).toBeUndefined()
+    })
+  })
 })
 
 describe('toModelEndpoint', () => {

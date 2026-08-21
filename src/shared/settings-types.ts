@@ -53,6 +53,19 @@ export interface FaehigkeitenAnsicht {
   gemessenAm: string | null
   gemessenMit: string | null
   quelle: 'gemessen' | 'vermutet' | 'herstellerangabe'
+  /**
+   * Optional, und das muss es bleiben: fehlt der Block, sendet der Codec keine Sampler und der
+   * Eintrag verhaelt sich wie vor seiner Einfuehrung. Keine Felder fuer `top_k`/`min_p`/
+   * `repeat_penalty` — Ollamas `/v1` verwirft sie stillschweigend, siehe `Sampler` in
+   * src/main/model/entry.ts.
+   */
+  sampler?: {
+    temperature: number
+    topP: number
+    presencePenalty: number
+    maxTokens: number
+    reasoningEffort?: 'low' | 'medium' | 'high'
+  }
 }
 
 export interface EintragAnsicht {

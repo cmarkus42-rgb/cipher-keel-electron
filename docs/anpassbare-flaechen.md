@@ -27,6 +27,7 @@ dasselbe Muster fortgesetzt, gegen das diese Strecke antritt.
 | `agent.startArgs` | Freitext-Startparameter je CLI-Adapter (ersetzt das frühere `agent.skipPermissions`); Vorgabe `--dangerously-skip-permissions` für `claude-code` | ja — Settings-Fenster, Reiter „CLI-Start" | ja — Settings-Fenster |
 | `agent.modelTiers` | Tier → Modell-Handle (`light`/`standard`/`heavy`), Rückfall für einen leeren `tier:*`-Slot | ja — Settings-Fenster, Reiter „Modelle" (Rückfall-Handle je Tier), auch in der Prompt-Vorschau als aufgelöstes Modell | ja — Settings-Fenster |
 | `modelle.eintraege` / `modelle.zuordnung` | Der Modell-Registry: eigene und überschreibende Einträge, die fünf Zuordnungsslots | ja — Settings-Fenster, Reiter „Modelle" | ja — Settings-Fenster (anlegen, bearbeiten, löschen, zuordnen) |
+| `modelle.eintraege[].faehigkeiten.sampler` | Die vier Sampler plus Denkstufe, die der Codec je Anfrage mitschickt: `temperature`, `topP`, `presencePenalty`, `maxTokens`, `reasoningEffort`. Der Block ist optional; **ihn wegzulassen ist aber keine Enthaltung** (siehe unten) | ja — Settings-Fenster, Reiter „Modelle" → Eintrag bearbeiten → Faehigkeitszeile, Abschnitt „Sampler" | ja — Settings-Fenster |
 | `voice.enabled` | Sprachausgabe an/aus | ja — Settings-Fenster, Reiter „Sprachausgabe" | ja — Settings-Fenster |
 | `voice.piperVoice` | Stimme der Sprachausgabe | ja — Settings-Fenster, Reiter „Sprachausgabe" | ja — Settings-Fenster |
 | `llm.tagging` | Endpunkt und Modell für das Notizen-Tagging — klein und häufig, bleibt lokal. Zugleich Rückfall für einen leeren `rolle:tagging`-Slot | ja — Settings-Fenster, Reiter „Modelle" (Rückfall-Endpunkt-Editor) | ja — Settings-Fenster |
@@ -160,6 +161,30 @@ Das Modell bleibt über denselben Ollama-Daemon erreichbar, aber jeder Aufruf l�
 `keep_alive`-Vorgabe — Ollama entscheidet serverseitig nach seinem eigenen Default, nicht mehr
 nach dem `-1` dieser App. Heute nicht editierbar und nicht einmal sichtbar: kein Warnhinweis
 im Settings-Fenster, wenn eine Faehigkeitszeile diesen Codec waehlt.
+
+### Sampler: was keel sendet, und was nur im Modelfile steht
+
+Ein weggelassener Sampler ist auf dieser Fläche **kein** „nimm deinen Serverwert". Ollamas
+`/v1`-Schicht setzt `temperature` und `top_p` **zwangsweise auf 1.0**, wenn der Client sie nicht
+mitschickt (`openai.go` L663/L681). Ein Modell mit empfohlenem `top_p 0.95` im Modelfile läuft
+über `/v1` also auf 1.0, sobald keel schweigt. Genau deshalb gibt es `faehigkeiten.sampler` in
+der Tabelle oben: fünf Felder, die keel je Anfrage sendet, wenn der Block gesetzt ist.
+
+`reasoningEffort` kennt in keel nur `low`, `medium`, `high`. `'xhigh'` wird von
+`normaliseEintrag` (`src/main/model/entry.ts`) **vor** dem Request abgewiesen, nicht erst im
+Wiederholungsversuch: Ollamas Renderer fällt damit in seinen default-Zweig und antwortet
+`unsupported Qwen3.8 reasoning effort "xhigh"` — ein 400 mitten im Lauf, der wie ein
+Transportfehler aussieht, obwohl er in der Konfiguration steht.
+
+| Fläche | Wo | In der App sichtbar | Editierbar |
+|---|---|---|---|
+| `top_k`, `min_p`, `repeat_penalty` | **Nur im Modelfile auf dem Server** (`PARAMETER top_k …`, beim abgeleiteten Modell auf dem Spark), nicht in dieser Config | nein — hier benannt, sonst nirgends | **nein — und das bleibt so.** Ollamas `/v1`-Fläche kennt diese drei Parameter nicht und verwirft sie stillschweigend. Ein Regler dafür im Settings-Fenster wäre eine Attrappe: er würde etwas versprechen, das den Server nie erreicht |
+
+Das ist eine anpassbare Fläche **außerhalb** der App, und sie steht hier, weil CK-NFR-012 genau
+das verlangt — benannt werden muss sie auch dann, wenn keel sie nicht erreichen kann. Wer diese
+drei Werte für einen `local-http`-Eintrag ändern will, ändert das Modelfile auf dem Server und
+legt das Modell neu an; ein `ollama-native`-Codec würde daran nichts ändern, denn die Lücke sitzt
+in Ollamas `/v1`-Übersetzung, nicht in keels Codec.
 
 ## Kostenbudget — versionierte Preistabelle
 
