@@ -923,6 +923,16 @@ sondern Kontext: das Modell kann im **selben** Lauf eine Datei lesen und die zug
 API-Dokumentation nachschlagen. Genau das nimmt der Modus-Schnitt weg, den Abschnitt 4.1 als
 billigere Zwischenstufe vorschlug — deshalb fällt diese Zwischenstufe weg.
 
+**Was ein Eintrag der Positivliste bedeutet:** die Domäne **samt aller Unterdomänen**, beliebig
+tief. `nodejs.org` erlaubt auch `beliebig.docs.nodejs.org` — für ein Nachschlagewerk gewollt und
+richtig. Damit gehören auf die Liste nur Domänen, deren Unterdomänen derselben Partei gehören.
+`github.io`, `readthedocs.io`, `vercel.app` oder `pages.dev` vergeben eine Unterdomäne an jeden,
+der sich anmeldet; ein solcher Eintrag hängt fremden Nutzerinhalt in den Hauptlauf, neben
+`datei_lesen` und die Graph-Werkzeuge, und die Begründung von eben („setzt einen Einbruch bei
+Mozilla voraus") trägt dann nicht mehr. Die Liste ist eine anpassbare Fläche — sobald sie eine
+Vorgabe oder ein Einstellungsfeld bekommt, gehört dieser Satz mit in die Zeile in
+`docs/anpassbare-flaechen.md`.
+
 **Weg 2 — der gekapselte Rechercheur, für das offene Netz.** `recherchieren` bleibt wie in 3.4 und
 4.1 entworfen: eigener Unterlauf, eigene Registry (`web_suchen`, `seite_lesen`, `faehigkeit_lesen`),
 **kein** Datei- und kein Graph-Werkzeug, Rückgabe als Text mit Quellenliste. Alles, was nicht auf

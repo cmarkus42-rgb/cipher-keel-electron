@@ -10,9 +10,21 @@
 //      `example.org.boeser-host.de`.
 //   4. Den Eintrag `100.64.0.0/10` aus GESPERRTE_V4 entfernt: 11 rot, darunter Ollama, MS-01
 //      und der VPS.
+//   5. Die Bindung aus einer *zweiten* Aufloesung gebaut — also das, was fetch mit einem Namen
+//      ohnehin tut: 5 rot. Nimmt man dazu die Sperrlisten-Pruefung in `bindeAufAdressen` heraus,
+//      steht im Ergebnis `erreicht: ['100.78.7.108']` und `text: 'INHALT VON 100.78.7.108'` — der
+//      Angriff des Pruefers, ausgefuehrt.
+//   6. `gegenDieUhr` um die Aufloesung entfernt: 1 rot, 821 ms Laufzeit bei 30 ms Budget, und der
+//      Grund hiess am Ende „Mehr als 3 Weiterleitungen" statt „Zeitbudget".
+//   7. Den Literal-Zweig in `holeSicher` uebersprungen: 3 rot, Meldung „Namensaufloesung
+//      fehlgeschlagen fuer 100.78.7.108" statt „gesperrtes Netz (Tailscale)".
 import { describe, it, expect } from 'vitest'
-import { pruefeUrl, holeSicher } from '../../src/main/harness/netzwache'
-import type { NetzWacheKontext, AbrufGrenzen } from '../../src/main/harness/netzwache'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { pruefeUrl, holeSicher, bindeAufAdressen } from '../../src/main/harness/netzwache'
+import type {
+  NetzWacheKontext, AbrufGrenzen, Abrufer, Abrufauftrag, Bindung, AufloesungsTreffer,
+} from '../../src/main/harness/netzwache'
 
 // A plausible whitelist: documentation sites whose content we treat as a reference work.
 const LISTE = ['nodejs.org', 'developer.mozilla.org', 'example.org']
@@ -89,6 +101,20 @@ describe('pruefeUrl: gesperrte Netze, geprueft an der Adresse', () => {
     ['::ffff:100.78.7.108', 'IPv4-mapped IPv6 auf Tailscale'],
     ['::10.0.0.1', 'IPv4-compatible IPv6, die alte Form'],
     ['::', 'die unspezifizierte Adresse'],
+    // Runde 3, Fund 4: die dritte und vierte Einbettungsform von IPv4 in IPv6. In einem Netz mit
+    // DNS64/NAT64 ist 64:ff9b::100.78.7.108 der regulaere Weg zum Ollama, und 6to4 traegt die
+    // Adresse des Uebergangs in Gruppe 1 und 2. Beide fielen durch alle Zweige und waren frei.
+    ['64:ff9b::100.78.7.108', 'NAT64 64:ff9b::/96 auf Tailscale'],
+    ['64:ff9b::644e:76c', 'NAT64, hexadezimale Schreibweise derselben Adresse'],
+    ['64:ff9b::10.0.0.1', 'NAT64 auf ein privates Netz'],
+    ['64:ff9b:1::100.78.7.108', 'NAT64 in der Ortsform aus RFC 8215 — Einbettung unbekannt'],
+    ['2002:644e:76c::1', '6to4 2002::/16 mit Tailscale als Uebergang'],
+    ['2002:c0a8:101::1', '6to4 mit 192.168.1.1 als Uebergang'],
+    // Rundfunk und Gruppenruf. Ueber TCP praktisch nicht erreichbar, aber die Sperrliste ist die
+    // Stelle, an der so etwas hinterher niemand mehr sucht.
+    ['255.255.255.255', 'der Rundruf'],
+    ['224.0.0.1', 'Gruppenruf 224/4'],
+    ['239.255.255.250', 'Gruppenruf: SSDP'],
   ]
 
   for (const [adresse, warum] of gesperrt) {
@@ -112,6 +138,11 @@ describe('pruefeUrl: gesperrte Netze, geprueft an der Adresse', () => {
     ['2606:4700:4700::1111', 'oeffentliches IPv6'],
     ['fbff:ffff::1', 'direkt unter fc00::/7'],
     ['fec0::1', 'direkt ueber fe80::/10'],
+    // Die Gegenprobe zu den neuen Einbettungen: geurteilt wird ueber die eingebettete Adresse,
+    // nicht ueber das Praefix. Sonst waere in einem NAT64-Netz jedes IPv4-Ziel gesperrt.
+    ['64:ff9b::93.184.216.34', 'NAT64 auf ein oeffentliches Ziel'],
+    ['2002:5db8:d822::1', '6to4 mit oeffentlichem Uebergang 93.184.216.34'],
+    ['223.255.255.255', 'direkt unter dem Gruppenruf-Bereich 224/4'],
   ]
 
   for (const [adresse, warum] of erlaubt) {
@@ -261,17 +292,16 @@ describe('pruefeUrl: Zugangsdaten in der URL', () => {
 // holeSicher
 // ---------------------------------------------------------------------------------------------
 
-interface Aufruf { url: string; init: RequestInit }
+type Aufruf = Abrufauftrag
 
 /** Records every request and answers from a table. An unknown URL is a test bug, so it throws. */
-function abrufer(tabelle: Record<string, () => Response>, aufrufe: Aufruf[]): typeof fetch {
-  return ((eingabe: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const url = String(eingabe)
-    aufrufe.push({ url, init: init ?? {} })
-    const macher = tabelle[url]
-    if (!macher) return Promise.reject(new Error(`unerwartete URL im Test: ${url}`))
+function abrufer(tabelle: Record<string, () => Response>, aufrufe: Aufruf[]): Abrufer {
+  return (auftrag: Abrufauftrag): Promise<Response> => {
+    aufrufe.push(auftrag)
+    const macher = tabelle[auftrag.url]
+    if (!macher) return Promise.reject(new Error(`unerwartete URL im Test: ${auftrag.url}`))
     return Promise.resolve(macher())
-  }) as typeof fetch
+  }
 }
 
 function aufloeser(karte: Record<string, string[]>): (host: string) => Promise<string[]> {
@@ -280,6 +310,40 @@ function aufloeser(karte: Record<string, string[]>): (host: string) => Promise<s
     if (!a) throw new Error(`kein Eintrag fuer ${host}`)
     return a
   }
+}
+
+/**
+ * Ein Abrufer, der sich verhaelt wie ein richtiger Klient: er stellt die Verbindung ueber die
+ * Bindung her, die die Wache ihm gibt, und liefert den Inhalt der Adresse, die er dabei erreicht.
+ * Damit steht im Ergebnis, *wohin* der Socket ging — und nicht nur, welchen Namen jemand geprueft
+ * hat.
+ */
+function verbindenderAbrufer(erreicht: string[]): Abrufer {
+  return (auftrag: Abrufauftrag) => new Promise<Response>((fertig, ablehnen) => {
+    auftrag.bindung(new URL(auftrag.url).hostname, { all: true }, (fehler, treffer) => {
+      if (fehler !== null) { ablehnen(fehler); return }
+      const adresse = (treffer as AufloesungsTreffer[])[0].address
+      erreicht.push(adresse)
+      fertig(new Response(`INHALT VON ${adresse}`, { status: 200 }))
+    })
+  })
+}
+
+/** Sammelt, was eine Bindung herausgibt — synchron, weil der Rueckruf synchron aufgerufen wird. */
+function ueberBindung(
+  bindung: Bindung,
+  hostname: string,
+  optionen: { family?: number; all?: boolean } = { all: true },
+): { fehler: Error | null; adressen: string[] } {
+  let ergebnis: { fehler: Error | null; adressen: string[] } | null = null
+  bindung(hostname, optionen, (fehler, treffer, familie) => {
+    if (fehler !== null) { ergebnis = { fehler, adressen: [] }; return }
+    ergebnis = typeof treffer === 'string'
+      ? { fehler: null, adressen: [`${treffer}/${familie}`] }
+      : { fehler: null, adressen: (treffer as AufloesungsTreffer[]).map(t => `${t.address}/${t.family}`) }
+  })
+  if (ergebnis === null) throw new Error('die Bindung hat ihren Rueckruf nicht aufgerufen')
+  return ergebnis
 }
 
 const GRENZEN: AbrufGrenzen = { maxBytes: 100_000, zeitbudgetMs: 5_000, maxWeiterleitungen: 3 }
@@ -347,7 +411,7 @@ describe('holeSicher: der gewoehnliche Weg', () => {
   it('benennt einen geworfenen Netzfehler', async () => {
     const e = await holeSicher('https://nodejs.org/a', haupt(), GRENZEN, {
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
-      abrufen: (() => Promise.reject(new Error('ECONNREFUSED'))) as typeof fetch,
+      abrufen: (() => Promise.reject(new Error('ECONNREFUSED'))) as Abrufer,
     })
     expect(e.ok).toBe(false)
     expect(e.ok === false && e.grund).toContain('ECONNREFUSED')
@@ -517,7 +581,7 @@ describe('holeSicher: Groesse und Zeit', () => {
     })
     const e = await holeSicher('https://nodejs.org/gross', haupt(), { ...GRENZEN, maxBytes: 4096 }, {
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
-      abrufen: (() => Promise.resolve(new Response(strom, { status: 200 }))) as typeof fetch,
+      abrufen: (() => Promise.resolve(new Response(strom, { status: 200 }))) as Abrufer,
     })
     expect(e.ok).toBe(false)
     expect(e.ok === false && e.grund).toContain('Groessengrenze')
@@ -527,7 +591,7 @@ describe('holeSicher: Groesse und Zeit', () => {
   it('laesst einen Koerper genau an der Grenze durch', async () => {
     const e = await holeSicher('https://nodejs.org/a', haupt(), { ...GRENZEN, maxBytes: 5 }, {
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
-      abrufen: (() => Promise.resolve(new Response('12345', { status: 200 }))) as typeof fetch,
+      abrufen: (() => Promise.resolve(new Response('12345', { status: 200 }))) as Abrufer,
     })
     expect(e).toEqual({ ok: true, text: '12345', endUrl: 'https://nodejs.org/a' })
   })
@@ -535,7 +599,7 @@ describe('holeSicher: Groesse und Zeit', () => {
   it('lehnt einen Koerper ein Byte ueber der Grenze ab', async () => {
     const e = await holeSicher('https://nodejs.org/a', haupt(), { ...GRENZEN, maxBytes: 5 }, {
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
-      abrufen: (() => Promise.resolve(new Response('123456', { status: 200 }))) as typeof fetch,
+      abrufen: (() => Promise.resolve(new Response('123456', { status: 200 }))) as Abrufer,
     })
     expect(e.ok).toBe(false)
     expect(e.ok === false && e.grund).toContain('Groessengrenze')
@@ -543,10 +607,10 @@ describe('holeSicher: Groesse und Zeit', () => {
 
   it('bricht ab, wenn das Zeitbudget verstreicht, und benennt es', async () => {
     // The fetch never answers. Only the AbortSignal ends this.
-    const haengend = ((_eingabe: RequestInfo | URL, init?: RequestInit) =>
-      new Promise<Response>((_aufloesen, ablehnen) => {
-        init?.signal?.addEventListener('abort', () => ablehnen(new Error('Dieser Vorgang wurde abgebrochen')))
-      })) as typeof fetch
+    const haengend: Abrufer = (auftrag) =>
+      new Promise<Response>((_fertig, ablehnen) => {
+        auftrag.init.signal?.addEventListener('abort', () => ablehnen(new Error('Dieser Vorgang wurde abgebrochen')))
+      })
     const e = await holeSicher('https://nodejs.org/langsam', haupt(), { ...GRENZEN, zeitbudgetMs: 20 }, {
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: haengend,
@@ -567,20 +631,242 @@ describe('holeSicher: Groesse und Zeit', () => {
   it('teilt sich das Zeitbudget ueber die ganze Kette, nicht pro Sprung', async () => {
     // Two hops, each answering after 30 ms, against a 40 ms budget. A per-hop timer would let
     // this through; the run as a whole must not outlive its budget.
-    const langsam = ((eingabe: RequestInfo | URL, init?: RequestInit) =>
-      new Promise<Response>((aufloesen, ablehnen) => {
+    const langsam: Abrufer = (auftrag) =>
+      new Promise<Response>((fertig, ablehnen) => {
         const uhr = setTimeout(() => {
-          aufloesen(String(eingabe).endsWith('/0')
+          fertig(auftrag.url.endsWith('/0')
             ? new Response(null, { status: 302, headers: { location: 'https://nodejs.org/1' } })
             : new Response('spaet', { status: 200 }))
         }, 30)
-        init?.signal?.addEventListener('abort', () => { clearTimeout(uhr); ablehnen(new Error('abgebrochen')) })
-      })) as typeof fetch
+        auftrag.init.signal?.addEventListener('abort', () => { clearTimeout(uhr); ablehnen(new Error('abgebrochen')) })
+      })
     const e = await holeSicher('https://nodejs.org/0', haupt(), { ...GRENZEN, zeitbudgetMs: 40 }, {
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: langsam,
     })
     expect(e.ok).toBe(false)
     expect(e.ok === false && e.grund).toContain('Zeitbudget')
+  })
+
+  // ---- Runde 3, Fund 2 -------------------------------------------------------------------------
+  it('bindet auch die Namensaufloesung ans Zeitbudget', async () => {
+    // Das Budget trug den Kommentar „fuer die ganze Kette" und deckte doch nur den Abruf: das
+    // Signal ging an `abrufen`, nie an `aufloesen`. Wer den autoritativen Nameserver seiner
+    // eigenen Kette betreibt, laesst jede Aufloesung haengen und haelt den Werkzeugaufruf ueber
+    // maxWeiterleitungen+1 Aufloesungen offen. Vorher gemessen: 30 ms Budget, ~800 ms Laufzeit,
+    // und die Ablehnung hiess am Ende „Mehr als 3 Weiterleitungen" statt „Zeitbudget".
+    const begonnen = Date.now()
+    const e = await holeSicher('https://nodejs.org/0', haupt(), { ...GRENZEN, zeitbudgetMs: 30 }, {
+      aufloesen: async () => {
+        await new Promise(fertig => setTimeout(fertig, 200))
+        return ['93.184.216.34']
+      },
+      abrufen: () => Promise.resolve(
+        new Response(null, { status: 302, headers: { location: 'https://nodejs.org/1' } }),
+      ),
+    })
+    expect(e.ok).toBe(false)
+    expect(e.ok === false && e.grund).toContain('Zeitbudget')
+    expect(Date.now() - begonnen).toBeLessThan(150)
+  })
+
+  it('gibt dem Aufloeser das Abbruchsignal mit, damit er selbst abbrechen kann', async () => {
+    // Node bricht eine laufende Abfrage nicht von selbst ab; das Rennen gegen die Uhr rettet nur
+    // die Antwortzeit. Damit die Aufloesung wirklich endet, muss die Implementierung das Signal
+    // bekommen — deshalb steht es in der Schnittstelle und nicht bloss im Kommentar.
+    const signale: unknown[] = []
+    await holeSicher('https://nodejs.org/a', haupt(), GRENZEN, {
+      aufloesen: async (_host: string, signal?: AbortSignal) => { signale.push(signal); return ['93.184.216.34'] },
+      abrufen: abrufer({ 'https://nodejs.org/a': seite('x') }, []),
+    })
+    expect(signale).toHaveLength(1)
+    expect(signale[0]).toBeInstanceOf(AbortSignal)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Runde 3, Fund 1: geprueft wurde die Adresse, geholt wurde der Name
+// ---------------------------------------------------------------------------------------------
+
+describe('holeSicher: die Verbindung haengt an der geprueften Adresse', () => {
+  it('gibt dem Abrufer genau die freigegebenen Adressen mit, nicht nur den Namen', async () => {
+    // Der zweite Beleg des Pruefers, ohne jede Zeitfrage: der Abrufer bekam `https://…/x` und nie
+    // die Adressen, ueber die geurteilt worden war. Damit loeste er ein zweites Mal auf.
+    const aufrufe: Aufruf[] = []
+    await holeSicher('https://nodejs.org/api', haupt(), GRENZEN, {
+      aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46', '2606:4700::6810:162e'] }),
+      abrufen: abrufer({ 'https://nodejs.org/api': seite('x') }, aufrufe),
+    })
+    expect(aufrufe[0].url).toBe('https://nodejs.org/api')
+    expect(aufrufe[0].host).toBe('nodejs.org')
+    expect(aufrufe[0].adressen).toEqual(['104.20.22.46', '2606:4700::6810:162e'])
+  })
+
+  it('haelt die Adresse fest, wenn der Aufloeser beim zweiten Mal etwas anderes sagt', async () => {
+    // Der kritische Befund, nachgestellt. `aufloesen` liefert beim ersten Aufruf die oeffentliche
+    // Adresse und danach den Ollama im Tailnet — ein Angreifer mit TTL 0 auf seiner eigenen Zone.
+    // Vorher lief der Abruf gegen den *Namen*, fetch loeste ein zweites Mal auf und das Ergebnis
+    // war `{ ok: true, text: 'INHALT VON 100.78.7.108' }`: die Wache hatte freigegeben, der Socket
+    // hatte den unauthentifizierten Ollama erreicht. Der Abrufer hier verbindet ueber die Bindung,
+    // also so wie ein richtiger Klient es tun muss.
+    let male = 0
+    const erreicht: string[] = []
+    const e = await holeSicher('https://example.org/x', offen(), GRENZEN, {
+      aufloesen: async () => (male++ === 0 ? ['93.184.216.34'] : ['100.78.7.108']),
+      abrufen: verbindenderAbrufer(erreicht),
+    })
+    expect(erreicht).toEqual(['93.184.216.34'])
+    expect(e).toEqual({ ok: true, text: 'INHALT VON 93.184.216.34', endUrl: 'https://example.org/x' })
+  })
+
+  it('haelt die Adresse auch am letzten Glied einer Weiterleitungskette fest', async () => {
+    // Dritter Beleg des Pruefers: jeder Sprung wird nach demselben Muster geprueft und geholt,
+    // also traegt jeder Sprung denselben Fehler. Hier ist der *zweite* Host der praeparierte.
+    const erreicht: string[] = []
+    const antworten: Record<string, () => Response> = {
+      'https://irgendein-forum.de/thread/1': um('https://blog.beispiel.de/eintrag'),
+    }
+    let male = 0
+    const e = await holeSicher('https://irgendein-forum.de/thread/1', offen(), GRENZEN, {
+      aufloesen: async (host: string) => {
+        if (host === 'irgendein-forum.de') return ['93.184.216.34']
+        return male++ === 0 ? ['203.0.113.9'] : ['100.78.7.108']
+      },
+      abrufen: (auftrag) => {
+        const fest = antworten[auftrag.url]
+        if (fest) return Promise.resolve(fest())
+        return verbindenderAbrufer(erreicht)(auftrag)
+      },
+    })
+    expect(erreicht).toEqual(['203.0.113.9'])
+    expect(e).toEqual({ ok: true, text: 'INHALT VON 203.0.113.9', endUrl: 'https://blog.beispiel.de/eintrag' })
+  })
+})
+
+describe('bindeAufAdressen: das letzte Tor vor dem Socket', () => {
+  it('gibt genau die geprueften Adressen heraus, mit ihrer Familie', () => {
+    const bindung = bindeAufAdressen('example.org', ['93.184.216.34', '2606:4700:4700::1111'])
+    expect(ueberBindung(bindung, 'example.org')).toEqual({
+      fehler: null,
+      adressen: ['93.184.216.34/4', '2606:4700:4700::1111/6'],
+    })
+  })
+
+  it('antwortet auch in der Einzelform, die Node ohne `all` erwartet', () => {
+    const bindung = bindeAufAdressen('example.org', ['93.184.216.34'])
+    expect(ueberBindung(bindung, 'example.org', {})).toEqual({ fehler: null, adressen: ['93.184.216.34/4'] })
+  })
+
+  it('gibt zu einer Anfrage nach IPv6 keine IPv4-Adresse heraus', () => {
+    // Bedenken des Pruefers zu den Adressfamilien: wenn die Aufloesung nur A-Records geprueft hat
+    // und der Socket ueber AAAA geht, ist an Adressen geprueft worden, die nie kontaktiert wurden.
+    // Ueber die Bindung kann das nicht passieren — was nicht geprueft wurde, gibt es hier nicht,
+    // und eine Anfrage, die so nicht bedient werden kann, endet mit einem Fehler statt mit einem
+    // Rueckfall auf den Aufloeser des Systems.
+    const bindung = bindeAufAdressen('example.org', ['93.184.216.34'])
+    const ergebnis = ueberBindung(bindung, 'example.org', { family: 6, all: true })
+    expect(ergebnis.adressen).toEqual([])
+    expect(ergebnis.fehler?.message).toContain('keine gepruefte Adresse')
+  })
+
+  it('verweigert eine Verbindung zu einem anderen Namen als dem geprueften', () => {
+    const bindung = bindeAufAdressen('example.org', ['93.184.216.34'])
+    const ergebnis = ueberBindung(bindung, 'boeser-host.de')
+    expect(ergebnis.fehler?.message).toContain('anderen Namen')
+  })
+
+  it('lehnt eine gesperrte Adresse auch hier noch ab, obwohl die Wache sie schon geprueft hat', () => {
+    // Doppelt gemoppelt und mit Absicht: das ist die Stelle, an der die Adresse in den Socket
+    // geht. Wer diese Funktion kuenftig von woanders aufruft, kommt an der Sperrliste nicht
+    // vorbei — die Pruefung liegt damit wirklich im Verbindungspfad und nicht nur davor.
+    const bindung = bindeAufAdressen('ollama.intern', ['100.78.7.108'])
+    const ergebnis = ueberBindung(bindung, 'ollama.intern')
+    expect(ergebnis.fehler?.message).toContain('Tailscale')
+  })
+
+  it('lehnt eine leere Adressliste ab, statt den Aufloeser des Systems uebernehmen zu lassen', () => {
+    const ergebnis = ueberBindung(bindeAufAdressen('example.org', []), 'example.org')
+    expect(ergebnis.fehler?.message).toContain('keine gepruefte Adresse')
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Runde 3, Fund 3: IP-Literale gingen durch den Aufloeser
+// ---------------------------------------------------------------------------------------------
+
+describe('holeSicher: IP-Literale', () => {
+  it('fragt fuer ein Literal keinen Aufloeser und nennt den richtigen Grund', async () => {
+    // `dns.resolve4('100.78.7.108')` wirft, und die Ablehnung hiess dann „Namensaufloesung
+    // fehlgeschlagen" — die falsche Meldung ausgerechnet im wichtigsten Fall. Nebenbei ging das
+    // Literal als DNS-Anfrage raus.
+    const gefragt: string[] = []
+    const aufrufe: Aufruf[] = []
+    const e = await holeSicher('https://100.78.7.108/api/generate', offen(), GRENZEN, {
+      aufloesen: async (host: string) => { gefragt.push(host); throw new Error('nicht aufloesbar') },
+      abrufen: abrufer({}, aufrufe),
+    })
+    expect(e.ok).toBe(false)
+    expect(e.ok === false && e.grund).toContain('gesperrten Netz (Tailscale)')
+    expect(gefragt).toEqual([])
+    expect(aufrufe).toHaveLength(0)
+  })
+
+  it('fragt auch fuer ein IPv6-Literal in Klammern keinen Aufloeser', async () => {
+    const gefragt: string[] = []
+    const e = await holeSicher('https://[::ffff:100.78.7.108]/x', offen(), GRENZEN, {
+      aufloesen: async (host: string) => { gefragt.push(host); throw new Error('nicht aufloesbar') },
+      abrufen: abrufer({}, []),
+    })
+    expect(e.ok).toBe(false)
+    expect(e.ok === false && e.grund).toContain('gesperrten Netz')
+    expect(gefragt).toEqual([])
+  })
+
+  it('holt ein erlaubtes Literal ohne Umweg ueber den Aufloeser', async () => {
+    const gefragt: string[] = []
+    const aufrufe: Aufruf[] = []
+    const e = await holeSicher('https://93.184.216.34/x', offen(), GRENZEN, {
+      aufloesen: async (host: string) => { gefragt.push(host); throw new Error('nicht aufloesbar') },
+      abrufen: abrufer({ 'https://93.184.216.34/x': seite('Inhalt') }, aufrufe),
+    })
+    expect(e.ok).toBe(true)
+    expect(gefragt).toEqual([])
+    // Auch das Literal geht als freigegebene Adresse an den Abrufer weiter, damit das Protokoll
+    // nach 4.1 (4) dieselbe Form hat wie bei einem Namen.
+    expect(aufrufe[0].adressen).toEqual(['93.184.216.34'])
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Runde 3, Fund 5: was ein Eintrag der Positivliste wirklich bedeutet
+// ---------------------------------------------------------------------------------------------
+
+describe('die Positivliste gilt fuer alle Unterdomaenen — und das muss dastehen', () => {
+  const QUELLE = readFileSync(join(__dirname, '../../src/main/harness/netzwache.ts'), 'utf8')
+  const SPEC = readFileSync(
+    join(__dirname, '../../docs/superpowers/specs/2026-08-21-qwen38-niveau-c-entwurf.md'), 'utf8',
+  )
+
+  it('gibt jede Unterdomaene frei, beliebig tief', () => {
+    // Die Regel selbst, festgenagelt: fuer nodejs.org ist das gewollt. Fuer eine Domaene, die
+    // Unterdomaenen an Fremde vergibt, waere es eine Einladung — deshalb die zwei Tests darunter.
+    expect(pruefeUrl('https://beliebig.angreifer.nodejs.org/x', haupt()).ok).toBe(true)
+  })
+
+  it('warnt am Feld selbst vor Domaenen mit fremdem Nutzerinhalt je Unterdomaene', () => {
+    const feld = QUELLE.slice(0, QUELLE.indexOf('positivliste: string[]'))
+    const kommentar = feld.slice(feld.lastIndexOf('/**'))
+    expect(kommentar).toContain('Unterdomaenen')
+    expect(kommentar).toContain('github.io')
+  })
+
+  it('sagt es auch in der Spec, wo die Liste beschrieben wird', () => {
+    // Der Nachtrag macht die Liste ausdruecklich zu einer anpassbaren Flaeche. Wer dort spaeter
+    // github.io eintraegt, haengt jede fremde Projektseite in den Hauptlauf — neben datei_lesen
+    // und die Graph-Werkzeuge. Die Begruendung „setzt einen Einbruch bei Mozilla voraus" traegt
+    // dann nicht mehr.
+    // Die Spec schreibt mit Umlauten, der Quelltext ohne — deshalb hier die andere Schreibweise.
+    expect(SPEC).toContain('samt aller Unterdomänen')
+    expect(SPEC).toContain('github.io')
   })
 })

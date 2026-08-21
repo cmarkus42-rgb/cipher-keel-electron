@@ -17,15 +17,40 @@
  * It is not an exfiltration boundary. A URL on the positive list still carries its query string
  * out, and nothing here stops a poisoned page from lying in its content. What this closes is the
  * class where the *destination itself* is the attack: the internal network.
+ *
+ * The verdict is about an *address*, so the connection has to go to that address. Judging the
+ * resolved address and then handing the *name* to a fetcher is the hole this module warned about
+ * in its own comments and had anyway: two lookups, and between them nothing holds the address
+ * still. An attacker serving TTL 0 on his own zone answers the guard with 93.184.216.34 and the
+ * socket with 100.78.7.108. Hence `Abrufer` — it does not take a URL and follow its nose, it takes
+ * the cleared addresses and a `bindung` that hands out those and nothing else. SNI and Host header
+ * stay with the name; only the connect path is pinned.
  */
 
 /** The two trust levels of the addendum. `offen` is the researcher's sub-run, and only that. */
 export interface NetzWacheKontext {
   /** 'whitelist' = Hauptlauf, nur Positivliste. 'offen' = Unterlauf des Rechercheurs. */
   modus: 'whitelist' | 'offen'
-  /** Hosts der Positivliste. Nur im Modus 'whitelist' gelesen. */
+  /**
+   * Hosts der Positivliste. Nur im Modus 'whitelist' gelesen.
+   *
+   * **Ein Eintrag gilt fuer die Domaene samt aller Unterdomaenen, beliebig tief** — `nodejs.org`
+   * erlaubt auch `beliebig.docs.nodejs.org`. Fuer ein Nachschlagewerk ist das gewollt. Fuer eine
+   * Domaene, die Unterdomaenen an Fremde vergibt, ist es eine Einladung: `github.io`,
+   * `readthedocs.io`, `vercel.app` oder `pages.dev` traegt jeder Beliebige, und mit einem solchen
+   * Eintrag steht fremder Nutzerinhalt im Hauptlauf neben `datei_lesen` und den Graph-Werkzeugen.
+   * Die Begruendung des Nachtrags — „setzt einen Einbruch bei Mozilla voraus" — traegt dann nicht
+   * mehr. Auf die Liste gehoeren nur Domaenen, deren Unterdomaenen derselben Partei gehoeren.
+   */
   positivliste: string[]
-  /** Aufgeloeste IP-Adressen des Ziels. Wird eingespeist, damit die Wache ohne DNS testbar ist. */
+  /**
+   * Aufgeloeste IP-Adressen des Ziels. Wird eingespeist, damit die Wache ohne DNS testbar ist.
+   *
+   * Vollstaendig, ueber alle Familien: was hier fehlt, wird nicht geprueft, und ein Klient mit
+   * Happy Eyeballs verbindet sonst ueber ein AAAA, das nie jemand angesehen hat. `holeSicher`
+   * schliesst diese Luecke, indem der Abrufer nur ueber genau diese Liste verbinden darf — wer
+   * `pruefeUrl` allein benutzt, muss selbst dafuer sorgen.
+   */
   adressen: string[]
 }
 
@@ -52,6 +77,11 @@ const GESPERRTE_V4: Array<{ praefix: string; bits: number; name: string }> = [
   // process, with no credential needed anywhere along the way — the tailnet *is* the credential.
   // That is SSRF, and this environment is an unusually rewarding target for it.
   { praefix: '100.64.0.0', bits: 10, name: 'Tailscale' },
+  // Gruppenruf und der reservierte Rest (in dem auch 255.255.255.255 liegt). Ueber TCP praktisch
+  // nicht erreichbar, also kein Loch, das jemand heute aufreisst — aber die Sperrliste ist die
+  // Stelle, an der hinterher niemand mehr nachsieht, und zwei Zeilen sind billiger als die Frage.
+  { praefix: '224.0.0.0', bits: 4, name: 'Gruppenruf' },
+  { praefix: '240.0.0.0', bits: 4, name: 'reserviert, einschliesslich Rundruf' },
 ]
 
 /** Dotted quad, strictly. Anything else is not an IPv4 literal and must not be treated as one. */
@@ -106,6 +136,11 @@ function alsV6(text: string): number[] | null {
   return [...vorne, ...Array<number>(fehlend).fill(0), ...hinten]
 }
 
+/** Zwei 16-Bit-Gruppen als punktierte IPv4-Adresse — die eingebettete Adresse einer v6-Form. */
+function alsPunkte(hoch: number, tief: number): string {
+  return `${hoch >> 8}.${hoch & 0xff}.${tief >> 8}.${tief & 0xff}`
+}
+
 /**
  * The name of the blocked range an address falls into, or null. Returning the *name* rather than
  * a boolean is what lets the refusal say which net it was — a refusal nobody can read gets
@@ -131,9 +166,28 @@ function gesperrterBereich(adresse: string): string | null {
   // reaches the tailnet that 100.78.7.108 is blocked from. `::1` and `::` land here too, and the
   // Loopback and 0/8 rules cover them exactly right.
   if (v6.slice(0, 5).every(g => g === 0) && (v6[5] === 0xffff || v6[5] === 0)) {
-    const eingebettet = `${v6[6] >> 8}.${v6[6] & 0xff}.${v6[7] >> 8}.${v6[7] & 0xff}`
-    return gesperrterBereich(eingebettet)
+    return gesperrterBereich(alsPunkte(v6[6], v6[7]))
   }
+
+  // Und die dritte und vierte Einbettungsform, die zwei Zweige lang fehlten. In einem reinen
+  // IPv6-Netz mit DNS64/NAT64 ist `64:ff9b::100.78.7.108` der regulaere Weg zum Ollama, und 6to4
+  // traegt die IPv4-Adresse des Uebergangs in den Gruppen 1 und 2. Beide fielen durch alle Zweige
+  // und waren frei. Geurteilt wird ueber die eingebettete Adresse, nicht ueber das Praefix —
+  // sonst waere in einem NAT64-Netz jedes oeffentliche IPv4-Ziel gesperrt.
+  if (v6[0] === 0x0064 && v6[1] === 0xff9b) {
+    if (v6[2] === 0 && v6[3] === 0 && v6[4] === 0 && v6[5] === 0) {
+      const bereich = gesperrterBereich(alsPunkte(v6[6], v6[7]))
+      return bereich === null ? null : `NAT64 auf ${bereich}`
+    }
+    // 64:ff9b:1::/48 aus RFC 8215 kennt mehrere Einbettungslaengen. Wo die Adresse steckt, ist
+    // von aussen nicht sicher zu sagen — also wird nicht geraten, sondern abgelehnt.
+    return 'NAT64 in unbekannter Einbettung'
+  }
+  if (v6[0] === 0x2002) {
+    const bereich = gesperrterBereich(alsPunkte(v6[1], v6[2]))
+    return bereich === null ? null : `6to4 auf ${bereich}`
+  }
+
   if ((v6[0] & 0xfe00) === 0xfc00) return 'IPv6 Unique Local'
   if ((v6[0] & 0xffc0) === 0xfe80) return 'IPv6 Link-Local'
   return null
@@ -233,10 +287,107 @@ export function pruefeUrl(roh: string, ktx: NetzWacheKontext): NetzErgebnis {
 export interface AbrufGrenzen {
   /** Hard cap, enforced while reading. A body over it is refused, never truncated silently. */
   maxBytes: number
-  /** Budget for the whole chain including every redirect, not per hop. */
+  /**
+   * Budget for the whole chain including every redirect, not per hop — und einschliesslich jeder
+   * Namensaufloesung. Das war der Unterschied zwischen dem Kommentar und dem Code: das Signal ging
+   * nur an den Abruf, und wer den autoritativen Nameserver seiner Kette betreibt, hielt den
+   * Werkzeugaufruf ueber maxWeiterleitungen+1 haengende Aufloesungen offen.
+   */
   zeitbudgetMs: number
   maxWeiterleitungen: number
 }
+
+/** Ein Treffer der Bindung, in der Form, die Nodes `lookup` erwartet. */
+export interface AufloesungsTreffer { address: string; family: 4 | 6 }
+
+/**
+ * Eine `lookup`-Funktion im Sinne von `net.connect`, die nichts nachschlaegt: sie gibt genau die
+ * Adressen heraus, ueber die die Wache geurteilt hat. Absichtlich ohne Import aus `node:dns` —
+ * unter `src/main/harness/` bleibt der Code frei von Umgebung, und die Form ist strukturell
+ * dieselbe.
+ */
+export type Bindung = (
+  hostname: string,
+  optionen: { family?: number; all?: boolean },
+  rueckruf: (fehler: Error | null, treffer?: AufloesungsTreffer[] | string, familie?: number) => void,
+) => void
+
+/**
+ * Baut die Bindung fuer einen geprueften Host. Das ist das letzte Tor vor dem Socket, und es
+ * schliesst den Fall, in dem die Pruefung an einer Adresse haengt und die Verbindung an einem
+ * Namen: hier wird nicht mehr aufgeloest, hier wird ausgegeben.
+ *
+ * Drei Ablehnungen, alle fail-closed:
+ * - ein anderer Hostname als der gepruefte (der Klient hat die Verbindung umgeleitet),
+ * - eine Adresse aus einem gesperrten Netz (dieselbe Sperrliste noch einmal, damit die Regel im
+ *   Verbindungspfad liegt und nicht nur davor),
+ * - keine passende Adresse. Kein Rueckfall auf den Aufloeser des Systems — genau der Rueckfall
+ *   waere die Luecke, und ein `lookup`, das den Fehler durchreicht, laesst die Verbindung
+ *   scheitern statt sie irgendwohin gehen zu lassen.
+ */
+export function bindeAufAdressen(host: string, adressen: string[]): Bindung {
+  const geprueft = normalisiereHost(host)
+  return (hostname, optionen, rueckruf) => {
+    if (normalisiereHost(hostname) !== geprueft) {
+      rueckruf(new Error(`Verbindung zu einem anderen Namen als dem geprueften: ${hostname} statt ${geprueft}`))
+      return
+    }
+    const treffer: AufloesungsTreffer[] = []
+    for (const adresse of adressen) {
+      const bereich = gesperrterBereich(adresse)
+      if (bereich !== null) {
+        rueckruf(new Error(`Adresse liegt in einem gesperrten Netz (${bereich}): ${adresse}`))
+        return
+      }
+      const familie: 4 | 6 | null = alsV4(adresse) !== null ? 4 : alsV6(adresse) !== null ? 6 : null
+      if (familie === null) {
+        rueckruf(new Error(`Adresse nicht lesbar: ${adresse}`))
+        return
+      }
+      if ((optionen.family === 4 || optionen.family === 6) && optionen.family !== familie) continue
+      treffer.push({ address: adresse, family: familie })
+    }
+    if (treffer.length === 0) {
+      const familie = optionen.family === 4 || optionen.family === 6 ? ` der Familie IPv${optionen.family}` : ''
+      rueckruf(new Error(`Fuer ${geprueft} gibt es keine gepruefte Adresse${familie}`))
+      return
+    }
+    if (optionen.all === true) rueckruf(null, treffer)
+    else rueckruf(null, treffer[0].address, treffer[0].family)
+  }
+}
+
+/**
+ * Was `holeSicher` dem Abrufer uebergibt. Bewusst *nicht* `typeof fetch`: wer nur eine URL
+ * bekommt, loest ein zweites Mal auf, und dann urteilt die Wache ueber die eine Adresse, waehrend
+ * der Socket zur anderen geht.
+ */
+export interface Abrufauftrag {
+  /** Die gepruefte URL. Sie bestimmt Name, SNI und Host-Kopf — nur nicht mehr das Ziel. */
+  url: string
+  init: RequestInit
+  /** Der gepruefte Host, normalisiert. */
+  host: string
+  /** Genau die freigegebenen Adressen. Fuer das Protokoll nach 4.1 (4). */
+  adressen: string[]
+  /**
+   * Und hierueber geht die Verbindung — als `lookup` eines undici-Agenten oder eines
+   * `https.request`. Ein Abrufer, der stattdessen einfach `fetch(url)` ruft, hebt die Wache auf.
+   */
+  bindung: Bindung
+}
+
+export type Abrufer = (auftrag: Abrufauftrag) => Promise<Response>
+
+/**
+ * Loest den Namen auf. Bekommt das Abbruchsignal, weil das Zeitbudget fuer die ganze Kette gilt
+ * und Node eine laufende DNS-Abfrage nicht von selbst beendet.
+ *
+ * Pflicht der Implementierung: **alle** Familien, die der Klient spaeter verbinden koennte. Wer
+ * nur `dns.resolve4` nimmt, laesst die AAAA-Adressen ungeprueft. Ueber `bindeAufAdressen` faellt
+ * das nicht mehr ins Netz, sondern in einen Verbindungsfehler — aber es faellt.
+ */
+export type Aufloeser = (host: string, signal: AbortSignal) => Promise<string[]>
 
 export type AbrufErgebnis =
   | { ok: true; text: string; endUrl: string }
@@ -260,6 +411,26 @@ function hostFuerAufloesung(roh: string): string | null {
 }
 
 /**
+ * Laesst ein Versprechen gegen die Uhr laufen. Ohne das haengt `holeSicher` so lange, wie der
+ * Aufloeser Geduld hat — gemessen: 30 ms Budget, 811 ms Laufzeit, weil das Signal nur am Abruf
+ * hing und jeder Sprung erneut aufloest.
+ *
+ * Das Signal geht *zusaetzlich* an den Aufloeser selbst (siehe `Aufloeser`): dieses Rennen rettet
+ * nur die Antwortzeit, nicht die Abfrage, die im Hintergrund weiterlaeuft.
+ */
+function gegenDieUhr<T>(versprechen: Promise<T>, signal: AbortSignal, grund: string): Promise<T> {
+  if (signal.aborted) return Promise.reject(new Error(grund))
+  const melder: { rufe: (() => void) | null } = { rufe: null }
+  const wecker = new Promise<never>((_, ablehnen) => {
+    melder.rufe = () => ablehnen(new Error(grund))
+    signal.addEventListener('abort', melder.rufe, { once: true })
+  })
+  return Promise.race([versprechen, wecker]).finally(() => {
+    if (melder.rufe !== null) signal.removeEventListener('abort', melder.rufe)
+  })
+}
+
+/**
  * Fetches with the guard applied at *every* hop.
  *
  * `redirect: 'manual'` and following by hand is the entire reason this function exists. Letting
@@ -268,13 +439,15 @@ function hostFuerAufloesung(roh: string): string | null {
  *
  * `aufloesen` and `abrufen` are injected: this is testable without a network and without DNS, and
  * a test can play the attacker. `ktx.adressen` is *overwritten* per hop with what `aufloesen`
- * returns — the field is what `pruefeUrl` reads, and here this function fills it.
+ * returns — the field is what `pruefeUrl` reads, and here this function fills it. Und derselbe
+ * Satz Adressen geht als Bindung an den Abrufer, damit zwischen Urteil und Socket keine zweite
+ * Aufloesung mehr passt.
  */
 export async function holeSicher(
   url: string,
   ktx: NetzWacheKontext,
   grenzen: AbrufGrenzen,
-  abhaengigkeiten: { aufloesen: (host: string) => Promise<string[]>; abrufen: typeof fetch },
+  abhaengigkeiten: { aufloesen: Aufloeser; abrufen: Abrufer },
 ): Promise<AbrufErgebnis> {
   const steuerung = new AbortController()
   const uhr = setTimeout(() => steuerung.abort(), grenzen.zeitbudgetMs)
@@ -285,19 +458,40 @@ export async function holeSicher(
     let aktuell = url
     for (let sprung = 0; ; sprung++) {
       const host = hostFuerAufloesung(aktuell)
+      if (host === null) {
+        // Kein https oder gar keine URL. `pruefeUrl` formuliert die Ablehnung, damit der Wortlaut
+        // aus einer Hand kommt; dass sie hier ablehnt, ist sicher — genau diese beiden Faelle sind
+        // es, in denen `hostFuerAufloesung` null gibt. Der Zweig darunter ist trotzdem da, weil
+        // eine unmoegliche Freigabe nicht stillschweigend zur Freigabe werden darf.
+        const urteil = pruefeUrl(aktuell, { ...ktx, adressen: [] })
+        if (!urteil.ok) return urteil
+        return { ok: false, grund: `Ziel ohne verwendbaren Host: ${aktuell.slice(0, 200)}` }
+      }
       // Refuse a host that cannot possibly be allowed *before* a resolver is asked about it. A
       // redirect to `https://<geheimnis>.boeser-host.de/` would otherwise carry the secret out in
       // a DNS query even though the request itself never happens. Same kind of pre-filter as the
       // scheme check inside `hostFuerAufloesung`, and for the same reason; `pruefeUrl` below stays
       // the authority on the verdict, which is why both places return the identical wording.
-      if (host !== null && ktx.modus === 'whitelist' && !stehtAufListe(host, ktx.positivliste)) {
+      // Nur im Hauptlauf: im Unterlauf gibt es keine Liste, an der sich das entscheiden liesse,
+      // und dort geht die Anfrage ohnehin hinaus. Das ist keine allgemeine Zusicherung gegen
+      // Ausleitung — der Modulkopf sagt, warum es keine sein kann.
+      if (ktx.modus === 'whitelist' && !stehtAufListe(host, ktx.positivliste)) {
         return { ok: false, grund: nichtAufListe(host) }
       }
-      let adressen: string[] = []
-      if (host !== null) {
+
+      let adressen: string[]
+      if (alsV4(host) !== null || alsV6(host) !== null) {
+        // Ein Literal wird nicht aufgeloest. `dns.resolve4('100.78.7.108')` wirft, und die
+        // Ablehnung hiesse dann „Namensaufloesung fehlgeschlagen" statt „gesperrtes Netz" — die
+        // falsche Meldung ausgerechnet im wichtigsten Fall, und eine, die den naechsten Leser die
+        // Regel an der falschen Stelle suchen laesst. Nebenbei ginge das Literal als DNS-Anfrage
+        // hinaus.
+        adressen = [host]
+      } else {
         try {
-          adressen = await abhaengigkeiten.aufloesen(host)
+          adressen = await gegenDieUhr(abhaengigkeiten.aufloesen(host, signal), signal, zeitGrund)
         } catch (fehler) {
+          if (signal.aborted) return { ok: false, grund: zeitGrund }
           // Named, not swallowed. An empty list here would be indistinguishable from a host with
           // no records, and `pruefeUrl` would report the wrong reason for the refusal.
           return { ok: false, grund: `Namensaufloesung fehlgeschlagen fuer ${host}: ${(fehler as Error).message}` }
@@ -309,15 +503,21 @@ export async function holeSicher(
 
       let antwort: Response
       try {
-        antwort = await abhaengigkeiten.abrufen(urteil.url, {
-          method: 'GET',
-          redirect: 'manual',
-          signal,
-          // No cookie jar, no credentials, no referrer: nothing may travel between two calls of
-          // this function, and nothing about the previous page may travel to the next host.
-          credentials: 'omit',
-          referrerPolicy: 'no-referrer',
-          headers: { accept: 'text/html,text/plain;q=0.9,*/*;q=0.5' },
+        antwort = await abhaengigkeiten.abrufen({
+          url: urteil.url,
+          host,
+          adressen,
+          bindung: bindeAufAdressen(host, adressen),
+          init: {
+            method: 'GET',
+            redirect: 'manual',
+            signal,
+            // No cookie jar, no credentials, no referrer: nothing may travel between two calls of
+            // this function, and nothing about the previous page may travel to the next host.
+            credentials: 'omit',
+            referrerPolicy: 'no-referrer',
+            headers: { accept: 'text/html,text/plain;q=0.9,*/*;q=0.5' },
+          },
         })
       } catch (fehler) {
         if (signal.aborted) return { ok: false, grund: zeitGrund }
