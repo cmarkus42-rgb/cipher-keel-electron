@@ -95,10 +95,23 @@ const QUELLEN = new Set<string>(['gemessen', 'vermutet', 'herstellerangabe'])
  * einen 400 mitten im Lauf. Eine Liste, die an der Serverversion haengt, ist keine Wache —
  * also nimmt keel die drei, die ueberall gelten, und weist alles andere hier ab.
  */
-const DENKSTUFEN = new Set<string>(['low', 'medium', 'high'])
+export const DENKSTUFEN = new Set<string>(['low', 'medium', 'high'])
 
 /** The Faehigkeiten fields that must be a whole number greater than zero. */
 const GANZZAHL_FELDER = ['nutzbaresKontextfenster', 'werkzeugObergrenze', 'rundenbudget'] as const
+
+/**
+ * Die vier Sampler-Zahlen — jede Pflicht, sobald der Block ueberhaupt da ist.
+ *
+ * Ein halb gefuellter Block ist schlimmer als gar keiner: `openAiChatCodec.toWire` schreibt bei
+ * vorhandenem Block alle vier hinaus, `JSON.stringify` wirft ein `undefined` still weg, und
+ * Ollamas `/v1` setzt ein fehlendes `temperature`/`top_p` zwangsweise auf 1.0 — also genau das
+ * stille Ueberschreiben, gegen das dieser Block gebaut wurde, nur diesmal mit einer Config, die
+ * aussieht, als waere er gesetzt. Erreichbar ueber `sampler: {}` von Hand und, bis Runde 2,
+ * ueber das Formular: `Number('')` ist 0, nicht NaN, ein geleertes Feld ergab also `0` statt
+ * einer auffaelligen Luecke. Das Formular schickt seither NaN, und NaN faellt hier auf.
+ */
+const SAMPLER_ZAHLEN = ['temperature', 'topP', 'presencePenalty', 'maxTokens'] as const
 
 /** Everything a capability row does not state. Never `gemessen` — that is the canary's word. */
 const FAEHIGKEITEN_RUECKFALL: Faehigkeiten = {
@@ -202,6 +215,26 @@ export function normaliseEintrag(raw: unknown): ModellEintrag {
         `Eintrag '${r.id}': unbekannte sampler.reasoningEffort '${stufe}' — ` +
           'bekannt sind low, medium, high'
       )
+    }
+    const sampler = faehigkeiten.sampler
+    if (sampler) {
+      for (const feld of SAMPLER_ZAHLEN) {
+        const wert = sampler[feld]
+        if (typeof wert !== 'number' || !Number.isFinite(wert)) {
+          throw new Error(
+            `Eintrag '${r.id}': faehigkeiten.sampler.${feld} muss eine Zahl sein, gesehen: ${String(wert)}`
+          )
+        }
+      }
+      // maxTokens enger: `num_predict 0` liefert gar keine Antwort, und ein gebrochener Wert
+      // ist keine Tokenzahl. Temperatur 0 dagegen ist eine Wahl (deterministisch) und bleibt
+      // erlaubt — eine untere Schranke waere hier eine Meinung, keine Wache.
+      if (!Number.isInteger(sampler.maxTokens) || sampler.maxTokens <= 0) {
+        throw new Error(
+          `Eintrag '${r.id}': faehigkeiten.sampler.maxTokens muss eine ganze Zahl groesser als 0 ` +
+            `sein, gesehen: ${String(sampler.maxTokens)}`
+        )
+      }
     }
   }
 

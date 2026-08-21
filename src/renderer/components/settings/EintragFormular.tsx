@@ -18,7 +18,11 @@
  * builds `anthropic` and `openai-chat`, so this form still offers `ollama-native` and `text`
  * (existing entries use `ollama-native`, and hiding the option would show an unexplained blank
  * select for them) but warns under both, the same way it already did for the text
- * werkzeugmodus.
+ * werkzeugmodus. Zwei weitere Warnungen desselben Musters kamen in Runde 2 dazu, beide am
+ * sampler-Block: `samplerWarnung` (der gewaehlte Codec traegt die Werte nicht hinaus) und
+ * `samplerLuecken` (ein leergeraeumtes Zahlenfeld wird beim Speichern abgelehnt). Beides sind
+ * Faelle, in denen die Eingabe garantiert scheitert oder folgenlos bleibt -- kein zweiter
+ * Validator, sondern die Ansage vorher.
  */
 import { useState } from 'react'
 import type { EintragAnsicht, FaehigkeitenAnsicht, Schreiber } from '../../../shared/settings-types'
@@ -32,6 +36,25 @@ type Denkstufe = '' | 'low' | 'medium' | 'high'
 
 /** Codecs no run can actually use yet -- see codecFuer in src/main/harness/codec.ts. */
 const UNGEBAUTE_CODECS = new Set<Codec>(['ollama-native', 'text'])
+
+/**
+ * Der einzige Codec, dessen `toWire` `faehigkeiten.sampler` ueberhaupt liest
+ * (src/main/harness/codec-openai-chat.ts). `anthropicCodec.toWire` fasst den Block nie an.
+ */
+const SAMPLER_CODEC: Codec = 'openai-chat'
+
+/**
+ * Die Denkstufen als Liste, nicht als handgeschriebene `<option>`-Zeilen im JSX.
+ *
+ * Damit ist „gar nicht erst anbieten" pruefbar: `tests/renderer/eintrag-formular.test.ts` legt
+ * diese Liste gegen `DENKSTUFEN` in src/main/model/entry.ts. Eine vierte Stufe -- `xhigh` ist
+ * die teure -- faellt dort auf, statt erst beim Speichern als Fehlermeldung zurueckzukommen.
+ */
+export const DENKSTUFEN_AUSWAHL: ReadonlyArray<{ wert: Exclude<Denkstufe, ''>; text: string }> = [
+  { wert: 'low', text: 'low — kurz denken' },
+  { wert: 'medium', text: 'medium — Vorgabe fuer Agentenlaeufe' },
+  { wert: 'high', text: 'high — lange denken' },
+]
 
 export interface Felder {
   id: string
@@ -155,6 +178,69 @@ function ausVorlage(v: EintragAnsicht): Felder {
 }
 
 /**
+ * Ein geleertes Zahlenfeld ist keine Null.
+ *
+ * `Number('')` ergibt 0, nicht NaN (und `Number('   ')` ebenso). Wer die Temperatur markiert
+ * und loescht, schickte damit `temperature: 0` und `top_p: 0` hinaus -- plausibel aussehende
+ * Werte, die niemand gewaehlt hat, statt einer Luecke, die auffaellt. Deshalb hier NaN: der
+ * Sampler-Waechter in `normaliseEintrag` weist es benannt ab, und das Fenster bleibt mit einer
+ * Meldung offen, statt still gieriges Sampling zu speichern (Review-Runde 2, Fund 2).
+ *
+ * Nur fuer den sampler-Block. Die drei Ganzzahlfelder darueber haben denselben Rand, aber ihre
+ * eigene Wache in `normaliseEintrag` (`GANZZAHL_FELDER`), die eine 0 ohnehin schon abweist.
+ */
+function zahl(s: string): number {
+  return s.trim() === '' ? Number.NaN : Number(s)
+}
+
+/**
+ * Warum die Sampler-Felder bei diesem Codec folgenlos bleiben -- oder null, wenn sie es nicht
+ * sind.
+ *
+ * CK-NFR-012 verbietet die Attrappe: ein Regler, der etwas verspricht, das den Server nie
+ * erreicht. Genau das war der Abschnitt fuer einen Eintrag mit Codec `anthropic` -- angeboten
+ * wird er fuer jeden Nicht-cli-harness-Eintrag, gelesen wird `f.sampler` aber nur von
+ * `openAiChatCodec.toWire`. Kein `<select>`-Zweig weiter oben faengt das ab, weil `anthropic`
+ * ein gebauter Codec ist und keine Warnung traegt.
+ */
+export function samplerWarnung(f: Felder): string | null {
+  if (!f.fSamplerAn || f.fCodec === SAMPLER_CODEC) return null
+  return (
+    `Der Codec „${f.fCodec}" schickt keine Sampler mit — diese Werte werden gespeichert und ` +
+    'hier wieder angezeigt, erreichen den Server aber nicht; jeder Lauf faehrt mit der Vorgabe ' +
+    `des Anbieters. Nur „${SAMPLER_CODEC}" sendet sie.`
+  )
+}
+
+/** Beschriftung je Sampler-Feld, damit eine Warnung dasselbe Wort nennt wie die Marke darueber. */
+const SAMPLER_MARKEN: ReadonlyArray<[keyof Felder, string]> = [
+  ['fTemperature', 'Temperatur'],
+  ['fTopP', 'Top-P'],
+  ['fPresencePenalty', 'Wiederholungsbremse'],
+  ['fMaxTokens', 'Antwortlaenge'],
+]
+
+/**
+ * Welche Sampler-Felder leer sind -- oder null, wenn keines es ist.
+ *
+ * Ein leeres Feld ist ab Runde 2 eine Angabe, die beim Speichern garantiert scheitert (siehe
+ * `zahl`), und genau dafuer kennt dieses Formular die Ausnahme von seiner Regel: vorher sagen,
+ * was sicher abgelehnt wird. Vorher sagte das Fenster gar nichts -- bei `maxTokens` sprang
+ * immerhin die 2048-Warnung an, weil das leere Feld zur 0 wurde; bei Temperatur und Top-P fiel
+ * niemandem etwas auf, und `temperature: 0` sah aus wie eine Entscheidung.
+ */
+export function samplerLuecken(f: Felder): string | null {
+  if (!f.fSamplerAn) return null
+  const leer = SAMPLER_MARKEN.filter(([k]) => String(f[k]).trim() === '').map(([, marke]) => marke)
+  if (leer.length === 0) return null
+  return (
+    `Leer ist keine 0: ${leer.join(', ')} ${leer.length === 1 ? 'traegt' : 'tragen'} keinen Wert. ` +
+    'So wird nicht gespeichert — entweder eine Zahl eintragen oder das Kaestchen abwaehlen, ' +
+    'dann schickt keel gar keine Sampler mit.'
+  )
+}
+
+/**
  * The capability row this form sends, or none for cli-harness. No hooks, no DOM -- a plain
  * function so this specific behaviour (which fields are overwritten and which survive) is
  * unit-testable without a React render environment. See tests/renderer/eintrag-formular.test.ts.
@@ -191,10 +277,10 @@ export function baueFaehigkeitenPayload(f: Felder, bestehend: FaehigkeitenAnsich
     ...(f.fSamplerAn
       ? {
           sampler: {
-            temperature: Number(f.fTemperature),
-            topP: Number(f.fTopP),
-            presencePenalty: Number(f.fPresencePenalty),
-            maxTokens: Number(f.fMaxTokens),
+            temperature: zahl(f.fTemperature),
+            topP: zahl(f.fTopP),
+            presencePenalty: zahl(f.fPresencePenalty),
+            maxTokens: zahl(f.fMaxTokens),
             ...(f.fReasoningEffort ? { reasoningEffort: f.fReasoningEffort } : {}),
           },
         }
@@ -395,6 +481,8 @@ export function EintragFormular({
               auch wenn im Modelfile etwas anderes steht.
             </div>
           )}
+          {samplerWarnung(f) && <div style={styles.warnung}>{samplerWarnung(f)}</div>}
+          {samplerLuecken(f) && <div style={styles.warnung}>{samplerLuecken(f)}</div>}
           {f.fSamplerAn && (
             <>
               <label style={styles.marke}>Temperatur</label>
@@ -412,7 +500,12 @@ export function EintragFormular({
 
               <label style={styles.marke}>Antwortlaenge (max_tokens)</label>
               <input type="number" min={1} value={f.fMaxTokens} onChange={setze('fMaxTokens')} style={styles.eingabe} />
-              {Number(f.fMaxTokens) < 2048 && (
+              {/*
+                `zahl` statt `Number`: ein leeres Feld ergaebe sonst 0 und damit diese Warnung,
+                die dann das Falsche saegt -- nicht „zu klein", sondern „gar kein Wert". Dafuer
+                gibt es samplerLuecken oben im Block.
+              */}
+              {zahl(f.fMaxTokens) < 2048 && (
                 <div style={styles.warnung}>
                   Unter 2048 schneidet ein Denkmodell ab, bevor es mit dem Denken fertig ist —
                   die Antwort kommt dann ganz ohne Text an und sieht wie ein Netzproblem aus.
@@ -422,9 +515,9 @@ export function EintragFormular({
               <label style={styles.marke}>Denkstufe</label>
               <select value={f.fReasoningEffort} onChange={setze('fReasoningEffort')} style={styles.eingabe}>
                 <option value="">keine Angabe — das Modell entscheidet selbst</option>
-                <option value="low">low — kurz denken</option>
-                <option value="medium">medium — Vorgabe fuer Agentenlaeufe</option>
-                <option value="high">high — lange denken</option>
+                {DENKSTUFEN_AUSWAHL.map(s => (
+                  <option key={s.wert} value={s.wert}>{s.text}</option>
+                ))}
               </select>
               {/*
                 Deliberately only these three. Ollamas Renderer kennt je nach Serverversion mehr

@@ -6,6 +6,11 @@ const INVENTORY = readFileSync(
   join(__dirname, '../../docs/anpassbare-flaechen.md'), 'utf8'
 )
 
+/** Das Formular, auf das die Inventarzeile zeigt — der Wegweiser muss auf echten Text zeigen. */
+const FORMULAR = readFileSync(
+  join(__dirname, '../../src/renderer/components/settings/EintragFormular.tsx'), 'utf8'
+)
+
 // CK-NFR-012: a new adjustable surface without an inventory entry is an audit finding.
 // Binding the test to the config keys is what keeps this from being a document that
 // quietly falls behind the code.
@@ -51,6 +56,27 @@ describe('CK-NFR-012 — the adjustable-surface inventory', () => {
     expect(INVENTORY).toContain('reasoningEffort')
   })
 
+  // Runde 2, Fund 1: die Zeile sagte pauschal „die der Codec je Anfrage mitschickt". Gelesen
+  // wird `f.sampler` aber nur von `openAiChatCodec.toWire`; `anthropicCodec.toWire` fasst den
+  // Block nie an. Ein Inventar, das eine Flaeche weiter verspricht, als sie reicht, ist genau
+  // die Attrappe, die CK-NFR-012 verbietet.
+  it('nennt am sampler-Eintrag den einen Codec, der ihn wirklich mitschickt', () => {
+    const zeile = INVENTORY.split('\n').find(l => l.includes('`modelle.eintraege[].faehigkeiten.sampler`'))
+    expect(zeile).toBeDefined()
+    expect(zeile).toContain('openai-chat')
+  })
+
+  // Runde 2, Fund 5: der Wegweiser nannte einen „Abschnitt „Sampler"", den es im Formular
+  // nicht gibt — die Flaeche haengt an einem Kontrollkaestchen und ist unsichtbar, solange es
+  // aus ist. In einer Tabelle, deren einziger Zweck das Auffinden ist, ist das der Fehler,
+  // der zaehlt.
+  it('weist den Weg auf eine Beschriftung, die im Formular wirklich steht', () => {
+    const zeile = INVENTORY.split('\n').find(l => l.includes('`modelle.eintraege[].faehigkeiten.sampler`'))
+    expect(zeile).toContain('Sampler selbst setzen')
+    expect(FORMULAR).toContain('Sampler selbst setzen')
+    expect(zeile).not.toContain('Abschnitt „Sampler"')
+  })
+
   it('names top_k, min_p and repeat_penalty as a surface outside the app', () => {
     // The honest half of the same entry: these three exist, they matter, and no field in
     // this app can reach them -- Ollamas /v1 discards them. They live in the Modelfile on
@@ -59,6 +85,20 @@ describe('CK-NFR-012 — the adjustable-surface inventory', () => {
     expect(INVENTORY).toContain('min_p')
     expect(INVENTORY).toContain('repeat_penalty')
     expect(INVENTORY).toContain('Modelfile')
+  })
+
+  // Runde 2, Fund 3: der Schlusssatz war in sich widerspruechlich — „ein `ollama-native`-Codec
+  // würde daran nichts ändern, denn die Lücke sitzt in Ollamas `/v1`-Übersetzung". Sitzt sie
+  // dort, dann schliesst ein Codec, der `/v1` umgeht, sie gerade: Ollamas natives `options`-Feld
+  // traegt top_k, min_p und repeat_penalty. Das Argument „die Luecke sitzt in Ollama, nicht in
+  // der Uebersetzung" galt `tool_choice`/`parallel_tool_calls` und ist hier auf die falschen
+  // Parameter uebertragen worden. Wer spaeter entscheiden soll, ob `ollama-native` gebaut wird,
+  // liest sonst im Inventar, dass es fuer diese drei nichts brachte.
+  it('nennt den nativen Weg als das, was diese drei erreichen wuerde', () => {
+    expect(INVENTORY).not.toMatch(/`ollama-native`-Codec würde daran nichts ändern/)
+    const absatz = INVENTORY.split('\n\n').find(a => a.includes('`ollama-native`-Codec'))
+    expect(absatz).toBeDefined()
+    expect(absatz).toContain('options')
   })
 
   it('documents the cost budget price table', () => {
