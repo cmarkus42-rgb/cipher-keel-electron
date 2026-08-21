@@ -8,8 +8,9 @@
 //      `boesenodejs.org` steht damit auf der Positivliste. Das ist der klassische Suffix-Fehler.
 //   3. Suffixpruefung durch `host.includes(eintrag)` ersetzt: 4 rot, darunter
 //      `example.org.boeser-host.de`.
-//   4. Den Eintrag `100.64.0.0/10` aus GESPERRTE_V4 entfernt: 11 rot, darunter Ollama, MS-01
-//      und der VPS.
+//   4. Den Eintrag `100.64.0.0/10` aus GESPERRTE_V4 entfernt: **17 rot**, darunter Ollama, MS-01
+//      und der VPS. (Hier stand 11; die Aussage war richtig, die Zahl alt — die Datei ist seit
+//      a63723a um Bindung und Literal-Zweig gewachsen. Nachgemessen am 2026-08-21.)
 //   5. Die Bindung aus einer *zweiten* Aufloesung gebaut — also das, was fetch mit einem Namen
 //      ohnehin tut: 5 rot. Nimmt man dazu die Sperrlisten-Pruefung in `bindeAufAdressen` heraus,
 //      steht im Ergebnis `erreicht: ['100.78.7.108']` und `text: 'INHALT VON 100.78.7.108'` — der
@@ -18,6 +19,10 @@
 //      Grund hiess am Ende „Mehr als 3 Weiterleitungen" statt „Zeitbudget".
 //   7. Den Literal-Zweig in `holeSicher` uebersprungen: 3 rot, Meldung „Namensaufloesung
 //      fehlgeschlagen fuer 100.78.7.108" statt „gesperrtes Netz (Tailscale)".
+//   8. `gegenDieUhr` um `lies` wieder entfernt (der Stand vor dieser Runde): 1 rot, und zwar
+//      nicht mit einer Zusicherung, sondern mit „Test timed out in 5000ms" — 50 ms Budget,
+//      5.009 ms Laufzeit. Das Zeitbudget deckte die Kette bis zum Antwortkopf und nicht das
+//      Lesen des Koerpers.
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -681,6 +686,32 @@ describe('holeSicher: Groesse und Zeit', () => {
     })
     expect(signale).toHaveLength(1)
     expect(signale[0]).toBeInstanceOf(AbortSignal)
+  })
+
+  it('bindet auch das Lesen des Koerpers ans Zeitbudget', async () => {
+    // Die Leseschleife prueft `signal.aborted` nur *zwischen* zwei Stuecken. Bleibt
+    // `leser.read()` haengen, kam die Schleife nie wieder an die Pruefung — und `holeSicher`
+    // lief ueber sein Budget hinaus weiter, obwohl `zeitbudgetMs` „fuer die ganze Kette"
+    // zusagt. Gemessen: 50 ms Budget, nach 2.000 ms war der Aufruf noch offen und musste vom
+    // Test abgebrochen werden. `such-anbieter.ts` hat genau diesen Fall geloest, indem
+    // `liesBegrenzt` in `gegenDieUhr` laeuft; hier fehlte dieselbe Klammer.
+    //
+    // Der Strom im Test ist der Angreifer: er liefert ein Stueck und danach nie wieder, und er
+    // kennt das Signal nicht. Im Betrieb reicht dafuer ein Abrufer, der `init.signal` an die
+    // Anfrage reicht, aber nicht an den Koerperstrom.
+    const strom = new ReadableStream<Uint8Array>({
+      start(steuerung) { steuerung.enqueue(new TextEncoder().encode('<html>')) },
+      pull() { return new Promise<void>(() => {}) },
+      cancel() { return new Promise<void>(() => {}) },
+    })
+    const begonnen = Date.now()
+    const e = await holeSicher('https://nodejs.org/haengt', haupt(), { ...GRENZEN, zeitbudgetMs: 50 }, {
+      aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
+      abrufen: (() => Promise.resolve(new Response(strom, { status: 200 }))) as Abrufer,
+    })
+    expect(e.ok).toBe(false)
+    expect(e.ok === false && e.grund).toContain('Zeitbudget')
+    expect(Date.now() - begonnen).toBeLessThan(1000)
   })
 })
 

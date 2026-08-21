@@ -208,3 +208,47 @@ describe('projiziere', () => {
     expect(inhaltStr).toContain('bereits')
   })
 })
+
+// --- Die Herkunft eines Werkzeugergebnisses (§4.1 (3)) -----------------------------------------
+//
+// Die Angabe funktionierte und war vollstaendig ungetestet: `...quelleAus(e.nutzlast.quelle)` aus
+// projektion.ts zu entfernen liess die ganze Suite gruen, und `quelle: r.quelle` aus dem
+// `tool.completed` in lauf.ts ebenso. Kein Konsument liest das Feld heute — der Praefix markiert
+// nichts damit, das Fenster zeigt es nicht, die Codecs bauen ihre Felder einzeln und tragen es
+// bewusst nicht auf den Draht. Genau darum kann es still verrotten, und genau das ist der Punkt,
+// von dem die Spec sagt, er duerfe nicht nachtraeglich kommen: sobald der erste Konsument da ist,
+// saehe er fuer Netzergebnisse dasselbe wie fuer lokale — die Unterscheidung, die den Unterlauf
+// des Rechercheurs ueberhaupt begruendet.
+describe('projiziere: die Herkunft', () => {
+  const mitQuelle = (quelle: unknown): Record<string, unknown> => ({
+    aufrufId: 'c1', name: 'seite_lesen', inhalt: [{ art: 'text', text: 'fremder Inhalt' }],
+    ...(quelle === undefined ? {} : { quelle }),
+  })
+
+  const block = (quelle: unknown) => projiziere([
+    ev(1, 'run.started', { auftragstext: 'a' }),
+    ev(2, 'model.answered', { bloecke: [
+      { art: 'werkzeug-aufruf', id: 'c1', name: 'seite_lesen', eingabe: {} },
+    ] }),
+    ev(3, 'tool.intent', { aufrufId: 'c1', name: 'seite_lesen' }),
+    ev(4, 'tool.completed', mitQuelle(quelle)),
+  ])[2].bloecke[0]
+
+  it('reicht netz und lokal unveraendert in den Ergebnisblock durch', () => {
+    expect(block('netz')).toMatchObject({ art: 'werkzeug-ergebnis', quelle: 'netz' })
+    expect(block('lokal')).toMatchObject({ art: 'werkzeug-ergebnis', quelle: 'lokal' })
+  })
+
+  it('erfindet keine Herkunft, wo das Protokoll keine hat', () => {
+    // Ein Protokoll aus der Zeit vor dieser Angabe traegt sie nicht. Ein hier eingesetztes
+    // 'lokal' waere eine Auskunft ueber alte Laeufe, die niemand geprueft hat.
+    expect(block(undefined)).not.toHaveProperty('quelle')
+  })
+
+  it('laesst einen unbekannten Wert weg, statt ihn zu lokal zu machen', () => {
+    // 'lokal' ist die gefaehrlichere der beiden Deutungen: „aus dieser Maschine" ist genau die
+    // Zusage, die ein fremdbestimmter Inhalt nicht bekommen darf.
+    expect(block('sonstwoher')).not.toHaveProperty('quelle')
+    expect(block(42)).not.toHaveProperty('quelle')
+  })
+})

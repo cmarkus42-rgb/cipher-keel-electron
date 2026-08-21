@@ -49,10 +49,12 @@
  * Und ein dritter Punkt, der der Datei ihre Form gibt: **Treffertexte sind fremdbestimmter
  * Netzinhalt.** Titel und Auszug gehen denselben Weg ins Kontextfenster wie eine geholte Seite,
  * nur ohne dass die Seite je geholt wird — `seite_lesen` und sein Strip kommen nie ins Spiel.
- * Also laeuft `saeubere` hier ueber jeden Titel und jeden Auszug, und beide werden gekappt.
+ * Also laeuft `saeubere` hier ueber jeden Titel und jeden Auszug, beide werden gekappt und beide
+ * auf **eine** Zeile gebracht — das Ausgabeformat von `web_suchen` ist zeilenweise, und ein
+ * Umbruch im Titel schreibt darin einen frei erfundenen Treffer samt URL (siehe `einzeilig`).
  */
 
-import { saeubere } from './seiten-text'
+import { einzeilig, saeubere } from './seiten-text'
 
 /** Ein einzelner Suchtreffer. Kein Seiteninhalt — den holt `seite_lesen` einzeln. */
 export interface Treffer {
@@ -291,9 +293,15 @@ function text(wert: unknown): string {
  * Erst saeubern, dann kappen: NFKC kann einen Text laenger machen (die Ligatur 'ﬁ' wird zu
  * 'fi'), also muss die Grenze auf den endgueltigen Zeichen liegen. Die Kappung endet sichtbar,
  * damit ein abgeschnittener Auszug nicht wie ein vollstaendiger aussieht.
+ *
+ * Und `einzeilig` dazwischen, weil `saeubere` Zeilenumbrueche stehen laesst — sie ueberleben NFKC
+ * und stehen auf keiner ihrer Streichlisten. Gemessen kam ein `title: 'Zeile1\nZeile2'`
+ * unveraendert beim Aufrufer an, und im dreizeiligen Ausgabeformat von `web_suchen` schrieb ein
+ * solcher Titel einen zweiten, frei erfundenen Treffer samt URL in keels eigene Liste (siehe
+ * `einzeilig`).
  */
 function sauberGekappt(wert: unknown, max: number): string {
-  const sauber = saeubere(text(wert)).trim()
+  const sauber = einzeilig(saeubere(text(wert))).trim()
   return sauber.length <= max ? sauber : sauber.slice(0, max - 1).trimEnd() + '…'
 }
 
@@ -307,13 +315,22 @@ function sauberGekappt(wert: unknown, max: number): string {
  * Zurueckgegeben wird die *geparste* Form. Sie percent-kodiert, was unsichtbar war: ein
  * Zero-Width-Zeichen im Pfad steht danach als `%E2%80%8B` da, sichtbar fuer jeden, der die Liste
  * liest. `saeubere` waere hier falsch — NFKC auf einer URL veraendert das Ziel.
+ *
+ * **Nur https.** http stand hier einmal daneben und erreichte nichts: `pruefeUrl` lehnt es
+ * garantiert ab, bevor auch nur aufgeloest wird. Der Treffer verbrauchte aber einen der harten
+ * zehn Plaetze und landete in `trefferUrls`, also in der Herkunftsliste von `seite_lesen` —
+ * gemessen an `http://100.78.7.108:11434/api/generate`, dem unauthentifizierten Ollama im
+ * Tailnet. Zwei Restschaeden, beide hier behoben: dem Modell wurde ein internes Ziel als
+ * abrufbarer Treffer angeboten, und die Absage lautete danach 'Nur https ist erlaubt, nicht
+ * http:' statt 'gesperrtes Netz (Tailscale)' — die falsche Meldung ausgerechnet an der Stelle,
+ * an der die richtige in netzwache.ts ausdruecklich erarbeitet wurde.
  */
 function brauchbareUrl(wert: unknown): string | null {
   const roh = text(wert).trim()
   if (roh === '') return null
   try {
     const url = new URL(roh)
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : null
+    return url.protocol === 'https:' ? url.toString() : null
   } catch {
     return null
   }

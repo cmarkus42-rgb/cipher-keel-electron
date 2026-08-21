@@ -6,6 +6,7 @@ import { oeffneHarnessDb, anhaengen, lesen } from '../../src/main/harness/protok
 import { starteLauf, setzeFort } from '../../src/main/harness/lauf'
 import { WerkzeugRegistry, META_WERKZEUG_NAME, type Werkzeug } from '../../src/main/harness/werkzeuge'
 import { DATEI_WERKZEUGE } from '../../src/main/harness/werkzeug-datei'
+import { projiziere } from '../../src/main/harness/projektion'
 import type { ModelAntwort } from '../../src/main/harness/form'
 import type { ModellEintrag } from '../../src/main/model/entry'
 
@@ -300,6 +301,59 @@ describe('Wiederaufnahme', () => {
     // The projection put it into the history; the loop must not re-run the call.
     expect(lesen(u.db, id).filter(e => e.art === 'tool.intent')).toHaveLength(1)
     expect(prompt).toBeDefined()
+    rmSync(w, { recursive: true, force: true })
+  })
+})
+
+// --- Die Herkunft, vom Werkzeug bis in den Verlauf ---------------------------------------------
+
+/**
+ * Ein Werkzeug, dessen Inhalt fremdbestimmt ist — dieselbe Rueckgabeform wie `seite_lesen`, aber
+ * ohne Netz, Anbieter und Wache. Es geht hier um die Kette Werkzeug -> `tool.completed` ->
+ * `projiziere`, nicht um den Abruf.
+ */
+const NETZWERKZEUG: Werkzeug = {
+  name: 'fremd_lesen',
+  beschreibung: 'gibt fremdbestimmten Inhalt zurueck',
+  schema: () => ({ type: 'object', properties: {} }),
+  async ausfuehren() {
+    return { ok: true, quelle: 'netz', inhalt: [{ art: 'text', text: 'fremder Inhalt' }] }
+  },
+}
+
+describe('Herkunft eines Werkzeugergebnisses (§4.1 (3))', () => {
+  // Die Angabe funktionierte und hing an nichts: `quelle: r.quelle` aus dem `tool.completed` in
+  // lauf.ts zu entfernen liess 2565 Tests gruen, ebenso das Durchreichen in projektion.ts. Einen
+  // Konsumenten gibt es heute nicht — der Praefix markiert nichts damit, das Fenster liest es
+  // nicht, die Codecs tragen es bewusst nicht auf den Draht. Genau deshalb kann das Feld still
+  // verrotten, und genau deshalb steht hier ein Test ueber den ganzen Weg statt ueber den
+  // Rueckgabewert des Werkzeugs, den ohnehin der Compiler erzwingt.
+  it('schreibt netz ins Protokoll und traegt es bis in den projizierten Verlauf', async () => {
+    const w = mkdtempSync(join(tmpdir(), 'keel-lq-'))
+    const u = umgebung(w, [ruft('fremd_lesen', {}), sagt('fertig')], [NETZWERKZEUG])
+    const id = await starteLauf(AUFTRAG(w), u)
+    const ereignisse = lesen(u.db, id)
+
+    expect(ereignisse.find(e => e.art === 'tool.completed')?.nutzlast.quelle).toBe('netz')
+    const block = projiziere(ereignisse)
+      .flatMap(n => n.bloecke)
+      .find(b => b.art === 'werkzeug-ergebnis')
+    expect(block).toMatchObject({ art: 'werkzeug-ergebnis', quelle: 'netz' })
+    rmSync(w, { recursive: true, force: true })
+  })
+
+  it('unterscheidet ein lokales Werkzeug davon — sonst waere die Angabe wertlos', async () => {
+    const w = mkdtempSync(join(tmpdir(), 'keel-lq-'))
+    writeFileSync(join(w, 'a.ts'), 'inhalt aus dieser Maschine')
+    const u = umgebung(w, [ruft('datei_lesen', { pfad: join(w, 'a.ts') }), sagt('fertig')])
+    const id = await starteLauf(AUFTRAG(w), u)
+    const ereignisse = lesen(u.db, id)
+
+    expect(ereignisse.find(e => e.art === 'tool.completed')?.nutzlast.quelle).toBe('lokal')
+    const block = projiziere(ereignisse)
+      .flatMap(n => n.bloecke)
+      .find(b => b.art === 'werkzeug-ergebnis')
+    expect(block).toMatchObject({ art: 'werkzeug-ergebnis', quelle: 'lokal' })
     rmSync(w, { recursive: true, force: true })
   })
 })

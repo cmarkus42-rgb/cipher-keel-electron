@@ -542,7 +542,22 @@ export async function holeSicher(
 
       if (!antwort.ok) return { ok: false, grund: `Abruf beantwortet mit HTTP ${antwort.status}` }
 
-      const gelesen = await lies(antwort, grenzen, signal, zeitGrund)
+      // Auch das Lesen laeuft gegen die Uhr, und nicht nur mit dem Signal in der Hand: `lies`
+      // prueft `signal.aborted` zwischen zwei Stuecken, kommt aber nie wieder an die Pruefung,
+      // wenn `leser.read()` haengt. Gemessen mit einem Koerperstrom, der nach dem ersten Stueck
+      // nie nachliefert und das Signal nicht kennt: 50 ms Budget, nach 2.000 ms lief der Aufruf
+      // noch. `such-anbieter.ts` klammert `liesBegrenzt` aus genau diesem Grund; hier fehlte es.
+      // Der haengende Strom laeuft danach im Hintergrund weiter — beendet wird er vom `signal`,
+      // das der Abrufer an die Anfrage gehaengt hat.
+      let gelesen: { ok: true; text: string } | { ok: false; grund: string }
+      try {
+        gelesen = await gegenDieUhr(lies(antwort, grenzen, signal, zeitGrund), signal, zeitGrund)
+      } catch (fehler) {
+        // Benannt, nicht verschluckt: `lies` selbst wirft nicht, also kommt hier das Rennen an —
+        // trotzdem wird der Grund weitergegeben statt pauschal aufs Zeitbudget geraten.
+        if (signal.aborted) return { ok: false, grund: zeitGrund }
+        return { ok: false, grund: `Lesen fehlgeschlagen: ${(fehler as Error).message}` }
+      }
       if (!gelesen.ok) return gelesen
       return { ok: true, text: gelesen.text, endUrl: urteil.url }
     }

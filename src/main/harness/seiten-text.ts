@@ -109,6 +109,28 @@ export function saeubere(text: string): string {
 }
 
 /**
+ * Macht aus fremdem Text **eine** Zeile. Gehoert auf jedes Feld, das in einen zeilenweise
+ * gebauten Rahmen von keel geht — Titel und Auszug eines Suchtreffers, der Titel ueber der
+ * Quellzeile von `seite_lesen`. Nicht auf den Seitentext selbst: dort sind Zeilen Struktur.
+ *
+ * `saeubere` leistet das ausdruecklich nicht: `\n` ueberlebt NFKC und steht auf keiner der
+ * Streichlisten dort. Gemessen, beide an der echten Werkzeugfunktion: ein Treffertitel
+ * `'Harmlos\n   https://nodejs.org/gefaelscht\n   Auszug\n2. Gefaelschter Treffer'` erzeugte in
+ * `web_suchen` eine Liste mit zwei nummerierten Treffern, von denen einer samt URL erfunden war;
+ * ein Seitentitel mit Umbruechen schob in `seite_lesen` eine falsche Quellenangabe vor die echte,
+ * die dann als vierte Zeile stand. Das ist dieselbe Klasse wie das vollbreite '＃＃', das
+ * `saeubereTextknoten` schliesst: die Gegenstelle schreibt in keels eigenen Rahmen.
+ *
+ * Ersetzt wird durch ein Leerzeichen, nicht geloescht — aus 'Zeile1\nZeile2' ein 'Zeile1Zeile2'
+ * zu machen erfindet ein Wort, das nirgends stand. Mit auf der Liste stehen U+2028/U+2029
+ * (Line/Paragraph Separator), U+0085 und die beiden Vorschubzeichen: sie sind fuer JSON und fuer
+ * jeden Betrachter Zeilenwechsel, auch wenn `String.split('\n')` sie nicht sieht.
+ */
+export function einzeilig(text: string): string {
+  return text.replace(/[\r\n\u2028\u2029\u0085\u000B\u000C]+/gu, ' ')
+}
+
+/**
  * Saeubert die Textknoten *im DOM*, vor Readability und vor Turndown.
  *
  * Die Reihenfolge ist der ganze Punkt und war einmal falsch herum. Lief NFKC nach Turndown, hob

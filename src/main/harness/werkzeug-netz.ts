@@ -45,11 +45,11 @@
 import type { Ereignis } from './ereignisse'
 import type { Werkzeug, WerkzeugErgebnis } from './werkzeuge'
 import {
-  MAX_ANFRAGE_LAENGE, MAX_ANZAHL, MAX_AUSZUG_ZEICHEN, SuchFehler,
+  MAX_ANFRAGE_LAENGE, MAX_ANZAHL, MAX_AUSZUG_ZEICHEN, MAX_TITEL_ZEICHEN, SuchFehler,
   type SuchAnbieter,
 } from './such-anbieter'
 import {
-  HARTE_MAX_ZEICHEN, MIN_ZEICHEN, STANDARD_MAX_ZEICHEN, extrahiereSeitenText,
+  HARTE_MAX_ZEICHEN, MIN_ZEICHEN, STANDARD_MAX_ZEICHEN, einzeilig, extrahiereSeitenText,
 } from './seiten-text'
 import { holeSicher, type AbrufGrenzen, type Abrufer, type Aufloeser } from './netzwache'
 
@@ -186,6 +186,25 @@ function kappe(text: string, max: number): string {
 }
 
 /**
+ * Eine Zeile fuer keels eigenen Rahmen: einzeilig und gekappt.
+ *
+ * Beides gilt fuer jedes fremdbestimmte Feld, das hier in ein zeilenweise gebautes Format geht —
+ * Titel und Auszug eines Treffers, der Titel ueber der Quellzeile von `seite_lesen`. Geprueft
+ * wird hier und nicht nur im Anbieter bzw. in der Extraktion, aus demselben Grund wie bei
+ * `MAX_ANFRAGE_LAENGE`: `SuchAnbieter` ist eine Schnittstelle, und der Rahmen gehoert dem
+ * Werkzeug, das ihn baut.
+ *
+ * Gemessen, beides an der echten Werkzeugfunktion: ein Treffertitel mit `\n` erzeugte eine
+ * Trefferliste mit zwei nummerierten Eintraegen, von denen einer samt URL erfunden war; eine
+ * Seite mit 120.000-Zeichen-Titel gab bei `max_zeichen: 1000` einen Textblock von 120.574
+ * Zeichen zurueck — `HARTE_MAX_ZEICHEN` war ueber den Titel ausgehebelt, nach oben begrenzt nur
+ * durch die 5-MB-Downloadgrenze.
+ */
+function zeile(text: string, max: number): string {
+  return kappe(einzeilig(text).trim(), max)
+}
+
+/**
  * `max_zeichen`: Vorgabe 32.000, hart 48.000 (§3.4). Ein zu grosser Wert wird **gekappt**, nicht
  * uebernommen — das ist die eine Stelle, an der Klemmen richtiger ist als Ablehnen, weil 60.000
  * kein Angriff ist, sondern ein Modell, das die Obergrenze nicht gelesen hat.
@@ -239,6 +258,16 @@ const webSuchen: Werkzeug = {
       // geht unredigiert nach draussen und ist damit der bequemste Kanal, um Inhalt aus dem Lauf
       // an einen Dritten zu schicken. Geprueft wird hier und nicht erst im Anbieter, damit die
       // Grenze auch fuer eine kuenftige dritte `SuchAnbieter`-Implementierung gilt.
+      //
+      // Zwei Dinge, die dazugehoeren und bisher nirgends standen. Erstens: **begrenzt sind 200
+      // Zeichen je Aufruf, nicht in Summe.** Im Hauptlauf begrenzt nichts die Zahl der Suchen
+      // ausser dem Rundenbudget (12 bis 30) — das sind 2,4 bis 6 KB pro Lauf, und dort steht
+      // `datei_lesen` daneben. Der Unterlauf des Rechercheurs hat laut Spec hoechstens drei
+      // Suchen; der Hauptlauf hat keine solche Schranke. Zweitens, und deshalb ist der Kanal
+      // trotzdem ertraeglich: **die Anfrage geht an den betreiberkonfigurierten Suchdienst, nicht
+      // an ein angreifergewaehltes Ziel.** Wer hier etwas abholen will, muss die Anfragen dieses
+      // Dienstes lesen koennen. Faellt diese Eigenschaft (ein Anbieter, dessen Ziel aus einem
+      // Werkzeugargument kaeme), traegt die Laengengrenze allein den Kanal nicht mehr.
       return {
         ok: false,
         meldung:
@@ -270,7 +299,8 @@ const webSuchen: Werkzeug = {
     // Kontextbudget, und sie darf nicht davon abhaengen, dass jeder Anbieter sie einhaelt.
     const treffer = antwort.treffer.slice(0, MAX_ANZAHL)
     const zeilen = treffer.map((t, i) =>
-      `${i + 1}. ${t.titel}\n   ${t.url}\n   ${kappe(t.auszug, MAX_AUSZUG_ZEICHEN)}`)
+      `${i + 1}. ${zeile(t.titel, MAX_TITEL_ZEICHEN)}\n   ${t.url}` +
+      `\n   ${zeile(t.auszug, MAX_AUSZUG_ZEICHEN)}`)
     const kopf = zeilen.length > 0 ? zeilen.join('\n') : 'Keine Treffer.'
 
     return {
@@ -346,7 +376,12 @@ const seiteLesen: Werkzeug = {
     // Seitentitel — der Titel ist die Vorlage, aus der das Modell sonst den Inhalt erfindet.
     if (!extrakt.ok) return { ok: false, meldung: extrakt.meldung }
 
-    const titel = extrakt.titel === '' ? '(ohne Titel)' : extrakt.titel
+    // Der Titel ist fremdbestimmt wie der Rumpf, geht aber in *keels* Kopfzeilen. Ungekappt und
+    // mehrzeilig hebelt er beides aus, was diese zwei Zeilen leisten sollen: die Obergrenze
+    // (siehe `zeile`) und die Quellenangabe — auf der §4.1 (4) ruht, weil der Mensch genau diese
+    // URL in Handover und Graph traegt.
+    const gekappt = zeile(extrakt.titel, MAX_TITEL_ZEICHEN)
+    const titel = gekappt === '' ? '(ohne Titel)' : gekappt
     return {
       ok: true,
       quelle: 'netz',
