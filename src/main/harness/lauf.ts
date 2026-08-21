@@ -28,13 +28,14 @@ import { baueFortschritt, baueStabilenTeil, type PraefixTeile, type PraefixText 
 import { anhangBlock } from './anhang'
 import {
   grundFuerStopGrund, pruefeBudgets, VON_AUSSEN, ZIEL_ERREICHT,
-  type Abschlussgrund, type Budgets, type Verbrauch,
+  type Abschlussgrund, type Budgets,
 } from './budget'
-import { kostenCent, VORGABE_PREISE, type Preis } from './preise'
+import { verbrauchAusEreignissen } from './verbrauch'
 import type { WacheKontext } from './pfadwache'
 import { META_WERKZEUG_NAME, type WerkzeugErgebnis, type WerkzeugRegistry } from './werkzeuge'
 import { FAEHIGKEIT_WERKZEUG_NAME, unbekannteFaehigkeitMeldung } from './faehigkeiten'
 import type { NetzKontext } from './werkzeug-netz'
+import type { AusgehenderSprung } from './netzwache'
 import { RECHERCHIEREN_NAME, fuehreRecherche } from './rechercheur'
 
 export interface Auftrag {
@@ -63,12 +64,13 @@ export interface LaufUmgebung {
    * Netzzugang des Laufs, wenn einer eingerichtet ist. Ohne ihn antworten die Netz-Werkzeuge
    * benannt, dass fuer diesen Lauf kein Netzzugang besteht — sie fallen nicht aus der Liste.
    *
-   * Ohne `ereignisse`: das Protokoll gehoert dem Lauf, nicht der Konfiguration, und `fuehreAus`
-   * setzt es je Aufruf frisch ein. Eine hier mitgegebene Liste waere ab dem ersten Zug veraltet,
-   * und die Herkunftspruefung von `seite_lesen` liefe gegen einen Stand, in dem die Suche dieses
-   * Zuges noch gar nicht steht.
+   * Ohne `ereignisse` und ohne `melde`: das Protokoll gehoert dem Lauf, nicht der Konfiguration,
+   * und `fuehreAus` setzt beides je Aufruf frisch ein. Eine hier mitgegebene Liste waere ab dem
+   * ersten Zug veraltet, und die Herkunftspruefung von `seite_lesen` liefe gegen einen Stand, in
+   * dem die Suche dieses Zuges noch gar nicht steht; ein hier mitgegebener Melder schriebe die
+   * ausgehenden URLs des Unterlaufs in das Protokoll des Elternlaufs.
    */
-  netz?: Omit<NetzKontext, 'ereignisse'>
+  netz?: Omit<NetzKontext, 'ereignisse' | 'melde'>
   registry: WerkzeugRegistry
   /** Every appended event, for whoever wants to watch. */
   strom: (e: Ereignis) => void
@@ -78,43 +80,10 @@ export interface LaufUmgebung {
   sende: (koerper: unknown, praefix: PraefixText) => Promise<ModelAntwort>
 }
 
-/**
- * Reconstruct consumption from the event log rather than carrying it in a variable across turns
- * — the same rule the rest of the loop follows for the conversation itself. Pure: events in,
- * `Verbrauch` out, nothing read from anywhere else.
- *
- * - Rounds are the count of `model.answered` events — one per turn actually taken.
- * - Context fill is the *last* answer's input token count, not a sum: it is a level, not an
- *   amount, and the provider reports the whole conversation's size on every turn.
- * - Cost is a sum: every turn's tokens are billed once and stay billed.
- * - Elapsed wall time is measured from `run.started`'s own timestamp, not from when this
- *   function happens to run. That is a deliberate reading of "wall clock", not the only
- *   possible one: it counts time the run spent not running at all, between a crash and its
- *   resumption, as budget spent. A run that has been dead for an hour has used an hour of
- *   wall clock either way.
- */
-export function verbrauchAusEreignissen(
-  ereignisse: Ereignis[], modellId: string, jetztMs: number,
-  tabelle: Record<string, Preis> = VORGABE_PREISE,
-): Verbrauch {
-  const gestartet = ereignisse.find(e => e.art === 'run.started')
-  const begonnenMs = gestartet ? Date.parse(gestartet.ts) : jetztMs
-
-  let runden = 0
-  let kostenGesamt = 0
-  let letzteEingabeToken = 0
-  for (const e of ereignisse) {
-    if (e.art !== 'model.answered') continue
-    runden += 1
-    const usage = e.nutzlast.usage as { eingabeToken: number; ausgabeToken: number } | undefined
-    if (usage) {
-      kostenGesamt += kostenCent(modellId, usage, tabelle)
-      letzteEingabeToken = usage.eingabeToken
-    }
-  }
-
-  return { runden, verstricheneMs: jetztMs - begonnenMs, kostenCent: kostenGesamt, letzteEingabeToken }
-}
+// Der Verbrauch wird aus dem Protokoll rekonstruiert und nirgends mitgeschleppt — die Funktion
+// selbst steht seit dem Rechercheur in verbrauch.ts (Zyklus, siehe dort) und wird hier
+// weitergereicht, damit die bisherigen Importstellen bleiben, wo sie sind.
+export { verbrauchAusEreignissen } from './verbrauch'
 
 function pruefeStartbedingungen(eintrag: ModellEintrag): void {
   const f = eintrag.faehigkeiten
@@ -361,6 +330,9 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
 async function fuehreAus(
   u: LaufUmgebung, laufId: string, auftrag: Auftrag, a: Extract<Block, { art: 'werkzeug-aufruf' }>,
 ): Promise<void> {
+  // Nicht-null wie ueberall in dieser Datei: `pruefeStartbedingungen` haette den Lauf sonst gar
+  // nicht erst beginnen lassen.
+  const f = u.eintrag.faehigkeiten!
   schreibe(u, laufId, 'tool.intent', { aufrufId: a.id, name: a.name, eingabe: a.eingabe })
 
   // `recherchieren` startet einen eigenen Lauf und braucht dafuer Protokoll, Transport, Uhr und
@@ -382,7 +354,13 @@ async function fuehreAus(
     return
   }
 
-  if (a.name === META_WERKZEUG_NAME) {
+  // Dieselbe Sperre wie bei `recherchieren`, und aus demselben Grund: der Abfang laeuft ueber den
+  // Namen, und ein Name ist keine Grenze. `werkzeug_schema` ist kein Eintrag der Registry, sondern
+  // entsteht in `stummel(aufgeschoben)` — also ist *das* seine Bedingung. Ohne sie liefert
+  // `fuehreAus` das Schema auch einem Lauf aus, in dessen Praefix das Meta-Werkzeug gar nicht
+  // steht (aufgeschobenes Laden aus): das Modell muesste den Namen bloss raten, und die Liste im
+  // Praefix waere keine Aussage mehr darueber, was ausgefuehrt wird.
+  if (a.name === META_WERKZEUG_NAME && f.aufgeschobenesLaden) {
     const gesucht = typeof a.eingabe.name === 'string' ? a.eingabe.name : ''
     const schema = u.registry.schemaVon(gesucht)
     if (!schema) {
@@ -401,7 +379,13 @@ async function fuehreAus(
     return
   }
 
-  if (a.name === FAEHIGKEIT_WERKZEUG_NAME) {
+  // Und dieselbe Registry-Bedingung wie bei den beiden darueber. Sie ist heute folgenlos, weil
+  // `faehigkeit_lesen` in beiden Registries steht — aber wer es aus der Unterlauf-Registry nimmt
+  // (etwa weil lokale Skill-Rumpfe neben Fremdinhalt unerwuenscht sind), entfernte es sonst nur
+  // aus dem Praefix: das Modell muesste den Namen bloss raten, und `fuehreAus` liefert den vollen
+  // Rumpf aus `u.praefixTeile.faehigkeiten` aus. Die Registry waere dann kein Schnitt mehr,
+  // sondern eine Liste, an die sich nur der Praefix haelt.
+  if (a.name === FAEHIGKEIT_WERKZEUG_NAME && u.registry.finde(FAEHIGKEIT_WERKZEUG_NAME) !== null) {
     // Dieselbe Stelle und dieselbe Reihenfolge wie beim Meta-Werkzeug darueber, und aus demselben
     // Grund: der Rumpf gehoert an die Historie, nicht in den stabilen Praefix, und nur ein eigenes
     // Ereignis macht im Protokoll sichtbar, dass eine Faehigkeit wirklich geladen wurde.
@@ -448,7 +432,17 @@ async function fuehreAus(
     // ausser im Protokoll — dieselbe Regel wie bei Verlauf und Verbrauch. Ein Aufruf im selben
     // Zug wie die Suche sieht deren Treffer je nach Reihenfolge noch nicht; das ist die
     // fail-closed-Richtung (Ablehnung, kein Abruf), und der naechste Zug hat sie.
-    const netz = u.netz ? { ...u.netz, ereignisse: lesen(u.db, laufId) } : undefined
+    const netz = u.netz
+      ? {
+          ...u.netz,
+          ereignisse: lesen(u.db, laufId),
+          // Unter *dieser* laufId, und nicht unter der des Elternlaufs: die ausgehenden URLs
+          // eines Unterlaufs gehoeren in sein eigenes Protokoll (§4.1 (4), rechercheur.ts).
+          melde: (sprung: AusgehenderSprung & { werkzeug: string }) => {
+            schreibe(u, laufId, 'netz.ausgehend', { ...sprung })
+          },
+        }
+      : undefined
     const r = await werkzeug.ausfuehren(a.eingabe, { wache: u.wache, graphDb: u.graphDb, netz })
     schreibeWerkzeugErgebnis(u, laufId, a, r)
   } catch (err) {

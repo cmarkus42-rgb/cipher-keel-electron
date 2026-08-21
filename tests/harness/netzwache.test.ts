@@ -23,12 +23,18 @@
 //      nicht mit einer Zusicherung, sondern mit „Test timed out in 5000ms" — 50 ms Budget,
 //      5.009 ms Laufzeit. Das Zeitbudget deckte die Kette bis zum Antwortkopf und nicht das
 //      Lesen des Koerpers.
+//   9. `melde` nur beim ersten Sprung aufrufen (`if (sprung === 0)`) — der Stand vor der
+//      Nacharbeit vom 2026-08-21, in dem es den Melder gar nicht gab: 1 rot,
+//      `expected [ { sprung: +0, …(2) } ] to deeply equal [ { sprung: +0, …(2) }, …(2) ]`. Die
+//      beiden Zwischenstationen einer Weiterleitungskette wurden aufgeloest und abgerufen und
+//      standen nirgends (§4.1 (4)).
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pruefeUrl, holeSicher, bindeAufAdressen } from '../../src/main/harness/netzwache'
 import type {
   NetzWacheKontext, AbrufGrenzen, Abrufer, Abrufauftrag, Bindung, AufloesungsTreffer,
+  AusgehenderSprung,
 } from '../../src/main/harness/netzwache'
 
 // A plausible whitelist: documentation sites whose content we treat as a reference work.
@@ -360,6 +366,7 @@ describe('holeSicher: der gewoehnliche Weg', () => {
   it('holt eine erlaubte Seite und gibt Text und Ziel-URL zurueck', async () => {
     const aufrufe: Aufruf[] = []
     const e = await holeSicher('https://nodejs.org/api/fs.html', haupt(), GRENZEN, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: abrufer({ 'https://nodejs.org/api/fs.html': seite('Dateisystem') }, aufrufe),
     })
@@ -370,6 +377,7 @@ describe('holeSicher: der gewoehnliche Weg', () => {
   it('schickt keine Zugangsdaten, keine Cookies und folgt nicht selbst', async () => {
     const aufrufe: Aufruf[] = []
     await holeSicher('https://nodejs.org/a', haupt(), GRENZEN, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: abrufer({ 'https://nodejs.org/a': seite('x') }, aufrufe),
     })
@@ -385,6 +393,7 @@ describe('holeSicher: der gewoehnliche Weg', () => {
     const aufrufe: Aufruf[] = []
     let aufgeloest = 0
     const e = await holeSicher('http://nodejs.org/a', haupt(), GRENZEN, {
+      melde: () => {},
       aufloesen: async (h) => { aufgeloest++; return aufloeser({ 'nodejs.org': ['104.20.22.46'] })(h) },
       abrufen: abrufer({}, aufrufe),
     })
@@ -396,6 +405,7 @@ describe('holeSicher: der gewoehnliche Weg', () => {
   it('benennt einen fehlgeschlagenen Namensaufloeser, statt ihn zu verschlucken', async () => {
     const aufrufe: Aufruf[] = []
     const e = await holeSicher('https://nodejs.org/a', haupt(), GRENZEN, {
+      melde: () => {},
       aufloesen: aufloeser({}),
       abrufen: abrufer({}, aufrufe),
     })
@@ -407,6 +417,7 @@ describe('holeSicher: der gewoehnliche Weg', () => {
   it('benennt einen Fehlerstatus', async () => {
     const aufrufe: Aufruf[] = []
     const e = await holeSicher('https://nodejs.org/a', haupt(), GRENZEN, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: abrufer({ 'https://nodejs.org/a': () => new Response('weg', { status: 404 }) }, aufrufe),
     })
@@ -415,6 +426,7 @@ describe('holeSicher: der gewoehnliche Weg', () => {
 
   it('benennt einen geworfenen Netzfehler', async () => {
     const e = await holeSicher('https://nodejs.org/a', haupt(), GRENZEN, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: (() => Promise.reject(new Error('ECONNREFUSED'))) as Abrufer,
     })
@@ -423,10 +435,67 @@ describe('holeSicher: der gewoehnliche Weg', () => {
   })
 })
 
+describe('holeSicher meldet jede ausgehende URL (§4.1 (4))', () => {
+  it('meldet jeden Sprung der Kette, nicht nur den ersten und den letzten', async () => {
+    // Der Befund: `holeSicher` folgte bis zu drei Weiterleitungen und stellte fuer jeden Sprung
+    // eine echte Namensaufloesung und ein echtes GET — geschrieben wurde nichts. Im Protokoll
+    // standen genau zwei URLs: die angefragte und, nur im Erfolgsfall, die letzte.
+    const gemeldet: AusgehenderSprung[] = []
+    const e = await holeSicher('https://nodejs.org/0', offen(), GRENZEN, {
+      melde: s => { gemeldet.push(s) },
+      aufloesen: aufloeser({
+        'nodejs.org': ['104.20.22.46'],
+        'zwischenstation-eins.test': ['93.184.216.34'],
+        'zwischenstation-zwei.test': ['93.184.216.35'],
+      }),
+      abrufen: abrufer({
+        'https://nodejs.org/0': um('https://zwischenstation-eins.test/GEHEIM-HOP-EINS'),
+        'https://zwischenstation-eins.test/GEHEIM-HOP-EINS': um('https://zwischenstation-zwei.test/GEHEIM-HOP-ZWEI'),
+        'https://zwischenstation-zwei.test/GEHEIM-HOP-ZWEI': seite('Ziel'),
+      }, []),
+    })
+    expect(e.ok).toBe(true)
+    expect(gemeldet).toEqual([
+      { sprung: 0, url: 'https://nodejs.org/0', host: 'nodejs.org' },
+      { sprung: 1, url: 'https://zwischenstation-eins.test/GEHEIM-HOP-EINS', host: 'zwischenstation-eins.test' },
+      { sprung: 2, url: 'https://zwischenstation-zwei.test/GEHEIM-HOP-ZWEI', host: 'zwischenstation-zwei.test' },
+    ])
+  })
+
+  it('meldet einen Sprung auch dann, wenn er scheitert — vor der Aufloesung', async () => {
+    // Ein Eintrag, den erst der Erfolg schreibt, fehlt genau bei dem Sprung, der scheiterte. Und
+    // die Namensaufloesung traegt den Namen bereits hinaus: `<geheimnis>.boeser-host` braucht nie
+    // eine Antwort.
+    const gemeldet: AusgehenderSprung[] = []
+    const e = await holeSicher('https://nodejs.org/a', haupt(), GRENZEN, {
+      melde: s => { gemeldet.push(s) },
+      aufloesen: async (host: string) => { throw new Error(`nicht aufloesbar: ${host}`) },
+      abrufen: abrufer({}, []),
+    })
+    expect(e.ok).toBe(false)
+    expect(gemeldet).toEqual([{ sprung: 0, url: 'https://nodejs.org/a', host: 'nodejs.org' }])
+  })
+
+  it('meldet nichts, wenn die Positivliste den Sprung vorher abweist', async () => {
+    // Die Gegenrichtung, und sie gehoert dazu: 'ausgehend' heisst ausgehend. Ein Ziel, das die
+    // Positivliste vor jeder Aufloesung abweist, hat das Haus nie verlassen — es als ausgehende
+    // Anfrage zu protokollieren waere eine Auskunft, die nicht stimmt.
+    const gemeldet: AusgehenderSprung[] = []
+    const e = await holeSicher('https://boeser-host.test/a', haupt(), GRENZEN, {
+      melde: s => { gemeldet.push(s) },
+      aufloesen: aufloeser({ 'boeser-host.test': ['93.184.216.34'] }),
+      abrufen: abrufer({}, []),
+    })
+    expect(e.ok).toBe(false)
+    expect(gemeldet).toEqual([])
+  })
+})
+
 describe('holeSicher: Weiterleitungen', () => {
   it('folgt einer Weiterleitung auf ein erlaubtes Ziel', async () => {
     const aufrufe: Aufruf[] = []
     const e = await holeSicher('https://nodejs.org/alt', haupt(), GRENZEN, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'], 'developer.mozilla.org': ['93.184.216.34'] }),
       abrufen: abrufer({
         'https://nodejs.org/alt': um('https://developer.mozilla.org/neu'),
@@ -440,6 +509,7 @@ describe('holeSicher: Weiterleitungen', () => {
   it('loest ein relatives Location-Feld gegen die aktuelle URL auf', async () => {
     const aufrufe: Aufruf[] = []
     const e = await holeSicher('https://nodejs.org/a/b', haupt(), GRENZEN, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: abrufer({
         'https://nodejs.org/a/b': um('/c'),
@@ -459,6 +529,7 @@ describe('holeSicher: Weiterleitungen', () => {
     // and not the name that decides.
     const aufrufe: Aufruf[] = []
     const e = await holeSicher('https://nodejs.org/api', haupt(), GRENZEN, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'], 'docs.example.org': ['100.78.7.108'] }),
       abrufen: abrufer({
         'https://nodejs.org/api': um('https://docs.example.org/api/generate'),
@@ -477,6 +548,7 @@ describe('holeSicher: Weiterleitungen', () => {
     // the address check is the only thing standing between a found page and 100.78.7.108:11434.
     const aufrufe: Aufruf[] = []
     const e = await holeSicher('https://irgendein-forum.de/thread/1', offen(), GRENZEN, {
+      melde: () => {},
       aufloesen: aufloeser({ 'irgendein-forum.de': ['93.184.216.34'], 'ollama.intern': ['100.78.7.108'] }),
       abrufen: abrufer({
         'https://irgendein-forum.de/thread/1': um('https://ollama.intern/api/generate'),
@@ -495,6 +567,7 @@ describe('holeSicher: Weiterleitungen', () => {
     const aufrufe: Aufruf[] = []
     const gefragt: string[] = []
     const e = await holeSicher('https://nodejs.org/api', haupt(), GRENZEN, {
+      melde: () => {},
       aufloesen: async (h) => { gefragt.push(h); return aufloeser({ 'nodejs.org': ['104.20.22.46'] })(h) },
       abrufen: abrufer({
         'https://nodejs.org/api': um('https://nodejs.org.boeser-host.de/x'),
@@ -509,6 +582,7 @@ describe('holeSicher: Weiterleitungen', () => {
   it('lehnt eine Weiterleitung auf ein anderes Schema ab', async () => {
     const aufrufe: Aufruf[] = []
     const e = await holeSicher('https://nodejs.org/api', offen(), GRENZEN, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: abrufer({ 'https://nodejs.org/api': um('file:///etc/passwd') }, aufrufe),
     })
@@ -520,6 +594,7 @@ describe('holeSicher: Weiterleitungen', () => {
     const aufrufe: Aufruf[] = []
     const grenzen: AbrufGrenzen = { ...GRENZEN, maxWeiterleitungen: 2 }
     const e = await holeSicher('https://nodejs.org/0', haupt(), grenzen, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: abrufer({
         'https://nodejs.org/0': um('https://nodejs.org/1'),
@@ -538,6 +613,7 @@ describe('holeSicher: Weiterleitungen', () => {
   it('lehnt bei maxWeiterleitungen 0 schon die erste Weiterleitung ab', async () => {
     const aufrufe: Aufruf[] = []
     const e = await holeSicher('https://nodejs.org/0', haupt(), { ...GRENZEN, maxWeiterleitungen: 0 }, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: abrufer({ 'https://nodejs.org/0': um('https://nodejs.org/1') }, aufrufe),
     })
@@ -549,6 +625,7 @@ describe('holeSicher: Weiterleitungen', () => {
     for (const status of [301, 302, 303, 307, 308]) {
       const aufrufe: Aufruf[] = []
       const e = await holeSicher('https://nodejs.org/api', haupt(), GRENZEN, {
+        melde: () => {},
         aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'], 'docs.example.org': ['100.78.7.108'] }),
         abrufen: abrufer({
           'https://nodejs.org/api': um('https://docs.example.org/x', status),
@@ -563,6 +640,7 @@ describe('holeSicher: Weiterleitungen', () => {
   it('benennt eine Weiterleitung ohne Ziel, statt sie als Inhalt zu behandeln', async () => {
     const aufrufe: Aufruf[] = []
     const e = await holeSicher('https://nodejs.org/api', haupt(), GRENZEN, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: abrufer({ 'https://nodejs.org/api': () => new Response(null, { status: 302 }) }, aufrufe),
     })
@@ -585,6 +663,7 @@ describe('holeSicher: Groesse und Zeit', () => {
       },
     })
     const e = await holeSicher('https://nodejs.org/gross', haupt(), { ...GRENZEN, maxBytes: 4096 }, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: (() => Promise.resolve(new Response(strom, { status: 200 }))) as Abrufer,
     })
@@ -595,6 +674,7 @@ describe('holeSicher: Groesse und Zeit', () => {
 
   it('laesst einen Koerper genau an der Grenze durch', async () => {
     const e = await holeSicher('https://nodejs.org/a', haupt(), { ...GRENZEN, maxBytes: 5 }, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: (() => Promise.resolve(new Response('12345', { status: 200 }))) as Abrufer,
     })
@@ -603,6 +683,7 @@ describe('holeSicher: Groesse und Zeit', () => {
 
   it('lehnt einen Koerper ein Byte ueber der Grenze ab', async () => {
     const e = await holeSicher('https://nodejs.org/a', haupt(), { ...GRENZEN, maxBytes: 5 }, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: (() => Promise.resolve(new Response('123456', { status: 200 }))) as Abrufer,
     })
@@ -617,6 +698,7 @@ describe('holeSicher: Groesse und Zeit', () => {
         auftrag.init.signal?.addEventListener('abort', () => ablehnen(new Error('Dieser Vorgang wurde abgebrochen')))
       })
     const e = await holeSicher('https://nodejs.org/langsam', haupt(), { ...GRENZEN, zeitbudgetMs: 20 }, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: haengend,
     })
@@ -627,6 +709,7 @@ describe('holeSicher: Groesse und Zeit', () => {
   it('gibt dem Abrufer ueberhaupt ein Abbruchsignal mit', async () => {
     const aufrufe: Aufruf[] = []
     await holeSicher('https://nodejs.org/a', haupt(), GRENZEN, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: abrufer({ 'https://nodejs.org/a': seite('x') }, aufrufe),
     })
@@ -646,6 +729,7 @@ describe('holeSicher: Groesse und Zeit', () => {
         auftrag.init.signal?.addEventListener('abort', () => { clearTimeout(uhr); ablehnen(new Error('abgebrochen')) })
       })
     const e = await holeSicher('https://nodejs.org/0', haupt(), { ...GRENZEN, zeitbudgetMs: 40 }, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: langsam,
     })
@@ -662,6 +746,7 @@ describe('holeSicher: Groesse und Zeit', () => {
     // und die Ablehnung hiess am Ende „Mehr als 3 Weiterleitungen" statt „Zeitbudget".
     const begonnen = Date.now()
     const e = await holeSicher('https://nodejs.org/0', haupt(), { ...GRENZEN, zeitbudgetMs: 30 }, {
+      melde: () => {},
       aufloesen: async () => {
         await new Promise(fertig => setTimeout(fertig, 200))
         return ['93.184.216.34']
@@ -681,6 +766,7 @@ describe('holeSicher: Groesse und Zeit', () => {
     // bekommen — deshalb steht es in der Schnittstelle und nicht bloss im Kommentar.
     const signale: unknown[] = []
     await holeSicher('https://nodejs.org/a', haupt(), GRENZEN, {
+      melde: () => {},
       aufloesen: async (_host: string, signal?: AbortSignal) => { signale.push(signal); return ['93.184.216.34'] },
       abrufen: abrufer({ 'https://nodejs.org/a': seite('x') }, []),
     })
@@ -706,6 +792,7 @@ describe('holeSicher: Groesse und Zeit', () => {
     })
     const begonnen = Date.now()
     const e = await holeSicher('https://nodejs.org/haengt', haupt(), { ...GRENZEN, zeitbudgetMs: 50 }, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: (() => Promise.resolve(new Response(strom, { status: 200 }))) as Abrufer,
     })
@@ -725,6 +812,7 @@ describe('holeSicher: die Verbindung haengt an der geprueften Adresse', () => {
     // die Adressen, ueber die geurteilt worden war. Damit loeste er ein zweites Mal auf.
     const aufrufe: Aufruf[] = []
     await holeSicher('https://nodejs.org/api', haupt(), GRENZEN, {
+      melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46', '2606:4700::6810:162e'] }),
       abrufen: abrufer({ 'https://nodejs.org/api': seite('x') }, aufrufe),
     })
@@ -743,6 +831,7 @@ describe('holeSicher: die Verbindung haengt an der geprueften Adresse', () => {
     let male = 0
     const erreicht: string[] = []
     const e = await holeSicher('https://example.org/x', offen(), GRENZEN, {
+      melde: () => {},
       aufloesen: async () => (male++ === 0 ? ['93.184.216.34'] : ['100.78.7.108']),
       abrufen: verbindenderAbrufer(erreicht),
     })
@@ -759,6 +848,7 @@ describe('holeSicher: die Verbindung haengt an der geprueften Adresse', () => {
     }
     let male = 0
     const e = await holeSicher('https://irgendein-forum.de/thread/1', offen(), GRENZEN, {
+      melde: () => {},
       aufloesen: async (host: string) => {
         if (host === 'irgendein-forum.de') return ['93.184.216.34']
         return male++ === 0 ? ['203.0.113.9'] : ['100.78.7.108']
@@ -833,6 +923,7 @@ describe('holeSicher: IP-Literale', () => {
     const gefragt: string[] = []
     const aufrufe: Aufruf[] = []
     const e = await holeSicher('https://100.78.7.108/api/generate', offen(), GRENZEN, {
+      melde: () => {},
       aufloesen: async (host: string) => { gefragt.push(host); throw new Error('nicht aufloesbar') },
       abrufen: abrufer({}, aufrufe),
     })
@@ -845,6 +936,7 @@ describe('holeSicher: IP-Literale', () => {
   it('fragt auch fuer ein IPv6-Literal in Klammern keinen Aufloeser', async () => {
     const gefragt: string[] = []
     const e = await holeSicher('https://[::ffff:100.78.7.108]/x', offen(), GRENZEN, {
+      melde: () => {},
       aufloesen: async (host: string) => { gefragt.push(host); throw new Error('nicht aufloesbar') },
       abrufen: abrufer({}, []),
     })
@@ -857,6 +949,7 @@ describe('holeSicher: IP-Literale', () => {
     const gefragt: string[] = []
     const aufrufe: Aufruf[] = []
     const e = await holeSicher('https://93.184.216.34/x', offen(), GRENZEN, {
+      melde: () => {},
       aufloesen: async (host: string) => { gefragt.push(host); throw new Error('nicht aufloesbar') },
       abrufen: abrufer({ 'https://93.184.216.34/x': seite('Inhalt') }, aufrufe),
     })

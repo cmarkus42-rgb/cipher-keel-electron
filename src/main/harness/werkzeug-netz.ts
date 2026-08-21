@@ -51,7 +51,9 @@ import {
 import {
   HARTE_MAX_ZEICHEN, MIN_ZEICHEN, STANDARD_MAX_ZEICHEN, einzeilig, extrahiereSeitenText,
 } from './seiten-text'
-import { holeSicher, type AbrufGrenzen, type Abrufer, type Aufloeser } from './netzwache'
+import {
+  holeSicher, type AbrufGrenzen, type Abrufer, type Aufloeser, type AusgehenderSprung,
+} from './netzwache'
 
 export const WEB_SUCHEN_NAME = 'web_suchen'
 export const SEITE_LESEN_NAME = 'seite_lesen'
@@ -110,7 +112,7 @@ export interface NetzKontext {
   aufloesen: Aufloeser
   /** Der Abrufer hinter der netzwache — er verbindet ueber die `bindung`, nicht ueber den Namen. */
   abrufen: Abrufer
-  /** 'whitelist' = Hauptlauf. 'offen' = Unterlauf des Rechercheurs, spaetere Welle. */
+  /** 'whitelist' = Hauptlauf. 'offen' = Unterlauf des Rechercheurs (rechercheur.ts). */
   modus: 'whitelist' | 'offen'
   positivliste: readonly string[]
   seiteGrenzen: AbrufGrenzen
@@ -119,6 +121,16 @@ export interface NetzKontext {
    * Herkunftspruefung — siehe Modulkopf.
    */
   ereignisse: readonly Ereignis[]
+  /**
+   * Schreibt eine ausgehende Anfrage ins Protokoll dieses Laufs (§4.1 (4)). Wie `ereignisse`
+   * gehoert sie dem Lauf und nicht der Konfiguration: `fuehreAus` (lauf.ts) setzt sie je Aufruf
+   * frisch ein, damit die Meldung unter der richtigen laufId landet.
+   *
+   * Pflichtfeld, kein optionales Extra — dieselbe Begruendung wie bei `quelle` in
+   * `WerkzeugErgebnis`: wer einen Netzkontext baut, muss sagen, wohin das Protokoll geht. Sonst
+   * ist der stille Fall (kein Melder, keine Zeile) genau der, der beim naechsten Umbau entsteht.
+   */
+  melde: (sprung: AusgehenderSprung & { werkzeug: string }) => void
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -284,7 +296,13 @@ const webSuchen: Werkzeug = {
 
     let antwort
     try {
-      antwort = await netz.anbieter.suche(anfrage, anzahl.wert, netz.suchAbrufer)
+      antwort = await netz.anbieter.suche(
+        anfrage, anzahl.wert, netz.suchAbrufer,
+        // §4.1 (4): die Anfrage-URL des Suchdienstes stand bisher in keinem Ereignis, nur der
+        // Suchbegriff. `sprung: 0` — der Suchpfad folgt keiner Weiterleitung (`redirect: 'error'`
+        // in such-anbieter.ts), es gibt hier also genau einen Sprung.
+        ziel => netz.melde({ sprung: 0, url: ziel.url, host: ziel.host, werkzeug: WEB_SUCHEN_NAME }),
+      )
     } catch (fehler) {
       // `SuchAnbieter.suche` wirft — es ist kein Werkzeug (such-anbieter.ts, Modulkopf). Hier
       // endet der Wurf und wird zum benannten Ergebnis, das der Lauf weiterreichen kann.
@@ -367,7 +385,15 @@ const seiteLesen: Werkzeug = {
       url,
       { modus: netz.modus, positivliste: [...netz.positivliste], adressen: [] },
       netz.seiteGrenzen,
-      { aufloesen: netz.aufloesen, abrufen: netz.abrufen },
+      {
+        aufloesen: netz.aufloesen,
+        abrufen: netz.abrufen,
+        // Jeder Sprung der Kette, einzeln und bevor er hinausgeht. Die Zwischenziele einer
+        // Weiterleitung waehlt der Betreiber der geholten Seite; ohne diese Zeile stehen sie
+        // nirgends, und die Frage „welche Hosts hat dieser Lauf beruehrt" ist nicht mehr zu
+        // beantworten (§4.1 (4), netzwache.ts `AusgehenderSprung`).
+        melde: sprung => netz.melde({ ...sprung, werkzeug: SEITE_LESEN_NAME }),
+      },
     )
     if (!abruf.ok) return { ok: false, meldung: `Die Seite wurde nicht geholt: ${abruf.grund}` }
 

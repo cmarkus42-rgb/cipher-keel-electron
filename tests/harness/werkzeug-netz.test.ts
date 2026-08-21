@@ -133,10 +133,14 @@ interface NetzBaukasten {
   positivliste?: readonly string[]
   modus?: 'whitelist' | 'offen'
   erreicht?: string[]
+  /** Jede gemeldete ausgehende Anfrage (§4.1 (4)) landet hier. */
+  gemeldet?: Record<string, unknown>[]
 }
 
 function netzKontext(b: NetzBaukasten = {}): NetzKontext {
+  const gemeldet = b.gemeldet ?? []
   return {
+    melde: (s) => { gemeldet.push({ ...s }) },
     anbieter: b.anbieter ?? anbieter(LEERE_ANTWORT).a,
     suchAbrufer: (async () => new Response('{}')) as unknown as typeof fetch,
     aufloesen: aufloeser(b.adressen ?? { 'nodejs.org': ['104.20.22.46'] }),
@@ -306,6 +310,29 @@ describe('web_suchen', () => {
     if (!e.ok) throw new Error(e.meldung)
     expect(e.trefferUrls).toEqual(['https://nodejs.org/a', 'https://vitest.dev/b', 'https://react.dev/c'])
     expect(e.quelle).toBe('netz')
+  })
+
+  it('reicht den Melder an den Anbieter durch (§4.1 (4))', async () => {
+    // Die Anfrage-URL des Suchdienstes kennt nur der Anbieter — das Werkzeug muss ihm den Weg ins
+    // Protokoll geben, sonst steht dort weiter nur der Suchbegriff. Dass die gemeldete URL die
+    // wirklich abgerufene ist, prueft such-anbieter.test.ts am echten Anbieterweg.
+    // Gegenprobe (`undefined` statt des Melders durchgereicht): 1 rot, `expected [] to deeply
+    // equal [ { werkzeug: 'web_suchen', …(3) } ]`.
+    const gemeldet: Record<string, unknown>[] = []
+    const meldender: SuchAnbieter = {
+      name: 'meldend',
+      async suche(_anfrage, _anzahl, _abrufen, melde) {
+        melde?.({ url: 'http://100.67.95.13:8080/search?q=vitest', host: '100.67.95.13' })
+        return DREI
+      },
+    }
+    const e = await webSuchen.ausfuehren(
+      { anfrage: 'vitest' }, ktx(netzKontext({ anbieter: meldender, gemeldet })))
+    expect(e.ok).toBe(true)
+    expect(gemeldet).toEqual([{
+      werkzeug: WEB_SUCHEN_NAME, sprung: 0,
+      url: 'http://100.67.95.13:8080/search?q=vitest', host: '100.67.95.13',
+    }])
   })
 
   it('lehnt eine Anfrage ueber 200 Zeichen ab und nennt die Laenge', async () => {

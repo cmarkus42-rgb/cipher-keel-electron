@@ -161,12 +161,16 @@ function Fenster() {
                 </div>
                 <div style={{ color: l.endzustand ? '#565f89' : '#9ece6a', fontSize: 11 }}>
                   {l.endzustand ?? 'laeuft'}
+                  {/* Ohne diese Zeile sah ein Unterlauf des Rechercheurs in der Liste aus wie
+                      jeder andere Lauf. */}
+                  {l.istUnterlauf && <span style={{ color: '#bb9af7' }}> · Unterlauf</span>}
                 </div>
               </button>
               {/* Only a run without run.finished may be resumed — the main process re-checks this
                   itself (HARNESS_LAUF_FORTSETZEN), this is only what decides whether the button
-                  is offered at all. */}
-              {l.endzustand === null && (
+                  is offered at all. Ein Unterlauf wird gar nicht fortgesetzt: er bekaeme die
+                  Registry des Hauptlaufs neben fremdem Netzinhalt (pruefeKeinUnterlauf). */}
+              {l.endzustand === null && !l.istUnterlauf && (
                 <button
                   onClick={() => void fortsetzen(l.laufId)}
                   title="Lauf fortsetzen"

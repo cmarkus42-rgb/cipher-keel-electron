@@ -20,6 +20,8 @@ export const FARBE: Record<string, string> = {
   'tool.schema_loaded': '#bb9af7',
   'skill.geladen': '#c0caf5',
   'budget.warned': '#ff9e64',
+  'netz.ausgehend': '#f7768e',
+  'unterlauf.verbraucht': '#bb9af7',
   'run.finished': '#7dcfff',
 }
 
@@ -46,6 +48,12 @@ export function kurzfassung(e: HarnessEreignis): string {
       return `${String(n.name)} · ${String(n.text ?? '').length} Zeichen`
     case 'budget.warned':
       return String(n.grund)
+    case 'netz.ausgehend':
+      // Der Host zuerst und ungekuerzt: das ist die Frage, die ein Mensch an diese Zeile hat —
+      // wohin ging etwas. Die volle URL steht aufgeklappt darunter.
+      return `${String(n.werkzeug)} · Sprung ${String(n.sprung)} · ${String(n.host)}`
+    case 'unterlauf.verbraucht':
+      return `${String(n.runden)} Runden · ${String(n.kostenCent)} Cent (${String(n.unterLaufId)})`
     case 'run.finished':
       return `${String(n.endzustand)} / ${String(n.grund)}`
     default:

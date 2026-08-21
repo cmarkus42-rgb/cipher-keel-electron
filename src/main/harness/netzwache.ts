@@ -393,6 +393,26 @@ export type AbrufErgebnis =
   | { ok: true; text: string; endUrl: string }
   | { ok: false; grund: string }
 
+/**
+ * Ein Sprung der Kette, so wie er ins Protokoll geht (§4.1 (4)).
+ *
+ * `sprung: 0` ist die angefragte URL, 1..n sind die Ziele der Weiterleitungen. Die Zwischenziele
+ * waehlt der Betreiber der geholten Seite, und genau deshalb muessen sie aufgeschrieben werden:
+ * ohne sie beantwortet niemand mehr die Frage, welche Hosts ein Lauf beruehrt hat.
+ */
+export interface AusgehenderSprung {
+  sprung: number
+  url: string
+  host: string
+}
+
+/**
+ * Wohin ein Sprung gemeldet wird. Eingespeist wie Aufloeser und Abrufer — dieses Modul kennt
+ * kein Protokoll und keine Datenbank; `fuehreAus` (lauf.ts) haengt die Meldung an den Lauf, dem
+ * sie gehoert.
+ */
+export type Melder = (sprung: AusgehenderSprung) => void
+
 const WEITERLEITUNGEN = new Set([301, 302, 303, 307, 308])
 
 /**
@@ -437,8 +457,9 @@ function gegenDieUhr<T>(versprechen: Promise<T>, signal: AbortSignal, grund: str
  * fetch follow means the first URL is checked and the destination that actually gets requested is
  * not — which is where most SSRF guards fall, because the check is present and looks right.
  *
- * `aufloesen` and `abrufen` are injected: this is testable without a network and without DNS, and
- * a test can play the attacker. `ktx.adressen` is *overwritten* per hop with what `aufloesen`
+ * `aufloesen`, `abrufen` und `melde` are injected: this is testable without a network and without
+ * DNS, and a test can play the attacker. `melde` schreibt **jeden** Sprung auf, bevor er hinausgeht
+ * — siehe `AusgehenderSprung`. `ktx.adressen` is *overwritten* per hop with what `aufloesen`
  * returns — the field is what `pruefeUrl` reads, and here this function fills it. Und derselbe
  * Satz Adressen geht als Bindung an den Abrufer, damit zwischen Urteil und Socket keine zweite
  * Aufloesung mehr passt.
@@ -447,7 +468,7 @@ export async function holeSicher(
   url: string,
   ktx: NetzWacheKontext,
   grenzen: AbrufGrenzen,
-  abhaengigkeiten: { aufloesen: Aufloeser; abrufen: Abrufer },
+  abhaengigkeiten: { aufloesen: Aufloeser; abrufen: Abrufer; melde: Melder },
 ): Promise<AbrufErgebnis> {
   const steuerung = new AbortController()
   const uhr = setTimeout(() => steuerung.abort(), grenzen.zeitbudgetMs)
@@ -478,6 +499,13 @@ export async function holeSicher(
       if (ktx.modus === 'whitelist' && !stehtAufListe(host, ktx.positivliste)) {
         return { ok: false, grund: nichtAufListe(host) }
       }
+
+      // §4.1 (4): jede ausgehende URL vollstaendig ins Protokoll — und zwar *hier*, vor der
+      // Aufloesung und vor dem GET. Ein Eintrag, den erst der Erfolg schreibt, fehlt genau bei
+      // dem Sprung, der scheiterte; und die Namensaufloesung selbst ist bereits ein ausgehender
+      // Vorgang, der den Namen hinaustraegt. Ueber der Positivlisten-Absage darueber steht sie
+      // absichtlich nicht: dort geht nichts hinaus.
+      abhaengigkeiten.melde({ sprung, url: aktuell, host })
 
       let adressen: string[]
       if (alsV4(host) !== null || alsV6(host) !== null) {

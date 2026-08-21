@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { oeffneHarnessDb, lesen } from '../../src/main/harness/protokoll'
 import { starteLauf } from '../../src/main/harness/lauf'
-import { WerkzeugRegistry } from '../../src/main/harness/werkzeuge'
+import { WerkzeugRegistry, type Werkzeug } from '../../src/main/harness/werkzeuge'
 import { DATEI_WERKZEUGE } from '../../src/main/harness/werkzeug-datei'
 import {
   FAEHIGKEIT_WERKZEUG_NAME, faehigkeitLesenWerkzeug, type Faehigkeit,
@@ -45,7 +45,10 @@ const GATE: Faehigkeit = {
   pfad: '.claude/capabilities/gate-urteil-guide',
 }
 
-function umgebung(wurzel: string, antworten: ModelAntwort[], faehigkeiten: Faehigkeit[]) {
+function umgebung(
+  wurzel: string, antworten: ModelAntwort[], faehigkeiten: Faehigkeit[],
+  werkzeuge: Werkzeug[] = [...DATEI_WERKZEUGE, faehigkeitLesenWerkzeug],
+) {
   let i = 0, t = 0
   return {
     db: oeffneHarnessDb(':memory:'),
@@ -55,7 +58,7 @@ function umgebung(wurzel: string, antworten: ModelAntwort[], faehigkeiten: Faehi
     },
     wache: { wurzel, heim: wurzel, userDataPfad: join(wurzel, 'ud') },
     graphDb: null,
-    registry: new WerkzeugRegistry([...DATEI_WERKZEUGE, faehigkeitLesenWerkzeug]),
+    registry: new WerkzeugRegistry(werkzeuge),
     strom: () => {},
     uhr: () => (t += 1000),
     abgebrochen: () => false,
@@ -160,6 +163,43 @@ describe('faehigkeit_lesen', () => {
         '- `faehigkeit_lesen` — Liest den vollen Text einer Faehigkeit aus der Liste oben. ' +
         'Rufe es, bevor du eine benutzt.',
       )
+    })
+  })
+})
+
+/**
+ * Der Abfang in `fuehreAus` laeuft ueber den **Namen**. `recherchieren` hat dort seit jeher eine
+ * Registry-Bedingung dazu — `faehigkeit_lesen` hatte keine, und damit war die Registry fuer diesen
+ * einen Namen keine Grenze mehr: wer das Werkzeug aus einer Registry nimmt (etwa aus der des
+ * Rechercheurs, weil lokale Skill-Rumpfe neben Fremdinhalt unerwuenscht sind), entfernt es nur aus
+ * dem Praefix. Das Modell muesste den Namen bloss raten.
+ *
+ * Gegenprobe (Registry-Bedingung in `fuehreAus` wieder entfernt): 1 rot, `expected true to be
+ * false` — `skill.geladen` stand im Protokoll und der Rumpf im Verlauf.
+ */
+describe('faehigkeit_lesen ist an die Registry gebunden, nicht nur an den Praefix', () => {
+  it('liefert keinen Rumpf aus, wenn das Werkzeug nicht in der Registry steht', async () => {
+    await mitWurzel(async w => {
+      const geheim: Faehigkeit = {
+        name: 'hausregeln',
+        beschreibung: 'Die Hausregeln.',
+        rumpf: 'RUMPF-NUR-IN-DEN-PRAEFIXTEILEN-4711',
+        pfad: '.claude/capabilities/hausregeln',
+      }
+      // Registry ohne `faehigkeit_lesen` — die Rumpfe stehen trotzdem in `praefixTeile`, weil
+      // `baueLaufUmgebung` sie unabhaengig von der Werkzeugliste einliest.
+      const u = umgebung(
+        w, [ruft(FAEHIGKEIT_WERKZEUG_NAME, { name: 'hausregeln' }), sagt('fertig')], [geheim],
+        [...DATEI_WERKZEUGE],
+      )
+      const id = await starteLauf(AUFTRAG(w), u)
+      const ev = lesen(u.db, id)
+
+      expect(ev.some(e => e.art === 'skill.geladen')).toBe(false)
+      const meldung = String(ev.find(e => e.art === 'tool.failed')?.nutzlast.meldung)
+      expect(meldung).toContain(`Es gibt kein Werkzeug '${FAEHIGKEIT_WERKZEUG_NAME}'`)
+      // Und der Rumpf ist nirgends im Protokoll — auch nicht in einem `prompt.sent`.
+      expect(JSON.stringify(ev)).not.toContain('RUMPF-NUR-IN-DEN-PRAEFIXTEILEN-4711')
     })
   })
 })

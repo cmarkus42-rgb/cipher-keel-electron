@@ -232,6 +232,33 @@ describe('Werkzeugausfuehrung', () => {
     rmSync(w, { recursive: true, force: true })
   })
 
+  it('fuehrt werkzeug_schema nicht aus, wenn es gar nicht im Praefix steht', async () => {
+    // Der Abfang in `fuehreAus` lief allein ueber den Namen, an der Werkzeugliste vorbei.
+    // `werkzeug_schema` ist kein Registry-Eintrag, sondern entsteht in `stummel(aufgeschoben)` —
+    // ohne aufgeschobenes Laden gibt es das Meta-Werkzeug nicht, alle Schemata stehen ohnehin im
+    // Praefix. Trotzdem lieferte `fuehreAus` es aus, wenn das Modell den Namen bloss riet: die
+    // Liste im Praefix war dann keine Aussage mehr darueber, was ausgefuehrt wird.
+    // Gegenprobe (Bedingung wieder entfernt): 1 rot, `expected true to be false` — das Schema
+    // wurde ausgeliefert und `tool.schema_loaded` stand im Protokoll.
+    const w = mkdtempSync(join(tmpdir(), 'keel-lw-'))
+    const u = umgebung(w, [ruft(META_WERKZEUG_NAME, { name: 'datei_lesen' }), sagt('ok')])
+    u.eintrag = {
+      ...EINTRAG,
+      faehigkeiten: { ...EINTRAG.faehigkeiten!, aufgeschobenesLaden: false },
+    }
+    const id = await starteLauf(AUFTRAG(w), u)
+    const ev = lesen(u.db, id)
+
+    // Erst die Voraussetzung: das Meta-Werkzeug steht in diesem Lauf wirklich nicht im Praefix.
+    const werkzeuge = ev.find(e => e.art === 'run.started')?.nutzlast.werkzeuge as string[]
+    expect(werkzeuge).not.toContain(META_WERKZEUG_NAME)
+
+    expect(ev.some(e => e.art === 'tool.schema_loaded')).toBe(false)
+    const f = ev.find(e => e.art === 'tool.failed')
+    expect(String(f?.nutzlast.meldung)).toContain(`Es gibt kein Werkzeug '${META_WERKZEUG_NAME}'`)
+    rmSync(w, { recursive: true, force: true })
+  })
+
   it('maskiert einen Werkzeugaufruf im Abschlusszug, statt ihn stillschweigend zu verwerfen', async () => {
     // The closing turn is exactly one turn (M8, and the note from Task 11's review): the model
     // already had its turn to comply. A tool call that arrives anyway must be logged and refused,

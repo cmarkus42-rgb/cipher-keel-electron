@@ -132,6 +132,17 @@ describe('CK-NFR-012 — the adjustable-surface inventory', () => {
     expect(INVENTORY).toContain('Unterdomaenen')
   })
 
+  it('nennt die zwei Grenzen des Rechercheurs, die eine Pruefung gefunden hat', () => {
+    // Beide sind Sicherheitsgrenzen und keine Bequemlichkeit: die eine begrenzt die Zahl der
+    // Unterlaeufe (acht Aufrufe eines Zuges fuhren acht nebenlaeufige Laeufe), die andere die
+    // Laenge einer Quellzeile (die End-URL waehlt im Modus 'offen' die Gegenstelle).
+    for (const flaeche of ['MAX_RECHERCHEN_JE_LAUF', 'MAX_QUELL_URL_ZEICHEN']) {
+      expect(INVENTORY).toContain(flaeche)
+    }
+    // Und die Protokollzusage, die kein Schalter ist.
+    expect(INVENTORY).toContain('netz.ausgehend')
+  })
+
   it('documents the cost budget price table', () => {
     // The price table is adjustable because rates change faster than releases.
     // It must be documented, and the key constraint — unknown models cost zero,

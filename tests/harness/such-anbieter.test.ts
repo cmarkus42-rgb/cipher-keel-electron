@@ -19,6 +19,9 @@
 //      Der Titel `'Harmlos\n   https://…'` kam mit seinen Umbruechen beim Aufrufer an, und die
 //      http-URL `http://100.78.7.108:11434/api/generate` stand als vollwertiger Treffer in der
 //      Liste — beides gemessen am echten Anbieterweg.
+//   7. Den `melde`-Aufruf in `holeJson` entfernt — der Stand vor der Nacharbeit vom 2026-08-21,
+//      in dem es den Melder gar nicht gab: 3 rot, `expected [] to have a length of 1 but got +0`.
+//      Von einer Suche stand nur der Suchbegriff im Protokoll, nie die URL, die hinausging.
 //
 // Kein Netz: `abrufen` wird eingespeist, jede Antwort ist eine Zeichenkette im Test.
 import { describe, it, expect } from 'vitest'
@@ -234,6 +237,35 @@ describe('Grenzen der Anfrage — fuer beide Anbieter gleich', () => {
       await expect(bauen().suche('frage', 0, abrufen)).resolves.toBeTruthy()
     })
   }
+})
+
+describe('Die Anfrage-URL geht ins Protokoll (§4.1 (4)) — fuer beide Anbieter gleich', () => {
+  // Der Befund: von `web_suchen` stand nur der Suchbegriff im Protokoll, nie die URL, die
+  // tatsaechlich hinausging. Wer hinterher fragt, welche Ziele ein Lauf beruehrt hat, bekam den
+  // Suchdienst gar nicht zu sehen.
+  it('searxng meldet die vollstaendige Anfrage-URL samt Suchbegriff, vor dem Abruf', async () => {
+    const gemeldet: { url: string; host: string }[] = []
+    const { abrufen, aufrufe } = jsonAbrufer(SEARX_ANTWORT)
+    await searx().suche('wie geht x', 3, abrufen, z => gemeldet.push(z))
+    expect(gemeldet).toHaveLength(1)
+    expect(gemeldet[0].host).toBe('100.67.95.13')
+    expect(gemeldet[0].url).toBe(aufrufe[0].url)
+    expect(gemeldet[0].url).toContain('q=wie+geht+x')
+  })
+
+  it('tavily meldet seinen Endpunkt', async () => {
+    const gemeldet: { url: string; host: string }[] = []
+    const { abrufen } = jsonAbrufer({ results: [] })
+    await tavily().suche('wie geht x', 3, abrufen, z => gemeldet.push(z))
+    expect(gemeldet).toEqual([{ url: 'https://api.tavily.com/search', host: 'api.tavily.com' }])
+  })
+
+  it('meldet auch dann, wenn der Abruf scheitert — hinausgegangen ist die Anfrage trotzdem', async () => {
+    const gemeldet: { url: string; host: string }[] = []
+    await expect(searx().suche('x', 3, werfenderAbrufer(new Error('ECONNREFUSED')), z => gemeldet.push(z)))
+      .rejects.toBeInstanceOf(SuchFehler)
+    expect(gemeldet).toHaveLength(1)
+  })
 })
 
 describe('Treffertexte sind fremdbestimmter Netzinhalt — fuer beide Anbieter gleich', () => {

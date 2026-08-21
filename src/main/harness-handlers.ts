@@ -272,6 +272,53 @@ export function laufAbgeschlossen(ereignisse: ReturnType<typeof lesen>): boolean
 }
 
 /**
+ * Traegt das `run.started` dieses Laufs ein `eltern`, ist er der Unterlauf eines anderen — heute
+ * der des Rechercheurs (harness/rechercheur.ts).
+ */
+export function istUnterlauf(ereignisse: ReturnType<typeof lesen>): boolean {
+  const gestartet = ereignisse.find((e) => e.art === 'run.started')
+  const eltern = gestartet?.nutzlast.eltern
+  return typeof eltern === 'object' && eltern !== null
+}
+
+/**
+ * Die dritte Absage des Fortsetzen-Pfads, und die einzige, die eine Sicherheitsgrenze haelt statt
+ * doppelter Arbeit vorzubeugen.
+ *
+ * `baueLaufUmgebung` gibt **jedem** Lauf, den dieser Prozess faehrt, die Registry des Hauptlaufs:
+ * `datei_lesen`, `inhalt_suchen`, die vier Graph-Werkzeuge, dazu `services.graphDb`. Fuer einen
+ * fortgesetzten Unterlauf ist das genau der Zustand, gegen den rechercheur.ts seine eigene laufId
+ * begruendet — nur von aussen wiederhergestellt. Der Weg dahin braucht keinen Angriff auf die
+ * IPC-Grenze: stirbt der Prozess mitten in einem Unterlauf, nachdem `seite_lesen` eine
+ * praeparierte Seite ins Protokoll geschrieben hat, dann hat dieser Lauf kein `run.finished`,
+ * steht in `laufUebersicht` mit `endzustand: null` und ist von einem gewoehnlich abgebrochenen
+ * Lauf nicht zu unterscheiden. Ein Klick auf Fortsetzen faehrt `setzeFort` ueber genau diese
+ * Historie — der Verlauf traegt den rohen Seitenrumpf, und daneben stuenden dann die
+ * Datei- und Graph-Werkzeuge.
+ *
+ * Deshalb wird ein Unterlauf **gar nicht** fortgesetzt, statt ihn mit einer nachgebauten
+ * Unterlauf-Umgebung fortzusetzen: die zweite Bauform waere eine zweite Stelle, an der die
+ * Kapselung richtig zusammengesetzt werden muss, und die zweite Stelle ist die, die beim naechsten
+ * Umbau vergessen wird. Ein Unterlauf ohne Elternlauf hat ohnehin niemanden mehr, dem er sein
+ * Ergebnis zurueckgeben koennte.
+ */
+export function pruefeKeinUnterlauf(
+  laufId: string, ereignisse: ReturnType<typeof lesen>,
+): { ok: true } | { ok: false; meldung: string } {
+  if (istUnterlauf(ereignisse)) {
+    return {
+      ok: false,
+      meldung:
+        `Der Lauf '${laufId}' ist der Unterlauf einer Recherche und wird nicht fortgesetzt. Er ` +
+        `hat fremden Netzinhalt im Verlauf und darf die Werkzeuge des Hauptlaufs nie daneben ` +
+        `sehen; und ohne seinen Elternlauf gibt es niemanden, der sein Ergebnis entgegennimmt. ` +
+        `Starte die Recherche im Hauptlauf neu.`,
+    }
+  }
+  return { ok: true }
+}
+
+/**
  * The provenance check itself, pulled out as a pure function so it is testable without
  * electron: it takes the requested paths and the set of dialog-attested ones as plain
  * arguments rather than reaching into module state. Deliberately takes no `wurzel` and applies
@@ -294,8 +341,11 @@ export function pruefeAnhaenge(
 }
 
 /** Every run's summary, oldest first — same order as `laufIds()`. There is no run table; this
- *  reads each run's own log, exactly as `laufIds()` itself derives the id list from it. */
-function laufUebersicht(datenbank: ReturnType<typeof oeffneHarnessDb>): LaufAnzeige[] {
+ *  reads each run's own log, exactly as `laufIds()` itself derives the id list from it.
+ *
+ *  Exportiert, damit ein Test die Zusammenfassung gegen ein echtes Protokoll pruefen kann — der
+ *  Handler selbst ist von hier aus nicht erreichbar (kein Test in diesem Repo erreicht ipcMain). */
+export function laufUebersicht(datenbank: ReturnType<typeof oeffneHarnessDb>): LaufAnzeige[] {
   return laufIds(datenbank).map((id) => {
     const ereignisse = lesen(datenbank, id)
     const gestartet = ereignisse.find((e) => e.art === 'run.started')
@@ -305,6 +355,12 @@ function laufUebersicht(datenbank: ReturnType<typeof oeffneHarnessDb>): LaufAnze
       modellId: typeof gestartet?.nutzlast.modellId === 'string' ? gestartet.nutzlast.modellId : '',
       gestartetTs: gestartet?.ts ?? '',
       endzustand: typeof beendet?.nutzlast.endzustand === 'string' ? beendet.nutzlast.endzustand : null,
+      // Unterlaeufe standen in dieser Liste als gewoehnliche Laeufe: `eltern` wurde ausserhalb von
+      // lauf.ts und rechercheur.ts nirgends gelesen, also war ein abgebrochener Unterlauf im
+      // Fenster von einem abgebrochenen Hauptlauf nicht zu unterscheiden — samt angebotenem
+      // Fortsetzen-Knopf. Die Absage trifft der Hauptprozess (pruefeKeinUnterlauf); dieses Feld
+      // sorgt dafuer, dass der Mensch sie nicht erst durch Klicken erfaehrt.
+      istUnterlauf: istUnterlauf(ereignisse),
     }
   })
 }
@@ -458,6 +514,9 @@ export function registerHarnessHandlers(services: AppServices): void {
       // process — see the comment on `laufendeLaeufe` above.
       const laufLaeuftPruefung = pruefeLaufLaeuftNicht(laufId, laufendeLaeufe)
       if (!laufLaeuftPruefung.ok) return laufLaeuftPruefung
+      // Die Kapselung des Rechercheurs, hier nachgezogen: siehe pruefeKeinUnterlauf.
+      const keinUnterlauf = pruefeKeinUnterlauf(laufId, ereignisse)
+      if (!keinUnterlauf.ok) return keinUnterlauf
       const auftrag = auftragAusProtokoll(ereignisse)
       if (!auftrag) {
         return { ok: false, meldung: `Das Protokoll von '${laufId}' traegt keinen vollstaendigen Auftrag.` }

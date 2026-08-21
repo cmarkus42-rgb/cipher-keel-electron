@@ -28,6 +28,30 @@
 //      'https://forum.beispiel.test/a'`. Die Quellenliste war leer, obwohl eine Seite geholt
 //      wurde; genau das Feld traegt sie.
 //
+// Nacharbeit 2026-08-21, fuenf Befunde der Pruefung. Jede Gegenprobe gegen den Stand *vor* der
+// Behebung ausgefuehrt:
+//
+//   6. **Die End-URL ungekappt in die Quellenliste** (`url` statt `quellzeile(url, …)`): **2 rot**
+//      — `expected '[{"rolle":"nutzer","bloecke":[{"art":…' not to contain
+//      'INJEKTION-AUS-DER-SEITE'` und `expected 4648 to be less than or equal to 300`. Der Text
+//      aus dem `Location`-Kopf einer Trefferseite stand woertlich im Verlauf des Hauptlaufs:
+//      4.648 Zeichen Quellzeile gegen 300 erlaubte.
+//   7. **Der Melder in `fuehreAus` schreibt nichts**: **2 rot** — `expected '[[{"laufId":…' to
+//      contain 'GEHEIM-HOP-EINS'` und `expected [] to have a length of 1 but got +0`. Die
+//      Zwischenziele der Weiterleitungskette und die Anfrage-URL des Suchdienstes standen in
+//      keinem Ereignis (§4.1 (4)).
+//   8. **Die Obergrenze fuer die Zahl der Recherchen ausgeschaltet**: **1 rot** — `expected
+//      […(8)] to have a length of 3 but got 8`. Acht Aufrufe eines Zuges fuhren acht
+//      nebenlaeufige Unterlaeufe, jeder mit vollem eigenem Budget.
+//   9. **`unterlauf.verbraucht` nicht mitgezaehlt** (verbrauch.ts): **1 rot** — `expected 0.008
+//      to be close to 0.012`. Genau der Zug des Unterlaufs fehlte im Kostenbudget des Hauptlaufs.
+//  10. **`pruefeKeinUnterlauf` und `istUnterlauf` ausgeschaltet**: **1 rot** — `expected true to
+//      be false`. Ein abgestuerzter Unterlauf war fortsetzbar und in der Liste des Fensters von
+//      einem Hauptlauf nicht zu unterscheiden.
+//  11. **Der alte Systemtext** („kein Dateisystem"): **1 rot** — `expected 'Du bist der
+//      abgeschottete Rechercheur…' not to contain 'kein Dateisystem'`. Der Unterlauf hat seit dem
+//      Nachtrag `faehigkeit_lesen`.
+//
 // Kein Netz: Modell, Suchanbieter, Aufloeser und Abrufer werden eingespeist.
 import { describe, it, expect } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -41,14 +65,17 @@ import { GRAPH_WERKZEUGE } from '../../src/main/harness/werkzeug-graph'
 import { faehigkeitLesenWerkzeug, FAEHIGKEIT_WERKZEUG_NAME } from '../../src/main/harness/faehigkeiten'
 import { projiziere } from '../../src/main/harness/projektion'
 import {
-  SEITE_LESEN_NAME, VORGABE_SEITE_GRENZEN, WEB_SUCHEN_NAME, type NetzKontext,
+  SEITE_LESEN_NAME, VORGABE_SEITE_GRENZEN, WEB_SUCHEN_NAME,
 } from '../../src/main/harness/werkzeug-netz'
 import {
-  RECHERCHIEREN_NAME, TIEFEN, UNTERLAUF_RUNDEN, baueRueckgabe, rechercheurWerkzeug,
+  MAX_QUELL_TITEL_ZEICHEN, MAX_QUELL_URL_ZEICHEN, MAX_RECHERCHEN_JE_LAUF, RECHERCHIEREN_NAME,
+  SYSTEMTEXT, TIEFEN, UNTERLAUF_RUNDEN, baueRueckgabe, quellenAusProtokoll, rechercheurWerkzeug,
   unterlaufRegistry,
 } from '../../src/main/harness/rechercheur'
+import { verbrauchAusEreignissen } from '../../src/main/harness/verbrauch'
+import { pruefeKeinUnterlauf, laufUebersicht } from '../../src/main/harness-handlers'
 import type { Abrufer, Aufloeser } from '../../src/main/harness/netzwache'
-import type { SuchAnbieter, Treffer } from '../../src/main/harness/such-anbieter'
+import { SearxngAnbieter, type SuchAnbieter, type Treffer } from '../../src/main/harness/such-anbieter'
 import type { ModelAntwort } from '../../src/main/harness/form'
 import type { ModellEintrag } from '../../src/main/model/entry'
 
@@ -104,7 +131,7 @@ function abrufer(erreicht: string[]): Abrufer {
   }
 }
 
-function netzKontext(erreicht: string[]): Omit<NetzKontext, 'ereignisse'> {
+function netzKontext(erreicht: string[]): LaufUmgebung['netz'] {
   return {
     anbieter: ANBIETER,
     suchAbrufer: (async () => new Response('nie benutzt')) as unknown as typeof fetch,
@@ -452,7 +479,270 @@ describe('Rueckgabe des Rechercheurs', () => {
 })
 
 // ===============================================================================================
-// 5. Absagen ohne Unterlauf
+// 5. Die Quellenliste ist der zweite Weg ueber die Kapselung — und der ungekappte war offen
+// ===============================================================================================
+
+/** Ein Abrufer, der einer Tabelle von Weiterleitungen folgt und jede erreichte URL mitschreibt. */
+function umleitenderAbrufer(kette: Record<string, string>, erreicht: string[]): Abrufer {
+  return async ({ url }) => {
+    erreicht.push(url)
+    const ziel = kette[url]
+    if (ziel !== undefined) {
+      return new Response(null, { status: 302, headers: { location: ziel } })
+    }
+    return new Response(seite('Endseite', GEHEIM), {
+      status: 200, headers: { 'content-type': 'text/html' },
+    })
+  }
+}
+
+const INJEKTION = 'INJEKTION-AUS-DER-SEITE'
+/** Die Ziel-URL einer Weiterleitung waehlt der Betreiber der geholten Seite — beliebig lang. */
+const LANGE_UMLEITUNG = `https://boeser-host.test/${'X'.repeat(4600)}${INJEKTION}`
+
+describe('Die Quellenliste traegt fremdbestimmten Text (§4.1 (1))', () => {
+  it('kappt die End-URL, statt 4.800 Zeichen Angreifertext in den Hauptlauf zu legen', async () => {
+    await mitWurzel(async (w) => {
+      const erreicht: string[] = []
+      const u = umgebung(w, {
+        haupt: [ruft(RECHERCHIEREN_NAME, { frage: 'Was ist X?', tiefe: 'kurz' }, 'r1'), sagt('fertig')],
+        unter: [
+          ruft(WEB_SUCHEN_NAME, { anfrage: 'X' }, 's1'),
+          ruft(SEITE_LESEN_NAME, { url: TREFFER[0].url }, 'p1'),
+          sagt('## Befund\n\nX ist ein Y.'),
+        ],
+      })
+      u.netz = { ...u.netz!, abrufen: umleitenderAbrufer({ [TREFFER[0].url]: LANGE_UMLEITUNG }, erreicht) }
+      const hauptId = await starteLauf(AUFTRAG(w), u)
+
+      // (a) Die Weiterleitung wurde wirklich gegangen — sonst misst der Rest nichts.
+      expect(erreicht).toEqual([TREFFER[0].url, LANGE_UMLEITUNG])
+
+      // (b) Der Angreifertext ist nirgends im Hauptlauf, weder im Verlauf noch in einem Ereignis.
+      const hauptEreignisse = lesen(u.db, hauptId)
+      expect(JSON.stringify(projiziere(hauptEreignisse))).not.toContain(INJEKTION)
+      expect(JSON.stringify(hauptEreignisse)).not.toContain(INJEKTION)
+
+      // (c) Die Quelle wird trotzdem genannt — gekappt, nicht weggelassen. Ein verschwiegener
+      // Herkunftsort waere die andere schlechte Antwort auf denselben Befund.
+      const ergebnis = hauptEreignisse
+        .find(e => e.art === 'tool.completed' && e.nutzlast.aufrufId === 'r1')
+      const text = (ergebnis?.nutzlast.inhalt as { text: string }[])[0].text
+      expect(text).toContain('https://boeser-host.test/')
+      const quellzeile = text.split('## Quellen')[1].trim()
+      expect(quellzeile.length).toBeLessThanOrEqual(MAX_QUELL_TITEL_ZEICHEN + MAX_QUELL_URL_ZEICHEN + 10)
+
+      // (d) Und im Protokoll des Unterlaufs steht die volle URL weiter — §4.1 (4) bleibt heil.
+      const [unterId] = unterlaufIds(u.db, hauptId)
+      expect(JSON.stringify(lesen(u.db, unterId))).toContain(INJEKTION)
+    })
+  })
+
+  it('kappt auch einen ueberlangen Titel an dieser Grenze', () => {
+    // Ueber `baueRueckgabe` direkt, weil die Rueckgabe die Grenze ist — und nicht darauf ruhen
+    // darf, dass werkzeug-netz.ts den Titel schon einmal gekappt hat.
+    const quellen = quellenAusProtokoll([{
+      laufId: 'u', seq: 1, ts: '2026-08-21T00:00:00.000Z', art: 'tool.completed',
+      nutzlast: {
+        aufrufId: 'p1', name: SEITE_LESEN_NAME,
+        gelesen: { titel: `T${'i'.repeat(5000)}\nzweite Zeile`, url: LANGE_UMLEITUNG },
+      },
+    }])
+    expect(quellen).toHaveLength(1)
+    expect(quellen[0].titel.length).toBeLessThanOrEqual(MAX_QUELL_TITEL_ZEICHEN)
+    expect(quellen[0].titel).not.toContain('\n')
+    expect(quellen[0].url.length).toBeLessThanOrEqual(MAX_QUELL_URL_ZEICHEN)
+    expect(quellen[0].url).not.toContain(INJEKTION)
+  })
+})
+
+// ===============================================================================================
+// 6. Jede ausgehende URL im Protokoll (§4.1 (4))
+// ===============================================================================================
+
+describe('Ausgehende URLs des Unterlaufs stehen vollstaendig im Protokoll', () => {
+  it('schreibt jedes Zwischenziel einer Weiterleitungskette auf', async () => {
+    await mitWurzel(async (w) => {
+      const erreicht: string[] = []
+      const eins = 'https://zwischenstation-eins.test/GEHEIM-HOP-EINS'
+      const zwei = 'https://zwischenstation-zwei.test/GEHEIM-HOP-ZWEI'
+      const u = umgebung(w, {
+        haupt: [ruft(RECHERCHIEREN_NAME, { frage: 'Was ist X?', tiefe: 'kurz' }, 'r1'), sagt('fertig')],
+        unter: [
+          ruft(WEB_SUCHEN_NAME, { anfrage: 'X' }, 's1'),
+          ruft(SEITE_LESEN_NAME, { url: TREFFER[0].url }, 'p1'),
+          sagt('## Befund\n\nX ist ein Y.'),
+        ],
+      })
+      u.netz = {
+        ...u.netz!,
+        abrufen: umleitenderAbrufer({ [TREFFER[0].url]: eins, [eins]: zwei }, erreicht),
+      }
+      const hauptId = await starteLauf(AUFTRAG(w), u)
+
+      // Beide Zwischenstationen wurden aufgeloest und abgerufen ...
+      expect(erreicht).toEqual([TREFFER[0].url, eins, zwei])
+
+      // ... und beide stehen im Protokoll. Gemessen ueber *alle* laufIds der Datenbank: vor dieser
+      // Runde stand im Protokoll genau die angefragte URL und die letzte, kein Zwischenziel.
+      const alleIds = [hauptId, ...unterlaufIds(u.db, hauptId)]
+      const allesJson = JSON.stringify(alleIds.map(id => lesen(u.db, id)))
+      expect(allesJson).toContain('GEHEIM-HOP-EINS')
+      expect(allesJson).toContain('GEHEIM-HOP-ZWEI')
+
+      // Und zwar als eigene Ereignisse im Protokoll des **Unterlaufs**, nicht des Hauptlaufs.
+      const [unterId] = unterlaufIds(u.db, hauptId)
+      const ausgehend = lesen(u.db, unterId).filter(e => e.art === 'netz.ausgehend')
+      expect(ausgehend.map(e => e.nutzlast.url)).toEqual([TREFFER[0].url, eins, zwei])
+      expect(ausgehend.map(e => e.nutzlast.sprung)).toEqual([0, 1, 2])
+      expect(lesen(u.db, hauptId).some(e => e.art === 'netz.ausgehend')).toBe(false)
+    })
+  })
+
+  it('schreibt auch die Anfrage an den Suchdienst auf, nicht nur den Suchbegriff', async () => {
+    await mitWurzel(async (w) => {
+      const u = umgebung(w, {
+        haupt: [ruft(RECHERCHIEREN_NAME, { frage: 'Was ist X?', tiefe: 'kurz' }, 'r1'), sagt('fertig')],
+        unter: [ruft(WEB_SUCHEN_NAME, { anfrage: 'X' }, 's1'), sagt('## Befund\n\nNichts.')],
+      })
+      // Der echte SearXNG-Anbieter, mit eingespeistem Abrufer — nur er kennt die Anfrage-URL.
+      u.netz = {
+        ...u.netz!,
+        anbieter: new SearxngAnbieter('http://100.67.95.13:8080/'),
+        suchAbrufer: (async () => new Response(JSON.stringify({ results: [] }), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        })) as unknown as typeof fetch,
+      }
+      const hauptId = await starteLauf(AUFTRAG(w), u)
+      const [unterId] = unterlaufIds(u.db, hauptId)
+      const ausgehend = lesen(u.db, unterId).filter(e => e.art === 'netz.ausgehend')
+      expect(ausgehend).toHaveLength(1)
+      expect(String(ausgehend[0].nutzlast.url)).toContain('q=X')
+      expect(ausgehend[0].nutzlast.werkzeug).toBe(WEB_SUCHEN_NAME)
+    })
+  })
+})
+
+// ===============================================================================================
+// 7. Die Zahl der Unterlaeufe und ihr Verbrauch
+// ===============================================================================================
+
+/** Eine Modellantwort mit mehreren Werkzeugaufrufen — so, wie ein Zug sie wirklich schickt. */
+const ruftViele = (name: string, eingaben: Record<string, unknown>[]): ModelAntwort => ({
+  bloecke: eingaben.map((eingabe, i) => ({
+    art: 'werkzeug-aufruf' as const, id: `v${i + 1}`, name, eingabe,
+  })),
+  stopGrund: { normalisiert: 'werkzeug', roh: 'tool_calls' },
+  usage: { eingabeToken: 100, ausgabeToken: 10, roh: null },
+})
+
+describe('Obergrenze fuer die Zahl der Recherchen eines Laufs', () => {
+  it('faehrt aus acht Aufrufen eines Zuges genau MAX_RECHERCHEN_JE_LAUF Unterlaeufe', async () => {
+    await mitWurzel(async (w) => {
+      const u = umgebung(w, {
+        haupt: [
+          ruftViele(RECHERCHIEREN_NAME, Array.from({ length: 8 }, (_, i) => ({ frage: `Frage ${i}` }))),
+          sagt('fertig'),
+        ],
+        unter: Array.from({ length: MAX_RECHERCHEN_JE_LAUF }, () => sagt('## Befund\n\nEtwas.')),
+      })
+      const hauptId = await starteLauf(AUFTRAG(w), u)
+
+      // Gemessen an den Laeufen in der Datenbank, nicht an einer Meldung: acht Aufrufe erzeugten
+      // vorher acht nebenlaeufige Unterlaeufe, jeder mit eigenem Runden-, Zeit-, Such- und
+      // Seitenbudget.
+      expect(unterlaufIds(u.db, hauptId)).toHaveLength(MAX_RECHERCHEN_JE_LAUF)
+
+      const abgelehnt = lesen(u.db, hauptId).filter(e => e.art === 'tool.failed')
+      expect(abgelehnt).toHaveLength(8 - MAX_RECHERCHEN_JE_LAUF)
+      expect(String(abgelehnt[0].nutzlast.meldung)).toContain(String(MAX_RECHERCHEN_JE_LAUF))
+      expect(String(abgelehnt[0].nutzlast.meldung)).toContain('Recherchen')
+    })
+  })
+
+  it('rechnet den Verbrauch des Unterlaufs dem Kostenbudget des Elternlaufs an', async () => {
+    await mitWurzel(async (w) => {
+      const u = umgebung(w, {
+        haupt: [ruft(RECHERCHIEREN_NAME, { frage: 'Was ist X?' }, 'r1'), sagt('fertig')],
+        unter: [sagt('## Befund\n\nEtwas.')],
+      })
+      // Ein Modell aus der echten Preistabelle — sonst kostet jeder Zug 0 und der Test misst
+      // die Arithmetik nicht, sondern nur eine fehlende Tabellenzeile.
+      const auftrag = { ...AUFTRAG(w), modellId: 'openrouter-qwen3-coder' }
+      const hauptId = await starteLauf(auftrag, u)
+      const hauptEreignisse = lesen(u.db, hauptId)
+
+      const angeschrieben = hauptEreignisse.filter(e => e.art === 'unterlauf.verbraucht')
+      expect(angeschrieben).toHaveLength(1)
+      expect(angeschrieben[0].nutzlast.runden).toBe(1)
+      expect(Number(angeschrieben[0].nutzlast.kostenCent)).toBeGreaterThan(0)
+
+      // Ein Zug kostet (100 * 22 + 10 * 180) / 1e6 Cent. Der Hauptlauf hatte zwei, der Unterlauf
+      // einen — und alle drei muessen im Verbrauch des Hauptlaufs stehen.
+      const jeZug = (100 * 22 + 10 * 180) / 1_000_000
+      const v = verbrauchAusEreignissen(hauptEreignisse, 'openrouter-qwen3-coder', 0)
+      expect(v.runden).toBe(2)
+      expect(v.kostenCent).toBeCloseTo(3 * jeZug, 12)
+    })
+  })
+})
+
+// ===============================================================================================
+// 8. Der Systemtext sagt, was wirklich gilt
+// ===============================================================================================
+
+describe('Systemtext des Unterlaufs', () => {
+  it('behauptet keine Grenze, die die Registry nicht zieht', () => {
+    // `faehigkeit_lesen` steht in der Registry des Unterlaufs (Nachtrag) und liefert lokale
+    // Dateiinhalte — die Rumpfe aus `.claude/`. Solange das so ist, darf der Systemtext nicht
+    // „kein Dateisystem" sagen: ein Modell, das dem Satz glaubt, haelt einen Skill-Rumpf fuer
+    // etwas anderes als das, was er ist.
+    const hatFaehigkeitLesen = unterlaufRegistry('kurz').finde(FAEHIGKEIT_WERKZEUG_NAME) !== null
+    expect(hatFaehigkeitLesen).toBe(true)
+    expect(SYSTEMTEXT).not.toContain('kein Dateisystem')
+    expect(SYSTEMTEXT).toContain('Hausregeln')
+  })
+})
+
+// ===============================================================================================
+// 9. Ein Unterlauf wird nicht fortgesetzt
+// ===============================================================================================
+
+describe('Der Fortsetzen-Pfad erkennt einen Unterlauf (harness-handlers)', () => {
+  it('lehnt genau das Protokoll ab, das die echte Schleife geschrieben hat', async () => {
+    await mitWurzel(async (w) => {
+      const u = umgebung(w, {
+        haupt: [ruft(RECHERCHIEREN_NAME, { frage: 'Was ist X?', tiefe: 'kurz' }, 'r1'), sagt('fertig')],
+        unter: [
+          ruft(WEB_SUCHEN_NAME, { anfrage: 'X' }, 's1'),
+          ruft(SEITE_LESEN_NAME, { url: TREFFER[0].url }, 'p1'),
+          sagt('## Befund\n\nX ist ein Y.'),
+        ],
+      })
+      const hauptId = await starteLauf(AUFTRAG(w), u)
+      const [unterId] = unterlaufIds(u.db, hauptId)
+
+      // Der Unterlauf traegt den rohen Seiteninhalt im Verlauf — genau der Lauf, der die
+      // Werkzeuge des Hauptlaufs nie daneben sehen darf.
+      expect(JSON.stringify(projiziere(lesen(u.db, unterId)))).toContain(GEHEIM)
+
+      const abgelehnt = pruefeKeinUnterlauf(unterId, lesen(u.db, unterId))
+      expect(abgelehnt.ok).toBe(false)
+      if (!abgelehnt.ok) expect(abgelehnt.meldung).toContain('Unterlauf')
+
+      // Und der Hauptlauf bleibt fortsetzbar — sonst waere die Regel nur eine Absage an alles.
+      expect(pruefeKeinUnterlauf(hauptId, lesen(u.db, hauptId))).toEqual({ ok: true })
+
+      // In der Liste des Fensters sind die beiden jetzt zu unterscheiden.
+      const uebersicht = laufUebersicht(u.db)
+      expect(uebersicht.find(l => l.laufId === unterId)?.istUnterlauf).toBe(true)
+      expect(uebersicht.find(l => l.laufId === hauptId)?.istUnterlauf).toBe(false)
+    })
+  })
+})
+
+// ===============================================================================================
+// 10. Absagen ohne Unterlauf
 // ===============================================================================================
 
 describe('Benannte Absagen', () => {

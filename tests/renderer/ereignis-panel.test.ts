@@ -31,6 +31,13 @@ const NUTZLAST: Record<string, unknown> = {
   meldung: 'Das Feld fehlt.',
   grund: 'runden-erschoepft',
   endzustand: 'fertig',
+  werkzeug: 'seite_lesen',
+  sprung: 1,
+  url: 'https://beispiel.test/a',
+  host: 'beispiel.test',
+  unterLaufId: 'u1',
+  kostenCent: 3,
+  runden: 4,
 }
 
 function ereignis(art: string): HarnessEreignis {

@@ -71,9 +71,21 @@ export interface SuchAntwort {
   engineLage: string
 }
 
+/**
+ * Wohin die tatsaechlich abgerufene Ziel-URL gemeldet wird (§4.1 (4)). Bis dahin stand im
+ * Protokoll nur der Suchbegriff, nie die Anfrage-URL an den Suchdienst — bei SearXNG ist das die
+ * Zeile, an der ein Mensch sieht, welche Instanz gefragt wurde und was genau in `q` stand.
+ *
+ * Optional, weil `suche` auch ausserhalb eines Laufs aufgerufen werden koennen muss (Messungen,
+ * Diagnose). Im Werkzeug ist sie nie weggelassen — `web_suchen` reicht sie immer durch.
+ */
+export type SuchMelder = (ziel: { url: string; host: string }) => void
+
 export interface SuchAnbieter {
   name: string
-  suche(anfrage: string, anzahl: number, abrufen: typeof fetch): Promise<SuchAntwort>
+  suche(
+    anfrage: string, anzahl: number, abrufen: typeof fetch, melde?: SuchMelder,
+  ): Promise<SuchAntwort>
 }
 
 /**
@@ -238,7 +250,12 @@ async function holeJson(
   grenzen: SuchGrenzen,
   abrufen: typeof fetch,
   statusZusatz: (status: number) => string,
+  melde?: SuchMelder,
 ): Promise<Record<string, unknown>> {
+  // Vor dem Abruf, nicht danach: eine Anfrage, die im Zeitbudget haengen bleibt, ist trotzdem
+  // hinausgegangen. Der Host wird aus der geparsten URL genommen; ein Endpunkt, den `new URL`
+  // nicht lesen kann, ist oben schon benannt abgelehnt worden.
+  if (melde) melde({ url: ziel, host: new URL(ziel).hostname })
   const steuerung = new AbortController()
   const uhr = setTimeout(() => steuerung.abort(), grenzen.zeitbudgetMs)
   const signal = steuerung.signal
@@ -368,7 +385,9 @@ export class SearxngAnbieter implements SuchAnbieter {
 
   private readonly grenzen: SuchGrenzen
 
-  async suche(anfrage: string, anzahl: number, abrufen: typeof fetch): Promise<SuchAntwort> {
+  async suche(
+    anfrage: string, anzahl: number, abrufen: typeof fetch, melde?: SuchMelder,
+  ): Promise<SuchAntwort> {
     const q = pruefeAnfrage(this.name, anfrage)
     const grenze = klemmeAnzahl(anzahl)
 
@@ -398,6 +417,7 @@ export class SearxngAnbieter implements SuchAnbieter {
         ? ' — vermutlich der Limiter: das Tailscale-Netz ist in `limiter.toml` nicht freigegeben,'
           + ' oder `search.formats` enthaelt `json` nicht.'
         : '',
+      melde,
     )
     const alle = ergebnisListe(this.name, koerper)
     const roh = alle.filter(e => brauchbareUrl(e.url) !== null)
@@ -480,7 +500,9 @@ export class TavilyAnbieter implements SuchAnbieter {
 
   private readonly grenzen: SuchGrenzen
 
-  async suche(anfrage: string, anzahl: number, abrufen: typeof fetch): Promise<SuchAntwort> {
+  async suche(
+    anfrage: string, anzahl: number, abrufen: typeof fetch, melde?: SuchMelder,
+  ): Promise<SuchAntwort> {
     const q = pruefeAnfrage(this.name, anfrage)
     const grenze = klemmeAnzahl(anzahl)
 
@@ -508,6 +530,7 @@ export class TavilyAnbieter implements SuchAnbieter {
       this.grenzen,
       abrufen,
       () => '',
+      melde,
     )
     const alle = ergebnisListe(this.name, koerper)
     const roh = alle.filter(e => brauchbareUrl(e.url) !== null)
