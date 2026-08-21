@@ -44,11 +44,11 @@ export interface Sampler {
   presencePenalty: number
   maxTokens: number
   /**
-   * keel-Namen, nicht Ollama-Namen. `'xhigh'` darf hier nie stehen: Ollamas Renderer faellt
-   * damit in den default-Zweig und antwortet `unsupported Qwen3.8 reasoning effort "xhigh"`.
-   * `normaliseEintrag` weist es vor dem Request ab, nicht erst im Wiederholungsversuch.
+   * keel-Namen. `'xhigh'` darf hier nie stehen — nicht weil der Server es abweist (er nimmt es
+   * an), sondern weil es gemessen 106 Sekunden fuer eine *kuerzere* Antwort kostet. Die Zahlen
+   * stehen bei `DENKSTUFEN`. `normaliseEintrag` weist es vor dem Request ab.
    */
-  reasoningEffort?: 'low' | 'medium' | 'high'
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high'
 }
 
 export interface Faehigkeiten {
@@ -89,13 +89,27 @@ const QUELLEN = new Set<string>(['gemessen', 'vermutet', 'herstellerangabe'])
 /**
  * Die einzigen Denkstufen, die keel hinausgibt.
  *
- * Bewusst enger als das, was ein Ollama-Server je nach Version annimmt (0.20.4 kennt nur
- * high/medium/low/none, spaeter kamen minimal/max/xhigh/ultra dazu). Die teure Falle ist
- * `'xhigh'`: es sieht wie ein gueltiger Wert aus, faellt in Ollamas default-Zweig und kostet
- * einen 400 mitten im Lauf. Eine Liste, die an der Serverversion haengt, ist keine Wache —
- * also nimmt keel die drei, die ueberall gelten, und weist alles andere hier ab.
+ * **Gemessen am 2026-08-21** gegen Ollama 0.32.15 mit `qwen3.8:27b` — eine fruehere Fassung dieses
+ * Kommentars behauptete, `'xhigh'` koste einen HTTP 400. Das ist falsch: der Server nimmt alle
+ * sieben Stufen an (`none`, `minimal`, `low`, `medium`, `high`, `max`, `xhigh`). Der Grund, es
+ * trotzdem nicht hinauszugeben, ist ein anderer und ein besserer — er steht in Zahlen da:
+ *
+ * | Stufe | Denkspur | Antwort | Zeit |
+ * |---|---|---|---|
+ * | `none`   |     0 Z |   593 Z |   7,8 s |
+ * | `low`    | 1.252 Z |   814 Z |  23,8 s |
+ * | `medium` | 1.933 Z | 1.290 Z |  37,0 s |
+ * | `high`   | 3.635 Z |   789 Z |  50,5 s |
+ * | `xhigh`  | 8.628 Z |   531 Z | 106,3 s |
+ *
+ * `xhigh` denkt am laengsten und antwortet am kuerzesten, in vierzehnfacher Zeit gegenueber
+ * `none`. `none` ist dabei kein Notbehelf, sondern der richtige Schalter fuer mechanische
+ * Arbeit — deshalb steht es hier mit drin und nicht nur als Randnotiz.
+ *
+ * `minimal`, `max` und `ultra` fehlen, weil ihre Bedeutung an der Serverversion haengt (0.20.4
+ * kennt sie nicht) und eine Liste, die an der Serverversion haengt, keine Wache ist.
  */
-export const DENKSTUFEN = new Set<string>(['low', 'medium', 'high'])
+export const DENKSTUFEN = new Set<string>(['none', 'low', 'medium', 'high'])
 
 /** The Faehigkeiten fields that must be a whole number greater than zero. */
 const GANZZAHL_FELDER = ['nutzbaresKontextfenster', 'werkzeugObergrenze', 'rundenbudget'] as const
@@ -122,13 +136,14 @@ const FAEHIGKEITEN_RUECKFALL: Faehigkeiten = {
   bilder: false,
   dokumente: false,
   aufgeschobenesLaden: false,
-  // 10, nicht 8. Der Harness liefert heute 9 Stummel aus (3 Datei- + 4 Graph-Werkzeuge +
-  // `faehigkeit_lesen` + `werkzeug_schema`, letzteres nur bei aufgeschobenem Laden). Mit dem alten
-  // Rueckfall 8 haette jeder Eintrag, der aufgeschobenes Laden einschaltet, bei *jedem* Lauf einen
-  // Hinweis in `run.started` geschrieben — eine Warnung, die bei der Vorgabekonfiguration immer
-  // anschlaegt, nutzt sich ab, bis niemand mehr hinsieht. Die Zahl ist in
-  // tests/harness/werkzeugliste.test.ts festgenagelt, damit sie nicht still auseinanderlaeuft.
-  werkzeugObergrenze: 10,
+  // 12, weil der Harness zwoelf Stummel ausliefert: 3 Datei- + 4 Graph-Werkzeuge,
+  // `faehigkeit_lesen`, `web_suchen`, `seite_lesen`, `recherchieren` und `werkzeug_schema`
+  // (letzteres nur bei aufgeschobenem Laden). Mit einem zu kleinen Rueckfall schriebe jeder
+  // Eintrag mit aufgeschobenem Laden bei *jedem* Lauf einen Hinweis in `run.started` — eine
+  // Warnung, die bei der Vorgabekonfiguration immer anschlaegt, nutzt sich ab, bis niemand mehr
+  // hinsieht. Die Zahl haengt an tests/harness/werkzeugliste.test.ts, und der prueft gegen die
+  // echte Konstruktion in harness-handlers.ts, nicht gegen einen Nachbau.
+  werkzeugObergrenze: 12,
   nutzbaresKontextfenster: 8192,
   vertragsStrenge: { schemaTiefe: 1, reparaturversuche: 1 },
   rundenbudget: 12,

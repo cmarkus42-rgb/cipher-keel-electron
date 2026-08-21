@@ -120,10 +120,11 @@ describe('baueFaehigkeitenPayload', () => {
         join(__dirname, '../../src/renderer/components/settings/EintragFormular.tsx'), 'utf8',
       )
 
-      it('bietet genau die drei Stufen an, die normaliseEintrag durchlaesst', () => {
-        expect(DENKSTUFEN_AUSWAHL.map(s => s.wert)).toEqual(['low', 'medium', 'high'])
-        // Und zwar dieselben drei: eine vierte hier waere ein 400 mitten im Lauf, eine
-        // fehlende waere eine Stufe, die die Datei erlaubt und das Formular verschweigt.
+      it('bietet genau die Stufen an, die normaliseEintrag durchlaesst', () => {
+        expect(DENKSTUFEN_AUSWAHL.map(s => s.wert)).toEqual(['none', 'low', 'medium', 'high'])
+        // Und zwar dieselben: eine zu viel hier waere 106 Sekunden fuer eine kuerzere Antwort
+        // (`xhigh`, gemessen), eine fehlende waere eine Stufe, die die Datei erlaubt und das
+        // Formular verschweigt.
         expect(new Set(DENKSTUFEN_AUSWAHL.map(s => s.wert))).toEqual(DENKSTUFEN)
       })
 

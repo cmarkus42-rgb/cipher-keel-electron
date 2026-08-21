@@ -45,9 +45,10 @@ import { toModelEndpoint, type Faehigkeiten, type ModellEintrag } from './model/
 import { clientForEndpoint } from './worker/model-client'
 import { assemblePraefixTeile } from './harness-praefix-quelle'
 import type { PraefixText } from './harness/praefix'
+import { baueNetzKontext } from './harness-netz'
 import {
   starteLauf, setzeFort, oeffneHarnessDb, lesen, laufIds, codecFuer,
-  WerkzeugRegistry, DATEI_WERKZEUGE, GRAPH_WERKZEUGE,
+  WerkzeugRegistry, DATEI_WERKZEUGE, GRAPH_WERKZEUGE, NETZ_WERKZEUGE, rechercheurWerkzeug,
   leseFaehigkeiten, faehigkeitLesenWerkzeug,
 } from './harness'
 import type { ModelAntwort, Auftrag, LaufUmgebung } from './harness'
@@ -124,6 +125,25 @@ function harnessDb(): ReturnType<typeof oeffneHarnessDb> {
   return db
 }
 
+/**
+ * Die Werkzeugliste des Laufs, an genau einer Stelle. Exportiert, damit ein Test gegen **diese**
+ * Konstruktion pruefen kann statt gegen einen Nachbau — der Nachbau in
+ * tests/harness/werkzeugliste.test.ts war gruen, waehrend die halbe Liste gar nicht verdrahtet
+ * war (siehe tests/harness/verdrahtung.test.ts).
+ *
+ * Die Netz-Werkzeuge stehen **immer** darin, auch ohne konfigurierten Suchanbieter. Grund: die
+ * Stummelliste bildet den stabilen Praefix, und der darf sich zwischen Laeufen nicht bewegen —
+ * eine Liste, die je nach Konfiguration mal neun und mal zwoelf Namen hat, kostet den
+ * Zwischenspeicher des Anbieters bei jedem Wechsel. Ohne Anbieter antworten die Werkzeuge
+ * benannt, dass Netzzugang fuer diesen Lauf nicht eingerichtet ist.
+ */
+export function baueWerkzeugRegistry(): WerkzeugRegistry {
+  return new WerkzeugRegistry([
+    ...DATEI_WERKZEUGE, ...GRAPH_WERKZEUGE, faehigkeitLesenWerkzeug,
+    ...NETZ_WERKZEUGE, rechercheurWerkzeug,
+  ])
+}
+
 function fehler(err: unknown): HarnessAntwort<never> {
   return { ok: false, meldung: err instanceof Error ? err.message : String(err) }
 }
@@ -190,10 +210,10 @@ function sendeUeberTransport(eintrag: ModellEintrag) {
  * `strom` sees; the caller decides what "the run has visibly started" means for its own race
  * against the loop's full completion (see HARNESS_LAUF_STARTEN and HARNESS_LAUF_FORTSETZEN).
  */
-function baueLaufUmgebung(
+async function baueLaufUmgebung(
   laufId: string, eintrag: ModellEintrag, auftragstext: string, wurzel: string,
   services: AppServices, aufJedesEreignis: (ev: HarnessEreignis) => void,
-): LaufUmgebung {
+): Promise<LaufUmgebung> {
   // Gelesen wird beim Bau der Umgebung, einmal je Lauf — nicht je Zug: der stabile Praefix muss
   // ueber alle Zuege zeichengleich bleiben, und ein Leser, der pro Zug wieder auf die Platte geht,
   // wuerde bei jeder Aenderung an .claude/ mitten im Lauf den Prompt-Cache des Anbieters verfehlen.
@@ -211,9 +231,10 @@ function baueLaufUmgebung(
     praefixTeile: assemblePraefixTeile(auftragstext, befund.faehigkeiten),
     wache: { wurzel, heim: homedir(), userDataPfad: app.getPath('userData') },
     graphDb: services.graphDb,
-    registry: new WerkzeugRegistry([
-      ...DATEI_WERKZEUGE, ...GRAPH_WERKZEUGE, faehigkeitLesenWerkzeug,
-    ]),
+    registry: baueWerkzeugRegistry(),
+    // Der Hauptlauf faehrt gegen die Positivliste ('whitelist'). Der Unterlauf des Rechercheurs
+    // setzt in rechercheur.ts auf 'offen' um und bekommt dafuer keine Datei- und Graph-Werkzeuge.
+    netz: await baueNetzKontext(),
     strom: (ev) => {
       broadcast(HARNESS_EREIGNIS, ev as HarnessEreignis)
       aufJedesEreignis(ev as HarnessEreignis)
@@ -424,7 +445,7 @@ export function registerHarnessHandlers(services: AppServices): void {
         },
         // The first appended event is always run.started — see lauf.ts's starteLauf, which
         // writes it before entering the loop. Once it lands, startup has succeeded.
-        baueLaufUmgebung(laufId, eintrag, w.auftragstext, w.wurzel, services, () => {
+        await baueLaufUmgebung(laufId, eintrag, w.auftragstext, w.wurzel, services, () => {
           if (markiereGestartet) { markiereGestartet(); markiereGestartet = null }
         }),
         laufId,
@@ -536,7 +557,7 @@ export function registerHarnessHandlers(services: AppServices): void {
       // for the run's entire remaining duration.
       const laufPromise = setzeFort(
         laufId, auftrag,
-        baueLaufUmgebung(laufId, eintrag, auftrag.auftragstext, auftrag.wurzel, services, () => {
+        await baueLaufUmgebung(laufId, eintrag, auftrag.auftragstext, auftrag.wurzel, services, () => {
           if (markiereGestartet) { markiereGestartet(); markiereGestartet = null }
         }),
       )

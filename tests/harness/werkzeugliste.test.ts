@@ -13,20 +13,30 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { WerkzeugRegistry, META_WERKZEUG_NAME } from '../../src/main/harness/werkzeuge'
-import { DATEI_WERKZEUGE } from '../../src/main/harness/werkzeug-datei'
-import { GRAPH_WERKZEUGE } from '../../src/main/harness/werkzeug-graph'
-import { faehigkeitLesenWerkzeug } from '../../src/main/harness/faehigkeiten'
+import { META_WERKZEUG_NAME } from '../../src/main/harness/werkzeuge'
 import { normaliseEintrag } from '../../src/main/model/entry'
+import { vi } from 'vitest'
 
-/** Genau die Zusammenstellung aus harness-handlers.ts. */
-function ausgelieferteRegistry(): WerkzeugRegistry {
-  return new WerkzeugRegistry([...DATEI_WERKZEUGE, ...GRAPH_WERKZEUGE, faehigkeitLesenWerkzeug])
+vi.mock('electron', () => ({
+  ipcMain: { handle: vi.fn() },
+  app: { getPath: () => '/tmp/keel-test', getAppPath: () => '/tmp/keel-test' },
+  dialog: { showOpenDialog: vi.fn() },
+  BrowserWindow: { fromWebContents: () => null },
+}))
+
+/**
+ * **Nicht** nachgebaut, sondern die echte Konstruktion aus harness-handlers.ts. Der Nachbau war
+ * hier der Fehler: er blieb gruen, waehrend die halbe Werkzeugliste gar nicht verdrahtet war
+ * (siehe tests/harness/verdrahtung.test.ts).
+ */
+async function ausgelieferteRegistry() {
+  const { baueWerkzeugRegistry } = await import('../../src/main/harness-handlers')
+  return baueWerkzeugRegistry()
 }
 
 describe('die ausgelieferte Werkzeugliste', () => {
-  it('traegt genau diese Namen', () => {
-    const namen = ausgelieferteRegistry().stummel(false).map(s => s.name).sort()
+  it('traegt genau diese Namen', async () => {
+    const namen = (await ausgelieferteRegistry()).stummel(false).map(s => s.name).sort()
     // Woertlich, nicht als Anzahl: ein umbenanntes Werkzeug ist eine Aenderung am stabilen
     // Praefix und damit am Zwischenspeicher des Anbieters. Das soll auffallen.
     expect(namen).toEqual([
@@ -37,21 +47,24 @@ describe('die ausgelieferte Werkzeugliste', () => {
       'graph_knoten_holen',
       'graph_suchen',
       'inhalt_suchen',
+      'recherchieren',
+      'seite_lesen',
       'verzeichnis_listen',
+      'web_suchen',
     ])
   })
 
-  it('kommt mit aufgeschobenem Laden auf 9 Stummel — das Meta-Werkzeug zaehlt mit', () => {
-    const mitMeta = ausgelieferteRegistry().stummel(true).map(s => s.name)
+  it('kommt mit aufgeschobenem Laden auf 12 Stummel — das Meta-Werkzeug zaehlt mit', async () => {
+    const mitMeta = (await ausgelieferteRegistry()).stummel(true).map(s => s.name)
     expect(mitMeta).toContain(META_WERKZEUG_NAME)
-    expect(mitMeta).toHaveLength(9)
+    expect(mitMeta).toHaveLength(12)
   })
 
   /**
    * Der eigentliche Punkt dieses Tests. Er verbindet zwei Zahlen, die in verschiedenen Dateien
    * stehen und bisher unabhaengig voneinander wandern konnten.
    */
-  it('bleibt unter der Vorgabe-Obergrenze, auch mit aufgeschobenem Laden', () => {
+  it('bleibt unter der Vorgabe-Obergrenze, auch mit aufgeschobenem Laden', async () => {
     const eintrag = normaliseEintrag({
       id: 'probe', name: 'Probe', art: 'local-http',
       erreichbarkeit: { art: 'local-http', host: '127.0.0.1', port: 11434, model: 'egal' },
@@ -60,7 +73,7 @@ describe('die ausgelieferte Werkzeugliste', () => {
       // den dieser Test selbst setzt.
       faehigkeiten: { codec: 'openai-chat', werkzeugmodus: 'nativ', aufgeschobenesLaden: true },
     })
-    const anzahl = ausgelieferteRegistry().stummel(true).length
+    const anzahl = (await ausgelieferteRegistry()).stummel(true).length
     expect(anzahl).toBeLessThanOrEqual(eintrag.faehigkeiten!.werkzeugObergrenze)
   })
 })

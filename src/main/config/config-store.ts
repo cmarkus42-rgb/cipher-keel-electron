@@ -89,6 +89,29 @@ export interface CipherKeelConfig {
       rollen: { tagging: string; worker: string }
     }
   }
+  /**
+   * Netzzugang der Harness-Werkzeuge. Leer ausgeliefert, und das ist die Vorgabe: ohne
+   * Suchanbieter melden `web_suchen` und `seite_lesen` benannt, dass Netzzugang nicht
+   * eingerichtet ist — sie geben keine leeren Treffer zurueck. Ein Agent, der leere Ergebnisse
+   * statt eines Fehlers bekommt, halluziniert die Antwort.
+   *
+   * Der Tavily-Schluessel steht **nicht** hier, sondern im Schluesselbund unter
+   * `cipher-keel-api-tavily` (bzw. in `CIPHER_KEEL_API_TAVILY`) — dieselbe Ablage wie fuer die
+   * Modell-Schluessel, siehe worker/api-keys.ts. Eine Konfigurationsdatei ist kein Ort fuer
+   * Geheimnisse.
+   */
+  netz: {
+    /** SearXNG-Endpunkt, z.B. `http://100.67.95.13:8080`. Leer = nicht eingerichtet. */
+    searxngEndpunkt: string
+    /** 'tavily' | 'searxng' | '' fuer automatisch (Tavily zuerst, dann SearXNG). */
+    bevorzugt: string
+    /**
+     * Zusaetzliche Hosts fuer den Whitelist-Weg im Hauptlauf, ueber die Vorgabeliste
+     * (`VORGABE_POSITIVLISTE` in harness/werkzeug-netz.ts) hinaus. Der offene Weg des
+     * Rechercheurs liest sie nicht — dort gilt keine Positivliste, dafuer keine Datei-Werkzeuge.
+     */
+    zusaetzlichePositivliste: string[]
+  }
   projects: {
     list: ProjectRecord[]
     activeId: string | null
@@ -141,6 +164,11 @@ const defaults: CipherKeelConfig = {
       tiers: { light: '', standard: '', heavy: '' },
       rollen: { tagging: '', worker: '' },
     },
+  },
+  netz: {
+    searxngEndpunkt: '',
+    bevorzugt: '',
+    zusaetzlichePositivliste: [],
   },
   projects: {
     list: [],

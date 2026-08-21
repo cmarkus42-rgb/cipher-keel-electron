@@ -32,7 +32,7 @@ type Oertlichkeit = 'lokal' | 'eigenes-netz' | 'fremdes-netz'
 type Codec = FaehigkeitenAnsicht['codec']
 type Werkzeugmodus = FaehigkeitenAnsicht['werkzeugmodus']
 /** Empty string means "keine Stufe angeben" -- the field stays out of the payload entirely. */
-type Denkstufe = '' | 'low' | 'medium' | 'high'
+type Denkstufe = '' | 'none' | 'low' | 'medium' | 'high'
 
 /** Codecs no run can actually use yet -- see codecFuer in src/main/harness/codec.ts. */
 const UNGEBAUTE_CODECS = new Set<Codec>(['ollama-native', 'text'])
@@ -47,13 +47,18 @@ const SAMPLER_CODEC: Codec = 'openai-chat'
  * Die Denkstufen als Liste, nicht als handgeschriebene `<option>`-Zeilen im JSX.
  *
  * Damit ist „gar nicht erst anbieten" pruefbar: `tests/renderer/eintrag-formular.test.ts` legt
- * diese Liste gegen `DENKSTUFEN` in src/main/model/entry.ts. Eine vierte Stufe -- `xhigh` ist
- * die teure -- faellt dort auf, statt erst beim Speichern als Fehlermeldung zurueckzukommen.
+ * diese Liste gegen `DENKSTUFEN` in src/main/model/entry.ts. Eine Stufe zu viel -- `xhigh` ist
+ * die teure, gemessen 106 s fuer eine kuerzere Antwort -- faellt dort auf, statt erst beim
+ * Speichern als Fehlermeldung zurueckzukommen.
  */
 export const DENKSTUFEN_AUSWAHL: ReadonlyArray<{ wert: Exclude<Denkstufe, ''>; text: string }> = [
-  { wert: 'low', text: 'low — kurz denken' },
-  { wert: 'medium', text: 'medium — Vorgabe fuer Agentenlaeufe' },
-  { wert: 'high', text: 'high — lange denken' },
+  // Die Zeiten stammen aus einer Messung am 2026-08-21 gegen qwen3.8:27b auf dem DGX Spark,
+  // an einer Frage mit echtem Denkbedarf. Sie stehen hier, weil die Wahl sonst nach Geschmack
+  // aussieht: der Unterschied zwischen 'none' und 'high' ist Faktor sechs an Wartezeit.
+  { wert: 'none', text: 'none — gar nicht denken (~8 s, fuer mechanische Arbeit)' },
+  { wert: 'low', text: 'low — kurz denken (~24 s)' },
+  { wert: 'medium', text: 'medium — Vorgabe fuer Agentenlaeufe (~37 s, laengste Antwort)' },
+  { wert: 'high', text: 'high — lange denken (~51 s)' },
 ]
 
 export interface Felder {

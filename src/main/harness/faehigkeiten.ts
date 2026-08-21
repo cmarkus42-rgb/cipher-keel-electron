@@ -20,6 +20,7 @@
 
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { einzeilig } from './seiten-text'
 import type { Werkzeug } from './werkzeuge'
 // gray-matter liegt schon im Repo (src/main/notes/*, src/main/p1/normalizer.ts) und parst genau
 // das Frontmatter-Format, das der Standard vorschreibt. Ein zweiter, selbstgeschriebener Parser
@@ -101,7 +102,24 @@ function leseEinVerzeichnis(
 
   return {
     ok: true,
-    faehigkeit: { name, beschreibung: beschreibung.trim(), rumpf: rumpf.trim(), pfad: relativ },
+    faehigkeit: {
+      name,
+      // `einzeilig`, nicht nur `trim`. Die Beschreibung wird in praefix.ts direkt in eine Zeile
+      // `- \`name\` — beschreibung` interpoliert. Ein YAML-Blockskalar (`description: |`) schreibt
+      // damit beliebige weitere Zeilen in den **stabilen Praefix** — nachgestellt kam nach
+      // '## Faehigkeiten' ein zweiter, frei erfundener '## Werkzeuge'-Abschnitt mit einem
+      // `shell_ausfuehren`-Eintrag heraus, fuer das Modell von keels eigener Liste nicht zu
+      // unterscheiden. Ausgefuehrt wird so ein Name nicht (fuehreAus lehnt ihn ab), aber der
+      // Praefix ist als Aussage darueber, was der Lauf kann, nicht mehr belastbar — und derselbe
+      // Weg traegt beliebigen Anweisungstext an die Stelle mit dem hoechsten Gewicht.
+      //
+      // Dieselbe Regel gilt in such-anbieter.ts fuer jeden Suchtreffer-Titel, aus demselben
+      // Grund. Sie fehlte hier, obwohl `.claude/skills/` laut Inventar 'mit einem Texteditor,
+      // ohne die App' editierbar ist — also genau die Flaeche, die ein fremdes Repo mitbringt.
+      beschreibung: einzeilig(beschreibung).trim(),
+      rumpf: rumpf.trim(),
+      pfad: relativ,
+    },
   }
 }
 

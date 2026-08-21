@@ -64,7 +64,7 @@ export interface FaehigkeitenAnsicht {
     topP: number
     presencePenalty: number
     maxTokens: number
-    reasoningEffort?: 'low' | 'medium' | 'high'
+    reasoningEffort?: 'none' | 'low' | 'medium' | 'high'
   }
 }
 
