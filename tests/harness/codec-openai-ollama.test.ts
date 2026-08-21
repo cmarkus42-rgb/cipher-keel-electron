@@ -137,9 +137,27 @@ describe('Anthropic bleibt unberuehrt', () => {
           inhalt: [{ art: 'text', text: 'Inhalt von a.ts' }] },
       ] },
     ], [], { ...KANN, codec: 'anthropic', denkbloecke: true }) as Draht
+
+    // Die Zahl zuerst, und zwar bevor irgendeine Schleife laeuft: ohne sie ist der Test bei
+    // `messages: []` gruen, weil der Schleifenkoerper nie ausgefuehrt wird. Selbst gefahren --
+    // `messages: nachrichten.map(...)` in codec-anthropic.ts:58 durch `[]` ersetzt, und diese
+    // Datei meldete 9 passed. Genau den Fall behauptet der Titel abzudecken.
+    expect(koerper.messages.length).toBe(2)
     for (const m of koerper.messages) {
       expect('content' in m).toBe(true)
       expect(Array.isArray(m.content)).toBe(true)
     }
+    // Und die Bloecke selbst, nicht nur ihre Huelle: `content: []` je Nachricht laesst ebenfalls
+    // alles weg und kaeme durch beide Pruefungen oben (ein leeres Array ist ein Array). Erst die
+    // volle Drahtform macht "laesst nichts weg" pruefbar.
+    expect(koerper.messages).toEqual([
+      { role: 'assistant', content: [
+        { type: 'tool_use', id: 'c1', name: 'datei_lesen', input: { pfad: 'a.ts' } },
+      ] },
+      { role: 'user', content: [
+        { type: 'tool_result', tool_use_id: 'c1', is_error: false,
+          content: [{ type: 'text', text: 'Inhalt von a.ts' }] },
+      ] },
+    ])
   })
 })
