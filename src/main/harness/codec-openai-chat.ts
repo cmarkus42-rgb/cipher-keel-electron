@@ -42,6 +42,25 @@ function inhaltsteil(b: Block, f: Faehigkeiten): Record<string, unknown> {
   }
 }
 
+/**
+ * Der `content`-Wert fuer eine Nachricht — Zeichenkette, wo das verlustfrei geht, sonst Array.
+ *
+ * Ollamas /v1-Schicht baut aus jedem Inhaltsteil eine eigene interne Nachricht. Ob Rolle `tool`
+ * mit Array-Content ueberhaupt durchgeht, ist unbelegt (Messpunkt M2). Ein einzelner Textblock
+ * traegt in der Zeichenketten-Form dieselbe Information und ist die Form, die jeder /v1-Server
+ * sicher kann; alles andere bleibt Array, weil das Zusammenlegen mehrerer Bloecke einen Trenner
+ * erfinden wuerde, den niemand gemessen hat.
+ *
+ * Bewusst am kanonischen Blocktyp `text` aufgehaengt, nicht am erzeugten Teil: ein `denken`-Block
+ * ohne Modellunterstuetzung wird zu einem Textteil mit Vorspann, behaelt aber die Array-Form —
+ * dieser Uebersetzungspfad ist in `codec-openai-chat.test.ts` auf die Teil-Form festgelegt, und
+ * er ist nicht der Pfad, den Fehler #14181 oder M2 betreffen.
+ */
+function inhaltswert(bloecke: Block[], f: Faehigkeiten): unknown {
+  if (bloecke.length === 1 && bloecke[0].art === 'text') return bloecke[0].text
+  return bloecke.map(b => inhaltsteil(b, f))
+}
+
 function stopGrund(roh: string): ModelAntwort['stopGrund'] {
   const normalisiert =
     roh === 'stop' ? 'ende' :
@@ -61,7 +80,7 @@ export const openAiChatCodec: Codec = {
         const e = w as Extract<Block, { art: 'werkzeug-ergebnis' }>
         messages.push({
           role: 'tool', tool_call_id: e.aufrufId,
-          content: e.inhalt.map(b => inhaltsteil(b, f)),
+          content: inhaltswert(e.inhalt, f),
         })
       }
       const aufrufe = n.bloecke.filter(b => b.art === 'werkzeug-aufruf')
@@ -69,8 +88,12 @@ export const openAiChatCodec: Codec = {
       if (rest.length > 0 || aufrufe.length > 0) {
         const m: Record<string, unknown> = {
           role: n.rolle === 'nutzer' ? 'user' : 'assistant',
-          content: rest.map(b => inhaltsteil(b, f)),
         }
+        // Feld weglassen statt leer schreiben. Ollama-Fehler #14181: `content: []` neben
+        // `tool_calls` reicht die /v1-Schicht ungefiltert an den Renderer, der einen leeren Wert
+        // anders behandelt als ein fehlendes Feld — qwen3-coder faellt danach in Folge-Zuegen aus
+        // dem strukturierten Werkzeugmodus in Text-Markup (`<function=...>`).
+        if (rest.length > 0) m.content = inhaltswert(rest, f)
         if (aufrufe.length > 0) {
           m.tool_calls = aufrufe.map(b => {
             const a = b as Extract<Block, { art: 'werkzeug-aufruf' }>
