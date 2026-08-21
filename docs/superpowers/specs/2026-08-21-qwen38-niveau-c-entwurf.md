@@ -901,3 +901,54 @@ Pipeline. Alle Zahlen in Abschnitt 4 (>90% adaptiv, 11,2% bei Claude for Chrome,
 sind uebernommen. Was fuer diese Modell-/Prompt-Kombination gilt, braeuchte ein eigenes
 Red-Team-Testset. Solange es das nicht gibt, traegt allein die Architektur — und deshalb ist sie
 so geschnitten, dass sie ohne diese Zahl auskommt.
+
+---
+
+## Nachtrag 2026-08-21: die Zweiteilung des Netzzugangs — Entscheidung des Nutzers
+
+Abschnitt 3 und 4 kannten **einen** Netzweg: alles durch den gekapselten Rechercheur. Der Nutzer
+hat anders entschieden, und die Fassung ist besser:
+
+> „neben den gekapselten rechercheur für freie suche stellen wir die freie suche mit whitelist —
+> github suche und ähnliches bleibt dem rechercheur — aber der sollte quasi als tool aufrufbar und
+> nutzbar sein"
+
+Damit gibt es **zwei Wege mit verschiedener Vertrauensstufe**, nicht einen:
+
+**Weg 1 — direkt, gegen eine Whitelist.** `web_suchen` und `seite_lesen` stehen im **Hauptlauf**,
+aber nur für Ziele auf einer Positivliste: Dokumentationsseiten, deren Inhalt wir als
+Nachschlagewerk behandeln (`nodejs.org`, `developer.mozilla.org`, `electronjs.org`, `vitest.dev`,
+`docs.ollama.com`, `docs.anthropic.com` und dergleichen). Der Gewinn ist nicht Bequemlichkeit,
+sondern Kontext: das Modell kann im **selben** Lauf eine Datei lesen und die zugehörige
+API-Dokumentation nachschlagen. Genau das nimmt der Modus-Schnitt weg, den Abschnitt 4.1 als
+billigere Zwischenstufe vorschlug — deshalb fällt diese Zwischenstufe weg.
+
+**Weg 2 — der gekapselte Rechercheur, für das offene Netz.** `recherchieren` bleibt wie in 3.4 und
+4.1 entworfen: eigener Unterlauf, eigene Registry (`web_suchen`, `seite_lesen`, `faehigkeit_lesen`),
+**kein** Datei- und kein Graph-Werkzeug, Rückgabe als Text mit Quellenliste. Alles, was nicht auf
+der Whitelist steht — GitHub, Foren, Blogs, Suchtreffer aus dem offenen Netz — läuft ausschließlich
+hier. Und er ist selbst ein Werkzeug des Hauptlaufs, also aufrufbar wie jedes andere.
+
+**Warum das sicherheitstechnisch trägt.** Die Trifecta aus Abschnitt 4 wird an der Stelle
+zerlegt, an der sie gefährlich ist, und nur dort:
+
+| | Weg 1 (Whitelist) | Weg 2 (Rechercheur) |
+|---|---|---|
+| Wer wählt das Ziel | wir, vorab | der Angreifer, potenziell |
+| Datei- und Graph-Werkzeuge daneben | ja | **nein** |
+| Rückgabe | Seitentext | nur Text plus Quellen, keine Blöcke |
+
+Ein präparierter Inhalt auf `developer.mozilla.org` setzt einen Einbruch bei Mozilla voraus; wer
+den hat, hat größere Ziele. Ein präparierter Inhalt auf einer beliebigen Fundstelle des offenen
+Netzes setzt nichts voraus — und trifft dort auf einen Lauf ohne Dateizugriff.
+
+**Was das an Abschnitt 4.1 ändert:** Punkt (1) bleibt unverändert. Die `netzwache` (Punkt 2)
+bekommt einen zweiten Modus: im Hauptlauf prüft sie zusätzlich gegen die Positivliste, im
+Unterlauf nicht. Alle übrigen Regeln — nur `https`, keine privaten und **keine
+Tailscale-Ziele**, Prüfung bei **jeder** Weiterleitung, `seite_lesen` nur auf URLs aus Treffern
+desselben Laufs, keine Auth-Header — gelten in **beiden** Modi unverändert. Die Positivliste ist
+eine anpassbare Fläche im Sinne von CK-NFR-012 und braucht ihren Eintrag.
+
+**Offene Frage 2 ist damit beantwortet** (Rechercheur, nicht Modus-Schnitt). Offene Frage 3 (die
+Spec sagt an zwei Stellen Nein) bleibt und wird mit dem Bau nachgeführt. Offene Frage 5
+(SearXNG oder Tavily) bleibt offen — die Schnittstelle wird gebaut, der Anbieter ist Konfiguration.
