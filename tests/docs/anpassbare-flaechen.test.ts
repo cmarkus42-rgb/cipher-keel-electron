@@ -101,6 +101,37 @@ describe('CK-NFR-012 — the adjustable-surface inventory', () => {
     expect(absatz).toContain('options')
   })
 
+  // Entwurf 1.4 macht den Eintrag zur Pflicht, sobald eine neue anpassbare Flaeche entsteht
+  // („Eine Zeile in docs/anpassbare-flaechen.md"). Die Zufuhr hat gleich mehrere gebracht, und
+  // 58b7ef5 hatte den Eintrag fuer die netzwache-Positivliste ausdruecklich vertagt. Wer den
+  // Suchanbieter im Betrieb umstellen will, findet die Stellschraube sonst nur im Quelltext —
+  // dieselbe Klasse Fehler, gegen die CK-NFR-012 steht.
+  it('nennt die Suchkonfiguration der Zufuhr', () => {
+    for (const flaeche of ['searxngEndpunkt', 'tavilySchluessel', 'bevorzugt', 'such-anbieter.ts']) {
+      expect(INVENTORY).toContain(flaeche)
+    }
+  })
+
+  it('nennt die Grenzen der Suche, die kein Werkzeugargument setzt', () => {
+    for (const flaeche of ['MAX_AUSZUG_ZEICHEN', 'MAX_ANFRAGE_LAENGE', 'ZEITBUDGET_MS', 'MAX_ANTWORT_BYTES']) {
+      expect(INVENTORY).toContain(flaeche)
+    }
+  })
+
+  it('nennt die Extraktionsgrenzen von seite_lesen', () => {
+    for (const flaeche of ['MIN_ZEICHEN', 'STANDARD_MAX_ZEICHEN', 'HARTE_MAX_ZEICHEN', 'seiten-text.ts']) {
+      expect(INVENTORY).toContain(flaeche)
+    }
+  })
+
+  it('nennt die Positivliste der netzwache — der Eintrag, den 58b7ef5 vertagt hat', () => {
+    expect(INVENTORY).toContain('Positivliste')
+    expect(INVENTORY).toContain('netzwache')
+    // Die Falle, die an dieser Flaeche haengt, gehoert an die Flaeche und nicht nur in den
+    // Quelltext: ein Eintrag gilt samt aller Unterdomaenen, beliebig tief.
+    expect(INVENTORY).toContain('Unterdomaenen')
+  })
+
   it('documents the cost budget price table', () => {
     // The price table is adjustable because rates change faster than releases.
     // It must be documented, and the key constraint — unknown models cost zero,

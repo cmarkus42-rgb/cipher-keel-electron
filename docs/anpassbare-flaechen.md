@@ -1,6 +1,7 @@
 # Anpassbare Flächen — Inventar (CK-NFR-012)
 
-**Stand:** 2026-08-17 — Settings-Fenster nachgeführt (siehe
+**Stand:** 2026-08-21 — Zufuhr nachgeführt (Suchanbieter, netzwache-Positivliste,
+Extraktionsgrenzen; siehe Abschnitt „Zufuhr"). Davor 2026-08-17, Settings-Fenster (siehe
 `docs/superpowers/specs/2026-08-17-settings-fenster-design.md`)
 
 > **CK-NFR-012:** Jede Fläche, die ein Nutzer sinnvoll anpassen kann — Einstellung,
@@ -193,6 +194,42 @@ der wenigen belegten Argumente **für** diesen Codec — und es ist nicht dassel
 dagegen: bei `tool_choice` und `parallel_tool_calls` sitzt die Lücke tatsächlich in Ollama selbst,
 `/api/chat` verhält sich dort genauso, und ein eigener Codec kauft nichts (Entwurf, Abschnitt 2).
 Wer die beiden Fälle vermengt, streicht ein Argument, das es gibt.
+
+## Zufuhr: Suchanbieter, Netzwache, Seitenextraktion — Stand 2026-08-21
+
+Die Zufuhr (`web_suchen`, `seite_lesen`) bringt drei Gruppen anpassbarer Flächen mit. **Keine
+davon hat heute eine Oberfläche**, und der Werkzeugrumpf darüber ist noch nicht gebaut — das
+ist der ehrliche Stand, und er steht hier, weil CK-NFR-012 genau das verlangt: benannt werden
+muss eine Fläche auch dann, wenn die App sie noch nicht erreicht.
+
+| Fläche | Herkunft | Wirkung | In der App sichtbar | Editierbar |
+|---|---|---|---|---|
+| `SuchKonfiguration.searxngEndpunkt` | `src/main/harness/such-anbieter.ts` | Basis-URL der SearXNG-Instanz, z. B. `http://100.67.95.13:8080` auf MS-01. **Läuft absichtlich an der netzwache vorbei** (siehe unten) | nein | nein — noch kein Config-Schlüssel, noch kein Leser |
+| `SuchKonfiguration.tavilySchluessel` | `src/main/harness/such-anbieter.ts`; das Geheimnis selbst gehört wie jeder API-Schlüssel in Keychain/Umgebung, nicht in die Config | Schaltet den Tavily-Anbieter frei | nein | nein — noch kein Config-Schlüssel |
+| `SuchKonfiguration.bevorzugt` | `src/main/harness/such-anbieter.ts`, gelesen von `waehleAnbieter` | Ausdrückliche Wahl zwischen `searxng` und `tavily`. Ohne Vorgabe gewinnt Tavily — bis M6 gemessen ist. Ist der bevorzugte Anbieter nicht konfiguriert, wird das gesagt, statt still auf den anderen auszuweichen | nein | nein |
+| `MAX_ANFRAGE_LAENGE` (200), `MAX_ANZAHL` (10), `MAX_AUSZUG_ZEICHEN` (300), `MAX_TITEL_ZEICHEN` (200) | Konstanten in `src/main/harness/such-anbieter.ts` (§3.4) | Grenzen der Anfrage und der Trefferdarstellung. Die 200 Zeichen der Anfrage sind zugleich eine Ausleit-Bremse: eine Suchanfrage geht unredigiert nach draußen | nein | nein — nur durch Ändern der Konstante und Neubau |
+| `ZEITBUDGET_MS` (10.000), `MAX_ANTWORT_BYTES` (1.000.000) | Konstanten in `src/main/harness/such-anbieter.ts`, überschreibbar je Anbieter-Instanz (`SuchGrenzen`) | Zeit- und Größengrenze des Suchabrufs. Sie stehen **hier** und nicht in der netzwache, weil dieser eine Abruf an ihr vorbeiläuft | nein | nein — nur durch Ändern der Konstante und Neubau |
+| `MIN_ZEICHEN` (250), `STANDARD_MAX_ZEICHEN` (32.000), `HARTE_MAX_ZEICHEN` (48.000) | Konstanten in `src/main/harness/seiten-text.ts` (§3.3/§3.4) | Untergrenze für brauchbaren Extrakt (darunter: benannte Absage statt Erfolg) und die Ober­grenzen, auf die ein modellgewähltes `max_zeichen` geklemmt wird | nein | nein — nur durch Ändern der Konstante und Neubau |
+| `NetzWacheKontext.positivliste` | `src/main/harness/netzwache.ts`, gefüllt vom Aufrufer | Welche Hosts der **Hauptlauf** überhaupt erreichen darf. Der Unterlauf des Rechercheurs (`modus: 'offen'`) überspringt genau diese eine Regel | nein | nein — heute im Quelltext des Aufrufers, keine Config, keine Oberfläche |
+
+**Zwei Fallen, die zur Positivliste gehören und deshalb hier stehen und nicht nur im Quelltext:**
+
+1. **Ein Eintrag gilt für die Domäne samt aller Unterdomaenen, beliebig tief.** `nodejs.org`
+   erlaubt auch `beliebig.docs.nodejs.org`. Für ein Nachschlagewerk ist das gewollt. Für eine
+   Domäne, die Unterdomänen an Fremde vergibt — `github.io`, `readthedocs.io`, `vercel.app`,
+   `pages.dev` —, ist es eine Einladung: mit einem solchen Eintrag steht fremder Nutzerinhalt
+   im Hauptlauf neben `datei_lesen` und den Graph-Werkzeugen.
+2. **Die Positivliste ist keine Ausleit-Grenze.** Eine erlaubte URL trägt ihren Query-String
+   mit hinaus.
+
+**Warum der Suchendpunkt nicht durch die netzwache läuft.** `pruefeUrl` lässt nur `https` durch
+und sperrt `100.64.0.0/10` (Tailscale); der SearXNG-Endpunkt auf MS-01 ist `http` im Tailnet und
+fällt damit doppelt durch. Ihn hindurchzuführen hieße, beides zu öffnen — und dahinter liegt ein
+unauthentifizierter Ollama auf `100.78.7.108:11434`. Der Unterschied, der es trägt: das **Suchziel
+ist betreiberkonfiguriert, nicht modellgewählt** — es steht in der Config, nie in einem
+Werkzeugargument. Der Preis dafür sind die eigenen Grenzen der Datei (Zeile `ZEITBUDGET_MS` /
+`MAX_ANTWORT_BYTES` oben). Für `seite_lesen`, dessen Ziel das Modell wählt, gilt das Gegenteil:
+dort ist die netzwache Pflicht.
 
 ## Kostenbudget — versionierte Preistabelle
 

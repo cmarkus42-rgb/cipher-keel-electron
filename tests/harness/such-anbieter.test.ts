@@ -9,12 +9,20 @@
 //   3. Die `!antwort.ok`-Pruefung in `SearxngAnbieter` entfernt: 2 rot — HTTP 502 und der
 //      403-Limiter kamen als „null Treffer" durch, nicht als Fehler.
 //   4. Die 200-Zeichen-Grenze der Anfrage entfernt: 2 rot, fuer beide Anbieter.
+//   5. Runde 2, gegen den Stand vor der Behebung ausgefuehrt: 16 rot. Der vergiftete Titel kam
+//      als `expected 'Harmlos​󠀁󠁉󠁧' to be 'Harmlos'` an, ein 4.000-Zeichen-Auszug ungekappt,
+//      zwei missgebildete Eintraege als `[ { titel: '', url: '', … } ]` mitgezaehlt, der
+//      werfende Abrufer als roher TypeError statt SuchFehler — und die beiden Zeitbudget-Tests
+//      liefen 5.006 ms in vitests eigene Zeitgrenze, weil es keine Uhr gab. Nach der Behebung
+//      beenden sie sich in 20 ms.
 //
 // Kein Netz: `abrufen` wird eingespeist, jede Antwort ist eine Zeichenkette im Test.
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   SearxngAnbieter, TavilyAnbieter, SuchFehler, waehleAnbieter,
-  MAX_ANFRAGE_LAENGE, MAX_ANZAHL,
+  MAX_ANFRAGE_LAENGE, MAX_ANZAHL, MAX_AUSZUG_ZEICHEN, MAX_TITEL_ZEICHEN,
 } from '../../src/main/harness/such-anbieter'
 
 /** Ein Abrufer, der eine feste JSON-Antwort liefert und die Aufrufe mitschreibt. */
@@ -42,8 +50,18 @@ const SEARX_ANTWORT = {
   ],
 }
 
-const searx = () => new SearxngAnbieter('http://100.67.95.13:8080/')
-const tavily = () => new TavilyAnbieter('tvly-geheim')
+const searx = (grenzen = {}) => new SearxngAnbieter('http://100.67.95.13:8080/', grenzen)
+const tavily = (grenzen = {}) => new TavilyAnbieter('tvly-geheim', grenzen)
+
+/** Ein Abrufer, der wirft — DNS aus, Verbindung abgelehnt, `redirect: 'error'`. */
+function werfenderAbrufer(fehler: Error) {
+  return (async () => { throw fehler }) as unknown as typeof fetch
+}
+
+/** Ein Abrufer, der nie antwortet. Ohne Zeitbudget haengt der Werkzeugaufruf an ihm fest. */
+function haengenderAbrufer() {
+  return (async () => new Promise<Response>(() => {})) as unknown as typeof fetch
+}
 
 describe('SearXNG', () => {
   it('fragt format=json am konfigurierten Endpunkt', async () => {
@@ -97,11 +115,19 @@ describe('SearXNG', () => {
     expect(engineLage).not.toContain('15 Tage')
   })
 
-  it('meldet null Treffer als Lage, nicht als Erfolg mit leerer Liste', async () => {
+  it('meldet null Treffer als Lage, ohne eine Engine-Auskunft zu erfinden', async () => {
+    // Vorher stand hier woertlich „keine Engine hat geantwortet". Das ist eine Auskunft, die
+    // dieses Modul nicht hat: SearXNG liefert `results: []` auch dann, wenn alle Engines
+    // geantwortet haben und keine etwas fand. Der Lauf schloss daraus auf einen Ausfall der
+    // Suchinfrastruktur und formulierte um — oder hielt einen echten Totalausfall fuer ein
+    // leeres Suchergebnis. Der Tavily-Zweig weigert sich an derselben Stelle ausdruecklich,
+    // eine Engine-Lage zu erfinden; hier tat er es.
     const { abrufen } = jsonAbrufer({ results: [], unresponsive_engines: [['google', 'blocked']] })
     const { treffer, engineLage } = await searx().suche('frage', 5, abrufen)
     expect(treffer).toHaveLength(0)
-    expect(engineLage).toContain('keine Engine hat geantwortet')
+    expect(engineLage).not.toContain('keine Engine hat geantwortet')
+    expect(engineLage).toContain('null Treffer')
+    expect(engineLage).toContain('keine Engine hat einen Treffer geliefert')
     expect(engineLage).toContain('google (blocked)')
   })
 
@@ -204,6 +230,109 @@ describe('Grenzen der Anfrage — fuer beide Anbieter gleich', () => {
       await expect(bauen().suche('frage', 0, abrufen)).resolves.toBeTruthy()
     })
   }
+})
+
+describe('Treffertexte sind fremdbestimmter Netzinhalt — fuer beide Anbieter gleich', () => {
+  // Suchauszuege gehen denselben Weg ins Kontextfenster wie eine geholte Seite, nur ohne dass
+  // die Seite je geholt wird: `seite_lesen` und sein Strip kommen nie ins Spiel. Wer eine Seite
+  // auf Platz 3 einer Nischenanfrage bringt, schreibt sonst unsichtbaren Text in den Praefix.
+  const vergiftet = 'Harmlos​\u{E0001}\u{E0049}\u{E0067}'
+
+  for (const [name, bauen] of [['searxng', searx], ['tavily', tavily]] as const) {
+    it(`${name}: saeubert Titel und Auszug`, async () => {
+      const { abrufen } = jsonAbrufer({
+        results: [{ title: vergiftet, url: 'https://beispiel.test/a', content: `Ｉｇｎｏｒｅ${vergiftet}`, engine: 'ddg' }],
+      })
+      const { treffer } = await bauen().suche('frage', 5, abrufen)
+      expect(treffer[0].titel).toBe('Harmlos')
+      expect(treffer[0].auszug).toBe('IgnoreHarmlos')
+      for (const zeichen of ['​', '\u{E0001}', '\u{E0049}', '\u{E0067}']) {
+        expect(treffer[0].titel + treffer[0].auszug).not.toContain(zeichen)
+      }
+    })
+
+    it(`${name}: kappt den Auszug bei ${MAX_AUSZUG_ZEICHEN} Zeichen und macht es sichtbar`, async () => {
+      const { abrufen } = jsonAbrufer({
+        results: [{ title: 'T'.repeat(4000), url: 'https://beispiel.test/a', content: 'A'.repeat(4000), engine: 'ddg' }],
+      })
+      const { treffer } = await bauen().suche('frage', 5, abrufen)
+      expect(treffer[0].auszug).toHaveLength(MAX_AUSZUG_ZEICHEN)
+      expect(treffer[0].auszug.endsWith('…')).toBe(true)
+      expect(treffer[0].titel).toHaveLength(MAX_TITEL_ZEICHEN)
+    })
+
+    it(`${name}: verwirft einen Eintrag ohne brauchbare URL und sagt, wie viele`, async () => {
+      // Vorher wurde jedes fehlende Feld zur leeren Zeichenkette: ein missgebildeter Eintrag
+      // sah aus wie ein vollwertiger Treffer mit leerem Titel und leerer URL, zaehlte in der
+      // Trefferzahl mit, und die leere URL wanderte als Kandidat in `seite_lesen`.
+      const { abrufen } = jsonAbrufer({
+        results: [
+          { engine: 'ddg' },
+          { titel: 'falsches Feld' },
+          { title: 'echt', url: 'https://beispiel.test/a', content: 'A', engine: 'ddg' },
+        ],
+      })
+      const { treffer, engineLage } = await bauen().suche('frage', 5, abrufen)
+      expect(treffer).toHaveLength(1)
+      expect(treffer[0].url).toBe('https://beispiel.test/a')
+      expect(engineLage).toContain('2')
+      expect(engineLage).toContain('ohne brauchbare URL verworfen')
+    })
+
+    it(`${name}: nennt einen Transportfehler samt Anbieter, statt ihn roh durchfallen zu lassen`, async () => {
+      // SearXNG auf MS-01 ist aus. Vorher fiel ein roher TypeError heraus, ohne SuchFehler und
+      // ohne Anbieternamen: der Werkzeugrumpf meldete 'fetch failed' — ohne den Hinweis, dass
+      // es der Betrieb ist und nicht die Anfrage. Genau die Diagnosetiefe, die der 403-Zweig
+      // liefert.
+      const abrufen = werfenderAbrufer(new TypeError('fetch failed'))
+      await expect(bauen().suche('frage', 5, abrufen)).rejects.toThrow(SuchFehler)
+      await expect(bauen().suche('frage', 5, abrufen)).rejects.toThrow(new RegExp(name))
+      await expect(bauen().suche('frage', 5, abrufen)).rejects.toThrow(/fetch failed/)
+    })
+
+    it(`${name}: bricht nach dem Zeitbudget ab, statt unbegrenzt zu haengen`, async () => {
+      // §3.4 verlangt zehn Sekunden fuer web_suchen. Haengt der Dienst statt abzulehnen, lief
+      // der Werkzeugaufruf vorher ohne Ende — es gab weder AbortSignal noch Uhr.
+      const anbieter = bauen({ zeitbudgetMs: 20 })
+      await expect(anbieter.suche('frage', 5, haengenderAbrufer())).rejects.toThrow(/Zeitbudget/)
+    })
+
+    it(`${name}: lehnt einen Antwortkoerper ueber der Groessengrenze ab`, async () => {
+      const { abrufen } = jsonAbrufer('x'.repeat(5000))
+      await expect(bauen({ maxBytes: 1000 }).suche('frage', 5, abrufen))
+        .rejects.toThrow(/Groessengrenze von 1000/)
+    })
+  }
+
+  it('searxng: macht aus einem unbrauchbaren Endpunkt einen SuchFehler, keinen rohen TypeError', async () => {
+    const { abrufen, aufrufe } = jsonAbrufer(SEARX_ANTWORT)
+    const anbieter = new SearxngAnbieter('kein:gueltiger endpunkt')
+    await expect(anbieter.suche('frage', 5, abrufen)).rejects.toThrow(SuchFehler)
+    await expect(anbieter.suche('frage', 5, abrufen)).rejects.toThrow(/Endpunkt/)
+    expect(aufrufe).toHaveLength(0)
+  })
+})
+
+describe('Der Modulkopf muss sagen, was wirklich gilt', () => {
+  // Er sagte: „Im Betrieb ist das der an `netzwache` gebundene Abrufer." Das ist nicht baubar —
+  // `netzwache.Abrufer` nimmt einen `Abrufauftrag` und gibt `{text, endUrl}`, `holeSicher`
+  // verdrahtet GET (Tavily braucht POST), laesst nur https durch und sperrt 100.64.0.0/10,
+  // waehrend der SearXNG-Endpunkt `http://100.67.95.13:8080` ist. Wer den Satz ernst nimmt,
+  // macht die netzwache passend — also http und das Tailnet auf: genau das Loch, gegen das
+  // a63723a und 58b7ef5 angetreten sind.
+  const QUELLE = readFileSync(join(__dirname, '../../src/main/harness/such-anbieter.ts'), 'utf8')
+  const KOPF = QUELLE.slice(0, QUELLE.indexOf('*/'))
+
+  it('behauptet nicht mehr, der Abrufer sei an die netzwache gebunden', () => {
+    expect(KOPF).not.toMatch(/an `netzwache` gebundene/)
+  })
+
+  it('sagt, dass der Suchendpunkt betreiberkonfiguriert ist und an der netzwache vorbeilaeuft', () => {
+    expect(KOPF).toContain('betreiberkonfiguriert')
+    expect(KOPF).toContain('100.64.0.0/10')
+    expect(KOPF).toMatch(/Zeitbudget/)
+    expect(KOPF).toMatch(/Groessengrenze/)
+  })
 })
 
 describe('waehleAnbieter: kein Anbieter ist ein benannter Zustand', () => {

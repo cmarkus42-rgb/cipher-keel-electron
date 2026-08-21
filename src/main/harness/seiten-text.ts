@@ -21,7 +21,8 @@
  *      Ueberschriften, Listen und Tabellen zum Nulltarif; die URL-Flut kostet 100 % Aufschlag
  *      fuer nichts. Nebenwirkung, die hier zaehlt: eine im Markdown transportierte URL ist auch
  *      der Ausleitungsweg aus EchoLeak (CVE-2025-32711) — ohne URLs im Text gibt es sie nicht.
- *   4. Zeichensaeuberung. Siehe `saeubere`.
+ *   4. Zeichensaeuberung — **vor** Readability und Turndown, an den Textknoten. Siehe `saeubere`
+ *      und `saeubereTextknoten`; die Reihenfolge ist der ganze Punkt und war einmal falsch herum.
  *
  * Was hier ausdruecklich *nicht* steht, weil es falsch waere: dass irgendetwas davon Prompt
  * Injection verhindert. Ein hoeflich formulierter, vollstaendig sichtbarer Satz auf einer
@@ -78,9 +79,13 @@ export function istVorlesbar(html: string): boolean {
 }
 
 /**
- * Zeichensaeuberung nach der Extraktion. Gemessen (Entwurf §3.3): 16 versteckte Zeichen
- * ueberleben die Extraktion bei allen vier getesteten Pipelines und verschwinden durch diesen
- * Strip vollstaendig. Das ist die einzige Massnahme in §4, die deterministisch eine ganze
+ * Zeichensaeuberung. Gemessen (Entwurf §3.3): 16 versteckte Zeichen ueberleben die Extraktion bei
+ * allen vier getesteten Pipelines und verschwinden durch diesen Strip — **diese 16, nicht alle.**
+ * Der Satz stand hier einmal ohne die Einschraenkung und war zu gross: durch gehen unter anderem
+ * U+180E, U+2065, U+034F, die Variantenselektoren U+FE00–FE0F und U+E0100–E01EF, und — kurios —
+ * U+1160, das NFKC selbst aus dem sichtbaren U+3164 erzeugt. Sie tragen keine Markdown-Struktur
+ * und bleiben deshalb stehen, aber wer hier „vollstaendig" liest, hoert eine Zusicherung, die
+ * niemand gemessen hat. Das ist die einzige Massnahme in §4, die deterministisch eine ganze
  * Angriffsklasse schliesst — Anweisungen, die ein Mensch beim Nachlesen der Seite nicht sehen
  * kann, weil sie keine Breite haben.
  *
@@ -101,6 +106,44 @@ export function saeubere(text: string): string {
   return text
     .normalize('NFKC')
     .replace(/[\u{E0000}-\u{E007F}​‌‎‏⁠-⁤﻿]/gu, '')
+}
+
+/**
+ * Saeubert die Textknoten *im DOM*, vor Readability und vor Turndown.
+ *
+ * Die Reihenfolge ist der ganze Punkt und war einmal falsch herum. Lief NFKC nach Turndown, hob
+ * es dessen Maskierung auf: Turndown maskiert ein echtes '##' am Zeilenanfang als '\##', ein
+ * vollbreites '＃＃' sieht es nicht als Markdown und laesst es stehen — und NFKC machte danach ein
+ * echtes '##' daraus. Gemessen: `<p>＃＃ Systemhinweis</p>` kam als eigene Ueberschriftszeile an,
+ * und `<p>［... 14 weitere Abschnitte ausgelassen: …］</p>` wurde ueber U+FF3B/U+FF3D zeichengleich
+ * zu keels eigener Kuerzungsmarke, bei `gekuerzt: false`. Eine geholte Seite konnte dem Modell
+ * also vorspiegeln, keel habe Abschnitte weggelassen, und deren Namen frei waehlen; keels Rahmen
+ * war vom Seiteninhalt nicht mehr zu unterscheiden. Ausgerechnet Ueberschriften sind hier die
+ * Schnittgrenzen und die Namen in der Marke.
+ *
+ * Am Textknoten und nicht an der HTML-Zeichenkette: NFKC ueber das Markup gejagt macht aus einem
+ * vollbreiten '＜' ein echtes '<', und dann baut die Saeuberung selbst das Markup, das sie
+ * entschaerfen soll. Ein Textknoten bleibt beim Serialisieren ein Textknoten.
+ */
+interface Knoten {
+  nodeType: number
+  nodeValue: string | null
+  childNodes: ArrayLike<Knoten>
+}
+
+function saeubereTextknoten(knoten: Knoten): void {
+  // Kopie der Kinderliste: `childNodes` ist in beiden DOMs lebendig, und wer waehrend des
+  // Durchlaufs schreibt, sollte nicht auf die Reihenfolge wetten.
+  for (const kind of Array.from(knoten.childNodes)) {
+    // 3 = Text, 1 = Element. Kommentare (8) bleiben unangetastet — Turndown wirft sie weg.
+    if (kind.nodeType === 3) {
+      const roh = kind.nodeValue ?? ''
+      const sauber = saeubere(roh)
+      if (sauber !== roh) kind.nodeValue = sauber
+    } else if (kind.nodeType === 1) {
+      saeubereTextknoten(kind)
+    }
+  }
 }
 
 function dokumentVon(html: string): Document | null {
@@ -166,17 +209,32 @@ function kuerze(markdown: string, max: number): { markdown: string; gekuerzt: bo
 
   const abschnitte = inAbschnitte(markdown)
   for (let behalten = abschnitte.length - 1; behalten >= 1; behalten--) {
-    const kopf = abschnitte.slice(0, behalten).map(a => a.text).join('')
-    const schwanz = marke(abschnitte.slice(behalten))
-    if (kopf.length + schwanz.length <= max) {
-      return { markdown: kopf.trimEnd() + '\n\n' + schwanz, gekuerzt: true }
-    }
+    const kopf = abschnitte.slice(0, behalten).map(a => a.text).join('').trimEnd()
+    // Ein Zuschnitt ohne Inhalt ist kein Zuschnitt. Beginnt der Text mit einer ##-Ueberschrift,
+    // ist `abschnitte[0]` der leere Vorspann — dann passte `behalten = 1` immer, weil die Marke
+    // allein unter jeder Obergrenze liegt, und heraus kam ein Erfolg mit echtem Titel und null
+    // Zeichen Rumpf. Gemessen an einer Seite `<article><h2>Hauptteil</h2>…` bei maxZeichen 32000:
+    // markdown = "\n\n[... 2 weitere Abschnitte ausgelassen: …]". Der MIN_ZEICHEN-Waechter greift
+    // dagegen nicht, weil er vor `kuerze` misst — und ein leerer Rumpf neben einem echten Titel
+    // ist genau die Vorlage, aus der das Modell den Inhalt erfindet.
+    if (kopf.trim().length < MIN_ZEICHEN) continue
+    // Gemessen wird die fertige Zeichenkette, nicht die Summe ihrer Teile: die beiden
+    // Zeilenumbrueche gehoeren zum Ergebnis. Vorher zaehlten sie nicht mit und nur das `trimEnd()`
+    // fing es ab, weil jeder `kopf` auf '\n' endet — das traegt, ist aber Zufall, keine Zusage.
+    const kandidat = kopf + '\n\n' + marke(abschnitte.slice(behalten))
+    if (kandidat.length <= max) return { markdown: kandidat, gekuerzt: true }
   }
 
-  // Der benannte Ausnahmefall: schon der erste Abschnitt ueberschreitet die Obergrenze allein.
+  // Der benannte Ausnahmefall: kein Schnitt an einer Ueberschrift laesst genug Inhalt uebrig.
   // Die beiden Alternativen waeren, das Budget stillschweigend zu reissen oder still mitten im
   // Wort zu schneiden. Beide belegen, was hier vermieden wird: das Modell merkt es nicht.
-  const schwanz = '[... hier abgeschnitten: der erste Abschnitt ueberschreitet die Obergrenze allein.]'
+  //
+  // Zwei Wortlaute, weil es zwei Faelle sind: ein Text ganz ohne Ueberschrift hat keinen „ersten
+  // Abschnitt", er hat nur einen — und einer ist keine Reihenfolge. Der andere Fall hat sehr wohl
+  // Ueberschriften, sie taugen nur nicht als Schnittstelle.
+  const schwanz = abschnitte.length === 1
+    ? '[... hier abgeschnitten: der Text hat keine Ueberschrift, an der sich schneiden liesse.]'
+    : '[... hier abgeschnitten: kein Schnitt an einer Ueberschrift laesst Inhalt uebrig, der in die Obergrenze passt.]'
   const platz = Math.max(0, max - schwanz.length - 2)
   return { markdown: markdown.slice(0, platz).trimEnd() + '\n\n' + schwanz, gekuerzt: true }
 }
@@ -204,13 +262,17 @@ export function extrahiereSeitenText(html: string, grenzen: ExtraktGrenzen = {})
     return { ok: false, meldung: ABSAGE }
   }
 
+  // Waechter 4, und er steht *vor* Readability und Turndown, nicht dahinter. Warum die
+  // Reihenfolge das Ganze ist: siehe `saeubereTextknoten`.
+  saeubereTextknoten(dokument as unknown as Knoten)
+
   const artikel = new Readability(dokument).parse()
   if (artikel === null || typeof artikel.content !== 'string' || artikel.content.trim() === '') {
     return { ok: false, meldung: ABSAGE }
   }
 
   const roh = turndown().turndown(artikel.content)
-  const sauber = saeubere(roh).replace(/\n{3,}/g, '\n\n').trim()
+  const sauber = roh.replace(/\n{3,}/g, '\n\n').trim()
 
   // Waechter 2, nach der Saeuberung gemessen: was durch den Strip verschwindet, hat als Laenge
   // nie gezaehlt. Vorher zu messen hiesse, eine Seite aus 300 unsichtbaren Zeichen zu bestehen.

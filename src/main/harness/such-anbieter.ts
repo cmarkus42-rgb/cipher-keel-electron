@@ -29,9 +29,30 @@
  * die Verwechslung, die (2) verhindern soll. Das Werkzeug darueber faengt `SuchFehler` und
  * macht daraus `{ ok: false, meldung }`.
  *
- * Der Abrufer wird eingespeist. Im Betrieb ist das der an `netzwache` gebundene Abrufer, im
- * Test eine Funktion im Test. Diese Datei kennt kein Netz und keine Konfigurationsquelle.
+ * Der Abrufer wird eingespeist — und er ist **nicht** `netzwache.holeSicher`. Der Satz stand
+ * einmal hier und war nicht baubar: `netzwache.Abrufer` nimmt einen `Abrufauftrag` und gibt
+ * `{ text, endUrl }` statt einer `Response`, `holeSicher` verdrahtet `method: 'GET'` (Tavily
+ * braucht POST), und `pruefeUrl` laesst nur https durch und sperrt 100.64.0.0/10 — der
+ * SearXNG-Endpunkt auf MS-01 ist `http://100.67.95.13:8080`, also http im Tailnet und damit
+ * doppelt abgelehnt. Wer den Satz ernst naehme, machte die netzwache passend, also http und das
+ * Tailnet auf: genau das Loch, gegen das a63723a und 58b7ef5 angetreten sind (unauthentifizierter
+ * Ollama auf 100.78.7.108:11434).
+ *
+ * Was stattdessen gilt: **das Suchziel ist betreiberkonfiguriert, nicht modellgewaehlt.** Es steht
+ * in `SuchKonfiguration`, nie in einem Werkzeugargument; das Modell waehlt die Anfrage, nicht das
+ * Ziel. Deshalb laeuft dieser eine Abruf absichtlich an der netzwache vorbei — und deshalb traegt
+ * diese Datei die Grenzen selbst, die dort sonst haengen: Zeitbudget (§3.4: zehn Sekunden),
+ * Groessengrenze beim Lesen, `redirect: 'error'`, kein Cookie, kein Auth ausser dem
+ * konfigurierten Schluessel. Ein blankes `fetch` einzuspeisen waere der andere schlechte Weg:
+ * der Suchpfad liefe ganz ohne Grenzen.
+ *
+ * Und ein dritter Punkt, der der Datei ihre Form gibt: **Treffertexte sind fremdbestimmter
+ * Netzinhalt.** Titel und Auszug gehen denselben Weg ins Kontextfenster wie eine geholte Seite,
+ * nur ohne dass die Seite je geholt wird — `seite_lesen` und sein Strip kommen nie ins Spiel.
+ * Also laeuft `saeubere` hier ueber jeden Titel und jeden Auszug, und beide werden gekappt.
  */
+
+import { saeubere } from './seiten-text'
 
 /** Ein einzelner Suchtreffer. Kein Seiteninhalt — den holt `seite_lesen` einzeln. */
 export interface Treffer {
@@ -62,6 +83,38 @@ export const MAX_ANFRAGE_LAENGE = 200
 
 /** Harte Obergrenze aus §3.4. Zehn Treffer sind schon ~1.500 Token Antwort. */
 export const MAX_ANZAHL = 10
+
+/** Laenge eines Auszugs, §3.4. Gemessen kam ein 4.000-Zeichen-`content` ungekappt an. */
+export const MAX_AUSZUG_ZEICHEN = 300
+
+/**
+ * Laenge eines Titels. §3.4 nennt nur den Auszug; ein Titel ist derselbe Kanal, nur kuerzer
+ * beabsichtigt — und wer ihn nicht kappt, hat die Grenze fuer den Auszug umsonst gezogen.
+ */
+export const MAX_TITEL_ZEICHEN = 200
+
+/** Zeitbudget fuer `web_suchen` aus §3.4. Gilt fuer den ganzen Aufruf, nicht je Teilschritt. */
+export const ZEITBUDGET_MS = 10_000
+
+/**
+ * Groessengrenze des Antwortkoerpers. Zehn Treffer JSON sind einige zehn Kilobyte; ein Megabyte
+ * ist reichlich und zugleich weit unter dem, was ein haengender oder feindlicher Dienst schickt.
+ */
+export const MAX_ANTWORT_BYTES = 1_000_000
+
+/**
+ * Die Grenzen, die diese Datei selbst zieht, weil die netzwache hier nicht dazwischensteht
+ * (siehe Modulkopf). Ueberschreibbar, damit ein Test sie in Millisekunden erreichen kann.
+ */
+export interface SuchGrenzen {
+  zeitbudgetMs: number
+  maxBytes: number
+}
+
+export const STANDARD_GRENZEN: SuchGrenzen = {
+  zeitbudgetMs: ZEITBUDGET_MS,
+  maxBytes: MAX_ANTWORT_BYTES,
+}
 
 /** Fehlschlag mit Namen. Kein leeres Ergebnis, kein `?? []`. */
 export class SuchFehler extends Error {
@@ -101,8 +154,7 @@ function klemmeAnzahl(anzahl: number): number {
  * JSON lesen, oder benannt scheitern. Ein Anbieter, der HTML mit einer Rate-Limit-Seite
  * zurueckgibt, darf hier nicht als „null Treffer" enden.
  */
-async function jsonOderFehler(anbieter: string, antwort: Response): Promise<Record<string, unknown>> {
-  const roh = await antwort.text()
+function jsonOderFehler(anbieter: string, roh: string): Record<string, unknown> {
   try {
     const gelesen: unknown = JSON.parse(roh)
     if (typeof gelesen !== 'object' || gelesen === null) {
@@ -112,6 +164,109 @@ async function jsonOderFehler(anbieter: string, antwort: Response): Promise<Reco
   } catch {
     // Der Rumpf wird bewusst nicht mitgegeben: er kann beliebig gross und beliebig fremd sein.
     throw new SuchFehler(anbieter, `Die Antwort war kein JSON (${roh.length} Zeichen empfangen).`)
+  }
+}
+
+/**
+ * Laesst ein Versprechen gegen die Uhr laufen. Ohne das haengt der Werkzeugaufruf so lange, wie
+ * der Dienst Geduld hat — und ein haengender Dienst ist der wahrscheinlichere Ausfall als ein
+ * ablehnender. Dieselbe Bauform wie in `netzwache.gegenDieUhr`, aus demselben Grund: das Signal
+ * allein reicht nicht, weil ein Abrufer es ignorieren darf.
+ */
+function gegenDieUhr<T>(versprechen: Promise<T>, signal: AbortSignal, grund: string): Promise<T> {
+  if (signal.aborted) return Promise.reject(new Error(grund))
+  const melder: { rufe: (() => void) | null } = { rufe: null }
+  const wecker = new Promise<never>((_, ablehnen) => {
+    melder.rufe = () => ablehnen(new Error(grund))
+    signal.addEventListener('abort', melder.rufe, { once: true })
+  })
+  return Promise.race([versprechen, wecker]).finally(() => {
+    if (melder.rufe !== null) signal.removeEventListener('abort', melder.rufe)
+  })
+}
+
+/**
+ * Liest den Koerper gegen die Groessengrenze *waehrend* des Lesens. Hinterher zu messen hiesse,
+ * dass ein 5-GB-Koerper schon im Speicher liegt, wenn die Grenze es merkt.
+ */
+async function liesBegrenzt(
+  anbieter: string,
+  antwort: Response,
+  grenzen: SuchGrenzen,
+  signal: AbortSignal,
+  zeitGrund: string,
+): Promise<string> {
+  const koerper = antwort.body
+  if (koerper === null) return ''
+  const leser = koerper.getReader()
+  const dekodierer = new TextDecoder()
+  let gelesen = 0
+  let text = ''
+  for (;;) {
+    if (signal.aborted) {
+      await leser.cancel(zeitGrund)
+      throw new SuchFehler(anbieter, zeitGrund)
+    }
+    const stueck = await leser.read()
+    if (stueck.done) break
+    gelesen += stueck.value.byteLength
+    if (gelesen > grenzen.maxBytes) {
+      const grund = `Die Antwort ueberschreitet die Groessengrenze von ${grenzen.maxBytes} Bytes.`
+      // Die Verbindung muss hier enden, sonst sendet der Dienst weiter in einen Leser, den
+      // niemand liest.
+      await leser.cancel(grund)
+      throw new SuchFehler(anbieter, grund)
+    }
+    text += dekodierer.decode(stueck.value, { stream: true })
+  }
+  return text + dekodierer.decode()
+}
+
+/**
+ * Der eine Abrufweg beider Anbieter: Uhr, Groessengrenze, und **jeder** Fehlschlag mit Namen.
+ * Vorher waren nur HTTP-Status und Nicht-JSON benannt; ein Transportfehler (DNS, Verbindung
+ * abgelehnt, `redirect: 'error'` bei einem umleitenden SearXNG, Abbruch) fiel als roher
+ * TypeError heraus, ohne `SuchFehler` und ohne Anbieternamen — der Werkzeugrumpf meldete dann
+ * 'fetch failed' und liess offen, ob der Betrieb aus ist oder die Anfrage schlecht war.
+ */
+async function holeJson(
+  anbieter: string,
+  ziel: string,
+  init: RequestInit,
+  grenzen: SuchGrenzen,
+  abrufen: typeof fetch,
+  statusZusatz: (status: number) => string,
+): Promise<Record<string, unknown>> {
+  const steuerung = new AbortController()
+  const uhr = setTimeout(() => steuerung.abort(), grenzen.zeitbudgetMs)
+  const signal = steuerung.signal
+  const zeitGrund = `Zeitbudget von ${grenzen.zeitbudgetMs} ms ueberschritten (${ziel}).`
+
+  try {
+    let antwort: Response
+    try {
+      antwort = await gegenDieUhr(abrufen(ziel, { ...init, signal }), signal, zeitGrund)
+    } catch (fehler) {
+      if (signal.aborted) throw new SuchFehler(anbieter, zeitGrund)
+      throw new SuchFehler(anbieter, `Abruf fehlgeschlagen (${ziel}): ${(fehler as Error).message}`)
+    }
+
+    if (!antwort.ok) {
+      throw new SuchFehler(anbieter, `HTTP ${antwort.status}${statusZusatz(antwort.status)}`)
+    }
+
+    let roh: string
+    try {
+      roh = await gegenDieUhr(liesBegrenzt(anbieter, antwort, grenzen, signal, zeitGrund), signal, zeitGrund)
+    } catch (fehler) {
+      if (fehler instanceof SuchFehler) throw fehler
+      if (signal.aborted) throw new SuchFehler(anbieter, zeitGrund)
+      throw new SuchFehler(anbieter, `Lesen fehlgeschlagen (${ziel}): ${(fehler as Error).message}`)
+    }
+
+    return jsonOderFehler(anbieter, roh)
+  } finally {
+    clearTimeout(uhr)
   }
 }
 
@@ -125,6 +280,50 @@ function ergebnisListe(anbieter: string, koerper: Record<string, unknown>): Reco
 
 function text(wert: unknown): string {
   return typeof wert === 'string' ? wert : ''
+}
+
+/**
+ * Gesaeubert und gekappt. Beides ist Pflicht und nicht Kosmetik: ein Titel oder Auszug ist
+ * fremdbestimmter Netzinhalt auf demselben Weg ins Kontextfenster wie eine geholte Seite.
+ * Gemessen kam ein `title: 'Harmlos​\u{E0001}\u{E0049}\u{E0067}'` mit allen vier
+ * versteckten Codepoints beim Aufrufer an und ein 4.000-Zeichen-`content` mit 4.001 Zeichen.
+ *
+ * Erst saeubern, dann kappen: NFKC kann einen Text laenger machen (die Ligatur 'ﬁ' wird zu
+ * 'fi'), also muss die Grenze auf den endgueltigen Zeichen liegen. Die Kappung endet sichtbar,
+ * damit ein abgeschnittener Auszug nicht wie ein vollstaendiger aussieht.
+ */
+function sauberGekappt(wert: unknown, max: number): string {
+  const sauber = saeubere(text(wert)).trim()
+  return sauber.length <= max ? sauber : sauber.slice(0, max - 1).trimEnd() + '…'
+}
+
+/**
+ * Die URL eines Treffers, oder null. Ein Eintrag ohne brauchbare URL ist kein Treffer: vorher
+ * machte `text()` aus jedem fehlenden Feld eine leere Zeichenkette, und ein missgebildeter
+ * `results`-Eintrag wurde damit zu einem vollwertig aussehenden Treffer mit leerem Titel und
+ * leerer URL — der in der Trefferzahl mitzaehlte und dessen leere URL als Kandidat in
+ * `seite_lesen` wanderte.
+ *
+ * Zurueckgegeben wird die *geparste* Form. Sie percent-kodiert, was unsichtbar war: ein
+ * Zero-Width-Zeichen im Pfad steht danach als `%E2%80%8B` da, sichtbar fuer jeden, der die Liste
+ * liest. `saeubere` waere hier falsch — NFKC auf einer URL veraendert das Ziel.
+ */
+function brauchbareUrl(wert: unknown): string | null {
+  const roh = text(wert).trim()
+  if (roh === '') return null
+  try {
+    const url = new URL(roh)
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : null
+  } catch {
+    return null
+  }
+}
+
+/** Der Satz ueber verworfene Eintraege, oder nichts. Eine stille Verwerfung waere die Luecke. */
+function verwurfHinweis(verworfen: number): string {
+  return verworfen === 0
+    ? ''
+    : ` ${verworfen} Eintrag/Eintraege ohne brauchbare URL verworfen.`
 }
 
 function zahl(wert: unknown): number | undefined {
@@ -143,48 +342,65 @@ function zahl(wert: unknown): number | undefined {
 export class SearxngAnbieter implements SuchAnbieter {
   readonly name = 'searxng'
 
-  constructor(private readonly endpunkt: string) {}
+  constructor(
+    private readonly endpunkt: string,
+    grenzen: Partial<SuchGrenzen> = {},
+  ) {
+    this.grenzen = { ...STANDARD_GRENZEN, ...grenzen }
+  }
+
+  private readonly grenzen: SuchGrenzen
 
   async suche(anfrage: string, anzahl: number, abrufen: typeof fetch): Promise<SuchAntwort> {
     const q = pruefeAnfrage(this.name, anfrage)
     const grenze = klemmeAnzahl(anzahl)
 
-    const url = new URL('search', this.endpunkt.replace(/\/*$/, '/'))
+    // `new URL` wirft bei einem unbrauchbaren Endpunkt roh — und ein Betriebsfehler in der
+    // Konfiguration saehe dann aus wie ein Fehler im Werkzeug.
+    let url: URL
+    try {
+      url = new URL('search', this.endpunkt.replace(/\/*$/, '/'))
+    } catch {
+      throw new SuchFehler(this.name, `Der konfigurierte Endpunkt ist keine gueltige URL: ${this.endpunkt}`)
+    }
     url.searchParams.set('q', q)
     url.searchParams.set('format', 'json')
 
-    const antwort = await abrufen(url.toString(), {
-      method: 'GET',
-      // Kein Cookie, kein Auth-Header, kein Jar ueber Aufrufe hinweg (§4.1).
-      headers: { accept: 'application/json' },
-      redirect: 'error',
-    })
-
-    if (!antwort.ok) {
-      const zusatz = antwort.status === 403
+    const koerper = await holeJson(
+      this.name,
+      url.toString(),
+      {
+        method: 'GET',
+        // Kein Cookie, kein Auth-Header, kein Jar ueber Aufrufe hinweg (§4.1).
+        headers: { accept: 'application/json' },
+        redirect: 'error',
+      },
+      this.grenzen,
+      abrufen,
+      status => status === 403
         ? ' — vermutlich der Limiter: das Tailscale-Netz ist in `limiter.toml` nicht freigegeben,'
           + ' oder `search.formats` enthaelt `json` nicht.'
-        : ''
-      throw new SuchFehler(this.name, `HTTP ${antwort.status}${zusatz}`)
-    }
-
-    const koerper = await jsonOderFehler(this.name, antwort)
-    const roh = ergebnisListe(this.name, koerper)
+        : '',
+    )
+    const alle = ergebnisListe(this.name, koerper)
+    const roh = alle.filter(e => brauchbareUrl(e.url) !== null)
+    const verworfen = alle.length - roh.length
 
     const treffer: Treffer[] = roh.slice(0, grenze).map(e => ({
-      titel: text(e.title),
-      url: text(e.url),
-      auszug: text(e.content),
+      titel: sauberGekappt(e.title, MAX_TITEL_ZEICHEN),
+      url: brauchbareUrl(e.url) ?? '',
+      auszug: sauberGekappt(e.content, MAX_AUSZUG_ZEICHEN),
       engine: text(e.engine) || 'unbekannt',
       bewertung: zahl(e.score),
     }))
 
-    // Die Lage wird ueber *alle* Rohtreffer gezaehlt, nicht nur ueber die zurueckgegebenen:
-    // sonst sieht eine Engine, deren Treffer hinter `grenze` liegen, wie ein Ausfall aus.
-    return { treffer, engineLage: this.lage(roh, koerper.unresponsive_engines) }
+    // Die Lage wird ueber *alle* brauchbaren Rohtreffer gezaehlt, nicht nur ueber die
+    // zurueckgegebenen: sonst sieht eine Engine, deren Treffer hinter `grenze` liegen, wie ein
+    // Ausfall aus.
+    return { treffer, engineLage: this.lage(roh, koerper.unresponsive_engines, verworfen) }
   }
 
-  private lage(roh: Record<string, unknown>[], unresponsive: unknown): string {
+  private lage(roh: Record<string, unknown>[], unresponsive: unknown, verworfen: number): string {
     const proEngine = new Map<string, number>()
     for (const e of roh) {
       const engine = text(e.engine) || 'unbekannt'
@@ -210,13 +426,20 @@ export class SearxngAnbieter implements SuchAnbieter {
       }
     }
 
+    // „keine Engine hat geantwortet" stand hier einmal und war eine Auskunft, die dieses Modul
+    // nicht hat: SearXNG liefert `results: []` auch dann, wenn alle Engines geantwortet haben
+    // und keine etwas fand. Der Lauf schloss daraus auf einen Ausfall der Suchinfrastruktur und
+    // formulierte um — oder hielt umgekehrt einen echten Totalausfall fuer ein leeres Ergebnis.
+    // Gesagt wird deshalb nur, was gezaehlt wurde: Treffer. Die Engine-Lage steht daneben und
+    // trennt die beiden Faelle, soweit SearXNG sie trennt.
     const kopf = geantwortet.length === 0
-      ? 'Engines: keine Engine hat geantwortet'
+      ? 'Engines: null Treffer; keine Engine hat einen Treffer geliefert'
       : `Engines: geantwortet ${geantwortet.join(', ')}`
+    const schwanz = verwurfHinweis(verworfen)
     if (geblockt.length === 0) {
-      return `${kopf}; geblockt: keine.`
+      return `${kopf}; geblockt: keine.${schwanz}`
     }
-    return `${kopf}; geblockt: ${geblockt.join(', ')} — ${SPERRHINWEIS}.`
+    return `${kopf}; geblockt: ${geblockt.join(', ')} — ${SPERRHINWEIS}.${schwanz}`
   }
 }
 
@@ -231,42 +454,52 @@ export class SearxngAnbieter implements SuchAnbieter {
 export class TavilyAnbieter implements SuchAnbieter {
   readonly name = 'tavily'
 
-  constructor(private readonly schluessel: string) {}
+  constructor(
+    private readonly schluessel: string,
+    grenzen: Partial<SuchGrenzen> = {},
+  ) {
+    this.grenzen = { ...STANDARD_GRENZEN, ...grenzen }
+  }
+
+  private readonly grenzen: SuchGrenzen
 
   async suche(anfrage: string, anzahl: number, abrufen: typeof fetch): Promise<SuchAntwort> {
     const q = pruefeAnfrage(this.name, anfrage)
     const grenze = klemmeAnzahl(anzahl)
 
-    const antwort = await abrufen('https://api.tavily.com/search', {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${this.schluessel}`,
-        'content-type': 'application/json',
+    const koerper = await holeJson(
+      this.name,
+      'https://api.tavily.com/search',
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${this.schluessel}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: q,
+          max_results: grenze,
+          search_depth: 'basic',
+          // Ausdruecklich aus: `include_raw_content` bei zehn Treffern sind grob 100k Token.
+          // Ein 27B mit 64K nutzbarem Kontext hat das nicht. Inline-Inhalt loest ein Problem
+          // von Cloud-Modellen mit 200K Kontext, nicht unseres — Seiten holt `seite_lesen`.
+          include_raw_content: false,
+          include_answer: false,
+        }),
+        redirect: 'error',
       },
-      body: JSON.stringify({
-        query: q,
-        max_results: grenze,
-        search_depth: 'basic',
-        // Ausdruecklich aus: `include_raw_content` bei zehn Treffern sind grob 100k Token.
-        // Ein 27B mit 64K nutzbarem Kontext hat das nicht. Inline-Inhalt loest ein Problem
-        // von Cloud-Modellen mit 200K Kontext, nicht unseres — Seiten holt `seite_lesen`.
-        include_raw_content: false,
-        include_answer: false,
-      }),
-      redirect: 'error',
-    })
-
-    if (!antwort.ok) {
-      throw new SuchFehler(this.name, `HTTP ${antwort.status}`)
-    }
-
-    const koerper = await jsonOderFehler(this.name, antwort)
-    const roh = ergebnisListe(this.name, koerper)
+      this.grenzen,
+      abrufen,
+      () => '',
+    )
+    const alle = ergebnisListe(this.name, koerper)
+    const roh = alle.filter(e => brauchbareUrl(e.url) !== null)
+    const verworfen = alle.length - roh.length
 
     const treffer: Treffer[] = roh.slice(0, grenze).map(e => ({
-      titel: text(e.title),
-      url: text(e.url),
-      auszug: text(e.content),
+      titel: sauberGekappt(e.title, MAX_TITEL_ZEICHEN),
+      url: brauchbareUrl(e.url) ?? '',
+      auszug: sauberGekappt(e.content, MAX_AUSZUG_ZEICHEN),
       engine: this.name,
       bewertung: zahl(e.score),
     }))
@@ -277,7 +510,8 @@ export class TavilyAnbieter implements SuchAnbieter {
       treffer,
       engineLage:
         `Engines: Tavily liefert keine Engine-Aufschluesselung; ${treffer.length} Treffer ` +
-        'von einem Anbieter. Ein stilles Ausduennen einzelner Quellen ist hier nicht sichtbar.',
+        'von einem Anbieter. Ein stilles Ausduennen einzelner Quellen ist hier nicht sichtbar.' +
+        verwurfHinweis(verworfen),
     }
   }
 }
