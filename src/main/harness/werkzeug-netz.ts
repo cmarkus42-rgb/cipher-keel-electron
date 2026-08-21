@@ -391,6 +391,11 @@ const seiteLesen: Werkzeug = {
         // die tatsaechlich gelesen wurde, und jeder Sprung dorthin ist durch die Wache gegangen.
         text: `${titel}\n${abruf.endUrl}\n\n${extrakt.markdown}`,
       }],
+      // Dieselben zwei Angaben noch einmal als Feld, nicht nur im Text. Der Rechercheur baut seine
+      // Quellenliste daraus (rechercheur.ts) — und er darf sie nicht aus dem Text zurueckparsen,
+      // in dem darunter der fremdbestimmte Seitenrumpf steht. Der Titel ist bereits durch `zeile`
+      // gegangen, ist also einzeilig und gekappt.
+      gelesen: { titel, url: abruf.endUrl },
     }
   },
 }

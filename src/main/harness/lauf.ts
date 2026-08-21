@@ -32,9 +32,10 @@ import {
 } from './budget'
 import { kostenCent, VORGABE_PREISE, type Preis } from './preise'
 import type { WacheKontext } from './pfadwache'
-import { META_WERKZEUG_NAME, type WerkzeugRegistry } from './werkzeuge'
+import { META_WERKZEUG_NAME, type WerkzeugErgebnis, type WerkzeugRegistry } from './werkzeuge'
 import { FAEHIGKEIT_WERKZEUG_NAME, unbekannteFaehigkeitMeldung } from './faehigkeiten'
 import type { NetzKontext } from './werkzeug-netz'
+import { RECHERCHIEREN_NAME, fuehreRecherche } from './rechercheur'
 
 export interface Auftrag {
   auftragstext: string
@@ -43,6 +44,13 @@ export interface Auftrag {
   anhaenge?: string[]
   pflichtfelder?: string[]
   budgets: Budgets
+  /**
+   * Gesetzt, wenn dieser Lauf der Unterlauf eines anderen ist (heute: der Rechercheur). Es landet
+   * unveraendert in `run.started` und ist die einzige Verbindung zwischen den beiden Laeufen —
+   * sie teilen die Datenbank, aber nicht die `laufId`, und genau darauf ruht die Kapselung
+   * (rechercheur.ts, Modulkopf).
+   */
+  eltern?: { laufId: string; aufrufId: string }
 }
 
 export interface LaufUmgebung {
@@ -160,6 +168,9 @@ export async function starteLauf(
     budgets: auftrag.budgets,
     hinweise,
     anhangBloecke: await anhangBloecke(auftrag),
+    // Weggelassen statt leer geschrieben: ein `eltern: null` an jedem gewoehnlichen Lauf saehe
+    // im Protokoll aus wie eine Angabe, die jemand geprueft hat.
+    ...(auftrag.eltern ? { eltern: auftrag.eltern } : {}),
   })
 
   await fahre(laufId, auftrag, u)
@@ -294,7 +305,7 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
       // All tools in this stretch read, so all calls of a turn may run concurrently. The
       // Single-Writer rule from M8 section 3.2 holds trivially: no call writes. The mechanism
       // for it arrives with the writing tools.
-      await Promise.all(aufrufe.map(a => fuehreAus(u, laufId, a)))
+      await Promise.all(aufrufe.map(a => fuehreAus(u, laufId, auftrag, a)))
       // Wall-clock time moved while the tools ran even though no new model.answered event did —
       // reconstructed again, not carried, same rule as everywhere else in this loop.
       const verbrauchNachWerkzeugen = verbrauchAusEreignissen(ereignisse, auftrag.modellId, u.uhr())
@@ -348,9 +359,28 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
  * call. Writing the intent afterwards would make the two states indistinguishable.
  */
 async function fuehreAus(
-  u: LaufUmgebung, laufId: string, a: Extract<Block, { art: 'werkzeug-aufruf' }>,
+  u: LaufUmgebung, laufId: string, auftrag: Auftrag, a: Extract<Block, { art: 'werkzeug-aufruf' }>,
 ): Promise<void> {
   schreibe(u, laufId, 'tool.intent', { aufrufId: a.id, name: a.name, eingabe: a.eingabe })
+
+  // `recherchieren` startet einen eigenen Lauf und braucht dafuer Protokoll, Transport, Uhr und
+  // Abbruchmarke — nichts davon steht einem Werkzeug ueber seinem WerkzeugKontext zur Verfuegung.
+  // Deshalb hier abgefangen, wie werkzeug_schema und faehigkeit_lesen.
+  //
+  // Die Registry-Bedingung ist **die Verschachtelungssperre**, nicht Kosmetik: der Abfang laeuft
+  // ueber den Namen, und der Unterlauf traegt denselben Namen genauso in einem Modellblock, wie
+  // der Hauptlauf es tut. Ohne die Bedingung startete der Unterlauf einen dritten Lauf, obwohl
+  // `recherchieren` gar nicht in seiner Registry steht — die Registry waere dann kein Schnitt
+  // mehr, sondern eine Liste, an die sich nur der Praefix haelt. Mit ihr faellt der Aufruf
+  // unten in „Es gibt kein Werkzeug 'recherchieren'".
+  if (a.name === RECHERCHIEREN_NAME && u.registry.finde(RECHERCHIEREN_NAME) !== null) {
+    const r = await fuehreRecherche(a.eingabe, {
+      eltern: u, elternLaufId: laufId, elternAufrufId: a.id, elternAuftrag: auftrag,
+      starteUnterlauf: starteLauf,
+    })
+    schreibeWerkzeugErgebnis(u, laufId, a, r)
+    return
+  }
 
   if (a.name === META_WERKZEUG_NAME) {
     const gesucht = typeof a.eingabe.name === 'string' ? a.eingabe.name : ''
@@ -420,23 +450,37 @@ async function fuehreAus(
     // fail-closed-Richtung (Ablehnung, kein Abruf), und der naechste Zug hat sie.
     const netz = u.netz ? { ...u.netz, ereignisse: lesen(u.db, laufId) } : undefined
     const r = await werkzeug.ausfuehren(a.eingabe, { wache: u.wache, graphDb: u.graphDb, netz })
-    if (r.ok) {
-      schreibe(u, laufId, 'tool.completed', {
-        aufrufId: a.id, name: a.name, inhalt: r.inhalt, quelle: r.quelle,
-        // Feld weglassen statt leer schreiben: die Herkunftspruefung liest `trefferUrls`, und ein
-        // leeres Feld an einem Werkzeug, das gar keine Treffer hat, saehe im Protokoll aus wie
-        // eine Suche ohne Ergebnis.
-        ...(r.trefferUrls ? { trefferUrls: r.trefferUrls } : {}),
-      })
-    } else {
-      schreibe(u, laufId, 'tool.failed', { aufrufId: a.id, name: a.name, meldung: r.meldung })
-    }
+    schreibeWerkzeugErgebnis(u, laufId, a, r)
   } catch (err) {
     schreibe(u, laufId, 'tool.failed', {
       aufrufId: a.id, name: a.name,
       meldung: err instanceof Error ? err.message : String(err),
     })
   }
+}
+
+/**
+ * Ein Werkzeugergebnis ins Protokoll, an genau einer Stelle. Der Rechercheur liefert dieselbe
+ * `WerkzeugErgebnis`-Form wie jedes Werkzeug, wird aber vor der Registry abgefangen — ohne diese
+ * Funktion staende der Schreibweg zweimal da, und die zweite Kopie waere die, die ein neues Feld
+ * (wie `gelesen`) beim naechsten Mal nicht bekommt.
+ */
+function schreibeWerkzeugErgebnis(
+  u: LaufUmgebung, laufId: string, a: Extract<Block, { art: 'werkzeug-aufruf' }>,
+  r: WerkzeugErgebnis,
+): void {
+  if (!r.ok) {
+    schreibe(u, laufId, 'tool.failed', { aufrufId: a.id, name: a.name, meldung: r.meldung })
+    return
+  }
+  schreibe(u, laufId, 'tool.completed', {
+    aufrufId: a.id, name: a.name, inhalt: r.inhalt, quelle: r.quelle,
+    // Felder weglassen statt leer schreiben: die Herkunftspruefung liest `trefferUrls` und die
+    // Quellenliste des Rechercheurs `gelesen`. Ein leeres Feld an einem Werkzeug, das gar keine
+    // Treffer hat, saehe im Protokoll aus wie eine Suche ohne Ergebnis.
+    ...(r.trefferUrls ? { trefferUrls: r.trefferUrls } : {}),
+    ...(r.gelesen ? { gelesen: r.gelesen } : {}),
+  })
 }
 
 function erledigte(ereignisse: Ereignis[]): string[] {

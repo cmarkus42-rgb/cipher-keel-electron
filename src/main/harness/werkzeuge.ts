@@ -47,6 +47,17 @@ export type WerkzeugErgebnis =
        * traegt auch Titel und Auszuege, und die schreibt die Gegenstelle.
        */
       trefferUrls?: string[]
+      /**
+       * Nur `seite_lesen` fuellt das: Titel und **End**-URL der Seite, die wirklich gelesen wurde.
+       * Es landet in `tool.completed` und ist die einzige Quelle der Quellenliste, die der
+       * Rechercheur seinem Elternlauf zurueckgibt (rechercheur.ts).
+       *
+       * Ein eigenes Feld und kein Zurueckparsen des Antworttextes — aus demselben Grund wie bei
+       * `trefferUrls`: der Text traegt den fremdbestimmten Seitenrumpf, und wer dort nach URLs
+       * sucht, laesst die Gegenstelle die Quellenliste mitschreiben. Und die Quellenliste ist das
+       * Einzige, was gegen den vergifteten Befund ueberhaupt noch hilft.
+       */
+      gelesen?: { titel: string; url: string }
     }
   | { ok: false; meldung: string }
 
