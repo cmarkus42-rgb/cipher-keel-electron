@@ -7,7 +7,16 @@
  */
 
 import type { Ereignis } from './ereignisse'
-import type { Block, Nachricht } from './form'
+import type { Block, Nachricht, WerkzeugQuelle } from './form'
+
+/**
+ * `quelle` aus der Nutzlast, oder nichts. Unbekannte Werte fallen weg statt zu 'lokal' zu werden:
+ * eine Herkunft, die dieses Modul nicht kennt, als „aus dieser Maschine" auszugeben waere die
+ * gefaehrlichere der beiden Deutungen.
+ */
+function quelleAus(wert: unknown): { quelle?: WerkzeugQuelle } {
+  return wert === 'netz' || wert === 'lokal' ? { quelle: wert } : {}
+}
 
 const UNBEKANNT =
   'Ausfuehrung unbekannt, Zustand pruefen. Der Aufruf wurde begonnen, sein Ergebnis nicht ' +
@@ -98,6 +107,11 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[] {
         ergebnisse.push({
           art: 'werkzeug-ergebnis', aufrufId: id,
           inhalt: finalInhalt, fehler: false,
+          // Durchgereicht, nicht geraten. Ein Protokoll aus der Zeit vor dieser Angabe hat kein
+          // `quelle` — dann bleibt das Feld weg. Ein hier eingesetztes `'lokal'` waere eine
+          // Auskunft ueber alte Laeufe, die niemand geprueft hat, und genau der Grund, warum die
+          // Angabe mit dem ersten Netz-Werkzeug kommt und nicht danach.
+          ...quelleAus(e.nutzlast.quelle),
         })
         beantwortetAufrufe.set(id, 'ergebnis')
         break

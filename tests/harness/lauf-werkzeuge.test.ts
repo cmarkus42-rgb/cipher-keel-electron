@@ -156,7 +156,7 @@ describe('Werkzeugausfuehrung', () => {
         ablauf.push(`start:${name}`)
         await new Promise(resolve => setTimeout(resolve, ms))
         ablauf.push(`ende:${name}`)
-        return { ok: true, inhalt: [{ art: 'text', text: name }] }
+        return { ok: true, quelle: 'lokal', inhalt: [{ art: 'text', text: name }] }
       },
     })
     const langsam = verzoegert('langsam', 40)

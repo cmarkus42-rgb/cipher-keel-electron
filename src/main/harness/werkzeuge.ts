@@ -11,17 +11,43 @@
  */
 
 import type Database from 'better-sqlite3'
-import type { Block } from './form'
+import type { Block, WerkzeugQuelle } from './form'
 import type { WerkzeugStummel } from './codec'
 import type { WacheKontext } from './pfadwache'
+import type { NetzKontext } from './werkzeug-netz'
 
 export interface WerkzeugKontext {
   wache: WacheKontext
   graphDb: Database.Database | null
+  /**
+   * Netzzugang, wenn der Lauf einen hat. Optional, und die Netz-Werkzeuge antworten ohne ihn
+   * **benannt** statt leer.
+   *
+   * Warum die Konfiguration hier durchgereicht wird und die Werkzeuge sie sich nicht selbst aus
+   * dem `configStore` ziehen: siehe `NetzKontext` in werkzeug-netz.ts. Kurz — das Werkzeug bleibt
+   * eine reine Funktion ueber seinem Kontext, und die anpassbare Flaeche entsteht an genau einer
+   * Stelle.
+   */
+  netz?: NetzKontext
 }
 
 export type WerkzeugErgebnis =
-  | { ok: true; inhalt: Block[] }
+  | {
+      ok: true
+      inhalt: Block[]
+      /**
+       * Pflichtangabe, kein optionales Extra: ein neues Werkzeug muss sich entscheiden, ob sein
+       * Inhalt fremdbestimmt ist. Vergessen kann man das dann nicht mehr — der Compiler fragt.
+       */
+      quelle: WerkzeugQuelle
+      /**
+       * Nur `web_suchen` fuellt das: die URLs der ausgegebenen Treffer, wortgleich. Sie landen in
+       * `tool.completed` und sind die einzige Quelle der Herkunftspruefung von `seite_lesen`
+       * (werkzeug-netz.ts). Ein eigenes Feld und kein Zurueckparsen des Antworttextes — der Text
+       * traegt auch Titel und Auszuege, und die schreibt die Gegenstelle.
+       */
+      trefferUrls?: string[]
+    }
   | { ok: false; meldung: string }
 
 // `Omit<..., 'schema'>` rather than a plain `extends`: WerkzeugStummel's `schema` is an optional

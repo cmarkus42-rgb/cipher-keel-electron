@@ -1,7 +1,8 @@
 # Anpassbare Flächen — Inventar (CK-NFR-012)
 
-**Stand:** 2026-08-21 — Zufuhr nachgeführt (Suchanbieter, netzwache-Positivliste,
-Extraktionsgrenzen; siehe Abschnitt „Zufuhr"). Davor 2026-08-17, Settings-Fenster (siehe
+**Stand:** 2026-08-21 — Netz-Werkzeuge nachgeführt (Vorgabe-Positivliste, Suchanbieter und
+Seitengrenzen je Lauf; siehe Abschnitt „Zufuhr"). Davor am selben Tag die Zufuhr darunter
+(Suchanbieter, netzwache-Positivliste, Extraktionsgrenzen). Davor 2026-08-17, Settings-Fenster (siehe
 `docs/superpowers/specs/2026-08-17-settings-fenster-design.md`)
 
 > **CK-NFR-012:** Jede Fläche, die ein Nutzer sinnvoll anpassen kann — Einstellung,
@@ -198,9 +199,16 @@ Wer die beiden Fälle vermengt, streicht ein Argument, das es gibt.
 ## Zufuhr: Suchanbieter, Netzwache, Seitenextraktion — Stand 2026-08-21
 
 Die Zufuhr (`web_suchen`, `seite_lesen`) bringt drei Gruppen anpassbarer Flächen mit. **Keine
-davon hat heute eine Oberfläche**, und der Werkzeugrumpf darüber ist noch nicht gebaut — das
-ist der ehrliche Stand, und er steht hier, weil CK-NFR-012 genau das verlangt: benannt werden
-muss eine Fläche auch dann, wenn die App sie noch nicht erreicht.
+davon hat heute eine Oberfläche** — das ist der ehrliche Stand, und er steht hier, weil
+CK-NFR-012 genau das verlangt: benannt werden muss eine Fläche auch dann, wenn die App sie noch
+nicht erreicht.
+
+Seit 2026-08-21 sind die beiden Werkzeuge selbst gebaut (`src/main/harness/werkzeug-netz.ts`).
+Damit kommen zwei Flächen hinzu, die es vorher nur als Begriff gab: die **Vorgabe-Positivliste**
+und der **Suchanbieter samt Grenzen je Lauf**. Beide hängen an **einer** Stelle, dem
+`NetzKontext` im `WerkzeugKontext` — die Werkzeuge ziehen sich ihre Konfiguration ausdrücklich
+nicht selbst aus dem `configStore`. Das ist kein Testtrick: eine anpassbare Fläche, die in drei
+Modulen gelesen wird, läuft auseinander, und diese hier wäre dann in einem der drei falsch.
 
 | Fläche | Herkunft | Wirkung | In der App sichtbar | Editierbar |
 |---|---|---|---|---|
@@ -211,6 +219,10 @@ muss eine Fläche auch dann, wenn die App sie noch nicht erreicht.
 | `ZEITBUDGET_MS` (10.000), `MAX_ANTWORT_BYTES` (1.000.000) | Konstanten in `src/main/harness/such-anbieter.ts`, überschreibbar je Anbieter-Instanz (`SuchGrenzen`) | Zeit- und Größengrenze des Suchabrufs. Sie stehen **hier** und nicht in der netzwache, weil dieser eine Abruf an ihr vorbeiläuft | nein | nein — nur durch Ändern der Konstante und Neubau |
 | `MIN_ZEICHEN` (250), `STANDARD_MAX_ZEICHEN` (32.000), `HARTE_MAX_ZEICHEN` (48.000) | Konstanten in `src/main/harness/seiten-text.ts` (§3.3/§3.4) | Untergrenze für brauchbaren Extrakt (darunter: benannte Absage statt Erfolg) und die Ober­grenzen, auf die ein modellgewähltes `max_zeichen` geklemmt wird | nein | nein — nur durch Ändern der Konstante und Neubau |
 | `NetzWacheKontext.positivliste` | `src/main/harness/netzwache.ts`, gefüllt vom Aufrufer | Welche Hosts der **Hauptlauf** überhaupt erreichen darf. Der Unterlauf des Rechercheurs (`modus: 'offen'`) überspringt genau diese eine Regel | nein | nein — heute im Quelltext des Aufrufers, keine Config, keine Oberfläche |
+| **`VORGABE_POSITIVLISTE`** | `src/main/harness/werkzeug-netz.ts` | Die Vorgabe für obige Zeile: `nodejs.org`, `developer.mozilla.org`, `electronjs.org`, `vitest.dev`, `vite.dev`, `typescriptlang.org`, `docs.ollama.com`, `docs.anthropic.com`, `react.dev`. **GitHub gehört bewusst nicht dazu** — GitHub-Recherche läuft über den Rechercheur (Nachtrag 2026-08-21), weil GitHub fremden Nutzerinhalt trägt und `github.io` Unterdomänen an jeden vergibt. Ein Test hält das fest, damit der Eintrag nicht aus Bequemlichkeit nachwächst | nein | nein — Konstante im Quelltext, Neubau nötig |
+| **`NetzKontext.anbieter`** (Suchanbieter je Lauf) | `src/main/harness/werkzeug-netz.ts`, gefüllt vom Aufrufer aus `waehleAnbieter` | Welcher Suchdienst `web_suchen` bedient. Ohne `netz`-Kontext antworten beide Werkzeuge **benannt**, dass für diesen Lauf kein Netzzugang eingerichtet ist — nie mit „keine Treffer" | nein | nein — heute im Quelltext des Aufrufers |
+| **`NetzKontext.modus`** | `src/main/harness/werkzeug-netz.ts` | `whitelist` (Hauptlauf, Positivliste gilt) oder `offen` (Unterlauf des Rechercheurs). Alle übrigen Regeln der netzwache gelten in beiden Modi unverändert | nein | nein |
+| **`VORGABE_SEITE_GRENZEN`** (5 MB, 20.000 ms, 3 Weiterleitungen) | `src/main/harness/werkzeug-netz.ts` (§3.4), je Lauf über `NetzKontext.seiteGrenzen` überschreibbar | Download-, Zeit- und Weiterleitungsgrenze von `seite_lesen`. Anders als beim Suchabruf laufen sie durch die netzwache, weil das Ziel hier **modellgewählt** ist | nein | nein — Konstante im Quelltext, Neubau nötig |
 
 **Zwei Fallen, die zur Positivliste gehören und deshalb hier stehen und nicht nur im Quelltext:**
 
@@ -220,7 +232,14 @@ muss eine Fläche auch dann, wenn die App sie noch nicht erreicht.
    `pages.dev` —, ist es eine Einladung: mit einem solchen Eintrag steht fremder Nutzerinhalt
    im Hauptlauf neben `datei_lesen` und den Graph-Werkzeugen.
 2. **Die Positivliste ist keine Ausleit-Grenze.** Eine erlaubte URL trägt ihren Query-String
-   mit hinaus.
+   mit hinaus. Was diesen Kanal fast vollständig schließt, ist nicht die Liste, sondern die
+   **Herkunftsprüfung** von `seite_lesen`: es nimmt ausschließlich URLs, die **bytegleich** in
+   einem Suchtreffer desselben Laufs standen. Eine vom Modell komponierte
+   `https://nodejs.org/?d=<Geheimnis>` hat keinen Treffer und wird abgelehnt, bevor auch nur der
+   Name aufgelöst wird. Geprüft wird gegen das Ereignisprotokoll (Feld `trefferUrls` in
+   `tool.completed`), nicht gegen den Antworttext — Titel und Auszug schreibt die Gegenstelle.
+   **Diese Prüfung ist keine anpassbare Fläche und soll keine werden:** ein Schalter dafür wäre
+   ein Schalter für die Ausleitung.
 
 **Warum der Suchendpunkt nicht durch die netzwache läuft.** `pruefeUrl` lässt nur `https` durch
 und sperrt `100.64.0.0/10` (Tailscale); der SearXNG-Endpunkt auf MS-01 ist `http` im Tailnet und

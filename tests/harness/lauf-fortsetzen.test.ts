@@ -124,7 +124,7 @@ describe('Wiederaufnahme ueber den rekonstruierten Auftrag (Beleg 8)', () => {
       schema: () => ({ type: 'object', properties: {} }),
       async ausfuehren() {
         aufrufe += 1
-        return { ok: true, inhalt: [{ art: 'text', text: 'ok' }] }
+        return { ok: true, quelle: 'lokal', inhalt: [{ art: 'text', text: 'ok' }] }
       },
     }
 

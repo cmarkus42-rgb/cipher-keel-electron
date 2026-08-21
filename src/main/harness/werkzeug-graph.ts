@@ -105,7 +105,7 @@ function isSafeError(msg: string): boolean {
 function serialisiereSicher(wert: unknown, maxSize: number, werkzeug: string): WerkzeugErgebnis {
   const txt = JSON.stringify(wert, null, 2)
   if (txt.length <= maxSize) {
-    return { ok: true, inhalt: [{ art: 'text', text: txt }] }
+    return { ok: true, quelle: 'lokal', inhalt: [{ art: 'text', text: txt }] }
   }
   const ersatz = {
     gekuerzt: true,
@@ -115,7 +115,7 @@ function serialisiereSicher(wert: unknown, maxSize: number, werkzeug: string): W
       'und wurde durch diese Meldung ersetzt, um gueltiges JSON zu garantieren. ' +
       'Bitte enger fassen (kleineres limit/depth oder praeziserer Suchbegriff/uid).',
   }
-  return { ok: true, inhalt: [{ art: 'text', text: JSON.stringify(ersatz, null, 2) }] }
+  return { ok: true, quelle: 'lokal', inhalt: [{ art: 'text', text: JSON.stringify(ersatz, null, 2) }] }
 }
 
 /**

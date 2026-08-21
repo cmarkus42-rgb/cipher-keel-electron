@@ -197,7 +197,7 @@ const dateiLesen: Werkzeug = {
       // that on its own; only a negative or inverted range needed rejecting above.
       text = zeilen.slice((von ?? 1) - 1, bis ?? zeilen.length).join('\n')
     }
-    return { ok: true, inhalt: [{ art: 'text', text }] }
+    return { ok: true, quelle: 'lokal', inhalt: [{ art: 'text', text }] }
   },
 }
 
@@ -224,6 +224,7 @@ const verzeichnisListen: Werkzeug = {
     const kernText = treffer.length > 0 ? treffer.join('\n') : 'Keine Treffer.'
     return {
       ok: true,
+      quelle: 'lokal',
       inhalt: [{ art: 'text', text: kernText + ausschlussHinweis(ausgeschlossen) }],
     }
   },
@@ -305,6 +306,7 @@ const inhaltSuchen: Werkzeug = {
       : ''
     return {
       ok: true,
+      quelle: 'lokal',
       inhalt: [{ art: 'text', text: kernText + groessenHinweis + ausschlussHinweis(ausgeschlossen) }],
     }
   },

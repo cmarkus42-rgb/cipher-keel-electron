@@ -34,6 +34,7 @@ import { kostenCent, VORGABE_PREISE, type Preis } from './preise'
 import type { WacheKontext } from './pfadwache'
 import { META_WERKZEUG_NAME, type WerkzeugRegistry } from './werkzeuge'
 import { FAEHIGKEIT_WERKZEUG_NAME, unbekannteFaehigkeitMeldung } from './faehigkeiten'
+import type { NetzKontext } from './werkzeug-netz'
 
 export interface Auftrag {
   auftragstext: string
@@ -50,6 +51,16 @@ export interface LaufUmgebung {
   praefixTeile: PraefixTeile
   wache: WacheKontext
   graphDb: Database.Database | null
+  /**
+   * Netzzugang des Laufs, wenn einer eingerichtet ist. Ohne ihn antworten die Netz-Werkzeuge
+   * benannt, dass fuer diesen Lauf kein Netzzugang besteht — sie fallen nicht aus der Liste.
+   *
+   * Ohne `ereignisse`: das Protokoll gehoert dem Lauf, nicht der Konfiguration, und `fuehreAus`
+   * setzt es je Aufruf frisch ein. Eine hier mitgegebene Liste waere ab dem ersten Zug veraltet,
+   * und die Herkunftspruefung von `seite_lesen` liefe gegen einen Stand, in dem die Suche dieses
+   * Zuges noch gar nicht steht.
+   */
+  netz?: Omit<NetzKontext, 'ereignisse'>
   registry: WerkzeugRegistry
   /** Every appended event, for whoever wants to watch. */
   strom: (e: Ereignis) => void
@@ -354,7 +365,7 @@ async function fuehreAus(
     // Appended to the history, never written into the stable prefix.
     schreibe(u, laufId, 'tool.schema_loaded', { name: gesucht, schema })
     schreibe(u, laufId, 'tool.completed', {
-      aufrufId: a.id, name: a.name,
+      aufrufId: a.id, name: a.name, quelle: 'lokal',
       inhalt: [{ art: 'text', text: `Schema fuer ${gesucht} steht im Verlauf.` }],
     })
     return
@@ -385,7 +396,7 @@ async function fuehreAus(
     }
     schreibe(u, laufId, 'skill.geladen', { name: treffer.name, text: treffer.rumpf })
     schreibe(u, laufId, 'tool.completed', {
-      aufrufId: a.id, name: a.name,
+      aufrufId: a.id, name: a.name, quelle: 'lokal',
       inhalt: [{ art: 'text', text: `Faehigkeit ${treffer.name} steht im Verlauf.` }],
     })
     return
@@ -402,9 +413,24 @@ async function fuehreAus(
   }
 
   try {
-    const r = await werkzeug.ausfuehren(a.eingabe, { wache: u.wache, graphDb: u.graphDb })
-    if (r.ok) schreibe(u, laufId, 'tool.completed', { aufrufId: a.id, name: a.name, inhalt: r.inhalt })
-    else schreibe(u, laufId, 'tool.failed', { aufrufId: a.id, name: a.name, meldung: r.meldung })
+    // Das Protokoll wird hier gelesen und nicht mitgeschleppt: `seite_lesen` prueft die Herkunft
+    // einer URL gegen die Treffer *dieses* Laufs, und der Lauf haelt seinen Zustand nirgends
+    // ausser im Protokoll — dieselbe Regel wie bei Verlauf und Verbrauch. Ein Aufruf im selben
+    // Zug wie die Suche sieht deren Treffer je nach Reihenfolge noch nicht; das ist die
+    // fail-closed-Richtung (Ablehnung, kein Abruf), und der naechste Zug hat sie.
+    const netz = u.netz ? { ...u.netz, ereignisse: lesen(u.db, laufId) } : undefined
+    const r = await werkzeug.ausfuehren(a.eingabe, { wache: u.wache, graphDb: u.graphDb, netz })
+    if (r.ok) {
+      schreibe(u, laufId, 'tool.completed', {
+        aufrufId: a.id, name: a.name, inhalt: r.inhalt, quelle: r.quelle,
+        // Feld weglassen statt leer schreiben: die Herkunftspruefung liest `trefferUrls`, und ein
+        // leeres Feld an einem Werkzeug, das gar keine Treffer hat, saehe im Protokoll aus wie
+        // eine Suche ohne Ergebnis.
+        ...(r.trefferUrls ? { trefferUrls: r.trefferUrls } : {}),
+      })
+    } else {
+      schreibe(u, laufId, 'tool.failed', { aufrufId: a.id, name: a.name, meldung: r.meldung })
+    }
   } catch (err) {
     schreibe(u, laufId, 'tool.failed', {
       aufrufId: a.id, name: a.name,
