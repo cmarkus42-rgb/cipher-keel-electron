@@ -14,6 +14,9 @@ export type EreignisArt =
   | 'tool.completed'
   | 'tool.failed'
   | 'tool.schema_loaded'
+  // Nutzlast `{name, text}`. Eigenes Ereignis statt eines gewoehnlichen Werkzeugergebnisses, damit
+  // im Protokoll sichtbar bleibt, dass eine Faehigkeit tatsaechlich geladen wurde (Spec 5.2, M7).
+  | 'skill.geladen'
   | 'budget.warned'
   | 'run.finished'
 

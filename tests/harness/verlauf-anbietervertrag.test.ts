@@ -102,6 +102,99 @@ const nachladeLauf: Ereignis[] = [
     inhalt: [{ art: 'text', text: 'Schema fuer datei_lesen steht im Verlauf.' }] }),
 ]
 
+// Dieselbe Form, eine Ebene weiter: das Modell holt sich den Rumpf einer Faehigkeit. `skill.geladen`
+// ist strukturell dasselbe wie `tool.schema_loaded` — und faellt deshalb in dieselbe Grube, wenn es
+// als eigene Nachricht geschrieben wird.
+const faehigkeitsLauf: Ereignis[] = [
+  ev(1, 'run.started', { auftragstext: 'recherchiere den Preis' }),
+  ev(2, 'model.answered', { bloecke: [
+    { art: 'text', text: 'Ich lese die Faehigkeit.' },
+    { art: 'werkzeug-aufruf', id: 'c1', name: 'faehigkeit_lesen', eingabe: { name: 'web-recherche' } },
+  ] }),
+  ev(3, 'tool.intent', { aufrufId: 'c1', name: 'faehigkeit_lesen', eingabe: { name: 'web-recherche' } }),
+  ev(4, 'skill.geladen', { name: 'web-recherche', text: '# Web-Recherche\n\nErst suchen, dann lesen.' }),
+  ev(5, 'tool.completed', { aufrufId: 'c1', name: 'faehigkeit_lesen',
+    inhalt: [{ art: 'text', text: 'Faehigkeit web-recherche steht im Verlauf.' }] }),
+]
+
+describe('Verlauf gegen den Anbietervertrag: geladene Faehigkeiten', () => {
+  it('haelt nach einem Faehigkeits-Nachladen die Nachbarschaft von tool_use und tool_result ein', () => {
+    const koerper = anthropicCodec.toWire(projiziere(faehigkeitsLauf), [], kann) as {
+      messages: Array<Record<string, unknown>>
+    }
+    expect(ersterVerstoss(koerper.messages)).toBeNull()
+  })
+
+  it('erzeugt keine zwei Nutzernachrichten hintereinander', () => {
+    const koerper = anthropicCodec.toWire(projiziere(faehigkeitsLauf), [], kann) as {
+      messages: Array<Record<string, unknown>>
+    }
+    expect(ersteRollenwiederholung(koerper.messages)).toBeNull()
+  })
+
+  it('traegt den Rumpf trotzdem in den Verlauf, nicht in den Praefix', () => {
+    const koerper = anthropicCodec.toWire(projiziere(faehigkeitsLauf), [], kann) as {
+      messages: Array<Record<string, unknown>>
+      tools?: unknown
+    }
+    // Wie oben verankert an dem Satz, den nur die Projektion schreibt — nicht an einem Wort, das
+    // auch im Auftrag oder im Werkzeugergebnis vorkommt.
+    expect(JSON.stringify(koerper.messages)).toContain('Faehigkeit web-recherche:')
+    expect(JSON.stringify(koerper.messages)).toContain('Erst suchen, dann lesen.')
+    expect(koerper.tools).toBeUndefined()
+  })
+
+  it('haengt den Rumpf hinter das Werkzeugergebnis, nicht davor', () => {
+    const v = projiziere(faehigkeitsLauf)
+    const letzte = v[v.length - 1]
+    expect(letzte.rolle).toBe('nutzer')
+    expect(letzte.bloecke[0].art).toBe('werkzeug-ergebnis')
+    expect(letzte.bloecke).toHaveLength(2)
+    expect(letzte.bloecke[1]).toEqual({
+      art: 'text',
+      text: 'Faehigkeit web-recherche:\n# Web-Recherche\n\nErst suchen, dann lesen.',
+    })
+  })
+
+  it('haelt die Nachbarschaft auch, wenn im selben Zug ein echtes Werkzeug mitlaeuft', () => {
+    const gemischt: Ereignis[] = [
+      ev(1, 'run.started', { auftragstext: 'a' }),
+      ev(2, 'model.answered', { bloecke: [
+        { art: 'werkzeug-aufruf', id: 'c1', name: 'datei_lesen', eingabe: { pfad: 'a.md' } },
+        { art: 'werkzeug-aufruf', id: 'c2', name: 'faehigkeit_lesen', eingabe: { name: 'web-recherche' } },
+      ] }),
+      ev(3, 'tool.intent', { aufrufId: 'c1', name: 'datei_lesen', eingabe: { pfad: 'a.md' } }),
+      ev(4, 'tool.intent', { aufrufId: 'c2', name: 'faehigkeit_lesen', eingabe: { name: 'web-recherche' } }),
+      ev(5, 'skill.geladen', { name: 'web-recherche', text: 'Rumpf.' }),
+      ev(6, 'tool.completed', { aufrufId: 'c2', name: 'faehigkeit_lesen',
+        inhalt: [{ art: 'text', text: 'Faehigkeit web-recherche steht im Verlauf.' }] }),
+      ev(7, 'tool.completed', { aufrufId: 'c1', name: 'datei_lesen',
+        inhalt: [{ art: 'text', text: 'Inhalt von a.md' }] }),
+    ]
+    const koerper = anthropicCodec.toWire(projiziere(gemischt), [], kann) as {
+      messages: Array<Record<string, unknown>>
+    }
+    expect(ersterVerstoss(koerper.messages)).toBeNull()
+    expect(ersteRollenwiederholung(koerper.messages)).toBeNull()
+  })
+
+  it('haelt die Reihenfolge auch beim openai-chat-Codec', () => {
+    const koerper = openAiChatCodec.toWire(projiziere(faehigkeitsLauf), [], { ...kann, codec: 'openai-chat' }) as {
+      messages: Array<Record<string, unknown>>
+    }
+    const rollen = koerper.messages.map(m => String(m.role))
+    for (let i = 0; i < koerper.messages.length; i++) {
+      const m = koerper.messages[i]
+      if (m.role !== 'assistant' || !m.tool_calls) continue
+      const anzahl = (m.tool_calls as unknown[]).length
+      for (let k = 1; k <= anzahl; k++) {
+        expect(rollen[i + k]).toBe('tool')
+      }
+    }
+    expect(JSON.stringify(koerper.messages)).toContain('Faehigkeit web-recherche:')
+  })
+})
+
 describe('Verlauf gegen den Anbietervertrag', () => {
   it('haelt nach einem Schema-Nachladen die Anthropic-Nachbarschaft von tool_use und tool_result ein', () => {
     const koerper = anthropicCodec.toWire(projiziere(nachladeLauf), [], kann) as {

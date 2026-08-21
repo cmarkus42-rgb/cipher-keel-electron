@@ -48,6 +48,7 @@ import type { PraefixText } from './harness/praefix'
 import {
   starteLauf, setzeFort, oeffneHarnessDb, lesen, laufIds, codecFuer,
   WerkzeugRegistry, DATEI_WERKZEUGE, GRAPH_WERKZEUGE,
+  leseFaehigkeiten, faehigkeitLesenWerkzeug,
 } from './harness'
 import type { ModelAntwort, Auftrag, LaufUmgebung } from './harness'
 import type { AppServices } from './window-manager'
@@ -193,13 +194,26 @@ function baueLaufUmgebung(
   laufId: string, eintrag: ModellEintrag, auftragstext: string, wurzel: string,
   services: AppServices, aufJedesEreignis: (ev: HarnessEreignis) => void,
 ): LaufUmgebung {
+  // Gelesen wird beim Bau der Umgebung, einmal je Lauf — nicht je Zug: der stabile Praefix muss
+  // ueber alle Zuege zeichengleich bleiben, und ein Leser, der pro Zug wieder auf die Platte geht,
+  // wuerde bei jeder Aenderung an .claude/ mitten im Lauf den Prompt-Cache des Anbieters verfehlen.
+  const befund = leseFaehigkeiten(wurzel)
+  // Uebersprungene Verzeichnisse werden genannt, nicht verschluckt. Sie gehen ins Hauptprozess-Log
+  // und (noch) nicht ins Ereignisprotokoll: `hinweise` gehoert run.started, und das schreibt
+  // starteLauf aus dem Auftrag heraus — dort ein Feld dafuer zu erfinden, waere Vorratsbau. Wer
+  // eine Faehigkeit vermisst, findet hier den Grund samt Pfad.
+  for (const u of befund.uebersprungen) {
+    console.warn(`[harness-handlers] Faehigkeit uebersprungen: ${u.pfad} — ${u.grund}`)
+  }
   return {
     db: harnessDb(),
     eintrag,
-    praefixTeile: assemblePraefixTeile(auftragstext),
+    praefixTeile: assemblePraefixTeile(auftragstext, befund.faehigkeiten),
     wache: { wurzel, heim: homedir(), userDataPfad: app.getPath('userData') },
     graphDb: services.graphDb,
-    registry: new WerkzeugRegistry([...DATEI_WERKZEUGE, ...GRAPH_WERKZEUGE]),
+    registry: new WerkzeugRegistry([
+      ...DATEI_WERKZEUGE, ...GRAPH_WERKZEUGE, faehigkeitLesenWerkzeug,
+    ]),
     strom: (ev) => {
       broadcast(HARNESS_EREIGNIS, ev as HarnessEreignis)
       aufJedesEreignis(ev as HarnessEreignis)

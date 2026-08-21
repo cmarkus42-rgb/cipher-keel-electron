@@ -150,7 +150,7 @@ describe('Wiederaufnahme ueber den rekonstruierten Auftrag (Beleg 8)', () => {
     await setzeFort(laufId, auftrag!, {
       db,
       eintrag: EINTRAG,
-      praefixTeile: { body: 'BODY', capabilities: '', persona: '', globaleRegeln: '', auftragstext: 'a' },
+      praefixTeile: { body: 'BODY', capabilities: '', persona: '', globaleRegeln: '', auftragstext: 'a', faehigkeiten: [] },
       wache: { wurzel: w, heim: w, userDataPfad: join(w, 'ud') },
       graphDb: null,
       registry: new WerkzeugRegistry([zaehlwerkzeug]),

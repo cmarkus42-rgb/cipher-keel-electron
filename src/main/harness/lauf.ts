@@ -33,6 +33,7 @@ import {
 import { kostenCent, VORGABE_PREISE, type Preis } from './preise'
 import type { WacheKontext } from './pfadwache'
 import { META_WERKZEUG_NAME, type WerkzeugRegistry } from './werkzeuge'
+import { FAEHIGKEIT_WERKZEUG_NAME, unbekannteFaehigkeitMeldung } from './faehigkeiten'
 
 export interface Auftrag {
   auftragstext: string
@@ -355,6 +356,37 @@ async function fuehreAus(
     schreibe(u, laufId, 'tool.completed', {
       aufrufId: a.id, name: a.name,
       inhalt: [{ art: 'text', text: `Schema fuer ${gesucht} steht im Verlauf.` }],
+    })
+    return
+  }
+
+  if (a.name === FAEHIGKEIT_WERKZEUG_NAME) {
+    // Dieselbe Stelle und dieselbe Reihenfolge wie beim Meta-Werkzeug darueber, und aus demselben
+    // Grund: der Rumpf gehoert an die Historie, nicht in den stabilen Praefix, und nur ein eigenes
+    // Ereignis macht im Protokoll sichtbar, dass eine Faehigkeit wirklich geladen wurde.
+    const gesucht = typeof a.eingabe.name === 'string' ? a.eingabe.name : ''
+    const alle = u.praefixTeile.faehigkeiten
+    if (gesucht === '') {
+      // Eigener Zweig, nicht in die Unbekannt-Meldung gefaltet: "Es gibt keine Faehigkeit ''"
+      // laesst das Modell nach einem Namen suchen, den es nie geschickt hat. Wortgleich mit der
+      // Ablehnung der Dateiwerkzeuge (werkzeug-datei.ts).
+      schreibe(u, laufId, 'tool.failed', {
+        aufrufId: a.id, name: a.name, meldung: `Das Feld 'name' fehlt in der Eingabe.`,
+      })
+      return
+    }
+    const treffer = alle.find(f => f.name === gesucht)
+    if (!treffer) {
+      schreibe(u, laufId, 'tool.failed', {
+        aufrufId: a.id, name: a.name,
+        meldung: unbekannteFaehigkeitMeldung(gesucht, alle),
+      })
+      return
+    }
+    schreibe(u, laufId, 'skill.geladen', { name: treffer.name, text: treffer.rumpf })
+    schreibe(u, laufId, 'tool.completed', {
+      aufrufId: a.id, name: a.name,
+      inhalt: [{ art: 'text', text: `Faehigkeit ${treffer.name} steht im Verlauf.` }],
     })
     return
   }

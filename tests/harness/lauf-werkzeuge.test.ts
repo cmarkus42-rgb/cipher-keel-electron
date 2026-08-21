@@ -26,7 +26,7 @@ function umgebung(wurzel: string, antworten: ModelAntwort[], werkzeuge: Werkzeug
   return {
     db: oeffneHarnessDb(':memory:'),
     eintrag: EINTRAG,
-    praefixTeile: { body: 'BODY', capabilities: '', persona: '', globaleRegeln: '', auftragstext: 'a' },
+    praefixTeile: { body: 'BODY', capabilities: '', persona: '', globaleRegeln: '', auftragstext: 'a', faehigkeiten: [] },
     wache: { wurzel, heim: wurzel, userDataPfad: join(wurzel, 'ud') },
     graphDb: null,
     registry: new WerkzeugRegistry(werkzeuge),

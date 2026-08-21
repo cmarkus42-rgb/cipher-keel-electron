@@ -32,7 +32,7 @@ function umgebungMit(antworten: ModelAntwort[], gesendet: PraefixText[] = []) {
   return {
     db: oeffneHarnessDb(':memory:'),
     eintrag: EINTRAG,
-    praefixTeile: { body: 'BODY', capabilities: '', persona: '', globaleRegeln: '', auftragstext: AUFTRAG.auftragstext },
+    praefixTeile: { body: 'BODY', capabilities: '', persona: '', globaleRegeln: '', auftragstext: AUFTRAG.auftragstext, faehigkeiten: [] },
     wache: { wurzel: '/tmp', heim: '/tmp', userDataPfad: '/tmp/ud' },
     graphDb: null,
     registry: new WerkzeugRegistry([]),

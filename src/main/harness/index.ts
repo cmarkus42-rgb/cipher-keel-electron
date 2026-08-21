@@ -9,6 +9,9 @@ export { starteLauf, setzeFort, type Auftrag, type LaufUmgebung } from './lauf'
 export { oeffneHarnessDb, lesen, laufIds } from './protokoll'
 export { WerkzeugRegistry } from './werkzeuge'
 export { DATEI_WERKZEUGE } from './werkzeug-datei'
+export {
+  leseFaehigkeiten, faehigkeitLesenWerkzeug, FAEHIGKEIT_WERKZEUG_NAME, type Faehigkeit,
+} from './faehigkeiten'
 export { GRAPH_WERKZEUGE } from './werkzeug-graph'
 export { codecFuer } from './codec'
 export { type PraefixTeile } from './praefix'

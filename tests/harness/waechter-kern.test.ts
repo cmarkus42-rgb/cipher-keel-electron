@@ -41,6 +41,11 @@ describe('Waechter: der Praefix ist rekonstruierbar', () => {
     const teile = {
       body: 'BODY', capabilities: 'CAP', persona: 'PERS',
       globaleRegeln: 'REGELN', auftragstext: 'auftrag',
+      faehigkeiten: [{
+        name: 'gate-urteil-guide', beschreibung: 'Faellt das Urteil an einem Gate.',
+        rumpf: 'Der Rumpf, der nie in den Praefix darf.',
+        pfad: '.claude/capabilities/gate-urteil-guide',
+      }],
     }
     const stummel = [{ name: 'datei_lesen', beschreibung: 'Liest eine Datei.' }]
     const gesendet = baueStabilenTeil(teile, stummel)
@@ -74,7 +79,7 @@ function umgebung(wurzel: string, antworten: ModelAntwort[]) {
   return {
     db: oeffneHarnessDb(':memory:'),
     eintrag: EINTRAG,
-    praefixTeile: { body: 'BODY', capabilities: '', persona: '', globaleRegeln: '', auftragstext: 'a' },
+    praefixTeile: { body: 'BODY', capabilities: '', persona: '', globaleRegeln: '', auftragstext: 'a', faehigkeiten: [] },
     wache: { wurzel, heim: wurzel, userDataPfad: join(wurzel, 'ud') },
     graphDb: null,
     registry: new WerkzeugRegistry(DATEI_WERKZEUGE),
