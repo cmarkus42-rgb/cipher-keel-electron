@@ -1,6 +1,6 @@
 # Übergabe: Qwen3.8 27B als Niveau-C-Modell mit Nachschlagen und Rechercheur
 
-**Stand:** 2026-08-22, vierte Fassung · **Zweig:** `qwen38-niveau-c`, 35 Commits über `main`,
+**Stand:** 2026-08-22, vierte Fassung · **Zweig:** `qwen38-niveau-c`, 37 Commits über `main`,
 2677 Tests grün, typecheck und lint sauber, Arbeitsbaum sauber · **Nicht integriert.**
 
 > **Was sich seit der ersten Fassung geändert hat, in fünf Sätzen:**
@@ -431,10 +431,17 @@ Runden mit fünf Behebungen, der hängende Abruf (5d) und der GPU-Zugriff des Sp
    Ein-Schuss-Worker bemessen, nicht für keels Schleife gegen ein 27B. Auf der gesunden Maschine
    fiel die Grenze nie auf, auf der CPU riss sie jeden Zug. Bewusst nicht geändert — siehe 5e.
 
-4. **Die nächsten Verluste des Rechercheurs sind Inhalt, nicht Netz.** Von 25 Abrufen in Runde 3:
-   4 „nicht extrahierbar" (Readability an JS-gerenderten Seiten, darunter GitHub-Issues) und
-   3 HTTP 403 (Reddit, Stack Exchange sperren Klienten ohne Browser-Kennung). Beides ist benannt
-   und kostet je einen Seitenplatz. Vor M12 war es hinter dem Filter unsichtbar.
+4. **Die nächsten Verluste des Rechercheurs sind Inhalt, nicht Netz — und damit die größte
+   verbliebene Position.** In Runde 5 gingen **11 von 32** Abrufen so verloren: 7 HTTP 403 (Reddit,
+   Stack Exchange sperren Klienten ohne Browser-Kennung) und 4 „nicht extrahierbar" (Readability an
+   JS-gerenderten Seiten, darunter GitHub-Issues). Beides ist benannt und kostet je einen
+   Seitenplatz; vor M12 war es hinter dem Netzfilter unsichtbar.
+
+   **Die 403-Hälfte ist keine technische Frage, sondern eine Entscheidung des Nutzers.** Der
+   naheliegende Handgriff — eine Browser-Kennung senden — umgeht eine Sperre, die diese Seiten
+   ausdrücklich gesetzt haben. Das ist nicht dasselbe wie ein Fehler, den man behebt, und es
+   gehört nicht im Vorbeigehen entschieden. Die Readability-Hälfte hat diese Frage nicht: dort
+   scheitert die Extraktion an JavaScript, nicht an einer Sperre.
 
 5. ~~**M7 — folgt ein 27B dem Nachlade-Satz?**~~ **Gefahren am 2026-08-22, 40 Läufe, und die
    Antwort ist ja.** `faehigkeit_lesen` wurde in **40 von 40** Läufen gerufen, bevor die Fähigkeit
@@ -452,6 +459,14 @@ Runden mit fünf Behebungen, der hängende Abruf (5d) und der GPU-Zugriff des Sp
 6. **M6 — SearXNG gegen Tavily gegen Brave**, an denselben 20 Fragen. Vorher ist die Anbieterwahl
    geraten. *Nebenbefund aus M12: die Trefferqualität von Tavily war in keinem der Läufe das
    Problem — die Trefferlisten waren durchweg einschlägig.*
+
+   **Zwei Dinge blockieren M6 heute, beide außerhalb des Codes.** Erstens ist
+   `netz.searxngEndpunkt` in der Konfiguration leer — es gibt keine erreichbare SearXNG-Instanz,
+   der Dreiervergleich ist also ohne einen Aufbauschritt nicht fahrbar. Zweitens steht die
+   Brave-Auflage weiter offen: die Speicherklausel §3(b)(i) der bezahlten Vertragsfassung ist
+   ungelesen (Abschnitt 5). Ein Zweiervergleich Tavily gegen Brave wäre sofort fahrbar — aber er
+   verschiebt Anfragen zu einem Anbieter, dessen Bedingungen für diesen Zweck niemand geprüft hat,
+   und das ist eine Entscheidung des Nutzers, keine Messentscheidung.
 
 7. **Integration** nach `main` über `superpowers:finishing-a-development-branch`.
 
