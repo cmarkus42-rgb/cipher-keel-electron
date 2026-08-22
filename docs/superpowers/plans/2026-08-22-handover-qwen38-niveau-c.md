@@ -443,6 +443,14 @@ Runden mit fünf Behebungen, der hängende Abruf (5d) und der GPU-Zugriff des Sp
    gehört nicht im Vorbeigehen entschieden. Die Readability-Hälfte hat diese Frage nicht: dort
    scheitert die Extraktion an JavaScript, nicht an einer Sperre.
 
+   **Ein eigener `user-agent` ist am 2026-08-22 schon einmal probiert und verworfen worden** —
+   Zeitfehler 5→4, gelesene Seiten 2→1, HTTP-Ablehnungen 1→3, also schlechter in jeder Zeile. Das
+   stand bis jetzt nur in einer Sitzungsnotiz und nirgends im Repo, deshalb steht es hier.
+   **Mit einem Vorbehalt, der es nicht erledigt macht:** gemessen wurde das, bevor der Netzfilter
+   als Ursache feststand — also unter genau der Störgröße, die damals jede Netzzahl verdorben hat.
+   Wer es noch einmal aufgreift, misst es neu, statt sich auf die alten Zahlen zu berufen; und wer
+   es liegen lässt, tut das mit dem Wissen, dass sie nicht belastbar sind.
+
 5. ~~**M7 — folgt ein 27B dem Nachlade-Satz?**~~ **Gefahren am 2026-08-22, 40 Läufe, und die
    Antwort ist ja.** `faehigkeit_lesen` wurde in **40 von 40** Läufen gerufen, bevor die Fähigkeit
    benutzt wurde — auch in den zwanzig Läufen, deren Auftrag **nicht** auf eine Hausregel hindeutete.
