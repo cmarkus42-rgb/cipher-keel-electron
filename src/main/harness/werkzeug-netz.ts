@@ -222,6 +222,13 @@ function zeile(text: string, max: number): string {
  * uebernommen — das ist die eine Stelle, an der Klemmen richtiger ist als Ablehnen, weil 60.000
  * kein Angriff ist, sondern ein Modell, das die Obergrenze nicht gelesen hat.
  *
+ * **Eine Zeichenkette wird angenommen, wenn sie eine Zahl ist** — dieselbe Regel und derselbe
+ * Grund wie bei `klemmeAnzahl` darunter, nur an der Stelle, an der sie beim ersten Mal fehlte.
+ * Gemessen an zehn echten Recherchen (M12, 2026-08-22): `qwen3.8:27b` schickte in fuenf von zehn
+ * Laeufen `"max_zeichen": "30000"`, und weil jede Ablehnung damals einen Seitenplatz verbrauchte,
+ * wurde in vier dieser Laeufe **keine einzige** Seite gelesen — der Befund stand dann auf
+ * Suchauszuegen oder auf gar nichts.
+ *
  * Oeffentlich, damit ein Test die Kappung *dieses* Werkzeugs pruefen kann.
  * `extrahiereSeitenText` klemmt noch einmal auf dieselbe Grenze; ein Test, der nur das Endergebnis
  * misst, waere also auch dann gruen, wenn es hier gar keine Kappung gaebe — der teuerste
@@ -231,10 +238,17 @@ export function klemmeMaxZeichen(
   wert: unknown,
 ): { ok: true; wert: number } | { ok: false; meldung: string } {
   if (wert === undefined) return { ok: true, wert: STANDARD_MAX_ZEICHEN }
-  if (typeof wert !== 'number' || !Number.isFinite(wert)) {
-    return { ok: false, meldung: `'max_zeichen' muss eine Zahl sein.` }
+  const zahl = typeof wert === 'string' && wert.trim() !== '' ? Number(wert) : wert
+  if (typeof zahl !== 'number' || !Number.isFinite(zahl)) {
+    // Der erhaltene Wert steht in der Meldung, nicht nur die Erwartung: ohne ihn steht im
+    // Protokoll, dass etwas nicht stimmte, aber nicht was — und M12 haette diesen Fehler dann
+    // gar nicht sehen koennen.
+    return {
+      ok: false,
+      meldung: `'max_zeichen' muss eine Zahl sein — erhalten: ${JSON.stringify(wert)}.`,
+    }
   }
-  return { ok: true, wert: Math.min(HARTE_MAX_ZEICHEN, Math.max(MIN_ZEICHEN, Math.trunc(wert))) }
+  return { ok: true, wert: Math.min(HARTE_MAX_ZEICHEN, Math.max(MIN_ZEICHEN, Math.trunc(zahl))) }
 }
 
 /**

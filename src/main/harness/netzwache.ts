@@ -498,7 +498,18 @@ export async function holeSicher(
   const steuerung = new AbortController()
   const uhr = setTimeout(() => steuerung.abort(), grenzen.zeitbudgetMs)
   const signal = steuerung.signal
-  const zeitGrund = `Zeitbudget von ${grenzen.zeitbudgetMs} ms ueberschritten`
+  /**
+   * Woran die Uhr gerade laeuft. Ohne diesen Zusatz sagt die Absage nur die Zahl, und die Zahl
+   * ist die einzige Auskunft, die man ohnehin schon hat.
+   *
+   * Gemessen an zwanzig echten Recherchen (M12, 2026-08-22): elf von fuenfundzwanzig
+   * Seitenabrufen rissen im **Hauptprozess der App** dieses Budget, waehrend derselbe Aufruf
+   * ueber genau denselben Code unter Node 0,1 bis 2,8 Sekunden braucht — nebenlaeufig wie
+   * nacheinander, mit und ohne Weiterleitung. Woran es liegt, ist offen; ohne die Angabe, in
+   * welchem Abschnitt die Zeit hinging, sucht der naechste Leser an drei Stellen zugleich.
+   */
+  let abschnitt = 'vor dem ersten Sprung'
+  const zeitGrund = () => `Zeitbudget von ${grenzen.zeitbudgetMs} ms ueberschritten (${abschnitt})`
 
   try {
     let aktuell = url
@@ -542,9 +553,10 @@ export async function holeSicher(
         adressen = [host]
       } else {
         try {
-          adressen = await gegenDieUhr(abhaengigkeiten.aufloesen(host, signal), signal, zeitGrund)
+          abschnitt = `Namensaufloesung fuer ${host}`
+          adressen = await gegenDieUhr(abhaengigkeiten.aufloesen(host, signal), signal, zeitGrund())
         } catch (fehler) {
-          if (signal.aborted) return { ok: false, grund: zeitGrund }
+          if (signal.aborted) return { ok: false, grund: zeitGrund() }
           // Named, not swallowed. An empty list here would be indistinguishable from a host with
           // no records, and `pruefeUrl` would report the wrong reason for the refusal.
           return { ok: false, grund: `Namensaufloesung fehlgeschlagen fuer ${host}: ${(fehler as Error).message}` }
@@ -556,7 +568,14 @@ export async function holeSicher(
 
       let antwort: Response
       try {
-        antwort = await abhaengigkeiten.abrufen({
+        abschnitt = `Abruf von ${host} (Sprung ${sprung})`
+        // Gegen die Uhr geklammert, nicht bloss mit dem Signal in der Hand — dieselbe Klammer und
+        // dieselbe Begruendung wie in `such-anbieter.holeJson`: **das Signal allein reicht nicht,
+        // weil ein Abrufer es ignorieren darf.** `Abrufer` ist eine Schnittstelle; sie sagt zu,
+        // dass `init.signal` mitkommt, nicht dass jemand darauf hoert. Aufloesung und Lesen liefen
+        // seit Runde 3 in dieser Klammer, der Abruf dazwischen nicht — der eine Abschnitt, der die
+        // Zusage von `zeitbudgetMs` („fuer die ganze Kette") am ehesten braucht.
+        antwort = await gegenDieUhr(abhaengigkeiten.abrufen({
           url: urteil.url,
           host,
           adressen,
@@ -571,9 +590,9 @@ export async function holeSicher(
             referrerPolicy: 'no-referrer',
             headers: { accept: 'text/html,text/plain;q=0.9,*/*;q=0.5' },
           },
-        })
+        }), signal, zeitGrund())
       } catch (fehler) {
-        if (signal.aborted) return { ok: false, grund: zeitGrund }
+        if (signal.aborted) return { ok: false, grund: zeitGrund() }
         return { ok: false, grund: `Abruf fehlgeschlagen: ${(fehler as Error).message}` }
       }
 
@@ -604,11 +623,12 @@ export async function holeSicher(
       // das der Abrufer an die Anfrage gehaengt hat.
       let gelesen: { ok: true; text: string } | { ok: false; grund: string }
       try {
-        gelesen = await gegenDieUhr(lies(antwort, grenzen, signal, zeitGrund), signal, zeitGrund)
+        abschnitt = `Lesen des Koerpers von ${host}`
+        gelesen = await gegenDieUhr(lies(antwort, grenzen, signal, zeitGrund()), signal, zeitGrund())
       } catch (fehler) {
         // Benannt, nicht verschluckt: `lies` selbst wirft nicht, also kommt hier das Rennen an —
         // trotzdem wird der Grund weitergegeben statt pauschal aufs Zeitbudget geraten.
-        if (signal.aborted) return { ok: false, grund: zeitGrund }
+        if (signal.aborted) return { ok: false, grund: zeitGrund() }
         return { ok: false, grund: `Lesen fehlgeschlagen: ${(fehler as Error).message}` }
       }
       if (!gelesen.ok) return gelesen

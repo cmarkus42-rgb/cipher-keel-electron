@@ -23,6 +23,17 @@
 //      nicht mit einer Zusicherung, sondern mit „Test timed out in 5000ms" — 50 ms Budget,
 //      5.009 ms Laufzeit. Das Zeitbudget deckte die Kette bis zum Antwortkopf und nicht das
 //      Lesen des Koerpers.
+//  10. Nacharbeit 2026-08-22 (M12): `gegenDieUhr` um den **Abruf** — den einzigen Abschnitt, der
+//      sie nie hatte. Ohne sie: 1 rot, und wieder nicht mit einer Zusicherung, sondern mit „Test
+//      timed out in 5000ms" bei 30 ms Budget. Aufloesung und Lesen liefen seit Runde 3 in der
+//      Klammer, der Abruf dazwischen nicht — obwohl `such-anbieter.holeJson` genau dafuer die
+//      Begruendung traegt: das Signal allein reicht nicht, weil ein Abrufer es ignorieren darf.
+//      `Abrufer` ist eine Schnittstelle; sie sagt zu, dass `init.signal` mitkommt, nicht dass
+//      jemand darauf hoert. Die alte Zeitbudget-Gegenprobe blieb gruen, weil ihr haengender
+//      Abrufer das Signal brav beachtete.
+//  11. Den Abschnittsnamen aus der Zeitabsage genommen: 1 rot. Elf von fuenfundzwanzig
+//      Seitenabrufen rissen in echten Recherchen das 20-Sekunden-Budget, und im Protokoll stand
+//      nur die Zahl — die einzige Auskunft, die man ohnehin schon hatte.
 //   9. `melde` nur beim ersten Sprung aufrufen (`if (sprung === 0)`) — der Stand vor der
 //      Nacharbeit vom 2026-08-21, in dem es den Melder gar nicht gab: 1 rot,
 //      `expected [ { sprung: +0, …(2) } ] to deeply equal [ { sprung: +0, …(2) }, …(2) ]`. Die
@@ -704,6 +715,48 @@ describe('holeSicher: Groesse und Zeit', () => {
     })
     expect(e.ok).toBe(false)
     expect(e.ok === false && e.grund).toContain('Zeitbudget')
+  })
+
+  it('nennt in der Zeitabsage den Abschnitt, in dem die Zeit hinging', async () => {
+    // Gemessen an zwanzig echten Recherchen (M12, 2026-08-22): elf von fuenfundzwanzig
+    // Seitenabrufen rissen im **Hauptprozess der App** das 20-Sekunden-Budget, waehrend derselbe
+    // Aufruf ueber genau denselben Code unter Node 0,1 bis 2,8 Sekunden braucht. Woran es lag,
+    // liess sich am Protokoll nicht ablesen: die Absage nannte nur die Zahl.
+    //
+    // Drei Abschnitte, drei Absagen. Ohne diese Unterscheidung sucht der naechste Leser den
+    // Fehler dort, wo er zuletzt jemanden vermutet hat, statt dort, wo die Zeit hinging.
+    const langsameAufloesung = await holeSicher(
+      'https://nodejs.org/a', haupt(), { ...GRENZEN, zeitbudgetMs: 30 }, {
+        melde: () => {},
+        aufloesen: () => new Promise<string[]>(() => {}),
+        abrufen: abrufer({ 'https://nodejs.org/a': seite('x') }, []),
+      })
+    expect(langsameAufloesung.ok === false && langsameAufloesung.grund).toContain('Namensaufloesung')
+
+    const langsamerAbruf = await holeSicher(
+      'https://nodejs.org/a', haupt(), { ...GRENZEN, zeitbudgetMs: 30 }, {
+        melde: () => {},
+        aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
+        abrufen: (() => new Promise<Response>(() => {})) as Abrufer,
+      })
+    expect(langsamerAbruf.ok === false && langsamerAbruf.grund).toContain('Abruf')
+    expect(langsamerAbruf.ok === false && langsamerAbruf.grund).not.toContain('Namensaufloesung')
+
+    const langsamesLesen = await holeSicher(
+      'https://nodejs.org/a', haupt(), { ...GRENZEN, zeitbudgetMs: 30 }, {
+        melde: () => {},
+        aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
+        abrufen: (() => Promise.resolve(new Response(new ReadableStream<Uint8Array>({
+          start(st) { st.enqueue(new TextEncoder().encode('<html>')) },
+          pull() { return new Promise<void>(() => {}) },
+          cancel() { return new Promise<void>(() => {}) },
+        }), { status: 200 }))) as Abrufer,
+      })
+    expect(langsamesLesen.ok === false && langsamesLesen.grund).toContain('Lesen')
+
+    // Und der Host steht dabei — bei einer Weiterleitungskette ist sonst nicht zu sagen, welcher
+    // Sprung haengen blieb.
+    expect(langsameAufloesung.ok === false && langsameAufloesung.grund).toContain('nodejs.org')
   })
 
   it('gibt dem Abrufer ueberhaupt ein Abbruchsignal mit', async () => {

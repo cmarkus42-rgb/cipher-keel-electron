@@ -64,6 +64,24 @@
 //      `expected [] to deeply equal [ 'rechercheur-modell' ]`. Deshalb sind Eintrag und `sende`
 //      ein Paar und kein Feld.
 //
+// Nacharbeit 2026-08-22, M12 — zehn echte Recherchen gegen `keel-qwen38:27b` mit Tavily. Die
+// Zahlen stehen im Messbericht; hier die Gegenproben zu dem, was daraus behoben wurde:
+//
+//  14. **Die alte Budgetzaehlung** (jeder `tool.intent` zaehlt, auch der an der Eingabepruefung
+//      gestorbene): **1 rot** — `expected [] to deeply equal [ …(2) ]`. Zwei Fehlaufrufe eines
+//      Zuges verbrannten das ganze Seitenbudget, und keine Seite wurde geholt. Genau das ist in
+//      vier von zehn echten Laeufen passiert.
+//  15. **`aufrufId` nicht am `netz.ausgehend`**: **2 rot**, darunter `expected [ …(3) ] to deeply
+//      equal [ …(2) ]` — ohne sie ist ein Aufruf, der hinausging und dann scheiterte, von einem,
+//      der nie hinausging, nicht zu unterscheiden, und ein Ziel mit zuverlaessigem HTTP 500 waere
+//      ein unbegrenzter Kanal nach draussen.
+//  16. **Aufgeschobenes Laden im Unterlauf wieder an**: **2 rot**. `werkzeug_schema` stand wieder
+//      in der Werkzeugliste des Unterlaufs. In den echten Laeufen kostete das in acht von zehn
+//      Faellen zwei der vier Runden.
+//  17. **Der Abfang in `fuehreAus` folgt weiter der Faehigkeitszeile statt dem Lauf**: **1 rot**.
+//      `werkzeug_schema` waere dann ausfuehrbar gewesen, ohne im Praefix zu stehen — die
+//      Werkzeugliste waere keine Aussage mehr darueber, was ausgefuehrt wird.
+//
 // Kein Netz: Modell, Suchanbieter, Aufloeser und Abrufer werden eingespeist.
 import { describe, it, expect } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -166,6 +184,15 @@ const ruft = (name: string, eingabe: Record<string, unknown>, id = 'c1'): ModelA
   usage: { eingabeToken: 100, ausgabeToken: 10, roh: null },
 })
 
+/** Ein Zug mit mehreren Werkzeugaufrufen — die Form, in der ein Modell sie wirklich schickt. */
+const ruftMehrfach = (
+  aufrufe: [string, Record<string, unknown>, string][],
+): ModelAntwort => ({
+  bloecke: aufrufe.map(([name, eingabe, id]) => ({ art: 'werkzeug-aufruf', id, name, eingabe })),
+  stopGrund: { normalisiert: 'werkzeug', roh: 'tool_calls' },
+  usage: { eingabeToken: 100, ausgabeToken: 10, roh: null },
+})
+
 const sagt = (text: string): ModelAntwort => ({
   bloecke: [{ art: 'text', text }],
   stopGrund: { normalisiert: 'ende', roh: 'stop' },
@@ -181,11 +208,13 @@ interface Baukasten {
   rechercheurModell?: LaufUmgebung['rechercheurModell']
 }
 
-function umgebung(wurzel: string, b: Baukasten): LaufUmgebung {
+function umgebung(wurzel: string, b: Baukasten): LaufUmgebung & { gesendet: unknown[] } {
   const haupt = [...b.haupt]
   const unter = [...b.unter]
+  const gesendet: unknown[] = []
   let t = 0
   return {
+    gesendet,
     db: oeffneHarnessDb(':memory:'),
     eintrag: EINTRAG,
     praefixTeile: {
@@ -203,7 +232,8 @@ function umgebung(wurzel: string, b: Baukasten): LaufUmgebung {
     // Die Weiche zwischen Haupt- und Unterlauf laeuft ueber den stabilen Praefix: nur der
     // Unterlauf hat `web_suchen` in seiner Werkzeugliste. Damit prueft schon der Aufbau des
     // Tests mit, dass die beiden Laeufe verschiedene Registries sehen.
-    sende: async (_koerper, praefix): Promise<ModelAntwort> => {
+    sende: async (koerper, praefix): Promise<ModelAntwort> => {
+      gesendet.push(koerper)
       const istUnterlauf = praefix.stabil.includes(`\`${WEB_SUCHEN_NAME}\``)
       const schlange = istUnterlauf ? unter : haupt
       const a = schlange.shift()
@@ -350,6 +380,81 @@ describe('Kapselung: der Seiteninhalt bleibt im Unterlauf', () => {
 // 3. Die Obergrenzen des Unterlaufs
 // ===============================================================================================
 
+describe('Der Unterlauf bekommt seine Schemata sofort, nicht auf Abruf', () => {
+  it('stellt die vollen Schemata in den Praefix und laesst werkzeug_schema weg', async () => {
+    // Gemessen an zehn echten Recherchen (M12, 2026-08-22): das Modell holte in acht von zehn
+    // Laeufen zuerst ein oder zwei Schemata — richtig, der Praefix fordert es so — und
+    // verbrauchte damit bis zur Haelfte seines Rundenbudgets von vier. In sechs Laeufen wurde
+    // danach keine einzige Seite mehr gelesen.
+    //
+    // Aufgeschobenes Laden ist ein Hebel fuer einen Lauf mit vielen Werkzeugen und Raum. Der
+    // Unterlauf hat drei Werkzeuge und vier Runden; die drei Schemata kosten im Praefix weniger
+    // als eine Runde.
+    await mitWurzel(async (w) => {
+      const u = umgebung(w, {
+        haupt: [ruft(RECHERCHIEREN_NAME, { frage: 'Was ist X?' }, 'r1'), sagt('fertig')],
+        unter: [sagt('## Befund\n\nNichts.')],
+      })
+      const hauptId = await starteLauf(AUFTRAG(w), u)
+      const [unterId] = unterlaufIds(u.db, hauptId)
+      const ev = lesen(u.db, unterId)
+
+      const werkzeuge = (ev.find(e => e.art === 'run.started')?.nutzlast.werkzeuge ?? []) as string[]
+      expect(werkzeuge.sort()).toEqual([FAEHIGKEIT_WERKZEUG_NAME, SEITE_LESEN_NAME, WEB_SUCHEN_NAME].sort())
+      expect(werkzeuge).not.toContain('werkzeug_schema')
+
+      // Und die Schemata gehen wirklich mit — in die `tools` des Koerpers, wo sie hingehoeren,
+      // nicht in den Prompt-Text. Ohne diese Zusage waere der Test auch dann gruen, wenn dem
+      // Modell nur der Name ohne Schema und ohne `werkzeug_schema` vorlaege: es koennte dann
+      // ueberhaupt nicht mehr richtig aufrufen.
+      type Koerper = {
+        tools?: { function: { name: string; parameters?: { properties?: Record<string, unknown> } } }[]
+      }
+      // Der Koerper des **Unterlaufs**, erkannt an seiner Werkzeugliste — der Hauptlauf antwortet
+      // danach noch und schriebe sonst den letzten Eintrag.
+      const werkzeugeImKoerper = (u.gesendet as Koerper[])
+        .map(k => k.tools ?? [])
+        .filter(t => t.some(x => x.function.name === SEITE_LESEN_NAME))
+        .at(-1) ?? []
+      const seite = werkzeugeImKoerper.find(t => t.function.name === SEITE_LESEN_NAME)
+      expect(Object.keys(seite?.function.parameters?.properties ?? {})).toContain('max_zeichen')
+      const suche = werkzeugeImKoerper.find(t => t.function.name === WEB_SUCHEN_NAME)
+      expect(Object.keys(suche?.function.parameters?.properties ?? {})).toContain('anfrage')
+    })
+  })
+
+  it('haelt werkzeug_schema auch in der Ausfuehrung fern, nicht nur im Praefix', async () => {
+    // Sonst waere die Werkzeugliste keine Aussage mehr darueber, was ausgefuehrt wird: `fuehreAus`
+    // faengt `werkzeug_schema` ueber den **Namen** ab, und ein Name ist keine Grenze. Dasselbe
+    // Muster und derselbe Grund wie bei `recherchieren` und `faehigkeit_lesen`.
+    await mitWurzel(async (w) => {
+      const u = umgebung(w, {
+        haupt: [ruft(RECHERCHIEREN_NAME, { frage: 'Was ist X?' }, 'r1'), sagt('fertig')],
+        unter: [
+          ruft('werkzeug_schema', { name: WEB_SUCHEN_NAME }, 'x1'),
+          sagt('## Befund\n\nNichts.'),
+        ],
+      })
+      const hauptId = await starteLauf(AUFTRAG(w), u)
+      const [unterId] = unterlaufIds(u.db, hauptId)
+      const ev = lesen(u.db, unterId)
+      expect(ev.some(e => e.art === 'tool.schema_loaded')).toBe(false)
+      const f = ev.find(e => e.art === 'tool.failed' && e.nutzlast.aufrufId === 'x1')
+      expect(String(f?.nutzlast.meldung)).toContain('kein Werkzeug')
+    })
+  })
+
+  it('laesst den Hauptlauf beim aufgeschobenen Laden', async () => {
+    // Die Gegenprobe: die Umstellung gilt dem Unterlauf, nicht der Faehigkeitszeile des Modells.
+    await mitWurzel(async (w) => {
+      const u = umgebung(w, { haupt: [sagt('fertig')], unter: [] })
+      const hauptId = await starteLauf(AUFTRAG(w), u)
+      const werkzeuge = (lesen(u.db, hauptId).find(e => e.art === 'run.started')?.nutzlast.werkzeuge ?? []) as string[]
+      expect(werkzeuge).toContain('werkzeug_schema')
+    })
+  })
+})
+
 describe('Obergrenzen des Unterlaufs (§3.4)', () => {
   it('meldet das Seitenbudget benannt, statt still eine dritte Seite zu holen', async () => {
     await mitWurzel(async (w) => {
@@ -406,6 +511,96 @@ describe('Obergrenzen des Unterlaufs (§3.4)', () => {
       expect(anfragen).toEqual(['eins', 'zwei', 'drei'])
       const abgelehnt = lesen(u.db, unterId).find(e => e.art === 'tool.failed' && e.nutzlast.aufrufId === 's4')
       expect(String(abgelehnt?.nutzlast.meldung)).toContain('Suchbudget')
+    })
+  })
+
+  it('verbraucht kein Netzbudget fuer einen Aufruf, der nie hinausging', async () => {
+    // Der teuerste Befund aus M12 (2026-08-22, zehn echte Recherchen): das Modell rief
+    // `web_suchen` mit `{}` auf und `seite_lesen` mit `"max_zeichen": "30000"`. Beides wird an
+    // der Eingabepruefung abgewiesen, bevor irgendetwas aufgeloest oder abgerufen wird — und
+    // beides verbrauchte trotzdem einen Platz, weil gezaehlt wurde, was das Modell *versuchte*,
+    // statt was hinausging. In vier von zehn Laeufen wurde dadurch keine einzige Seite gelesen.
+    await mitWurzel(async (w) => {
+      const erreicht: string[] = []
+      const u = umgebung(w, {
+        erreicht,
+        haupt: [ruft(RECHERCHIEREN_NAME, { frage: 'Was ist X?', tiefe: 'kurz' }, 'r1'), sagt('fertig')],
+        unter: [
+          ruft(WEB_SUCHEN_NAME, { anfrage: 'X', anzahl: 3 }, 's1'),
+          // Zwei Fehlaufrufe **in einem Zug**: einer ohne Pflichtfeld, einer mit unlesbarem Wert.
+          // Beide sterben in der Eingabepruefung des Werkzeugs, keiner beruehrt das Netz — und
+          // dass sie in einem Zug stehen, ist die Form, in der das Modell sie wirklich schickt.
+          ruftMehrfach([
+            [SEITE_LESEN_NAME, {}, 'p0'],
+            [SEITE_LESEN_NAME, { url: TREFFER[0].url, max_zeichen: 'viel' }, 'p0b'],
+          ]),
+          ruft(SEITE_LESEN_NAME, { url: TREFFER[0].url }, 'p1'),
+          ruft(SEITE_LESEN_NAME, { url: TREFFER[1].url }, 'p2'),
+          sagt('## Befund\n\nZwei Seiten gelesen.'),
+        ],
+      })
+      const hauptId = await starteLauf(AUFTRAG(w), u)
+      const [unterId] = unterlaufIds(u.db, hauptId)
+      const ev = lesen(u.db, unterId)
+
+      // Beide echten Seiten wurden geholt — gemessen am Abrufer, nicht am Protokoll.
+      expect(erreicht).toEqual([TREFFER[0].url, TREFFER[1].url])
+      // Und die Fehlaufrufe wurden benannt abgewiesen, nicht still verschluckt.
+      for (const id of ['p0', 'p0b']) {
+        const f = ev.find(e => e.art === 'tool.failed' && e.nutzlast.aufrufId === id)
+        expect(String(f?.nutzlast.meldung)).not.toContain('Seitenbudget')
+      }
+    })
+  })
+
+  it('verbraucht sehr wohl einen Platz fuer einen Abruf, der hinausging und dann scheiterte', async () => {
+    // Die Gegenrichtung, und sie ist die sicherheitsrelevante: eine Anfrage, die das Haus
+    // verlassen hat, ist bezahlt — sonst waere ein Ziel, das zuverlaessig 500 antwortet, ein
+    // unbegrenzter Kanal nach draussen. Gezaehlt wird deshalb `netz.ausgehend`, nicht der Erfolg.
+    await mitWurzel(async (w) => {
+      const erreicht: string[] = []
+      const u = umgebung(w, {
+        erreicht,
+        haupt: [ruft(RECHERCHIEREN_NAME, { frage: 'Was ist X?', tiefe: 'kurz' }, 'r1'), sagt('fertig')],
+        unter: [
+          ruft(WEB_SUCHEN_NAME, { anfrage: 'X', anzahl: 3 }, 's1'),
+          ruft(SEITE_LESEN_NAME, { url: TREFFER[0].url }, 'p1'),
+          ruft(SEITE_LESEN_NAME, { url: TREFFER[1].url }, 'p2'),
+          ruft(SEITE_LESEN_NAME, { url: TREFFER[2].url }, 'p3'),
+          sagt('## Befund\n\nGenug.'),
+        ],
+      })
+      // Ein Abrufer, der jede Seite mit 500 beantwortet: sie geht hinaus und liefert nichts.
+      u.netz = { ...u.netz!, abrufen: async ({ url }) => { erreicht.push(url); return new Response('weg', { status: 500 }) } }
+      const hauptId = await starteLauf(AUFTRAG(w), u)
+      const [unterId] = unterlaufIds(u.db, hauptId)
+      const ev = lesen(u.db, unterId)
+
+      expect(erreicht).toEqual([TREFFER[0].url, TREFFER[1].url])
+      const abgelehnt = ev.find(e => e.art === 'tool.failed' && e.nutzlast.aufrufId === 'p3')
+      expect(String(abgelehnt?.nutzlast.meldung)).toContain('Seitenbudget')
+    })
+  })
+
+  it('schreibt die aufrufId an jede ausgehende Anfrage', async () => {
+    // Ohne sie laesst sich nicht sagen, welcher Werkzeugaufruf welche Anfrage erzeugt hat — und
+    // genau darauf ruht die Budgetzaehlung oben.
+    await mitWurzel(async (w) => {
+      const u = umgebung(w, {
+        haupt: [ruft(RECHERCHIEREN_NAME, { frage: 'Was ist X?', tiefe: 'kurz' }, 'r1'), sagt('fertig')],
+        unter: [
+          ruft(WEB_SUCHEN_NAME, { anfrage: 'X', anzahl: 3 }, 's1'),
+          ruft(SEITE_LESEN_NAME, { url: TREFFER[0].url }, 'p1'),
+          sagt('## Befund\n\nEine Seite.'),
+        ],
+      })
+      const hauptId = await starteLauf(AUFTRAG(w), u)
+      const [unterId] = unterlaufIds(u.db, hauptId)
+      const raus = lesen(u.db, unterId).filter(e => e.art === 'netz.ausgehend')
+      expect(raus.length).toBeGreaterThan(0)
+      expect(raus.map(e => e.nutzlast.aufrufId)).toContain('p1')
+      expect(raus.every(e => typeof e.nutzlast.aufrufId === 'string' && e.nutzlast.aufrufId !== ''))
+        .toBe(true)
     })
   })
 

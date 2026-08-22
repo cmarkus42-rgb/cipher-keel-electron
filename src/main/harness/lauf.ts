@@ -82,6 +82,16 @@ export interface LaufUmgebung {
    * nichts anzeigen wuerde, weil beide Felder fuer sich plausibel aussehen.
    */
   rechercheurModell?: { eintrag: ModellEintrag; sende: LaufUmgebung['sende'] } | null
+  /**
+   * Ueberschreibt fuer **diesen Lauf**, ob Schemata auf Abruf kommen (`werkzeug_schema`) oder
+   * gleich im Praefix stehen. Weggelassen gilt die Faehigkeitszeile des Eintrags.
+   *
+   * Es steht hier und nicht in der Faehigkeitszeile, weil es keine Aussage ueber das Modell ist,
+   * sondern ueber den Zuschnitt des Laufs: der Unterlauf des Rechercheurs hat drei Werkzeuge und
+   * vier Runden, und aufgeschobenes Laden kostete dort gemessen bis zur Haelfte des
+   * Rundenbudgets (M12, 2026-08-22). Derselbe Eintrag faehrt im Hauptlauf weiter aufgeschoben.
+   */
+  aufgeschobenesLaden?: boolean
   registry: WerkzeugRegistry
   /** Every appended event, for whoever wants to watch. */
   strom: (e: Ereignis) => void
@@ -95,6 +105,18 @@ export interface LaufUmgebung {
 // selbst steht seit dem Rechercheur in verbrauch.ts (Zyklus, siehe dort) und wird hier
 // weitergereicht, damit die bisherigen Importstellen bleiben, wo sie sind.
 export { verbrauchAusEreignissen } from './verbrauch'
+
+/**
+ * Ob die Schemata dieses Laufs auf Abruf kommen. Die Faehigkeitszeile sagt, was das Modell kann;
+ * `u.aufgeschobenesLaden` sagt, was dieser Lauf davon nutzt. An **einer** Stelle beantwortet,
+ * weil die Antwort an drei Stellen gebraucht wird — Praefixaufbau beim Start, beim Fortsetzen und
+ * der Abfang in `fuehreAus`. Liefen sie auseinander, stuende `werkzeug_schema` nicht im Praefix,
+ * waere aber trotzdem ausfuehrbar: die Werkzeugliste waere dann keine Aussage mehr darueber, was
+ * ausgefuehrt wird.
+ */
+function laedtAufgeschoben(u: LaufUmgebung): boolean {
+  return u.aufgeschobenesLaden ?? u.eintrag.faehigkeiten!.aufgeschobenesLaden
+}
 
 function pruefeStartbedingungen(eintrag: ModellEintrag): void {
   const f = eintrag.faehigkeiten
@@ -124,7 +146,7 @@ export async function starteLauf(
 ): Promise<string> {
   pruefeStartbedingungen(u.eintrag)
   const f = u.eintrag.faehigkeiten!
-  const stummel = u.registry.stummel(f.aufgeschobenesLaden)
+  const stummel = u.registry.stummel(laedtAufgeschoben(u))
 
   const hinweise: string[] = []
   // The tool ceiling is an inferred signal (M8 section 4.10): it may warn, never abort.
@@ -184,7 +206,7 @@ export async function setzeFort(laufId: string, auftrag: Auftrag, u: LaufUmgebun
 async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise<void> {
   const f = u.eintrag.faehigkeiten!
   const codec = codecFuer(f.codec)
-  const stummel = u.registry.stummel(f.aufgeschobenesLaden)
+  const stummel = u.registry.stummel(laedtAufgeschoben(u))
   const stabil = baueStabilenTeil(u.praefixTeile, stummel)
 
   for (;;) {
@@ -341,9 +363,6 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
 async function fuehreAus(
   u: LaufUmgebung, laufId: string, auftrag: Auftrag, a: Extract<Block, { art: 'werkzeug-aufruf' }>,
 ): Promise<void> {
-  // Nicht-null wie ueberall in dieser Datei: `pruefeStartbedingungen` haette den Lauf sonst gar
-  // nicht erst beginnen lassen.
-  const f = u.eintrag.faehigkeiten!
   schreibe(u, laufId, 'tool.intent', { aufrufId: a.id, name: a.name, eingabe: a.eingabe })
 
   // `recherchieren` startet einen eigenen Lauf und braucht dafuer Protokoll, Transport, Uhr und
@@ -371,7 +390,7 @@ async function fuehreAus(
   // `fuehreAus` das Schema auch einem Lauf aus, in dessen Praefix das Meta-Werkzeug gar nicht
   // steht (aufgeschobenes Laden aus): das Modell muesste den Namen bloss raten, und die Liste im
   // Praefix waere keine Aussage mehr darueber, was ausgefuehrt wird.
-  if (a.name === META_WERKZEUG_NAME && f.aufgeschobenesLaden) {
+  if (a.name === META_WERKZEUG_NAME && laedtAufgeschoben(u)) {
     const gesucht = typeof a.eingabe.name === 'string' ? a.eingabe.name : ''
     const schema = u.registry.schemaVon(gesucht)
     if (!schema) {
@@ -449,8 +468,13 @@ async function fuehreAus(
           ereignisse: lesen(u.db, laufId),
           // Unter *dieser* laufId, und nicht unter der des Elternlaufs: die ausgehenden URLs
           // eines Unterlaufs gehoeren in sein eigenes Protokoll (§4.1 (4), rechercheur.ts).
+          //
+          // `aufrufId` steht dabei, seit die Netzbudgets des Rechercheurs zaehlen, was wirklich
+          // hinausging (rechercheur.ts, `mitObergrenze`). Ohne sie laesst sich nicht sagen,
+          // welcher Werkzeugaufruf welche Anfrage erzeugt hat — und dann ist ein Aufruf, der an
+          // der Eingabepruefung starb, von einem, dessen Abruf scheiterte, nicht zu unterscheiden.
           melde: (sprung: AusgehenderSprung & { werkzeug: string }) => {
-            schreibe(u, laufId, 'netz.ausgehend', { ...sprung })
+            schreibe(u, laufId, 'netz.ausgehend', { ...sprung, aufrufId: a.id })
           },
         }
       : undefined

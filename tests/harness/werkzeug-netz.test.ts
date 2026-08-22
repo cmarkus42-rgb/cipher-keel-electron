@@ -468,6 +468,29 @@ describe('seite_lesen', () => {
     expect(unlesbar.ok).toBe(false)
   })
 
+  it('nimmt max_zeichen als Zeichenkette an, wenn sie eine Zahl ist', () => {
+    // Gemessen an zehn echten Recherchen (M12, 2026-08-22): `qwen3.8:27b` schickte in fuenf von
+    // zehn Laeufen `"max_zeichen": "30000"` — in Anfuehrungszeichen, obwohl das Schema `number`
+    // sagt. Jede dieser Ablehnungen verbrauchte einen Seitenplatz, und in vier Laeufen wurde
+    // dadurch **keine einzige** Seite gelesen.
+    //
+    // `klemmeAnzahl` nimmt dieselbe Form seit dem 2026-08-22 an; diese Funktion daneben tat es
+    // nicht. Dieselbe Groessenklasse, dieselbe Fehlerart, ein Feld weiter.
+    expect(klemmeMaxZeichen('30000')).toEqual({ ok: true, wert: 30000 })
+    expect(klemmeMaxZeichen('60000')).toEqual({ ok: true, wert: HARTE_MAX_ZEICHEN })
+    // Und weiterhin benannt abgelehnt, was keine Lesart hat — das ist kein Raten.
+    expect(klemmeMaxZeichen('viel').ok).toBe(false)
+    expect(klemmeMaxZeichen('').ok).toBe(false)
+  })
+
+  it('nennt in der Ablehnung den erhaltenen Wert', () => {
+    // Ohne ihn steht im Protokoll nur, dass etwas nicht stimmte — nicht was. Dieselbe Regel wie
+    // bei `anzahl`, und sie ist der Grund, warum M12 diesen Fehler ueberhaupt sehen konnte.
+    const e = klemmeMaxZeichen('viel')
+    expect(e.ok).toBe(false)
+    if (!e.ok) expect(e.meldung).toContain('viel')
+  })
+
   it('haelt die gekappte Obergrenze auch im Ergebnis ein', async () => {
     const url = 'https://nodejs.org/lang'
     const netz = netzKontext({

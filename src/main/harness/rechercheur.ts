@@ -208,19 +208,50 @@ export const rechercheurWerkzeug: Werkzeug = {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Zaehlt die **Absichten** dieses Laufs zu einem Werkzeugnamen — nicht die Erfolge. `tool.intent`
- * steht im Protokoll, bevor der Effekt passiert (lauf.ts, `fuehreAus`), und genau das ist die
- * richtige Groesse: ein Abruf, der hinausging und dann fehlschlug, hat das Netz trotzdem berührt.
- * Wer `tool.completed` zaehlte, koennte ueber fehlschlagende Abrufe beliebig viele Ziele anlaufen.
+ * Zaehlt, wie oft ein Netz-Werkzeug dieses Laufs **das Netz beruehrt hat oder gleich wird** —
+ * nicht die Erfolge, und seit dem 2026-08-22 auch nicht mehr blosse Absichten.
+ *
+ * Gezaehlt wird jeder `tool.intent` zu diesem Namen, **ausser** er ist an der Eingabepruefung
+ * gestorben: ein `tool.failed` zu seiner `aufrufId`, und dazu kein einziges `netz.ausgehend`.
+ * Die drei Faelle, die diese Regel auseinanderhaelt:
+ *
+ *   - *Nie hinausgegangen* (`tool.failed`, kein `netz.ausgehend`): zaehlt **nicht**. Ein Aufruf
+ *     wie `web_suchen {}` oder `seite_lesen {url, max_zeichen: "30000"}` stirbt vor jeder
+ *     Namensaufloesung; er hat nichts getragen und kostet deshalb nichts. Gemessen an zehn echten
+ *     Recherchen (M12): in vier von zehn Laeufen verbrannten genau solche Aufrufe das ganze
+ *     Seitenbudget, und der Befund stand danach auf Suchauszuegen oder auf gar nichts.
+ *   - *Hinausgegangen und dann gescheitert* (`netz.ausgehend` **und** `tool.failed`): zaehlt.
+ *     Das ist die sicherheitsrelevante Richtung und der Grund, warum nicht der Erfolg zaehlt:
+ *     waere ein fehlgeschlagener Abruf frei, waere ein Ziel, das zuverlaessig 500 antwortet, ein
+ *     unbegrenzter Kanal nach draussen.
+ *   - *Noch nicht ausgefuehrt* (weder das eine noch das andere): zaehlt. Das ist die
+ *     fail-closed-Richtung und zugleich das, was die Zaehlung rennfrei macht: `fuehreAus` schreibt
+ *     alle `tool.intent` eines Zuges, bevor irgendein Werkzeug laeuft (`Promise.all`), also sehen
+ *     sich parallele Aufrufe desselben Zuges gegenseitig. Wer stattdessen nur `netz.ausgehend`
+ *     zaehlte, liesse acht gleichzeitige Suchen eines Zuges alle durch.
  *
  * Reine Funktion ueber dem Protokoll — dieselbe Bauform wie `trefferUrlsDesLaufs` und
  * `effekteOhneIntent`, und aus demselben Grund: der Lauf haelt seinen Zustand nirgends ausser im
  * Protokoll, und ein Merker im Modulspeicher waere nach einem Neustart weg.
  */
 export function zaehleAbsichten(ereignisse: readonly Ereignis[], name: string): number {
+  const gescheitert = new Set<string>()
+  const hinausgegangen = new Set<string>()
+  for (const e of ereignisse) {
+    if (e.art === 'tool.failed' && typeof e.nutzlast.aufrufId === 'string') {
+      gescheitert.add(e.nutzlast.aufrufId)
+    } else if (e.art === 'netz.ausgehend' && typeof e.nutzlast.aufrufId === 'string') {
+      hinausgegangen.add(e.nutzlast.aufrufId)
+    }
+  }
   let n = 0
   for (const e of ereignisse) {
-    if (e.art === 'tool.intent' && e.nutzlast.name === name) n += 1
+    if (e.art !== 'tool.intent' || e.nutzlast.name !== name) continue
+    const id = e.nutzlast.aufrufId
+    // Ohne `aufrufId` ist nicht zu entscheiden, ob etwas hinausging — dann zaehlt der Aufruf,
+    // weil das die fail-closed-Richtung ist.
+    if (typeof id === 'string' && gescheitert.has(id) && !hinausgegangen.has(id)) continue
+    n += 1
   }
   return n
 }
@@ -548,6 +579,13 @@ export async function fuehreRecherche(
     // das eine (die Registry) beim naechsten Umbau geoeffnet werden koennte.
     graphDb: null,
     registry: unterlaufRegistry(tiefe.tiefe),
+    // Die drei Schemata stehen im Praefix statt auf Abruf. Gemessen an zehn echten Recherchen
+    // (M12, 2026-08-22): das Modell holte in acht von zehn Laeufen zuerst ein oder zwei Schemata
+    // — genau wie der Praefix es verlangt — und verbrauchte damit bis zur Haelfte seines
+    // Rundenbudgets von vier; in sechs Laeufen wurde danach keine Seite mehr gelesen.
+    // Aufgeschobenes Laden ist ein Hebel fuer viele Werkzeuge und Raum. Hier sind es drei
+    // Werkzeuge und vier Runden, und die Schemata kosten im Praefix weniger als eine Runde.
+    aufgeschobenesLaden: false,
     // Der einzige Unterschied zwischen den zwei Netzwegen des Nachtrags: hier faellt die
     // Positivliste weg. Alle uebrigen Regeln der netzwache — nur https, keine privaten und keine
     // Tailscale-Ziele, Pruefung bei jeder Weiterleitung, keine Auth-Header — gelten unveraendert.
