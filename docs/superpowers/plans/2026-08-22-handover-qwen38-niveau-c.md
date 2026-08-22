@@ -1,7 +1,14 @@
 # Übergabe: Qwen3.8 27B als Niveau-C-Modell mit Nachschlagen und Rechercheur
 
-**Stand:** 2026-08-22 · **Zweig:** `qwen38-niveau-c`, 2633 Tests grün, typecheck und lint sauber,
-Arbeitsbaum sauber · **Nicht integriert.**
+**Stand:** 2026-08-22, zweite Fassung · **Zweig:** `qwen38-niveau-c`, 2671 Tests grün, typecheck
+und lint sauber, Arbeitsbaum sauber · **Nicht integriert.**
+
+> **Was sich seit der ersten Fassung geändert hat:** die zwei Konstruktionsfehler aus 5b sind
+> behoben und an der laufenden App belegt, und **M12 ist gefahren** — zweimal zehn echte
+> Recherchen, vier Behebungen dazwischen, Messprotokoll in
+> `docs/superpowers/plans/2026-08-22-m12-rechercheur.md`. Der Rechercheur ist damit von
+> „gebaut, nicht brauchbar" auf „brauchbar, mit einem benannten offenen Defekt" gerückt. Der
+> Defekt steht in Abschnitt 5d und ist die nächste Arbeit.
 
 Diese Datei ist der Einstieg. Lies sie ganz, bevor du etwas anfasst — sie nennt auch, was *nicht*
 stimmt, und das ist der teurere Teil.
@@ -75,19 +82,28 @@ Alle übrigen Regeln gelten in beiden.
 
 ### Steht im Code, ist aber **nicht** an einem echten Modell erprobt
 
-- Der **Rechercheur**. Sein innerer Ablauf ist nie gegen ein echtes Modell mit einem echten
-  Suchdienst gelaufen. Der Nutzer verlangt ausdrücklich, dass er „ausgetestet und optimiert" ist
-  und „einen funktionierenden inneren Flow" hat. **Das ist die wichtigste offene Arbeit.**
-  Prüfbar gemacht als **M12** im Nachtrag vom 2026-08-22, mit sechs konkreten Fragen.
 - Die **Skill-Mechanik**. Ob ein 27B dem Satz „lies die Fähigkeit, bevor du sie benutzt"
   tatsächlich folgt, ist unbelegt — **M7**, laut Entwurf der wichtigste Messpunkt überhaupt,
-  weil keels Niveau B schon heute auf derselben Annahme ruht.
-- Der Rechercheur **im Besonderen**: der eine echte Netzlauf ging über `web_suchen`, den
-  Nachschlage-Weg. `recherchieren` — der Unterlauf — ist weiterhin nie gelaufen.
+  weil keels Niveau B schon heute auf derselben Annahme ruht. **Ein Teilbefund liegt jetzt vor:**
+  für *Werkzeugschemata* folgt das Modell dem gleichlautenden Satz in 8 von 10 Läufen, und zwar
+  auf eigene Kosten (zwei von vier Runden). Für Fähigkeiten fehlt der Beleg weiter —
+  `faehigkeit_lesen` wurde in zwanzig gemessenen Unterläufen kein einziges Mal gerufen, weil im
+  Messprojekt keine Fähigkeit hinterlegt war. Wer M7 fährt, muss zuerst eine hinterlegen.
+
+### Erprobt, seit dieser Fassung
+
+- **Der Rechercheur.** Zweimal zehn echte Fragen durch die laufende App, gegen
+  `keel-qwen38:27b` mit Tavily, Ereignisprotokoll je Lauf ausgewertet. Vorher: 3 von 33
+  versuchten Seitenabrufen gelesen, 7 von 10 Recherchen ohne eine einzige Quelle. Nachher:
+  11 von 35 und 4 von 10. Vier Behebungen dazwischen, ein offener Defekt (5d). Sechs Fragen des
+  Entwurf-Nachtrags beantwortet — das Protokoll steht in
+  `docs/superpowers/plans/2026-08-22-m12-rechercheur.md`.
+- **Der eigene Zuordnungsplatz des Rechercheurs.** Hauptlauf auf `spark-qwen38-27b`, Unterlauf
+  auf einem anderen Eintrag, belegt am `run.started` des Unterlaufs.
 
 ---
 
-## 4. Drei Fallen, die Zeit kosten, wenn du sie nicht kennst
+## 4. Vier Fallen, die Zeit kosten, wenn du sie nicht kennst
 
 **Ollama halbiert `num_ctx` pro Anfrage.** Gemessen: `num_ctx 65536` im Modelfile ergab **32.770**
 nutzbare Token, und ein 185.000-Token-Prompt wurde **vorne still abgeschnitten** — das Modell
@@ -112,6 +128,13 @@ steht jetzt bei `DENKSTUFEN` in `src/main/model/entry.ts`. Wenn du eine Behauptu
 die du nicht nachmessen kannst, miss sie nach oder streiche sie.
 
 ---
+
+**Der CDP-Treiber von `run-keel` kappt eine Antwort bei rund 65 KB.** Wer ein
+Ereignisprotokoll am Stück zurückliest, bekommt bei einem langen Lauf abgeschnittenes JSON und
+einen `SyntaxError` — nicht in der App, im Messwerkzeug. Zwei von zehn Wiederholungsläufen fielen
+so aus und mussten mit einer kompakten Projektion im Fenster (zählen statt zurückgeben) einzeln
+nachgeholt werden. Die Richtung ist bemerkenswert: es trat erst **nach** den Behebungen auf, weil
+die Protokolle vorher kleiner waren — es wurde ja kaum eine Seite gelesen.
 
 ## 5. Suchanbieter — erledigt
 
@@ -152,7 +175,7 @@ Vorbeigehen.
 
 ---
 
-## 5b. Zwei Konstruktionsfehler, die vor M12 gehören
+## 5b. Zwei Konstruktionsfehler, die vor M12 gehörten — **beide erledigt**
 
 Beide sind beim Durchsprechen mit dem Nutzer aufgefallen, beide sind klein zu beheben, und beide
 verfälschen M12, wenn man sie stehen lässt.
@@ -200,20 +223,66 @@ werden.
 
 ---
 
+**Erledigt 2026-08-22** (`5d85f94`, `910e5e7`), beide an der laufenden App belegt:
+
+*Die Positivliste* wirkt jetzt an drei Stellen statt an einer. In der **Anfrage** — Tavily über
+sein eigenes Feld `include_domains`, SearXNG und Brave über eine `site:`-Kette; deshalb nimmt
+`SuchAnbieter.suche` eine Hostliste und keinen fertigen Anfragetext. Im **Filter** über den
+Treffern, denn was ein Anbieter aus `site:` macht, steht in seiner Hand; verworfen wird nie still
+(Zahl und der Name `recherchieren` stehen in der Antwort, und „alle verworfen" sagt etwas anderes
+als „Keine Treffer."). Und wie bisher beim Abruf. Gemessen an einem echten Lauf: 21 Treffer aus
+drei Suchen, **alle** auf `docs.ollama.com`, null verworfen.
+
+*Der Zuordnungsplatz* heißt `rolle:rechercheur`, steht als sechster Slot im Reiter „Modelle",
+sperrt cli-harness-Einträge und fällt bei leerem Platz auf das Modell des Hauptlaufs zurück —
+**nicht** auf einen `llm.*`-Endpunkt, den es für diese Rolle nicht gibt. `laeufer:
+'eigene-schleife'` und `niveau: B`; auf C hätte `unter-faehigkeit` bei jeder Zuordnung gefeuert,
+und das wäre hier unwahr.
+
+## 5d. Der offene Defekt: die Abrufe hängen im Hauptprozess der App
+
+**Das ist die nächste Arbeit.** 15 von 27 Seitenabrufen, die in der Messung wirklich hinausgingen,
+liefen ins 20-Sekunden-Budget. Die nachgeschärfte Absage sagt, wo: **immer im Abschnitt `Abruf`,
+immer Sprung 0** — nie die Namensauflösung, nie das Lesen des Körpers.
+
+Derselbe Code holt dieselben URLs unter Node in 84–738 ms, gemessen über `holeSicher` mit
+`aufloeserDesSystems` und `abruferDesSystems`, also ohne jeden Ersatz. Ausgeschlossen sind damit:
+das Netz, die Zielseiten, der Code-Pfad, die Nebenläufigkeit, das Anhäufen liegengelassener
+Weiterleitungskörper und IPv6/Happy Eyeballs (die meisten betroffenen Hosts haben gar kein
+AAAA-Record). Übrig bleibt der **Electron-Hauptprozess**; die Ursache ist offen.
+
+Zwei Dinge, die schon versucht und **gemessen verworfen** sind — nicht noch einmal machen, ohne
+den Messbericht zu lesen: ein eigener `user-agent` samt `accept-language` (Zeitfehler 5→4,
+gelesene Seiten 2→1, HTTP-Ablehnungen 1→3 über drei Läufe — kein Beleg), und das Hochsetzen des
+Zeitbudgets (ein Ziel, das unter Node 131 ms braucht, wird von 40 Sekunden nicht schneller, und
+ein größeres Budget verdeckt den Befund).
+
+Der naheliegendste ungeprüfte Verdacht steht im Messbericht: Electron bringt BoringSSL mit, Node
+OpenSSL — der TLS-Fingerabdruck ist ein anderer, und alle betroffenen Ziele sitzen hinter
+Bot-Abwehr. **Das ist eine Vermutung.** Belegt ist nur der Unterschied, nicht seine Ursache.
+
+---
+
 ## 6. Die Arbeit, die ansteht, in der Reihenfolge, in der sie zählt
 
-1. **Die zwei Konstruktionsfehler aus 5b** — Positivliste in die Suchanfrage, eigener
-   Zuordnungsplatz für das Modell des Rechercheurs. Beide vor M12, sonst misst M12 etwas, das
-   danach anders ist.
-2. **M12 — den inneren Ablauf des Rechercheurs austesten und nachstellen.** Zehn echte Fragen
-   durch die App, Ereignisprotokoll lesen, die sechs Fragen aus dem Nachtrag beantworten.
-   Ergebnis ist eine Quote und eine Liste dessen, was nachgestellt werden muss:
-   Beschreibungstexte, Budgets, Denkstufe des Unterlaufs, Aufbau der Rückgabe. Bis dahin gilt der
-   Rechercheur als gebaut, nicht als brauchbar.
-3. **M7 — folgt ein 27B dem Nachlade-Satz?** Ein Auftrag, dessen Lösung nur in einer Fähigkeit
+1. ~~**Die zwei Konstruktionsfehler aus 5b.**~~ **Erledigt 2026-08-22**, siehe dort.
+2. ~~**M12 — den inneren Ablauf des Rechercheurs austesten und nachstellen.**~~ **Gefahren
+   2026-08-22**, zweimal zehn Fragen, vier Behebungen, Protokoll in
+   `docs/superpowers/plans/2026-08-22-m12-rechercheur.md`. Die sechs Fragen des Nachtrags sind
+   beantwortet.
+3. **Der hängende Abruf (5d).** Der größte verbleibende Verlust und der einzige, der den
+   Rechercheur heute noch unter seinen Möglichkeiten hält: rund die Hälfte der Seiten, die er
+   ausgewählt hat, bekommt er nicht. Lokalisiert, aber nicht erklärt.
+4. **Die Budgets erst danach nachstellen.** Sie sind heute nicht das bindende Problem, und eine
+   Zahl, die gegen einen bekannten Defekt eingestellt wird, muss danach wieder geändert werden.
+   Wenn es so weit ist, sprechen die Daten für `kurz` auf **zwei** Suchen (in jedem einzelnen Lauf
+   wollte das Modell nach dem ersten Trefferbild eine verfeinerte zweite Anfrage stellen) und für
+   eine Wanduhr über 90 s, die nach dem Wegfall der Schema-Züge zu binden beginnt.
+5. **M7 — folgt ein 27B dem Nachlade-Satz?** Ein Auftrag, dessen Lösung nur in einer Fähigkeit
    steht, die im Präfix bloß mit Namen und Beschreibung erscheint. 20 Läufe, zwei Fähigkeiten,
    `skill.geladen` im Protokoll zählen gegen die Fälle, in denen das Modell stattdessen geraten
-   hat.
+   hat. **Vorher eine Fähigkeit im Messprojekt hinterlegen** — in den zwanzig M12-Läufen wurde
+   `faehigkeit_lesen` kein einziges Mal gerufen, weil es nichts zu lesen gab.
 4. ~~**Das Settings-Fenster** kennt die Netz-Felder nicht.~~ **Erledigt 2026-08-22:** Reiter
    „Netz" mit Anbieterwahl, beiden Schlüsselfeldern, SearXNG-Endpunkt und der Positivliste. Durch
    die laufende App belegt (Knopf geklickt, Inhalt gewechselt, Schreiben über das `<select>` in
@@ -222,9 +291,10 @@ werden.
    Alter Text: `netz.searxngEndpunkt`,
    `netz.bevorzugt` und `netz.zusaetzlichePositivliste` sind heute nur über die Konfigurationsdatei
    erreichbar. Das ist im Inventar so benannt, aber es ist eine offene CK-NFR-012-Lücke.
-5. **M6 — SearXNG gegen Tavily gegen Brave**, an denselben 20 Fragen. Vorher ist die
-   Anbieterwahl geraten.
-6. **Integration** nach `main` über `superpowers:finishing-a-development-branch`.
+6. **M6 — SearXNG gegen Tavily gegen Brave**, an denselben 20 Fragen. Vorher ist die
+   Anbieterwahl geraten. *Nebenbefund aus M12: die Trefferqualität von Tavily war in keinem der
+   zwanzig Läufe das Problem — die Trefferlisten waren durchweg einschlägig.*
+7. **Integration** nach `main` über `superpowers:finishing-a-development-branch`.
 
 Was ausdrücklich **nicht** ansteht: der `ollama-native`-Codec (M2 hat gezeigt, dass er nichts
 kaufen würde), Vision und Dokumente über `/v1` (strukturell beschädigt bzw. Sackgasse), YaRN,
@@ -249,7 +319,22 @@ ssh DGX                      # Alias mit nvsync.key, User crimak, Docker-Gruppe 
 KEEL_KEEP_PROFILE=1 .claude/skills/run-keel/launch.sh /tmp/keel-harness
 node .claude/skills/run-keel/driver.mjs settings-window "…"
 .claude/skills/run-keel/stop.sh          # immer, sonst bleiben tmux-Sitzungen liegen
+
+# Einen Harness-Lauf von aussen starten und auslesen (so lief M12):
+node .claude/skills/run-keel/driver.mjs project-window \
+  "window.cipherKeel.invoke('harness:lauf-starten', {auftragstext:'…', modellId:'spark-qwen38-27b', wurzel:'/tmp/x'})"
+node .claude/skills/run-keel/driver.mjs project-window \
+  "window.cipherKeel.invoke('harness:lauf-lesen','<laufId>').then(r => r.wert.length)"
+#   Der Unterlauf haengt am Ereignis `unterlauf.verbraucht` des Hauptlaufs (Feld `unterLaufId`)
+#   und wird ueber denselben Kanal gelesen. Bei langen Laeufen nicht das ganze Protokoll
+#   zurueckgeben, sondern im Fenster zaehlen — siehe die vierte Falle in Abschnitt 4.
 ```
+
+Das Messwerkzeug von M12 lag im Sitzungsverzeichnis und ist weg. Es war klein: ein Skript, das je
+Frage einen Hauptlauf mit dem Auftrag „rufe `recherchieren` mit dieser Frage und dieser Tiefe auf"
+startet, alle 15 s auf `run.finished` pollt und Haupt- plus Unterlauf als JSON ablegt; ein zweites,
+das daraus je Lauf Suchanfragen, gewählte URLs, Ablehnungsgründe und die Rückgabe ausschreibt. Für
+M6 und M7 ist es dieselbe Schleife mit anderen Fragen.
 
 Die Registry-Zeile für das Modell ist `spark-qwen38-27b` in `src/main/model/defaults.ts`. Sie
 trägt `quelle: 'vermutet'` und behält das, bis es einen Kanarienauftrag gibt — auch die von Hand

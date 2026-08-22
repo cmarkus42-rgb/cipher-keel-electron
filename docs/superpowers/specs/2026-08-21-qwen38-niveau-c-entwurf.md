@@ -1036,3 +1036,46 @@ Rückgabe.
 
 Solange M12 nicht gefahren ist, gilt der Rechercheur als **gebaut, nicht als brauchbar.** Der
 Unterschied ist derselbe, den dieser Zweig schon zweimal teuer gelernt hat.
+
+---
+
+## Nachtrag 2026-08-22, zweite Fassung: M12 ist gefahren
+
+Zweimal zehn echte Fragen gegen `keel-qwen38:27b` mit Tavily, durch die laufende App, vier
+Behebungen dazwischen. Das vollständige Protokoll steht in
+`docs/superpowers/plans/2026-08-22-m12-rechercheur.md`; hier nur, was es an diesem Entwurf ändert.
+
+**Die sechs Fragen sind beantwortet.** Vier klar positiv: das Modell formuliert brauchbare
+Suchanfragen statt die Frage hineinzuschieben, es wählt aus den Treffern statt den ersten zu
+nehmen, es holt nach einem tauben Ergebnis eine andere Seite, und sein Befund ist gedeckt — es
+trennt von sich aus „belegt" von „nicht belegt" und schreibt im Extremfall hin, dass die Suche
+unbrauchbar war. Eine klar negativ: **es hält die Budgets nicht ein, es reißt sie** (8 von 10
+Läufen enden `runden-erschoepft`); von selbst hört es nicht auf. Eine bleibt offen: die Denkstufe
+ist heute nicht die bindende Größe.
+
+**Was der Entwurf an drei Stellen zu knapp bemessen hat:**
+
+1. **§3.4, `tiefe: kurz` = eine Suche.** In *jedem* gemessenen Lauf wollte das Modell nach dem
+   ersten Trefferbild eine verfeinerte zweite Anfrage stellen. Eine Suche ist keine Recherche,
+   sondern ein Glücksgriff. Zwei wäre die ehrliche Zahl — geändert wird sie erst, wenn der offene
+   Abruf-Defekt (siehe Bericht) weg ist, weil sonst gegen einen bekannten Fehler eingestellt wird.
+2. **§5.2, aufgeschobenes Laden.** Der Abschnitt begründet es mit Anthropics Messung 79,5 % →
+   88,1 % und nennt es „fuer ein 27B den wichtigeren Hebel". Das gilt für einen Lauf mit vielen
+   Werkzeugen und Raum. Für den **Unterlauf** — drei Werkzeuge, vier Runden — ist es das
+   Gegenteil: in acht von zehn Läufen kostete es zwei der vier Runden, und in sechs davon wurde
+   danach keine Seite mehr gelesen. Der Unterlauf bekommt seine Schemata jetzt gleich mit.
+3. **§6.4, die Beschreibungstexte.** Der Entwurf erwartete den Fehlgriff bei der *Werkzeugwahl*
+   (`inhalt_suchen` gegen `web_suchen`). Im Unterlauf gibt es dieses Paar nicht, und die Wahl war
+   nie das Problem. Was schiefging, waren **JSON-Typen**: `"anzahl": "5"`, `"max_zeichen":
+   "30000"`. Zwanzig solcher Fehler in zehn Läufen — und sie verschwanden vollständig, sobald das
+   Schema im Körper mitging. Für diese Größenklasse ist der Typ im Schema der wirksamere Hebel
+   als das Leitverb in der Beschreibung.
+
+**Was der Entwurf richtig hatte und die Messung bestätigt:** die Quellenliste aus dem Protokoll
+statt vom Modell (§4.1) — kein Lauf hat eine Quelle erfunden; die benannte Absage statt des leeren
+Ergebnisses (§3.2) — das Modell hat jede Absage gelesen und darauf reagiert; und der feste Aufbau
+der Rückgabe (§3.4), der auch bei abgebrochenem Unterlauf noch einen lesbaren Befund liefert.
+
+**Der Rechercheur gilt damit als ausgetestet.** „Optimiert" ist er, soweit die Messung reicht: ein
+benannter Defekt steht noch aus, und er sitzt nicht im Rechercheur, sondern im Abrufweg unter
+Electron.
