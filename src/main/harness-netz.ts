@@ -109,12 +109,16 @@ async function suchKonfiguration(): Promise<SuchKonfiguration> {
   const netz = configStore.get('netz')
   // Der Schluessel kommt aus dem Schluesselbund, nicht aus der Konfigurationsdatei.
   const tavily = await resolveApiKey('tavily').catch(() => null)
+  const brave = await resolveApiKey('brave').catch(() => null)
   return {
     searxngEndpunkt: netz.searxngEndpunkt,
     tavilySchluessel: typeof tavily === 'string' ? tavily : '',
+    braveSchluessel: typeof brave === 'string' ? brave : '',
     // Leer heisst automatisch — das Feld bleibt dann weg, statt einen leeren String zu senden,
     // den `waehleAnbieter` als Anbieternamen deuten muesste.
-    ...(netz.bevorzugt === 'tavily' || netz.bevorzugt === 'searxng' ? { bevorzugt: netz.bevorzugt } : {}),
+    ...(netz.bevorzugt === 'tavily' || netz.bevorzugt === 'searxng' || netz.bevorzugt === 'brave'
+      ? { bevorzugt: netz.bevorzugt }
+      : {}),
   }
 }
 

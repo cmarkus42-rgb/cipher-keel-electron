@@ -556,6 +556,96 @@ export class TavilyAnbieter implements SuchAnbieter {
   }
 }
 
+/**
+ * Brave — eigener Index, kein Meta-Proxy und kein Aufsatz auf einer fremden Suchmaschine. Das ist
+ * der sachliche Vorteil gegenueber SearXNG (das nur weiterreicht, was Google und DuckDuckGo gerade
+ * herausruecken) und gegenueber Tavily (das seinerseits fremde Indizes buendelt).
+ *
+ * **Die Auflage, die mitkommt, und warum sie hier steht statt in einer Fussnote:** Braves
+ * Nutzungsbedingungen untersagen in §3(b)(i) woertlich, Ergebnisse zu „store, cache, or create a
+ * database of Search Results, in whole or in part, other than transient storage required for
+ * operation of Customer Applications". keels Ereignisprotokoll ist append-only und haelt die
+ * Trefferliste in `tool.completed` dauerhaft. Ob das als „transient storage required for
+ * operation" durchgeht — ein Lauf braucht seine Historie, um fortgesetzt zu werden — ist eine
+ * Auslegung und keine Selbstverstaendlichkeit. §3(b)(xiii) untersagt zusaetzlich, Ergebnisse zum
+ * „create, evaluate, train, re-train, fine-tune, benchmark or otherwise improve" von KI-Modellen
+ * zu verwenden; das zielt auf Training, nicht auf Grounding zur Laufzeit, aber „evaluate" und
+ * „benchmark" sind weit gefasst.
+ *
+ * Diese Abwaegung gehoert dem Betreiber, nicht dem Code. Der Code sagt sie nur an der Stelle, an
+ * der jemand sie treffen muss. SearXNG und Tavily tragen sie nicht.
+ */
+export class BraveAnbieter implements SuchAnbieter {
+  readonly name = 'brave'
+
+  constructor(
+    private readonly schluessel: string,
+    grenzen: Partial<SuchGrenzen> = {},
+  ) {
+    this.grenzen = { ...STANDARD_GRENZEN, ...grenzen }
+  }
+
+  private readonly grenzen: SuchGrenzen
+
+  async suche(
+    anfrage: string, anzahl: number, abrufen: typeof fetch, melde?: SuchMelder,
+  ): Promise<SuchAntwort> {
+    const q = pruefeAnfrage(this.name, anfrage)
+    const grenze = klemmeAnzahl(anzahl)
+
+    const url = new URL('https://api.search.brave.com/res/v1/web/search')
+    url.searchParams.set('q', q)
+    url.searchParams.set('count', String(grenze))
+    // Kein `extra_snippets`: mehr Auszug je Treffer kostet Kontext, den ein 27B nicht hat, und
+    // Seiten holt `seite_lesen`. Dieselbe Begruendung wie `include_raw_content: false` bei Tavily.
+    url.searchParams.set('text_decorations', 'false')
+
+    const koerper = await holeJson(
+      this.name,
+      url.toString(),
+      {
+        method: 'GET',
+        headers: {
+          accept: 'application/json',
+          'accept-encoding': 'gzip',
+          'x-subscription-token': this.schluessel,
+        },
+        redirect: 'error',
+      },
+      this.grenzen,
+      abrufen,
+      () => '',
+      melde,
+    )
+
+    // Brave verschachtelt die Netztreffer unter `web.results`; andere Abschnitte (news, videos)
+    // bleiben aussen vor. Wer sie mit hineinnaehme, bekaeme eine Trefferliste, deren Herkunft
+    // das Modell nicht mehr unterscheiden kann.
+    const web = (koerper as { web?: { results?: unknown } } | null)?.web
+    const alle = ergebnisListe(this.name, { results: web?.results })
+    const roh = alle.filter(e => brauchbareUrl(e.url) !== null)
+    const verworfen = alle.length - roh.length
+
+    const treffer: Treffer[] = roh.slice(0, grenze).map(e => ({
+      titel: sauberGekappt(e.title, MAX_TITEL_ZEICHEN),
+      url: brauchbareUrl(e.url) ?? '',
+      // Brave nennt den Auszug `description`, nicht `content` wie Tavily. `ergebnisListe`
+      // normalisiert keine Feldnamen — sie reicht die Rohsaetze durch. Wer hier `e.content`
+      // liest, bekommt bei jedem Treffer einen leeren Auszug, und zwar still.
+      auszug: sauberGekappt(e.description, MAX_AUSZUG_ZEICHEN),
+      engine: this.name,
+    }))
+
+    return {
+      treffer,
+      engineLage:
+        `Engines: Brave sucht im eigenen Index und nennt keine Aufschluesselung; ` +
+        `${treffer.length} Treffer von einem Anbieter. Ein stilles Ausduennen einzelner Quellen ` +
+        'ist hier nicht sichtbar.' + verwurfHinweis(verworfen),
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Auswahl
 // ---------------------------------------------------------------------------------------------
@@ -564,8 +654,13 @@ export interface SuchKonfiguration {
   /** Basis-URL der SearXNG-Instanz, z. B. `http://100.67.95.13:8080`. */
   searxngEndpunkt?: string | null
   tavilySchluessel?: string | null
+  /**
+   * Brave-Schluessel. Traegt eine Auflage, die die anderen beiden nicht haben — siehe den
+   * Kommentarkopf von `BraveAnbieter`.
+   */
+  braveSchluessel?: string | null
   /** Ausdrueckliche Vorgabe. Ist der gewaehlte Anbieter nicht konfiguriert, wird das gesagt. */
-  bevorzugt?: 'searxng' | 'tavily'
+  bevorzugt?: 'searxng' | 'tavily' | 'brave'
 }
 
 export type AnbieterWahl =
@@ -591,6 +686,7 @@ function gesetzt(wert: string | null | undefined): string | null {
 export function waehleAnbieter(konfig: SuchKonfiguration): AnbieterWahl {
   const endpunkt = gesetzt(konfig.searxngEndpunkt)
   const schluessel = gesetzt(konfig.tavilySchluessel)
+  const brave = gesetzt(konfig.braveSchluessel)
 
   if (konfig.bevorzugt === 'searxng') {
     return endpunkt === null
@@ -602,14 +698,25 @@ export function waehleAnbieter(konfig: SuchKonfiguration): AnbieterWahl {
       ? { ok: false, meldung: 'Der bevorzugte Suchanbieter tavily ist nicht konfiguriert: es fehlt der Schluessel.' }
       : { ok: true, anbieter: new TavilyAnbieter(schluessel) }
   }
+  if (konfig.bevorzugt === 'brave') {
+    return brave === null
+      ? { ok: false, meldung: 'Der bevorzugte Suchanbieter brave ist nicht konfiguriert: es fehlt der Schluessel.' }
+      : { ok: true, anbieter: new BraveAnbieter(brave) }
+  }
 
+  // Ohne ausdrueckliche Vorgabe bleibt es bei Tavily zuerst, dann SearXNG — die Entscheidung des
+  // Entwurfs (§3.2: Tavily ist die Vorgabe, weil es heute funktioniert; SearXNG uebernimmt, wenn
+  // M6 gemessen hat, dass es mehr liefert als einen DuckDuckGo-Proxy). Brave kommt zuletzt und
+  // **faellt niemandem zu**: es traegt als einziger eine ausdrueckliche Speicherbeschraenkung
+  // (§3(b)(i), siehe BraveAnbieter). Wer damit leben will, waehlt es ausdruecklich.
   if (schluessel !== null) return { ok: true, anbieter: new TavilyAnbieter(schluessel) }
   if (endpunkt !== null) return { ok: true, anbieter: new SearxngAnbieter(endpunkt) }
+  if (brave !== null) return { ok: true, anbieter: new BraveAnbieter(brave) }
 
   return {
     ok: false,
     meldung:
-      'Kein Suchanbieter konfiguriert. Es braucht entweder einen SearXNG-Endpunkt oder einen ' +
-      'Tavily-Schluessel; ohne beides wird nicht gesucht, und es wird auch nicht so getan.',
+      'Kein Suchanbieter konfiguriert. Es braucht einen SearXNG-Endpunkt, einen Tavily- oder ' +
+      'einen Brave-Schluessel; ohne eines davon wird nicht gesucht, und es wird auch nicht so getan.',
   }
 }

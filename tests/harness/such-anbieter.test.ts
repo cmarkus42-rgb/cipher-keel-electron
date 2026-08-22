@@ -28,7 +28,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
-  SearxngAnbieter, TavilyAnbieter, SuchFehler, waehleAnbieter,
+  SearxngAnbieter, TavilyAnbieter, BraveAnbieter, SuchFehler, waehleAnbieter,
   MAX_ANFRAGE_LAENGE, MAX_ANZAHL, MAX_AUSZUG_ZEICHEN, MAX_TITEL_ZEICHEN,
 } from '../../src/main/harness/such-anbieter'
 
@@ -467,5 +467,67 @@ describe('waehleAnbieter: kein Anbieter ist ein benannter Zustand', () => {
     expect(wahl.ok).toBe(false)
     if (wahl.ok) return
     expect(wahl.meldung).toContain('searxng')
+  })
+})
+
+/**
+ * Brave — der einzige Anbieter mit einem eigenen Index, und der einzige mit einer ausdruecklichen
+ * Auflage. Die Auflage steht im Kommentarkopf der Klasse, weil sie eine Entscheidung des
+ * Betreibers ist; hier wird nur geprueft, dass die Antwort richtig gelesen wird.
+ */
+describe('BraveAnbieter', () => {
+  const ANTWORT = {
+    web: {
+      results: [
+        { title: 'Electron BrowserWindow', url: 'https://electronjs.org/docs/api/browser-window',
+          description: 'Erzeugt und steuert Fenster.' },
+        { title: 'Zweiter Treffer', url: 'https://nodejs.org/api/https.html',
+          description: 'Der https-Modul.' },
+      ],
+    },
+    // Andere Abschnitte duerfen nicht in die Trefferliste geraten: das Modell koennte ihre
+    // Herkunft sonst nicht mehr unterscheiden.
+    news: { results: [{ title: 'Nachricht', url: 'https://example.org/n', description: 'x' }] },
+  }
+
+  function abrufer(koerper: unknown, status = 200): typeof fetch {
+    return (async () => new Response(JSON.stringify(koerper), {
+      status, headers: { 'content-type': 'application/json' },
+    })) as unknown as typeof fetch
+  }
+
+  it('liest Titel, URL und Auszug aus web.results', async () => {
+    const a = new BraveAnbieter('brv-nicht-echt')
+    const antwort = await a.suche('electron browserwindow', 5, abrufer(ANTWORT))
+
+    expect(antwort.treffer).toHaveLength(2)
+    expect(antwort.treffer[0].titel).toBe('Electron BrowserWindow')
+    expect(antwort.treffer[0].url).toBe('https://electronjs.org/docs/api/browser-window')
+    // Der Feldname ist der Punkt: Brave nennt den Auszug `description`, Tavily `content`.
+    // Wer hier `content` liest, bekommt bei *jedem* Treffer einen leeren Auszug — und zwar still,
+    // ohne Fehler und ohne dass die Trefferzahl sich aendert.
+    expect(antwort.treffer[0].auszug).toBe('Erzeugt und steuert Fenster.')
+    expect(antwort.treffer[1].auszug).toBe('Der https-Modul.')
+  })
+
+  it('nimmt keine Treffer aus anderen Abschnitten als web', async () => {
+    const a = new BraveAnbieter('brv-nicht-echt')
+    const antwort = await a.suche('irgendwas', 5, abrufer(ANTWORT))
+    expect(antwort.treffer.map(t => t.url)).not.toContain('https://example.org/n')
+  })
+
+  it('nennt sich in der Engine-Zeile und behauptet keine Aufschluesselung', async () => {
+    const a = new BraveAnbieter('brv-nicht-echt')
+    const antwort = await a.suche('x', 3, abrufer(ANTWORT))
+    expect(antwort.treffer.every(t => t.engine === 'brave')).toBe(true)
+    // Die Zeile soll sagen, was sie *nicht* weiss. Eine erfundene Engine-Liste waere schlimmer
+    // als keine — dieselbe Regel wie bei Tavily.
+    expect(antwort.engineLage).toContain('Brave')
+    expect(antwort.engineLage).toContain('keine Aufschluesselung')
+  })
+
+  it('meldet eine Antwort ohne web.results benannt, statt sie als leer auszugeben', async () => {
+    const a = new BraveAnbieter('brv-nicht-echt')
+    await expect(a.suche('x', 3, abrufer({ query: { original: 'x' } }))).rejects.toThrow()
   })
 })
