@@ -355,7 +355,16 @@ wird genannt.
 | `werkzeug_schema` | das Meta-Werkzeug des aufgeschobenen Ladens (§5.5) |
 
 Nicht dabei und ausdrücklich nicht: `schreiben`, `editieren`, Shell, `graph_upsert_node`,
-`graph_link`, `graph_maintain`, Delegation, Websuche, Netzabruf.
+`graph_link`, `graph_maintain`, Delegation.
+
+> **Nachgeführt 2026-08-22.** Diese Liste nannte bis dahin auch **Websuche und Netzabruf**. Beides
+> ist seit der Qwen3.8-Welle gebaut, und der Ausschluss ist damit ungültig — er wird hier
+> gestrichen und nicht bloß stillschweigend übergangen. Die Werkzeugliste des Hauptlaufs umfasst
+> jetzt zusätzlich `web_suchen`, `seite_lesen`, `recherchieren` und `faehigkeit_lesen`; die
+> Begründung und die Sicherheitsarchitektur dazu stehen in
+> `docs/superpowers/specs/2026-08-21-qwen38-niveau-c-entwurf.md`, Abschnitt 4 und im Nachtrag vom
+> 2026-08-21. Der Satz darunter — Datei-Werkzeuge laufen im Prozess, nie über eine Shell — gilt
+> unverändert und gilt auch für die Netz-Werkzeuge: kein `curl`, kein `execFile`.
 
 **Die Datei-Werkzeuge laufen im Prozess, nie über eine Shell.** Ein `grep` per `execFile` wäre
 bequem und würde genau die Grenze wieder aufheben, deren Fehlen diese Strecke rechtfertigt: Sobald
@@ -875,12 +884,23 @@ wirklich schwachen Modell belegt — ein starkes Modell hätte ihn nie gezeigt.
 ## 13. Ausdrücklich nicht in dieser Strecke
 
 Schreibende und editierende Werkzeuge · Shell · `graph_upsert_node`, `graph_link`,
-`graph_maintain` · OS-Ausführungsgrenze, Egress-Allowlist, Sandbox-Profil je Lauf · Kompaktierung ·
-`ausgesetzt` und der Weckdienst · beide Delegations-Primitive · der gekapselte Rechercheur ·
+`graph_maintain` · OS-Ausführungsgrenze, Sandbox-Profil je Lauf · Kompaktierung ·
+`ausgesetzt` und der Weckdienst · beide Delegations-Primitive ·
 Kanarienauftrag und das Füllen der Fähigkeitstabelle · Ergebnisurteil · Codecs `ollama-native` und
 `text` · Beobachtbarkeit autonomer Läufe samt `heartbeat` · Token-Streaming · Reparaturversuche ·
 echte Werkzeug-Suche über einen großen Katalog · Drag&Drop und Screenshot-Einfügen · ein B-Slot in
 `slots.ts`.
+
+> **Nachgeführt 2026-08-22.** Zwei Einträge sind aus dieser Liste gestrichen, weil sie gebaut
+> wurden: **der gekapselte Rechercheur** und die **Egress-Allowlist**. Beide gehören zur
+> Qwen3.8-Welle (`docs/superpowers/specs/2026-08-21-qwen38-niveau-c-entwurf.md`).
+>
+> Die Egress-Allowlist heißt dort `netzwache` und ist enger, als §13 sie sich gedacht hatte: keine
+> Liste erlaubter Ziele je Lauf, sondern eine Wache, die über *aufgelöste Adressen* urteilt, jede
+> Weiterleitung erneut prüft und im Hauptlauf zusätzlich gegen eine Positivliste geht. Was
+> weiterhin fehlt und in der Liste bleibt, ist das **Sandbox-Profil je Lauf** — die netzwache ist
+> eine Prüfung im Prozess, keine Grenze des Betriebssystems. Der Unterschied ist derselbe wie
+> zwischen `pfadwache` und einer echten Ausführungsgrenze, und er ist in §1.1 beschrieben.
 
 ### 13.1 Übernommene Abnahmen — fällig mit den schreibenden Werkzeugen
 

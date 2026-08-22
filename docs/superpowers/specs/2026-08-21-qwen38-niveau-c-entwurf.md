@@ -962,3 +962,77 @@ eine anpassbare Fläche im Sinne von CK-NFR-012 und braucht ihren Eintrag.
 **Offene Frage 2 ist damit beantwortet** (Rechercheur, nicht Modus-Schnitt). Offene Frage 3 (die
 Spec sagt an zwei Stellen Nein) bleibt und wird mit dem Bau nachgeführt. Offene Frage 5
 (SearXNG oder Tavily) bleibt offen — die Schnittstelle wird gebaut, der Anbieter ist Konfiguration.
+
+---
+
+## Nachtrag 2026-08-22: das Ziel, wie es jetzt steht
+
+Der Nutzer hat das Ziel geschärft. Es ist damit nicht mehr eine von mehreren Optionen, sondern
+die Vorgabe:
+
+> „direkte 'suche' (eher nachschlagen ist es dann ja) mit whitelist und für alles außerhalb der
+> whitelist rechercheur (der ausgetestet und optimiert sein sollte, einen funktionierenden inneren
+> flow haben)"
+
+Drei Dinge stecken darin, und die dritte ist die, die noch aussteht.
+
+### 1. Der direkte Weg heißt **Nachschlagen**, nicht Suchen
+
+Das ist keine Wortklauberei, sondern legt fest, was das Werkzeug soll. Nachschlagen heißt: eine
+bekannte Antwort an einem bekannten Ort holen — die Signatur von `BrowserWindow`, das Verhalten
+von `fs.readFile`, die Optionen von `vitest run`. Es heißt **nicht**: das Netz nach einer Meinung
+absuchen. Daraus folgt für die Beschreibung im stabilen Präfix, dass sie das Nachschlagen benennt
+und nicht die Suche — ein 27B nimmt das Leitverb einer Beschreibung wörtlich, und `inhalt_suchen`
+(Dateien) und `web_suchen` (Netz) sind sonst genau das Paar, das bei dieser Größenklasse den
+21-fachen Fehlgriff erzeugt (§6.4).
+
+Die Positivliste ist entsprechend eine **Nachschlagewerk-Liste**, keine Liste vertrauenswürdiger
+Seiten im weiteren Sinn: Herstellerdokumentation. `VORGABE_POSITIVLISTE` führt heute `nodejs.org`,
+`developer.mozilla.org`, `electronjs.org`, `vitest.dev`, `vite.dev`, `typescriptlang.org`,
+`docs.ollama.com`, `docs.anthropic.com`, `react.dev`. Erweiterbar über
+`netz.zusaetzlichePositivliste` im ConfigStore.
+
+**GitHub steht bewusst nicht darauf** und ein Test hält das fest
+(`tests/harness/verdrahtung.test.ts`). Eine Repository-Seite ist kein Nachschlagewerk: sie trägt
+fremden Text in Issues, READMEs und Kommentaren, den niemand redigiert hat. Sie gehört auf den
+zweiten Weg.
+
+### 2. Alles außerhalb der Liste läuft über den Rechercheur
+
+Unverändert wie in §4.1 (1) entworfen: eigener Unterlauf, eigene Registry (`web_suchen`,
+`seite_lesen`, `faehigkeit_lesen`), **kein** Datei- und kein Graph-Werkzeug, Rückgabe nur als Text
+mit Quellenliste. Der Unterschied zum direkten Weg ist der Modus der `netzwache`: `'offen'` statt
+`'whitelist'`. Alle übrigen Regeln gelten in beiden Modi.
+
+Der Rechercheur ist selbst ein Werkzeug des Hauptlaufs (`recherchieren`) und wird wie jedes andere
+aufgerufen — Stummel im Präfix, Schema auf Abruf, abgefangen in `fuehreAus`.
+
+### 3. **Der Rechercheur muss ausgetestet und optimiert sein.** Das ist er nicht.
+
+Die ausdrückliche Auflage des Nutzers, und die einzige der drei, die noch offen ist. Gebaut und
+im Test grün heißt hier nichts: der Unterlauf ist eine Agentenschleife im Kleinen, und ob ihr
+innerer Ablauf trägt, entscheidet sich an einem echten Modell mit einem echten Suchdienst, nicht
+an eingespeisten Antworten.
+
+„Funktionierender innerer Flow" ist prüfbar, und zwar an diesen Fragen:
+
+| | Woran es sich zeigt |
+|---|---|
+| Formuliert das Modell aus der Frage eine brauchbare Suchanfrage — oder schiebt es die Frage wörtlich hinein? | `tool.intent` des ersten `web_suchen` |
+| Wählt es aus den Treffern die richtige Seite, oder die erste? | Welche URL `seite_lesen` bekommt |
+| Merkt es, wenn eine Seite nichts hergibt, und holt eine zweite? | Zweiter `seite_lesen`-Aufruf nach einem dünnen Ergebnis |
+| Hält es die Budgets ein, ohne sie auszureizen? | Runden und Seitenabrufe im Protokoll gegen die Obergrenzen |
+| Ist der Befund gedeckt, oder erfindet er über die Quellen hinaus? | `## Quellen` gegen den Text, von Hand |
+| Reicht `medium` als Denkstufe, oder braucht der Unterlauf `low`? | Wanduhr des Unterlaufs, gemessen |
+
+Daraus folgt ein neuer Messpunkt, und er hat Vorrang vor M6 und M7:
+
+**M12 — trägt der innere Ablauf des Rechercheurs?** Zehn echte Fragen aus der laufenden Arbeit
+(Electron-, Node-, Vitest-, Ollama-Fragen), gegen `keel-qwen38:27b` mit einem echten Suchanbieter,
+durch die App gefahren. Je Lauf das Ereignisprotokoll lesen und die sechs Zeilen der Tabelle
+beantworten. Ergebnis ist keine Testfarbe, sondern eine Quote und eine Liste dessen, was
+nachgestellt werden muss — Beschreibungstexte, Budgets, Denkstufe des Unterlaufs, Aufbau der
+Rückgabe.
+
+Solange M12 nicht gefahren ist, gilt der Rechercheur als **gebaut, nicht als brauchbar.** Der
+Unterschied ist derselbe, den dieser Zweig schon zweimal teuer gelernt hat.
