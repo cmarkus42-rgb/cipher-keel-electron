@@ -289,18 +289,44 @@ Programm entscheidet, ist das ein anderes Programm.
 
 ## 5e. Zwei Befunde aus Runde 4 — beide unbehoben, beide benannt
 
-**Der Spark lief auf der CPU.** `nvidia-smi` meldete 0 % GPU-Auslastung, `llama-server` stand bei
-1894 % CPU, und eine Anfrage mit 19 Prompt- und 36 Antwort-Token brauchte **53 Sekunden** — gegen
-22–40 Sekunden für einen ganzen Zug in Runde 3. Ob das dauerhaft ist, weiß ich nicht. **Bevor hier
-wieder jemand eine Zeit misst, gehört das an den Anfang:**
+**Der Spark rechnete auf der CPU — Ursache gefunden, Behebung offen.**
 
-```bash
-curl -s http://100.78.7.108:11434/api/ps        # welches Modell, welcher Kontext
-ssh DGX nvidia-smi                              # rechnet die GPU ueberhaupt?
+Der Container hat seine **cgroup-Geräterechte** verloren. Er ist mit `--gpus all` gestartet
+(`DeviceRequests` steht in `docker inspect`), die Geräteknoten `/dev/nvidia0`, `nvidiactl` und
+`nvidia-uvm` sind im Container weiterhin sichtbar — aber `nvidia-smi` dort meldet
+`Failed to initialize NVML: Unknown Error`, und im Ollama-Log steht:
+
+```
+12:32:10  msg="gpu memory" id=0 library=CUDA available="115.0 GiB"    <- Scheduler sieht die GPU
+          ggml_cuda_init: failed to initialize CUDA: no CUDA-capable device is detected
+          system_info: n_threads = 20 ... CPU : NEON = 1 ...          <- llama-server auf CPU
 ```
 
-Eine Zahl von einer CPU-Ausführung ist keine Zahl über keel. Runde 4 ist deshalb verworfen und
-nicht hineingerechnet.
+**Auslöser:** `systemctl daemon-reload` schreibt die cgroup des Containers neu und verwirft dabei
+die Geräte-Freigabe, die das nvidia-container-toolkit beim Start injiziert hat. Der bereits
+laufende Ollama-Prozess behält seine Handles — deshalb meldet der Scheduler weiter CUDA —, jeder
+**neu gestartete** `llama-server` bekommt keine mehr. Im Journal: **8 Reloads in 30 Stunden**, der
+letzte ausgelöst von `snapd.service`. **Das kommt wieder.**
+
+**Sofort:** `ssh DGX docker restart ollama` — stellt die Rechte her, das Modell lädt in ~10 s neu.
+Die anderen fünf Modelle liegen auf dem Bind-Mount und sind nicht betroffen.
+
+**Dauerhaft** (braucht `sudo`, das es dort nicht passwortlos gibt): `"exec-opts":
+["native.cgroupdriver=cgroupfs"]` in `/etc/docker/daemon.json` — die Datei existiert dort nicht —,
+oder auf CDI umstellen (`nvidia-ctk cdi generate`, danach `--device nvidia.com/gpu=all`) statt der
+alten cgroup-Injektion.
+
+**Bevor hier wieder jemand eine Zeit misst, gehört das an den Anfang:**
+
+```bash
+curl -s http://100.78.7.108:11434/api/ps                 # welches Modell, welcher Kontext
+ssh DGX docker exec ollama nvidia-smi -L                 # sieht der *Container* die GPU?
+ssh DGX 'docker logs --tail 50 ollama | grep -i cuda'    # oder faellt llama-server auf CPU?
+```
+
+`nvidia-smi` **auf dem Host** genügt nicht — der Host sieht die GPU die ganze Zeit. Gefragt ist der
+Container. Eine Zahl von einer CPU-Ausführung ist keine Zahl über keel; Runde 4 ist deshalb
+verworfen und nicht hineingerechnet.
 
 **`WORKER_TIMEOUT_MS = 120_000` ist für den falschen Verbraucher bemessen.** Die Konstante in
 `src/main/worker/ollama-client.ts` stammt vom Ein-Schuss-Worker, der eine kleine Anfrage schickt.

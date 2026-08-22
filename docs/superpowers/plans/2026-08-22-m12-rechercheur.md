@@ -296,9 +296,15 @@ ist die Bestätigung — sie gehört in die nächste Sitzung, sobald der Spark w
 
 ### Zwei Befunde, die Runde 4 nebenbei freigelegt hat
 
-**1. Der Spark läuft auf der CPU.** Ob dauerhaft oder vorübergehend, ist offen. Bevor irgendjemand
-hier wieder eine Zeit misst, gehört `curl -s http://100.78.7.108:11434/api/ps` und ein Blick auf
-`ssh DGX nvidia-smi` an den Anfang. Eine Zahl von einer CPU-Ausführung ist keine Zahl über keel.
+**1. Der Spark läuft auf der CPU — Ursache gefunden.** Der Ollama-Container hat seine
+cgroup-Geräterechte verloren: `systemctl daemon-reload` schreibt die cgroup neu und verwirft die
+Freigabe des nvidia-container-toolkit; die Geräteknoten bleiben sichtbar, die Rechte nicht. Im
+Journal stehen 8 Reloads in 30 Stunden, ausgelöst von `snapd.service` — es kommt wieder. Sofort
+behoben mit `ssh DGX docker restart ollama`; dauerhaft mit
+`"exec-opts": ["native.cgroupdriver=cgroupfs"]` in `/etc/docker/daemon.json` oder mit CDI statt
+der alten cgroup-Injektion (beides braucht `sudo`). Die vollständige Beweisführung steht in der
+Übergabe, Abschnitt 5e. **Und der Prüfbefehl ist `docker exec ollama nvidia-smi -L`, nicht
+`nvidia-smi` auf dem Host** — der Host sieht die GPU die ganze Zeit.
 
 **2. `WORKER_TIMEOUT_MS = 120_000` ist für den falschen Verbraucher bemessen.** Die Konstante in
 `src/main/worker/ollama-client.ts` stammt vom **Ein-Schuss-Worker**, der eine kleine Anfrage
