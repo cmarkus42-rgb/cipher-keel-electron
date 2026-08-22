@@ -10,15 +10,17 @@ import { StrictMode, useState, useEffect, useCallback } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { SettingsAnsicht, SettingsAntwort, Schreiber } from '../../shared/settings-types'
 import { ModelleReiter } from '../components/settings/ModelleReiter'
+import { NetzReiter } from '../components/settings/NetzReiter'
 import { CliStartReiter } from '../components/settings/CliStartReiter'
 import { SprachausgabeReiter } from '../components/settings/SprachausgabeReiter'
 
 const api = () => window.cipherKeel
 
-type ReiterId = 'modelle' | 'cli' | 'sprache'
+type ReiterId = 'modelle' | 'netz' | 'cli' | 'sprache'
 
 const REITER: { id: ReiterId; titel: string }[] = [
   { id: 'modelle', titel: 'Modelle' },
+  { id: 'netz', titel: 'Netz' },
   { id: 'cli', titel: 'CLI-Start' },
   { id: 'sprache', titel: 'Sprachausgabe' },
 ]
@@ -85,6 +87,7 @@ function SettingsApp() {
       {fehler && <div style={styles.fehler}>{fehler}</div>}
       <div style={styles.inhalt}>
         {reiter === 'modelle' && <ModelleReiter ansicht={ansicht} schreibe={schreibe} />}
+        {reiter === 'netz' && <NetzReiter ansicht={ansicht} schreibe={schreibe} />}
         {reiter === 'cli' && <CliStartReiter ansicht={ansicht} schreibe={schreibe} />}
         {reiter === 'sprache' && <SprachausgabeReiter ansicht={ansicht} schreibe={schreibe} />}
       </div>

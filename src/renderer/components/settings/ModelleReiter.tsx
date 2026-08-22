@@ -168,7 +168,12 @@ export function ModelleReiter({
                 </div>
                 <div style={styles.erklaertext}>{e.erklaertext}</div>
                 <div style={styles.empfehlung}>{e.empfehlung}</div>
-                <GeheimnisFeld eintrag={e} schreibe={schreibe} />
+                <GeheimnisFeld
+                  keyRef={e.keyRef}
+                  status={e.geheimnisStatus}
+                  hinweis={e.geheimnisHinweis}
+                  schreibe={schreibe}
+                />
                 <div style={styles.eintragKnoepfe}>
                   <button onClick={() => setFormular(e.id)} style={styles.bearbeiten}>
                     Bearbeiten

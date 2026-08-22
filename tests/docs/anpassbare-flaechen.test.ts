@@ -23,6 +23,11 @@ const CONFIG_PATHS = [
   'llm.worker',
   'modelle.eintraege',
   'modelle.zuordnung',
+  // Der Netzzugang der Harness-Werkzeuge. Die Schluessel selbst stehen nicht im ConfigStore,
+  // sondern im Schluesselbund — deshalb stehen sie hier nicht, aber im Inventar sehr wohl.
+  'netz.searxngEndpunkt',
+  'netz.bevorzugt',
+  'netz.zusaetzlichePositivliste',
 ]
 
 describe('CK-NFR-012 — the adjustable-surface inventory', () => {

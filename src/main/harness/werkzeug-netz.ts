@@ -236,13 +236,31 @@ export function klemmeMaxZeichen(
   return { ok: true, wert: Math.min(HARTE_MAX_ZEICHEN, Math.max(MIN_ZEICHEN, Math.trunc(wert))) }
 }
 
-/** `anzahl`: 1 bis 10, Vorgabe 5. Ausserhalb wird geklemmt, Unlesbares wird benannt abgelehnt. */
+/**
+ * `anzahl`: 1 bis 10, Vorgabe 5. Ausserhalb wird geklemmt, Unlesbares wird benannt abgelehnt.
+ *
+ * **Eine Zeichenkette wird angenommen, wenn sie eine Zahl ist.** Gemessen am 2026-08-22, erster
+ * echter Lauf mit Tavily: `qwen3.8:27b` schickte zweimal `"anzahl": "5"` -- in Anfuehrungszeichen,
+ * obwohl das Schema `number` sagt -- und wurde zweimal abgewiesen. Erst im dritten Anlauf liess es
+ * das Feld weg. Zwei von sechs Runden verbrannt an einer Anfuehrungszeichen-Frage.
+ *
+ * Das ist kein stiller Griff und kein Raten: `"5"` hat genau eine Lesart, und `"viele"` faellt
+ * weiterhin benannt durch. Streng zu bleiben haette hier nichts gesichert und einem 27B ein
+ * Drittel seines Rundenbudgets gekostet -- Modelle dieser Groessenklasse tippen JSON-Typen
+ * regelmaessig falsch, und das ist ein bekanntes Verhalten, kein Fehler dieses einen Laufs.
+ */
 function klemmeAnzahl(wert: unknown): { ok: true; wert: number } | { ok: false; meldung: string } {
   if (wert === undefined) return { ok: true, wert: 5 }
-  if (typeof wert !== 'number' || !Number.isFinite(wert)) {
-    return { ok: false, meldung: `'anzahl' muss eine Zahl zwischen 1 und ${MAX_ANZAHL} sein.` }
+  const zahl = typeof wert === 'string' && wert.trim() !== '' ? Number(wert) : wert
+  if (typeof zahl !== 'number' || !Number.isFinite(zahl)) {
+    return {
+      ok: false,
+      meldung:
+        `'anzahl' muss eine Zahl zwischen 1 und ${MAX_ANZAHL} sein — erhalten: ` +
+        `${JSON.stringify(wert)}.`,
+    }
   }
-  return { ok: true, wert: Math.min(MAX_ANZAHL, Math.max(1, Math.trunc(wert))) }
+  return { ok: true, wert: Math.min(MAX_ANZAHL, Math.max(1, Math.trunc(zahl))) }
 }
 
 // ---------------------------------------------------------------------------------------------

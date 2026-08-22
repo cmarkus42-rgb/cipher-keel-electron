@@ -562,3 +562,44 @@ describe('Beschreibungen und Positivliste', () => {
     }
   })
 })
+
+/**
+ * Aus dem ersten echten Lauf mit Tavily (2026-08-22, `qwen3.8:27b`): das Modell schickte zweimal
+ * `"anzahl": "5"` in Anfuehrungszeichen, obwohl das Schema `number` sagt, und wurde zweimal
+ * abgewiesen. Erst im dritten Anlauf liess es das Feld weg — zwei von sechs Runden verbrannt.
+ *
+ * Ein 27B tippt JSON-Typen regelmaessig falsch. Streng zu bleiben haette hier nichts gesichert:
+ * `"5"` hat genau eine Lesart. Es bleibt aber dabei, dass Unlesbares benannt durchfaellt — das
+ * ist der Unterschied zwischen Entgegenkommen und Raten.
+ */
+describe('web_suchen — eine Zahl in Anfuehrungszeichen ist eine Zahl', () => {
+  it('nimmt "5" wie 5 und reicht sie an den Anbieter durch', async () => {
+    const { a, aufrufe } = anbieter(DREI)
+    const e = await webSuchen.ausfuehren(
+      { anfrage: 'node https request', anzahl: '5' },
+      ktx(netzKontext({ anbieter: a })),
+    )
+    expect(e.ok).toBe(true)
+    expect(aufrufe[0].anzahl).toBe(5)
+  })
+
+  it('klemmt eine Zeichenkette ausserhalb der Grenzen, statt sie abzulehnen', async () => {
+    const { a, aufrufe } = anbieter(DREI)
+    await webSuchen.ausfuehren(
+      { anfrage: 'x', anzahl: '99' },
+      ktx(netzKontext({ anbieter: a })),
+    )
+    // Die harte Obergrenze des Werkzeugs; sie steht im Schema als "1 bis 10".
+    expect(aufrufe[0].anzahl).toBe(10)
+  })
+
+  it('lehnt weiterhin ab, was keine Zahl ist — und nennt, was ankam', async () => {
+    const e = await webSuchen.ausfuehren(
+      { anfrage: 'x', anzahl: 'viele' },
+      ktx(netzKontext({ anbieter: anbieter(DREI).a })),
+    )
+    // Der erhaltene Wert gehoert in die Meldung: ohne ihn raet das Modell, was falsch war, und
+    // probiert dieselbe Form noch einmal — genau die Schleife, die den Lauf zwei Runden kostete.
+    expect(meldung(e)).toContain('viele')
+  })
+})

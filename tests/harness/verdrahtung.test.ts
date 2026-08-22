@@ -25,7 +25,22 @@ vi.mock('electron', () => ({
   BrowserWindow: { fromWebContents: () => null },
 }))
 
-beforeEach(() => { vi.resetModules() })
+// Der Schluesselbund der Maschine wird **nicht** befragt. Ohne diese Ersetzung las der Test den
+// echten Bund, und sobald jemand dort einen Tavily-Schluessel hinterlegte, kippte er von gruen
+// nach rot — ohne dass sich eine Zeile Code geaendert haette. Ein Test, dessen Farbe an der
+// Maschine haengt, sagt ueber den Code nichts.
+const schluesselStand = { tavily: null as string | null, brave: null as string | null }
+vi.mock('../../src/main/worker/api-keys', async (echt) => ({
+  ...(await echt<typeof import('../../src/main/worker/api-keys')>()),
+  resolveApiKey: async (ref: string) =>
+    schluesselStand[ref as keyof typeof schluesselStand] ?? null,
+}))
+
+beforeEach(() => {
+  vi.resetModules()
+  schluesselStand.tavily = null
+  schluesselStand.brave = null
+})
 
 describe('Verdrahtung: gebaute Werkzeuge sind vom Lauf aus erreichbar', () => {
   it('haelt jedes exportierte Werkzeug in der Registry des Laufs', async () => {
@@ -56,7 +71,7 @@ describe('Verdrahtung: gebaute Werkzeuge sind vom Lauf aus erreichbar', () => {
    * Verdrahtung — und die war es, die fehlte.
    */
   it('baut einen Netzkontext, sobald ein Suchanbieter konfiguriert ist', async () => {
-    process.env.CIPHER_KEEL_API_TAVILY = 'tvly-probe-nicht-echt'
+    schluesselStand.tavily = 'tvly-probe-nicht-echt'
     try {
       const { baueNetzKontext } = await import('../../src/main/harness-netz')
       const netz = await baueNetzKontext()
@@ -68,12 +83,11 @@ describe('Verdrahtung: gebaute Werkzeuge sind vom Lauf aus erreichbar', () => {
       expect(typeof netz!.abrufen).toBe('function')
       expect(typeof netz!.aufloesen).toBe('function')
     } finally {
-      delete process.env.CIPHER_KEEL_API_TAVILY
+      schluesselStand.tavily = null
     }
   })
 
   it('gibt ohne Suchanbieter keinen Netzkontext zurueck, statt einen halben zu bauen', async () => {
-    delete process.env.CIPHER_KEEL_API_TAVILY
     const { baueNetzKontext } = await import('../../src/main/harness-netz')
     // Ohne Anbieter ist `undefined` die ehrliche Antwort: die Werkzeuge stehen weiter im Praefix
     // (sonst bewegte er sich zwischen Laeufen), melden aber benannt, dass nichts eingerichtet ist.

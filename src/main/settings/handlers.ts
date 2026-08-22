@@ -49,7 +49,14 @@ async function mitAnsicht(aenderung: () => void): Promise<SettingsAntwort> {
 const EINFACHFELDER = new Set([
   'modelltier:light', 'modelltier:standard', 'modelltier:heavy',
   'sprachausgabe:aktiv', 'sprachausgabe:stimme',
+  // Der Netzzugang der Harness-Werkzeuge. Die Schluessel stehen bewusst *nicht* hier, sondern
+  // gehen ueber SETTINGS_GEHEIMNIS_SETZEN in den Schluesselbund — eine Konfigurationsdatei ist
+  // kein Ort fuer Geheimnisse, und der Kanal dafuer ist schon generisch.
+  'netz:bevorzugt', 'netz:searxngEndpunkt', 'netz:zusaetzlichePositivliste',
 ])
+
+/** Die Anbieter, die `waehleAnbieter` kennt. Leer heisst automatisch. */
+const ANBIETER = new Set(['', 'searxng', 'tavily', 'brave'])
 
 export function registerSettingsHandlers(): void {
   ipcMain.handle(SETTINGS_ANSICHT, async () => baueAnsicht())
@@ -152,6 +159,42 @@ export function registerSettingsHandlers(): void {
         })
         return
       }
+      if (bereich === 'netz') {
+        const netz = configStore.get('netz')
+        if (name === 'bevorzugt') {
+          if (typeof wert !== 'string' || !ANBIETER.has(wert)) {
+            throw new Error(
+              `Unbekannter Suchanbieter '${String(wert)}' — bekannt sind searxng, tavily, brave ` +
+              `oder leer fuer automatisch.`,
+            )
+          }
+          configStore.set('netz', { ...netz, bevorzugt: wert })
+          return
+        }
+        if (name === 'searxngEndpunkt') {
+          if (typeof wert !== 'string') throw new Error('Der Endpunkt muss Text sein.')
+          // Leer ist zulaessig und heisst "nicht eingerichtet" — dann meldet das Werkzeug das
+          // benannt, statt leere Treffer zu liefern.
+          configStore.set('netz', { ...netz, searxngEndpunkt: wert.trim() })
+          return
+        }
+        // zusaetzlichePositivliste: eine Zeile je Host, im Formular als Textfeld.
+        if (typeof wert !== 'string') throw new Error('Die Positivliste kommt als Text, ein Host je Zeile.')
+        const hosts = wert.split('\n').map(z => z.trim().toLowerCase()).filter(z => z !== '')
+        for (const h of hosts) {
+          // Kein Schema, kein Pfad, kein Sternchen: die netzwache vergleicht Hostnamen. Ein
+          // Eintrag wie `https://example.org/docs` wuerde nie greifen und saehe doch richtig aus.
+          if (/[/:*\s]/.test(h)) {
+            throw new Error(
+              `'${h}' ist kein reiner Hostname. Erwartet wird z.B. 'developer.mozilla.org' — ` +
+              `ohne Schema, ohne Pfad, ohne Sternchen. Ein Eintrag deckt seine Unterdomaenen mit ab.`,
+            )
+          }
+        }
+        configStore.set('netz', { ...netz, zusaetzlichePositivliste: hosts })
+        return
+      }
+
       const voice = configStore.get('voice')
       if (name === 'aktiv') {
         if (typeof wert !== 'boolean') throw new Error('Die Sprachausgabe ist an oder aus.')

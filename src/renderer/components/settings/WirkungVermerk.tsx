@@ -9,6 +9,11 @@ import type { Wirkung } from '../../../shared/settings-types'
 
 const TEXT: Record<Wirkung, string> = {
   'sofort': 'wirkt sofort',
+  // Der Netzkontext wird in baueLaufUmgebung je Harness-Lauf gebaut, nicht beim Start der App
+  // und nicht je CLI-Session. Ein eigener Vermerk dafuer, weil keiner der drei anderen stimmt —
+  // und ein falscher Vermerk ist schlimmer als keiner: der Nutzer wartet sonst auf einen
+  // Neustart, der nichts aendert, oder haelt eine Aenderung fuer wirkungslos.
+  'naechster-lauf': 'gilt ab dem naechsten Harness-Lauf',
   'naechste-session': 'gilt ab der naechsten Session',
   'neustart': 'braucht einen Neustart der App',
 }

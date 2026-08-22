@@ -17,6 +17,7 @@ import type { ModellEintrag } from './entry'
 import { envVarName, readFromEnv, readFromKeychain } from '../worker/api-keys'
 import { splitShellArgs } from '../util/shell-quote'
 import { AdapterRegistry } from '../agent/registry'
+import { VORGABE_POSITIVLISTE } from '../harness/werkzeug-netz'
 import type {
   AdapterAnsicht, EintragAnsicht, EndpunktAnsicht, GeheimnisStatus,
   SettingsAnsicht, SlotAnsicht, SlotOptionAnsicht, WarnungAnsicht,
@@ -214,6 +215,33 @@ function adapterAnsichten(): AdapterAnsicht[] {
   })
 }
 
+/**
+ * Der Netzzugang der Harness-Werkzeuge, so wie ihn das Settings-Fenster zeigt.
+ *
+ * Die Schluesselstaende kommen aus demselben Leser wie bei den Modell-Eintraegen
+ * (`geheimnisStatusVon`), damit es genau eine Wahrheit darueber gibt, ob ein Schluessel
+ * auffindbar ist. Die Vorgabe-Positivliste wird mitgeschickt statt im Fenster nachgebaut: sie
+ * steht in `harness/werkzeug-netz.ts`, und ein Nachbau im Renderer waere eine zweite Liste, die
+ * auseinanderlaufen kann.
+ */
+async function netzAnsicht(quellen: GeheimnisQuellen) {
+  const netz = configStore.get('netz')
+  const [tavily, brave] = await Promise.all([
+    geheimnisStatusVon('tavily', quellen),
+    geheimnisStatusVon('brave', quellen),
+  ])
+  return {
+    bevorzugt: netz.bevorzugt ?? '',
+    searxngEndpunkt: netz.searxngEndpunkt ?? '',
+    zusaetzlichePositivliste: Array.isArray(netz.zusaetzlichePositivliste)
+      ? netz.zusaetzlichePositivliste.filter((h): h is string => typeof h === 'string')
+      : [],
+    vorgabePositivliste: [...VORGABE_POSITIVLISTE],
+    tavily: { status: tavily.status, hinweis: tavily.hinweis },
+    brave: { status: brave.status, hinweis: brave.hinweis },
+  }
+}
+
 export async function baueAnsicht(quellen: GeheimnisQuellen = {}): Promise<SettingsAnsicht> {
   const { eintraege, uebersprungen } = ladeEintraege()
 
@@ -259,5 +287,6 @@ export async function baueAnsicht(quellen: GeheimnisQuellen = {}): Promise<Setti
     },
     adapter: adapterAnsichten(),
     sprachausgabe: { aktiv: voice.enabled !== false, stimme: voice.piperVoice ?? '' },
+    netz: await netzAnsicht(quellen),
   }
 }
