@@ -52,8 +52,12 @@ Alle übrigen Regeln gelten in beiden.
 
 ### Steht und ist an der echten Maschine gemessen
 
-- **Ollama auf dem Spark ist 0.32.15** (war 0.32.5, das Modell verlangt ≥ 0.32.12). Der alte
-  Container liegt als `ollama-alt-0325` geparkt und ist ein `docker start` weit weg.
+- **Ollama auf dem Spark ist 0.32.15** (war 0.32.5, das Modell verlangt ≥ 0.32.12). Der
+  Rückfall-Container `ollama-alt-0325` ist am 2026-08-22 gelöscht, nachdem die neue Version einen
+  vollen Arbeitstag getragen hat. Das alte Image ist ebenfalls nicht mehr da — ein Rückfall wäre
+  jetzt ein erneuter Download, kein `docker start`. Was zählt, liegt ohnehin nicht im Container:
+  die Modelle stehen auf dem Bind-Mount `/home/crimak/ollama` (190 GB) und überleben jeden
+  Container-Neubau.
 - **`qwen3.8:27b` liegt dort**, dazu das abgeleitete `keel-qwen38:27b` mit Kontext und den drei
   Samplern, die Ollamas `/v1` nicht durchreicht.
 - **M1** lädt und antwortet · **M4** `ollama create` reicht Renderer und Parser durch,
@@ -245,9 +249,6 @@ ssh DGX                      # Alias mit nvsync.key, User crimak, Docker-Gruppe 
 KEEL_KEEP_PROFILE=1 .claude/skills/run-keel/launch.sh /tmp/keel-harness
 node .claude/skills/run-keel/driver.mjs settings-window "…"
 .claude/skills/run-keel/stop.sh          # immer, sonst bleiben tmux-Sitzungen liegen
-
-# Aufraeumen, wenn sich 0.32.15 bewaehrt hat:
-ssh DGX 'docker rm ollama-alt-0325'
 ```
 
 Die Registry-Zeile für das Modell ist `spark-qwen38-27b` in `src/main/model/defaults.ts`. Sie
