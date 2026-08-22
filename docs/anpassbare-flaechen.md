@@ -62,7 +62,7 @@ Einstellung.
 | Capability-`SKILL.md` (Preset-Quelle) | `src/main/preset/*/capabilities/*/SKILL.md` | ja — Prompt-Vorschau | nein — Folgephase |
 | **Fähigkeiten des Harness-Laufs** | `<Projektwurzel>/.claude/skills/<name>/SKILL.md` und `<Projektwurzel>/.claude/capabilities/<name>/SKILL.md` — gelesen von `src/main/harness/faehigkeiten.ts` | ja — als Abschnitt `## Fähigkeiten` im stabilen Präfix jedes Laufs, und im Ereignisprotokoll bei `skill.geladen` | **ja — mit einem Texteditor, ohne die App.** Eine neue `SKILL.md` unter der Projektwurzel ändert ab dem nächsten Lauf das Verhalten des Modells |
 | **Netzzugang der Harness-Werkzeuge** | `netz.searxngEndpunkt`, `netz.bevorzugt`, `netz.zusaetzlichePositivliste` im ConfigStore; die Schlüssel im Schlüsselbund unter `cipher-keel-api-tavily` bzw. `cipher-keel-api-brave` (oder in `CIPHER_KEEL_API_TAVILY` / `CIPHER_KEEL_API_BRAVE`) | ja — Settings-Fenster, Reiter „Netz"; und ohne Suchanbieter melden `web_suchen` und `seite_lesen` benannt, dass Netzzugang nicht eingerichtet ist | ja — Settings-Fenster (Anbieterwahl, beide Schlüsselfelder, SearXNG-Endpunkt, Positivliste), sonst ConfigStore bzw. Schlüsselbund |
-| **GPU-Zugriff des Ollama-Containers auf dem Spark** | Docker auf `gx10-91a9`, **außerhalb des Repos** | Ob `keel-qwen38:27b` auf der GPU oder auf der CPU rechnet. **Kein Schalter, sondern ein Fehlerfall, der sich von selbst einstellt:** der Container ist mit `--gpus all` gestartet und die Geräteknoten (`/dev/nvidia0`, `nvidiactl`, `nvidia-uvm`) bleiben sichtbar — aber ein `systemctl daemon-reload` auf dem Host schreibt die cgroup des Containers neu und verwirft die Geräte-Freigabe des nvidia-container-toolkit. Gemessen 2026-08-22: 8 Reloads in 30 Stunden, ausgelöst von `snapd.service`. Ollamas Scheduler meldet danach weiter `library=CUDA available="115.0 GiB"`, während jeder neu gestartete `llama-server` mit `ggml_cuda_init: failed to initialize CUDA: no CUDA-capable device is detected` auf CPU fällt | **nein — und das ist das Gefährliche.** keel sieht nur langsame Antworten; gemessen 53 s für 19 Prompt- und 36 Antwort-Token gegen 22–40 s für einen ganzen Agentenzug auf der GPU | ja, außerhalb der App: `docker restart ollama` stellt die Rechte sofort wieder her. Dauerhaft: `"exec-opts": ["native.cgroupdriver=cgroupfs"]` in `/etc/docker/daemon.json` (existiert dort nicht) oder CDI statt der alten cgroup-Injektion — beides braucht `sudo`, das es dort nicht passwortlos gibt |
+| **GPU-Zugriff des Ollama-Containers auf dem Spark** | Docker auf `gx10-91a9`, **außerhalb des Repos** | Ob `keel-qwen38:27b` auf der GPU oder auf der CPU rechnet. **Kein Schalter, sondern ein Fehlerfall, der sich von selbst einstellt** — die Mechanik steht unter der Tabelle. Symptom: Ollamas Scheduler meldet weiter `library=CUDA available="115.0 GiB"`, während jeder neu gestartete `llama-server` mit `ggml_cuda_init: failed to initialize CUDA: no CUDA-capable device is detected` auf CPU fällt. Gemessen 2026-08-22: 53 s für 19 Prompt- und 36 Antwort-Token gegen 10,8 s nach der Behebung — und gegen 22–40 s für einen **ganzen Agentenzug** auf der GPU | **nein — und das ist das Gefährliche.** keel sieht nur langsame Antworten. Prüfbefehl ist `docker exec ollama nvidia-smi -L`, **nicht** `nvidia-smi` auf dem Host: der sieht die GPU die ganze Zeit | ja, außerhalb der App: `docker restart ollama` stellt die Rechte sofort wieder her (erledigt 2026-08-22). Dauerhaft siehe unten — braucht `sudo`, das dort nicht passwortlos ist |
 | **`num_ctx` des abgeleiteten Ollama-Modells** || PhaseInput | Graph — `phasenoutput`-Artefakte der Vorgängerphase, aufgelöst über `phasenBindung` | ja — Prompt-Vorschau, sobald der Graph Artefakte trägt | mittelbar — ja, über die Artefakte im Graphen; es gibt keine Einstellung dafür |
 
 Der `phaseninput` (M2 §9.1 und §17.4) trägt keine Inhalte, sondern **Zeiger**: Titel, uid
@@ -271,6 +271,46 @@ angefragte und — allein im Erfolgsfall — die letzte URL. Es gibt dafür kein
    `tool.completed`), nicht gegen den Antworttext — Titel und Auszug schreibt die Gegenstelle.
    **Diese Prüfung ist keine anpassbare Fläche und soll keine werden:** ein Schalter dafür wäre
    ein Schalter für die Ausleitung.
+
+**Warum der GPU-Zugriff des Containers von selbst verlorengeht.** Unter **cgroup v2** gibt es
+keinen `devices`-Controller mehr; wer ein Gerät öffnen darf, entscheidet ein **eBPF-Programm** an
+der cgroup (`BPF_CGROUP_DEVICE`), und davon ist pro cgroup nur eines wirksam. Beim Start mit
+`--gpus all` tut das nvidia-container-toolkit zwei getrennte Dinge: es **mountet** `/dev/nvidia*`
+samt Treiberbibliotheken in den Container, und es schreibt die Geräte-Erlaubnis als eBPF-Programm
+direkt in die cgroup — **an Docker vorbei**.
+
+Dort sitzt der Bruch: mit `Cgroup Driver: systemd` (so ist die Maschine eingestellt) gehört die
+cgroup des Containers nicht Docker, sondern **systemd**. systemd führt sein eigenes Modell darüber,
+welche Geräte eine Unit haben darf (`DeviceAllow=`), und von der Regel des Toolkits weiß es nichts.
+`systemctl daemon-reload` lässt systemd seine Eigenschaften **neu anwenden** — also ein frisches
+eBPF-Geräteprogramm aus seiner eigenen Sicht anhängen, in der keine NVIDIA-Geräte vorkommen. Die
+Regel ist damit weg.
+
+Die Mounts überleben, weil sie keine cgroup-Eigenschaft sind — deshalb ist `/dev/nvidia0` weiterhin
+sichtbar und `open()` gibt trotzdem `EPERM`. Und weil die Prüfung beim `open()` stattfindet, behält
+der **laufende** Ollama-Prozess seine Deskriptoren und meldet weiter CUDA, während jeder **neu
+gestartete** `llama-server` scheitert. Auf dieser Maschine stößt `snapd` den Reload regelmäßig an:
+gemessen **8 Reloads in 30 Stunden**.
+
+Kurz: zwei Eigentümer für dieselbe cgroup. Das Toolkit schreibt Rechte hinein, systemd schreibt sie
+wieder heraus.
+
+**Die dauerhafte Behebung** (nicht getan — braucht `sudo`, das dort nicht passwortlos ist) nimmt
+systemd aus der Schleife:
+
+```bash
+echo '{ "exec-opts": ["native.cgroupdriver=cgroupfs"] }' | sudo tee /etc/docker/daemon.json
+sudo systemctl restart docker      # der Container hat `unless-stopped` und kommt von selbst zurueck
+docker info | grep -i "Cgroup Driver"          # -> cgroupfs
+# und die Gegenprobe, ohne die es keine Behebung ist:
+sudo systemctl daemon-reload
+docker exec ollama nvidia-smi -L               # muss die GPU weiterhin zeigen
+```
+
+Die Alternative hält systemd stattdessen **im** Bild: `no-cgroups = true` in
+`/etc/nvidia-container-runtime/config.toml` und den Container mit ausdrücklichen `--device`-Flags
+neu anlegen. Dann trägt Docker die Geräte als `DeviceAllow=` in die systemd-Eigenschaften ein, und
+ein Reload wendet sie mit an. Sauberer im Modell, aber ein Container-Neubau statt einer Datei.
 
 **Warum der Suchendpunkt nicht durch die netzwache läuft.** `pruefeUrl` lässt nur `https` durch
 und sperrt `100.64.0.0/10` (Tailscale); der SearXNG-Endpunkt auf MS-01 ist `http` im Tailnet und
