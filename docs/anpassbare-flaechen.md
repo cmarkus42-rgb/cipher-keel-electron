@@ -327,19 +327,44 @@ docker run -d --name ollama --restart unless-stopped --gpus all \
 `--device`-Flags tragen allein die **Rechte** — und die sind der Teil, der verlorenging.
 Nachgemessen: dieselbe Anfrage 1,68 s statt 53 s, `load_tensors: offloaded 66/66 layers to GPU`.
 
-**Ein Schritt bleibt offen und braucht `sudo`** (auf dem Spark nicht passwortlos): `no-cgroups =
-true` in `/etc/nvidia-container-runtime/config.toml` — die Zeile steht dort auskommentiert. Danach
-schreibt das Toolkit **gar keine** cgroup-Regeln mehr, und es gibt genau einen Eigentümer statt
-zweier. Solange sie fehlt, schreibt es weiter mit; das ist redundant und schadet nicht, weil
-systemds Kopie die dauerhafte ist. Die Gegenprobe für beides:
+**Was belegt ist und was nicht.** Belegt ist die *Mechanik*: die Geräte stehen als `DeviceAllow=`
+in systemds Unit-Eigenschaften, und genau die wendet ein `daemon-reload` wieder an — beim alten
+Container stand dort nichts. **Noch nicht belegt ist der Ernstfall:** seit dem Umbau am 2026-08-22
+um 13:31 hat kein Reload stattgefunden.
+
+**Die Gegenprobe braucht kein `sudo`,** weil der Auslöser von selbst kommt — `snapd` stößt ihn auf
+dieser Maschine im Schnitt alle dreieinhalb Stunden an. Es genügt, danach nachzusehen:
 
 ```bash
-sudo systemctl daemon-reload          # der Ausloeser, absichtlich
-docker exec ollama nvidia-smi -L      # muss die GPU weiterhin zeigen
+ssh DGX '
+  START=$(docker inspect ollama --format "{{.State.StartedAt}}")
+  echo "Reloads seit dem Umbau: $(journalctl --since "$(date -d "$START" "+%F %T")" \
+        | grep -ci "Reloading requested")"
+  docker exec ollama nvidia-smi -L
+'
 ```
 
-Der alte Container ist als `ollama-vor-device` angehalten geparkt und kann weg, sobald diese
-Gegenprobe einmal bestanden ist.
+Steht dort eine Zahl **größer als null** und die GPU wird trotzdem gezeigt, ist die Behebung
+belegt. Wird sie nicht gezeigt, trägt die Erklärung nicht und die Untersuchung gehört wieder auf.
+
+Der alte Container ist als `ollama-vor-device` angehalten geparkt — er bleibt, bis diese Probe
+einmal bestanden ist.
+
+**Ein Schritt bleibt offen und braucht `sudo`** (auf dem Spark nicht passwortlos, und das Passwort
+ist nicht bekannt): `no-cgroups = true` in `/etc/nvidia-container-runtime/config.toml`, die Zeile
+steht dort auskommentiert. Danach schreibt das Toolkit **gar keine** cgroup-Regeln mehr, und es
+gibt genau einen Eigentümer statt zweier. **Das ist Hygiene, kein Funktionsbedarf:** solange die
+Zeile fehlt, schreibt das Toolkit redundant mit, und ein Reload wischt genau diese Kopie weg —
+systemds Kopie bleibt und trägt. Der Befehl, wenn das Passwort einmal zur Hand ist:
+
+```bash
+ssh -t DGX "sudo sed -i 's/^#no-cgroups = false/no-cgroups = true/' \
+  /etc/nvidia-container-runtime/config.toml && docker restart ollama"
+```
+
+Das `-t` ist nötig, sonst bekommt `sudo` kein Terminal für die Abfrage. Und der Befehl gehört auf
+den **Spark**, nicht auf den Mac: dort gibt es weder Docker noch diese Datei, und macOS bringt
+BSD-`sed` mit, dessen `-i` zwingend ein Suffix verlangt.
 
 **Nicht gewählt:** `"exec-opts": ["native.cgroupdriver=cgroupfs"]` in `/etc/docker/daemon.json`.
 Das wirkt auch, ist eine Zeile statt eines Container-Neubaus — nimmt systemd aber die cgroups weg,

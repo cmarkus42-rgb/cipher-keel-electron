@@ -316,7 +316,28 @@ Die anderen fünf Modelle liegen auf dem Bind-Mount und sind nicht betroffen.
 oder auf CDI umstellen (`nvidia-ctk cdi generate`, danach `--device nvidia.com/gpu=all`) statt der
 alten cgroup-Injektion.
 
-**Bevor hier wieder jemand eine Zeit misst, gehört das an den Anfang:**
+**Behoben am 2026-08-22, und zwar an der Ursache:** der Container ist mit ausdrücklichen
+`--device`-Flags neu angelegt. Damit stehen die Geräte in Dockers `HostConfig.Devices`, runc
+übersetzt sie in `DeviceAllow=`-Eigenschaften der systemd-Unit — und genau die wendet ein
+`daemon-reload` **wieder an**, statt sie zu verwerfen. Nachweis ohne `sudo`:
+`systemctl show docker-<id>.scope -p DeviceAllow` zeigt sie beim neuen Container und war beim
+alten leer. Gemessen: 1,68 s statt 53 s, `offloaded 66/66 layers to GPU`. Einzelheiten und der
+Startbefehl stehen in `docs/anpassbare-flaechen.md`.
+
+**Offen ist die Probe im Ernstfall.** Seit dem Umbau hat kein Reload stattgefunden. Sie braucht
+kein `sudo`, weil `snapd` den Auslöser von selbst liefert — **erster Handgriff der nächsten
+Sitzung:**
+
+```bash
+ssh DGX 'START=$(docker inspect ollama --format "{{.State.StartedAt}}");
+  echo "Reloads seit Umbau: $(journalctl --since "$(date -d "$START" "+%F %T")" | grep -ci "Reloading requested")";
+  docker exec ollama nvidia-smi -L'
+```
+
+Zahl > 0 **und** GPU wird gezeigt → belegt, und `ollama-vor-device` kann gelöscht werden. GPU fehlt
+→ die Erklärung trägt nicht, Untersuchung wieder auf.
+
+**Und weiterhin vor jeder Zeitmessung:**
 
 ```bash
 curl -s http://100.78.7.108:11434/api/ps                 # welches Modell, welcher Kontext
