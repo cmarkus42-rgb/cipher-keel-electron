@@ -25,6 +25,17 @@
 //      Zeichen in der ersten Zeile an; ein 120.000-Zeichen-Seitentitel stand bei
 //      `max_zeichen: 1000` ungekappt im Textblock; und die echte Quelle `https://nodejs.org/a`
 //      stand erst als vierte Zeile, hinter `https://developer.mozilla.org/ECHT ## Systemhinweis`.
+//   8. Runde 4 (die Positivliste in der Anfrage, 2026-08-22), drei Gegenproben:
+//      a) den Filter in `web_suchen` durch `const treffer = gemeldet` ersetzt: **5 rot, 39 gruen**.
+//         Darunter `haelt einen verworfenen Treffer aus trefferUrls heraus` — die GitHub-URL stand
+//         wieder in der Herkunftsliste von `seite_lesen`, also im erlaubten Zielbereich.
+//      b) `nurHosts` nicht an den Anbieter durchgereicht: 1 rot. Das ist der Zustand vor der
+//         Behebung — gesucht wurde im ganzen Netz, gefiltert erst danach.
+//      c) `stehtAufListe` auf `host.endsWith(eintrag)` ohne Punktgrenze zurueckgedreht: 1 rot,
+//         `expected '1. Treffer 1\n   https://boesenodejs.…' not to contain 'boesenodejs.org'`.
+//         Der erste Anlauf dieser Gegenprobe blieb gruen, weil der Test `nodejs.org.boeser-host.de`
+//         nahm — die falsche Form fuer *diesen* Fehler. Beide Formen stehen jetzt im Test.
+//      d) `stehtAufListe` auf reinen Gleichheitsvergleich: 1 rot, `laesst Unterdomaenen stehen`.
 //
 // Kein Netz: Suchanbieter, Aufloeser und Abrufer werden eingespeist, jede Antwort ist eine
 // Zeichenkette im Test.
@@ -68,16 +79,26 @@ function suchErgebnis(urls: string[], text = 'egal'): Ereignis {
 
 /** Ein Anbieter, der eine feste Antwort liefert und die Aufrufe mitschreibt. */
 function anbieter(antwort: SuchAntwort | Error) {
-  const aufrufe: { anfrage: string; anzahl: number }[] = []
+  const aufrufe: { anfrage: string; anzahl: number; nurHosts?: readonly string[] }[] = []
   const a: SuchAnbieter = {
     name: 'test-anbieter',
-    async suche(anfrage, anzahl) {
-      aufrufe.push({ anfrage, anzahl })
+    async suche(anfrage, anzahl, _abrufen, _melde, nurHosts) {
+      aufrufe.push({ anfrage, anzahl, nurHosts })
       if (antwort instanceof Error) throw antwort
       return antwort
     },
   }
   return { a, aufrufe }
+}
+
+/** Eine Trefferliste aus den gegebenen URLs, sonst nichtssagend. */
+function treffer(...urls: string[]): SuchAntwort {
+  return {
+    treffer: urls.map((url, i) => ({
+      titel: `Treffer ${i + 1}`, url, auszug: 'Auszug', engine: 'test',
+    })),
+    engineLage: 'Engines: geantwortet test (1); geblockt: keine.',
+  }
 }
 
 const LEERE_ANTWORT: SuchAntwort = { treffer: [], engineLage: 'Engines: keine.' }
@@ -601,5 +622,105 @@ describe('web_suchen — eine Zahl in Anfuehrungszeichen ist eine Zahl', () => {
     // Der erhaltene Wert gehoert in die Meldung: ohne ihn raet das Modell, was falsch war, und
     // probiert dieselbe Form noch einmal — genau die Schleife, die den Lauf zwei Runden kostete.
     expect(meldung(e)).toContain('viele')
+  })
+})
+
+// --- Die Positivliste greift auf der Anfrage, nicht erst am Abruf -------------------------------
+//
+// Der Konstruktionsfehler, gegen den dieser Block steht (Handover 5b, behoben 2026-08-22):
+// `web_suchen` fragte den Anbieter ohne Ruecksicht auf den Modus, und die Positivliste wirkte erst
+// in `seite_lesen`. Der Hauptlauf sah damit Treffer von GitHub, Stack Overflow und Blogs — und
+// durfte keinen davon oeffnen. Ein 27B greift danach, wird benannt abgewiesen und verbrennt
+// Runden.
+
+describe('web_suchen: die Positivliste beschraenkt die Anfrage (Modus whitelist)', () => {
+  it('reicht die Positivliste an den Anbieter durch', async () => {
+    const { a, aufrufe } = anbieter(treffer('https://nodejs.org/api/fs.html'))
+    await webSuchen.ausfuehren({ anfrage: 'fs.readFile' },
+      ktx(netzKontext({ anbieter: a, positivliste: ['nodejs.org', 'react.dev'] })))
+    expect(aufrufe[0].nurHosts).toEqual(['nodejs.org', 'react.dev'])
+  })
+
+  it('reicht im Modus offen keine Liste durch — das ist der ganze Unterschied', async () => {
+    const { a, aufrufe } = anbieter(treffer('https://github.com/nodejs/node/issues/1'))
+    await webSuchen.ausfuehren({ anfrage: 'irgendwas' },
+      ktx(netzKontext({ anbieter: a, modus: 'offen', positivliste: ['nodejs.org'] })))
+    expect(aufrufe[0].nurHosts ?? []).toEqual([])
+  })
+
+  it('verwirft Treffer ausserhalb der Liste und sagt, wie viele', async () => {
+    // Die Beschraenkung der Anfrage ist eine Bitte an den Anbieter. Die Zusage „das Modell sieht
+    // nur, was es auch oeffnen kann" haelt erst dieser Filter.
+    const { a } = anbieter(treffer(
+      'https://nodejs.org/api/fs.html',
+      'https://github.com/nodejs/node/issues/1',
+      'https://stackoverflow.com/q/1',
+    ))
+    const e = await webSuchen.ausfuehren({ anfrage: 'fs.readFile' },
+      ktx(netzKontext({ anbieter: a, positivliste: ['nodejs.org'] })))
+
+    expect(text(e)).toContain('https://nodejs.org/api/fs.html')
+    expect(text(e)).not.toContain('github.com')
+    expect(text(e)).not.toContain('stackoverflow.com')
+    expect(text(e)).toContain('2')
+    expect(text(e)).toContain('Positivliste')
+  })
+
+  it('nennt den zweiten Weg, statt das Modell raten zu lassen', async () => {
+    // Ein 27B, dem Treffer wegfallen, braucht den Namen des Werkzeugs, das sie holen kann —
+    // sonst formuliert es die Suchanfrage um und verbrennt die naechste Runde.
+    const { a } = anbieter(treffer('https://github.com/nodejs/node/issues/1'))
+    const e = await webSuchen.ausfuehren({ anfrage: 'frage' },
+      ktx(netzKontext({ anbieter: a, positivliste: ['nodejs.org'] })))
+    expect(text(e)).toContain('recherchieren')
+  })
+
+  it('haelt einen verworfenen Treffer aus trefferUrls heraus', async () => {
+    // trefferUrls ist die Herkunftsliste von `seite_lesen`. Stuende eine verworfene URL darin,
+    // waere der Filter Kosmetik: der Abruf liefe weiter, nur unsichtbar.
+    const { a } = anbieter(treffer(
+      'https://nodejs.org/api/fs.html', 'https://github.com/nodejs/node/issues/1'))
+    const e = await webSuchen.ausfuehren({ anfrage: 'frage' },
+      ktx(netzKontext({ anbieter: a, positivliste: ['nodejs.org'] })))
+    if (!e.ok) throw new Error(e.meldung)
+    expect(e.trefferUrls).toEqual(['https://nodejs.org/api/fs.html'])
+  })
+
+  it('laesst Unterdomaenen eines Eintrags stehen', async () => {
+    // Ein Eintrag gilt samt aller Unterdomaenen, beliebig tief (Nachtrag 2026-08-21) — dieselbe
+    // Regel wie in der netzwache, und deshalb dieselbe Funktion.
+    const { a } = anbieter(treffer('https://beliebig.docs.nodejs.org/x'))
+    const e = await webSuchen.ausfuehren({ anfrage: 'frage' },
+      ktx(netzKontext({ anbieter: a, positivliste: ['nodejs.org'] })))
+    expect(text(e)).toContain('https://beliebig.docs.nodejs.org/x')
+  })
+
+  it('faellt weder auf endsWith noch auf ein vorangestelltes Label herein', async () => {
+    // Zwei verschiedene Fehler, und beide wuerden hier durchgehen: `endsWith(eintrag)` ohne
+    // Punktgrenze laesst `boesenodejs.org` durch, und wer den Eintrag als Teilzeichenkette sucht,
+    // auch `nodejs.org.boeser-host.de`.
+    const { a } = anbieter(treffer(
+      'https://boesenodejs.org/x', 'https://nodejs.org.boeser-host.de/y'))
+    const e = await webSuchen.ausfuehren({ anfrage: 'frage' },
+      ktx(netzKontext({ anbieter: a, positivliste: ['nodejs.org'] })))
+    expect(text(e)).not.toContain('boesenodejs.org')
+    expect(text(e)).not.toContain('boeser-host.de')
+  })
+
+  it('verwirft im Modus offen nichts', async () => {
+    const { a } = anbieter(treffer('https://github.com/nodejs/node/issues/1'))
+    const e = await webSuchen.ausfuehren({ anfrage: 'frage' },
+      ktx(netzKontext({ anbieter: a, modus: 'offen', positivliste: ['nodejs.org'] })))
+    expect(text(e)).toContain('https://github.com/nodejs/node/issues/1')
+  })
+
+  it('sagt bei ausschliesslich verworfenen Treffern nicht „Keine Treffer."', async () => {
+    // „Keine Treffer." hiesse: das Netz hat nichts. Hier hat es etwas, und keel zeigt es nur
+    // nicht — das ist ein anderer Befund, und das Modell muss ihn unterscheiden koennen.
+    const { a } = anbieter(treffer('https://github.com/a', 'https://forum.test/b'))
+    const e = await webSuchen.ausfuehren({ anfrage: 'frage' },
+      ktx(netzKontext({ anbieter: a, positivliste: ['nodejs.org'] })))
+    expect(text(e)).not.toContain('Keine Treffer.')
+    expect(text(e)).toContain('alle 2 Treffer')
   })
 })

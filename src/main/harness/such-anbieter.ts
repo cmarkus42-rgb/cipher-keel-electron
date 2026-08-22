@@ -85,7 +85,57 @@ export interface SuchAnbieter {
   name: string
   suche(
     anfrage: string, anzahl: number, abrufen: typeof fetch, melde?: SuchMelder,
+    nurHosts?: readonly string[],
   ): Promise<SuchAntwort>
+}
+
+/**
+ * Hosts, auf die die **Anfrage** beschraenkt werden soll — der Nachschlage-Weg des Hauptlaufs
+ * (Nachtrag 2026-08-21), leer im offenen Weg des Rechercheurs.
+ *
+ * **Warum die Beschraenkung hierher gehoert und nicht erst zum Abruf.** Bis zum 2026-08-22 fragte
+ * `web_suchen` den Anbieter ohne Ruecksicht auf den Modus, und erst `seite_lesen` prallte an der
+ * Positivliste ab. Der Hauptlauf durchsuchte damit das ganze Netz, bekam Treffer von GitHub, Stack
+ * Overflow und Blogs — und durfte keinen davon oeffnen. Fuer ein 27B ist das der schlechteste
+ * Fall: es sieht etwas Passendes, greift danach, bekommt eine benannte Ablehnung und verbrennt
+ * Runden. Gemessen im ersten echten Netzlauf: zwei von sechs Runden gingen an einer verwandten
+ * Kleinigkeit (`"anzahl": "5"`) verloren, und das Rundenbudget ist 12.
+ *
+ * Jeder Anbieter drueckt die Beschraenkung so aus, wie seine Flaeche sie kennt — Tavily hat ein
+ * eigenes Feld dafuer, die anderen beiden nehmen `site:` in der Anfrage. Deshalb steht sie hier
+ * als Liste von Hosts und nicht als fertiger Anfragetext: einen `site:`-Text an Tavily zu
+ * schicken hiesse, Anfragezeichen fuer etwas auszugeben, wofuer es einen genauen Parameter gibt.
+ *
+ * **Die Beschraenkung ist eine Verbesserung der Treffer, keine Garantie.** Was ein Anbieter aus
+ * `site:` macht, steht in seiner Hand; die Zusage „das Modell sieht nur, was es auch oeffnen kann"
+ * haelt allein der Filter in `web_suchen` (werkzeug-netz.ts).
+ */
+function sauberHosts(nurHosts: readonly string[] | undefined): string[] {
+  return (nurHosts ?? []).map(h => h.trim()).filter(h => h !== '')
+}
+
+/**
+ * Die `site:`-Kette fuer Anbieter ohne eigenen Parameter. Leer, wenn kein brauchbarer Host da ist
+ * — ein `site:` ohne Host waere eine Anfrage, die kein Anbieter sinnvoll beantwortet, und die
+ * Liste kommt aus einem Konfigurationsfeld, in dem eine leere Zeile normal ist.
+ *
+ * Die Kette zaehlt **nicht** gegen `MAX_ANFRAGE_LAENGE`. Diese Grenze ist eine Ausleit-Bremse fuer
+ * das, was das Modell schreibt; die Kette schreibt keel selbst aus der Positivliste und traegt
+ * nichts aus dem Lauf hinaus. Sie waechst allerdings mit der Liste, und ein Anbieter darf eine zu
+ * lange Anfrage ablehnen — das kommt dann als benanntes `HTTP 4xx` zurueck und nicht als stilles
+ * Weniger. Gekappt wird hier nichts: eine stillschweigend halbierte Positivliste waere eine Suche,
+ * die Treffer verspricht, die `seite_lesen` danach doch verweigert.
+ */
+export function siteKette(nurHosts: readonly string[] | undefined): string {
+  const hosts = sauberHosts(nurHosts)
+  if (hosts.length === 0) return ''
+  if (hosts.length === 1) return `site:${hosts[0]}`
+  return `(${hosts.map(h => `site:${h}`).join(' OR ')})`
+}
+
+function mitKette(anfrage: string, nurHosts: readonly string[] | undefined): string {
+  const kette = siteKette(nurHosts)
+  return kette === '' ? anfrage : `${anfrage} ${kette}`
 }
 
 /**
@@ -387,8 +437,10 @@ export class SearxngAnbieter implements SuchAnbieter {
 
   async suche(
     anfrage: string, anzahl: number, abrufen: typeof fetch, melde?: SuchMelder,
+    nurHosts?: readonly string[],
   ): Promise<SuchAntwort> {
-    const q = pruefeAnfrage(this.name, anfrage)
+    // Geprueft wird die Anfrage des Modells, angehaengt wird danach — siehe `siteKette`.
+    const q = mitKette(pruefeAnfrage(this.name, anfrage), nurHosts)
     const grenze = klemmeAnzahl(anzahl)
 
     // `new URL` wirft bei einem unbrauchbaren Endpunkt roh — und ein Betriebsfehler in der
@@ -502,9 +554,13 @@ export class TavilyAnbieter implements SuchAnbieter {
 
   async suche(
     anfrage: string, anzahl: number, abrufen: typeof fetch, melde?: SuchMelder,
+    nurHosts?: readonly string[],
   ): Promise<SuchAntwort> {
     const q = pruefeAnfrage(this.name, anfrage)
     const grenze = klemmeAnzahl(anzahl)
+    // Tavily hat ein eigenes Feld fuer die Beschraenkung. Es ist genauer als `site:` im Text und
+    // kostet keine Anfragezeichen — deshalb hier und nicht ueber `mitKette`.
+    const hosts = sauberHosts(nurHosts)
 
     const koerper = await holeJson(
       this.name,
@@ -519,6 +575,10 @@ export class TavilyAnbieter implements SuchAnbieter {
           query: q,
           max_results: grenze,
           search_depth: 'basic',
+          // Weggelassen statt leer geschickt: ein `include_domains: []` ist bei Tavily nicht
+          // dasselbe wie kein Feld, und der offene Weg des Rechercheurs darf hier nichts stehen
+          // haben.
+          ...(hosts.length > 0 ? { include_domains: hosts } : {}),
           // Ausdruecklich aus: `include_raw_content` bei zehn Treffern sind grob 100k Token.
           // Ein 27B mit 64K nutzbarem Kontext hat das nicht. Inline-Inhalt loest ein Problem
           // von Cloud-Modellen mit 200K Kontext, nicht unseres — Seiten holt `seite_lesen`.
@@ -589,8 +649,10 @@ export class BraveAnbieter implements SuchAnbieter {
 
   async suche(
     anfrage: string, anzahl: number, abrufen: typeof fetch, melde?: SuchMelder,
+    nurHosts?: readonly string[],
   ): Promise<SuchAntwort> {
-    const q = pruefeAnfrage(this.name, anfrage)
+    // Wie bei SearXNG: Brave kennt keinen Parameter dafuer, aber den `site:`-Operator.
+    const q = mitKette(pruefeAnfrage(this.name, anfrage), nurHosts)
     const grenze = klemmeAnzahl(anzahl)
 
     const url = new URL('https://api.search.brave.com/res/v1/web/search')

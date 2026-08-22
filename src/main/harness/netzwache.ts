@@ -212,12 +212,37 @@ function nichtAufListe(host: string): string {
  * Exact match, or a suffix at a dot boundary. `endsWith(eintrag)` is the classic mistake and it
  * hands `example.org.boeser-host.de` to an attacker who registered boeser-host.de.
  */
-function stehtAufListe(host: string, positivliste: string[]): boolean {
+function stehtAufListe(host: string, positivliste: readonly string[]): boolean {
   return positivliste.some(roh => {
     const eintrag = normalisiereHost(roh.trim())
     if (eintrag === '') return false
     return host === eintrag || host.endsWith(`.${eintrag}`)
   })
+}
+
+/**
+ * Ob die URL eines Suchtreffers auf der Positivliste steht — dieselbe Frage wie Regel 3 von
+ * `pruefeUrl`, nur ohne Namensaufloesung, weil hier nichts abgerufen wird.
+ *
+ * Sie steht hier und nicht in `werkzeug-netz.ts`, seit `web_suchen` die Treffer des
+ * Nachschlage-Wegs filtert (2026-08-22). Eine zweite Fassung dort waere die Doppelung, an der die
+ * Punkt-Grenze bei der naechsten Aenderung an *einer* der beiden verschwindet — und ausgerechnet
+ * die Suchliste entscheidet, was `seite_lesen` danach ueberhaupt angeboten bekommt.
+ *
+ * `false` bei allem, was `new URL` nicht liest, und bei allem ausser https: fail closed, und die
+ * beiden Regeln decken sich mit `pruefeUrl`, das einen solchen Treffer ohnehin ablehnen wuerde.
+ * Ein Treffer, den keel anzeigt und danach nicht holen kann, ist genau der verbrannte Zug, gegen
+ * den dieser Filter steht.
+ */
+export function urlAufPositivliste(roh: string, positivliste: readonly string[]): boolean {
+  let url: URL
+  try {
+    url = new URL(roh)
+  } catch {
+    return false
+  }
+  if (url.protocol !== 'https:') return false
+  return stehtAufListe(normalisiereHost(url.hostname), positivliste)
 }
 
 export function pruefeUrl(roh: string, ktx: NetzWacheKontext): NetzErgebnis {

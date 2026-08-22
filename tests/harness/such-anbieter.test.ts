@@ -22,6 +22,11 @@
 //   7. Den `melde`-Aufruf in `holeJson` entfernt — der Stand vor der Nacharbeit vom 2026-08-21,
 //      in dem es den Melder gar nicht gab: 3 rot, `expected [] to have a length of 1 but got +0`.
 //      Von einer Suche stand nur der Suchbegriff im Protokoll, nie die URL, die hinausging.
+//   8. Runde 4 (Beschraenkung auf die Positivliste, 2026-08-22): der ganze Block gegen den Stand
+//      davor gefahren — 6 rot, 57 gruen. Tavily schickte kein `include_domains`, SearXNG und
+//      Brave keine `site:`-Kette, und die Anfrage kam bei allen dreien unveraendert an. Gruen
+//      blieb genau eine: „Tavily schickt ohne Hosts kein include_domains mit" — sie ist die
+//      Gegenprobe zur Behebung, nicht ihr Beleg.
 //
 // Kein Netz: `abrufen` wird eingespeist, jede Antwort ist eine Zeichenkette im Test.
 import { describe, it, expect } from 'vitest'
@@ -529,5 +534,78 @@ describe('BraveAnbieter', () => {
   it('meldet eine Antwort ohne web.results benannt, statt sie als leer auszugeben', async () => {
     const a = new BraveAnbieter('brv-nicht-echt')
     await expect(a.suche('x', 3, abrufer({ query: { original: 'x' } }))).rejects.toThrow()
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Die Beschraenkung auf die Positivliste — 2026-08-22
+// ---------------------------------------------------------------------------------------------
+
+describe('Beschraenkung der Suche auf Hosts (Nachschlage-Weg)', () => {
+  const TAVILY = { results: [{ title: 'T', url: 'https://nodejs.org/a', content: 'x', score: 1 }] }
+  const BRAVE = { web: { results: [{ title: 'B', url: 'https://nodejs.org/b', description: 'x' }] } }
+
+  it('Tavily nennt die Hosts als include_domains und laesst die Anfrage in Ruhe', async () => {
+    // Der native Weg, nicht `site:` im Text: er kostet keine Anfragezeichen und ist exakt.
+    const { abrufen, aufrufe } = jsonAbrufer(TAVILY)
+    await tavily().suche('fs.readFile Signatur', 5, abrufen, undefined,
+      ['nodejs.org', 'developer.mozilla.org'])
+    const koerper = JSON.parse(String(aufrufe[0].init?.body))
+    expect(koerper.include_domains).toEqual(['nodejs.org', 'developer.mozilla.org'])
+    expect(koerper.query).toBe('fs.readFile Signatur')
+  })
+
+  it('Tavily schickt ohne Hosts kein include_domains mit', async () => {
+    const { abrufen, aufrufe } = jsonAbrufer(TAVILY)
+    await tavily().suche('frage', 5, abrufen)
+    expect(JSON.parse(String(aufrufe[0].init?.body))).not.toHaveProperty('include_domains')
+  })
+
+  it('SearXNG haengt eine site:-Kette an die Anfrage', async () => {
+    const { abrufen, aufrufe } = jsonAbrufer(SEARX_ANTWORT)
+    await searx().suche('fs.readFile Signatur', 5, abrufen, undefined,
+      ['nodejs.org', 'developer.mozilla.org'])
+    const q = new URL(aufrufe[0].url).searchParams.get('q')
+    expect(q).toBe('fs.readFile Signatur (site:nodejs.org OR site:developer.mozilla.org)')
+  })
+
+  it('SearXNG schreibt bei genau einem Host kein OR', async () => {
+    const { abrufen, aufrufe } = jsonAbrufer(SEARX_ANTWORT)
+    await searx().suche('frage', 5, abrufen, undefined, ['nodejs.org'])
+    expect(new URL(aufrufe[0].url).searchParams.get('q')).toBe('frage site:nodejs.org')
+  })
+
+  it('Brave haengt dieselbe site:-Kette an', async () => {
+    const { abrufen, aufrufe } = jsonAbrufer(BRAVE)
+    await new BraveAnbieter('brv-nicht-echt').suche('frage', 5, abrufen, undefined,
+      ['electronjs.org', 'react.dev'])
+    const q = new URL(aufrufe[0].url).searchParams.get('q')
+    expect(q).toBe('frage (site:electronjs.org OR site:react.dev)')
+  })
+
+  it('leere und blanke Eintraege der Liste erzeugen keinen leeren site:-Operator', async () => {
+    // Ein `site:` ohne Host waere eine Anfrage, die kein Anbieter sinnvoll beantwortet — und die
+    // Liste kommt aus einem Konfigurationsfeld, in dem eine leere Zeile normal ist.
+    const { abrufen, aufrufe } = jsonAbrufer(SEARX_ANTWORT)
+    await searx().suche('frage', 5, abrufen, undefined, ['', '  ', 'nodejs.org'])
+    expect(new URL(aufrufe[0].url).searchParams.get('q')).toBe('frage site:nodejs.org')
+  })
+
+  it('eine Liste ohne brauchbaren Host laesst die Anfrage unveraendert', async () => {
+    const { abrufen, aufrufe } = jsonAbrufer(SEARX_ANTWORT)
+    await searx().suche('frage', 5, abrufen, undefined, ['', '   '])
+    expect(new URL(aufrufe[0].url).searchParams.get('q')).toBe('frage')
+  })
+
+  it('die Kette zaehlt nicht gegen die 200-Zeichen-Grenze der Modellanfrage', async () => {
+    // Die Grenze ist eine Ausleit-Bremse fuer das, was das *Modell* schreibt. Die site:-Kette
+    // schreibt keel selbst aus der Positivliste — sie traegt nichts aus dem Lauf hinaus.
+    const { abrufen, aufrufe } = jsonAbrufer(SEARX_ANTWORT)
+    const lang = 'a'.repeat(MAX_ANFRAGE_LAENGE)
+    const viele = ['nodejs.org', 'developer.mozilla.org', 'electronjs.org', 'vitest.dev']
+    await searx().suche(lang, 5, abrufen, undefined, viele)
+    const q = new URL(aufrufe[0].url).searchParams.get('q') ?? ''
+    expect(q.startsWith(lang)).toBe(true)
+    expect(q.length).toBeGreaterThan(MAX_ANFRAGE_LAENGE)
   })
 })

@@ -52,7 +52,8 @@ import {
   HARTE_MAX_ZEICHEN, MIN_ZEICHEN, STANDARD_MAX_ZEICHEN, einzeilig, extrahiereSeitenText,
 } from './seiten-text'
 import {
-  holeSicher, type AbrufGrenzen, type Abrufer, type Aufloeser, type AusgehenderSprung,
+  holeSicher, urlAufPositivliste,
+  type AbrufGrenzen, type Abrufer, type Aufloeser, type AusgehenderSprung,
 } from './netzwache'
 
 export const WEB_SUCHEN_NAME = 'web_suchen'
@@ -263,6 +264,20 @@ function klemmeAnzahl(wert: unknown): { ok: true; wert: number } | { ok: false; 
   return { ok: true, wert: Math.min(MAX_ANZAHL, Math.max(1, Math.trunc(zahl))) }
 }
 
+/**
+ * Der Satz ueber verworfene Treffer, oder nichts. Er nennt die Zahl und den zweiten Weg — ohne
+ * die Zahl waere die Verwerfung still, ohne den Namen `recherchieren` muesste das Modell raten,
+ * wie es an das kommt, was es gerade nicht sieht.
+ */
+function positivlisteHinweis(verworfen: number): string {
+  if (verworfen === 0) return ''
+  return (
+    ` ${verworfen} Treffer ausserhalb der Positivliste verworfen: dieser Lauf schlaegt nur in ` +
+    `Herstellerdokumentation nach. Fuer das offene Netz — GitHub, Foren, Blogs — gibt es das ` +
+    `Werkzeug 'recherchieren'.`
+  )
+}
+
 // ---------------------------------------------------------------------------------------------
 // web_suchen
 // ---------------------------------------------------------------------------------------------
@@ -312,6 +327,11 @@ const webSuchen: Werkzeug = {
     const netz = ktx.netz
     if (!netz) return ohneNetz(WEB_SUCHEN_NAME)
 
+    // Der Nachschlage-Weg beschraenkt die **Anfrage**, nicht erst den Abruf. Im Modus 'offen'
+    // (Unterlauf des Rechercheurs) bleibt die Liste weg — das ist der ganze Unterschied zwischen
+    // den zwei Netzwegen. Siehe `sauberHosts` in such-anbieter.ts fuer den Fehlerfall dahinter.
+    const nurHosts = netz.modus === 'whitelist' ? netz.positivliste : undefined
+
     let antwort
     try {
       antwort = await netz.anbieter.suche(
@@ -320,6 +340,7 @@ const webSuchen: Werkzeug = {
         // Suchbegriff. `sprung: 0` — der Suchpfad folgt keiner Weiterleitung (`redirect: 'error'`
         // in such-anbieter.ts), es gibt hier also genau einen Sprung.
         ziel => netz.melde({ sprung: 0, url: ziel.url, host: ziel.host, werkzeug: WEB_SUCHEN_NAME }),
+        nurHosts,
       )
     } catch (fehler) {
       // `SuchAnbieter.suche` wirft — es ist kein Werkzeug (such-anbieter.ts, Modulkopf). Hier
@@ -333,11 +354,28 @@ const webSuchen: Werkzeug = {
 
     // Harte Obergrenze noch einmal hier: `MAX_ANZAHL` ist eine Zusage des Werkzeugs an das
     // Kontextbudget, und sie darf nicht davon abhaengen, dass jeder Anbieter sie einhaelt.
-    const treffer = antwort.treffer.slice(0, MAX_ANZAHL)
+    const gemeldet = antwort.treffer.slice(0, MAX_ANZAHL)
+    // Und die Zusage, die die Beschraenkung der Anfrage **nicht** gibt: was ein Anbieter aus
+    // `include_domains` oder `site:` macht, steht in seiner Hand. Erst dieser Filter macht wahr,
+    // dass das Modell im Hauptlauf nur sieht, was es auch oeffnen kann — dieselbe Liste und
+    // dieselbe Punkt-Grenze wie in Regel 3 der netzwache, deshalb dieselbe Funktion.
+    const treffer = nurHosts
+      ? gemeldet.filter(t => urlAufPositivliste(t.url, nurHosts))
+      : gemeldet
+    const verworfen = gemeldet.length - treffer.length
+
     const zeilen = treffer.map((t, i) =>
       `${i + 1}. ${zeile(t.titel, MAX_TITEL_ZEICHEN)}\n   ${t.url}` +
       `\n   ${zeile(t.auszug, MAX_AUSZUG_ZEICHEN)}`)
-    const kopf = zeilen.length > 0 ? zeilen.join('\n') : 'Keine Treffer.'
+    // Drei Faelle, und sie duerfen nicht zusammenfallen. „Keine Treffer." heisst: das Netz hat
+    // nichts hergegeben. „Alle verworfen" heisst: es hat etwas hergegeben, und keel zeigt es
+    // nicht. Ein Modell, das das zweite fuer das erste haelt, formuliert die Suchanfrage um,
+    // statt zum zweiten Weg zu greifen — und verbrennt die naechste Runde.
+    const kopf = zeilen.length > 0
+      ? zeilen.join('\n')
+      : verworfen > 0
+        ? `Keine Treffer auf der Positivliste — alle ${verworfen} Treffer lagen ausserhalb.`
+        : 'Keine Treffer.'
 
     return {
       ok: true,
@@ -347,7 +385,11 @@ const webSuchen: Werkzeug = {
         // Die Engine-Zeile ist kein Schmuck: SearXNG sperrt eine geblockte Engine 3.600 s, bei
         // CAPTCHA einen Tag, bei Cloudflare 15 Tage. Wer sie nicht sieht, bekommt still weniger
         // Ergebnisse und haelt sie fuer alle, die es gibt.
-        text: `${kopf}\n\n${antwort.engineLage}`,
+        //
+        // Der Hinweis auf die Positivliste steht daneben und aus demselben Grund: eine stille
+        // Verwerfung waere die Luecke. Er nennt `recherchieren` beim Namen, weil ein 27B sonst
+        // nicht ableitet, welches Werkzeug die weggefallenen Treffer holen kann.
+        text: `${kopf}\n\n${antwort.engineLage}${positivlisteHinweis(verworfen)}`,
       }],
       // Das Feld, gegen das `seite_lesen` prueft. Es steht im Protokoll und nicht im Text — der
       // Text traegt auch fremdbestimmte Auszuege (Modulkopf).

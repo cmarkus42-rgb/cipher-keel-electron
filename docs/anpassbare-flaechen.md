@@ -1,6 +1,8 @@
 # Anpassbare Flächen — Inventar (CK-NFR-012)
 
-**Stand:** 2026-08-21 — Netz-Werkzeuge nachgeführt (Vorgabe-Positivliste, Suchanbieter und
+**Stand:** 2026-08-22 — der Nachschlage-Weg beschränkt jetzt die **Suchanfrage** und filtert die
+Treffer, nicht erst den Abruf; die Zeilen zum Reiter „Netz" nachgeführt, die noch „noch kein
+Config-Schlüssel" sagten. Davor 2026-08-21, Netz-Werkzeuge (Vorgabe-Positivliste, Suchanbieter und
 Seitengrenzen je Lauf; siehe Abschnitt „Zufuhr"). Davor am selben Tag die Zufuhr darunter
 (Suchanbieter, netzwache-Positivliste, Extraktionsgrenzen). Davor 2026-08-17, Settings-Fenster (siehe
 `docs/superpowers/specs/2026-08-17-settings-fenster-design.md`)
@@ -57,7 +59,7 @@ Einstellung.
 | GlobalRules | `src/main/preset/global-rules.ts` | ja — Prompt-Vorschau | nein — Folgephase |
 | Capability-`SKILL.md` (Preset-Quelle) | `src/main/preset/*/capabilities/*/SKILL.md` | ja — Prompt-Vorschau | nein — Folgephase |
 | **Fähigkeiten des Harness-Laufs** | `<Projektwurzel>/.claude/skills/<name>/SKILL.md` und `<Projektwurzel>/.claude/capabilities/<name>/SKILL.md` — gelesen von `src/main/harness/faehigkeiten.ts` | ja — als Abschnitt `## Fähigkeiten` im stabilen Präfix jedes Laufs, und im Ereignisprotokoll bei `skill.geladen` | **ja — mit einem Texteditor, ohne die App.** Eine neue `SKILL.md` unter der Projektwurzel ändert ab dem nächsten Lauf das Verhalten des Modells |
-| **Netzzugang der Harness-Werkzeuge** | `netz.searxngEndpunkt`, `netz.bevorzugt`, `netz.zusaetzlichePositivliste` im ConfigStore; die Schlüssel im Schlüsselbund unter `cipher-keel-api-tavily` bzw. `cipher-keel-api-brave` (oder in `CIPHER_KEEL_API_TAVILY` / `CIPHER_KEEL_API_BRAVE`) | ja — ohne Suchanbieter melden `web_suchen` und `seite_lesen` benannt, dass Netzzugang nicht eingerichtet ist | ja — ConfigStore bzw. Schlüsselbund. **Nicht** im Settings-Fenster, das ist offen |
+| **Netzzugang der Harness-Werkzeuge** | `netz.searxngEndpunkt`, `netz.bevorzugt`, `netz.zusaetzlichePositivliste` im ConfigStore; die Schlüssel im Schlüsselbund unter `cipher-keel-api-tavily` bzw. `cipher-keel-api-brave` (oder in `CIPHER_KEEL_API_TAVILY` / `CIPHER_KEEL_API_BRAVE`) | ja — Settings-Fenster, Reiter „Netz"; und ohne Suchanbieter melden `web_suchen` und `seite_lesen` benannt, dass Netzzugang nicht eingerichtet ist | ja — Settings-Fenster (Anbieterwahl, beide Schlüsselfelder, SearXNG-Endpunkt, Positivliste), sonst ConfigStore bzw. Schlüsselbund |
 | **`num_ctx` des abgeleiteten Ollama-Modells** | `Modelfile` auf dem DGX Spark (`keel-qwen38:27b`), **außerhalb des Repos** | ja — bestimmt, wie viel Kontext eine Anfrage wirklich bekommt | **nein — und das ist gefährlich.** Ollama halbiert den deklarierten Wert pro Anfrage (gemessen 2026-08-21: `65536` ergab 32.770 nutzbare Token, Prompt vorne still gekappt). Das Modelfile steht deshalb auf `131072`, damit `nutzbaresKontextfenster: 65536` stimmt. Wer eine der beiden Zahlen ändert, muss die andere mitändern |
 | PhaseInput | Graph — `phasenoutput`-Artefakte der Vorgängerphase, aufgelöst über `phasenBindung` | ja — Prompt-Vorschau, sobald der Graph Artefakte trägt | mittelbar — ja, über die Artefakte im Graphen; es gibt keine Einstellung dafür |
 
@@ -214,16 +216,16 @@ Modulen gelesen wird, läuft auseinander, und diese hier wäre dann in einem der
 
 | Fläche | Herkunft | Wirkung | In der App sichtbar | Editierbar |
 |---|---|---|---|---|
-| `SuchKonfiguration.searxngEndpunkt` | `src/main/harness/such-anbieter.ts` | Basis-URL der SearXNG-Instanz, z. B. `http://100.67.95.13:8080` auf MS-01. **Läuft absichtlich an der netzwache vorbei** (siehe unten) | nein | nein — noch kein Config-Schlüssel, noch kein Leser |
-| `SuchKonfiguration.tavilySchluessel` | `src/main/harness/such-anbieter.ts`; das Geheimnis selbst gehört wie jeder API-Schlüssel in Keychain/Umgebung, nicht in die Config | Schaltet den Tavily-Anbieter frei | nein | nein — noch kein Config-Schlüssel |
-| `SuchKonfiguration.bevorzugt` | `src/main/harness/such-anbieter.ts`, gelesen von `waehleAnbieter` | Ausdrückliche Wahl zwischen `searxng` und `tavily`. Ohne Vorgabe gewinnt Tavily — bis M6 gemessen ist. Ist der bevorzugte Anbieter nicht konfiguriert, wird das gesagt, statt still auf den anderen auszuweichen | nein | nein |
+| `SuchKonfiguration.searxngEndpunkt` | `src/main/harness/such-anbieter.ts`, gefüllt aus `netz.searxngEndpunkt` | Basis-URL der SearXNG-Instanz, z. B. `http://100.67.95.13:8080` auf MS-01. **Läuft absichtlich an der netzwache vorbei** (siehe unten) | ja — Settings-Fenster, Reiter „Netz" | ja — ConfigStore und Settings-Fenster |
+| `SuchKonfiguration.tavilySchluessel`, `.braveSchluessel` | `src/main/harness/such-anbieter.ts`; das Geheimnis selbst gehört wie jeder API-Schlüssel in Keychain/Umgebung, nicht in die Config | Schalten den Tavily- bzw. Brave-Anbieter frei | ja — Settings-Fenster, Reiter „Netz" (Stand, nicht Wert) | ja — über den Schlüsselbund-Kanal des Fensters |
+| `SuchKonfiguration.bevorzugt` | `src/main/harness/such-anbieter.ts`, gelesen von `waehleAnbieter`, gefüllt aus `netz.bevorzugt` | Ausdrückliche Wahl zwischen `searxng`, `tavily` und `brave`. Ohne Vorgabe gewinnt Tavily — bis M6 gemessen ist; Brave fällt niemandem zu, weil es als einziges eine Speicherbeschränkung trägt. Ist der bevorzugte Anbieter nicht konfiguriert, wird das gesagt, statt still auf einen anderen auszuweichen | ja — Settings-Fenster, Reiter „Netz" | ja — ConfigStore und Settings-Fenster |
 | `MAX_ANFRAGE_LAENGE` (200), `MAX_ANZAHL` (10), `MAX_AUSZUG_ZEICHEN` (300), `MAX_TITEL_ZEICHEN` (200) | Konstanten in `src/main/harness/such-anbieter.ts` (§3.4) | Grenzen der Anfrage und der Trefferdarstellung. Die 200 Zeichen der Anfrage sind zugleich eine Ausleit-Bremse: eine Suchanfrage geht unredigiert nach draußen | nein | nein — nur durch Ändern der Konstante und Neubau |
 | `ZEITBUDGET_MS` (10.000), `MAX_ANTWORT_BYTES` (1.000.000) | Konstanten in `src/main/harness/such-anbieter.ts`, überschreibbar je Anbieter-Instanz (`SuchGrenzen`) | Zeit- und Größengrenze des Suchabrufs. Sie stehen **hier** und nicht in der netzwache, weil dieser eine Abruf an ihr vorbeiläuft | nein | nein — nur durch Ändern der Konstante und Neubau |
 | `MIN_ZEICHEN` (250), `STANDARD_MAX_ZEICHEN` (32.000), `HARTE_MAX_ZEICHEN` (48.000) | Konstanten in `src/main/harness/seiten-text.ts` (§3.3/§3.4) | Untergrenze für brauchbaren Extrakt (darunter: benannte Absage statt Erfolg) und die Ober­grenzen, auf die ein modellgewähltes `max_zeichen` geklemmt wird | nein | nein — nur durch Ändern der Konstante und Neubau |
 | `NetzWacheKontext.positivliste` | `src/main/harness/netzwache.ts`, gefüllt vom Aufrufer | Welche Hosts der **Hauptlauf** überhaupt erreichen darf. Der Unterlauf des Rechercheurs (`modus: 'offen'`) überspringt genau diese eine Regel | nein | nein — heute im Quelltext des Aufrufers, keine Config, keine Oberfläche |
 | **`VORGABE_POSITIVLISTE`** | `src/main/harness/werkzeug-netz.ts` | Die Vorgabe für obige Zeile: `nodejs.org`, `developer.mozilla.org`, `electronjs.org`, `vitest.dev`, `vite.dev`, `typescriptlang.org`, `docs.ollama.com`, `docs.anthropic.com`, `react.dev`. **GitHub gehört bewusst nicht dazu** — GitHub-Recherche läuft über den Rechercheur (Nachtrag 2026-08-21), weil GitHub fremden Nutzerinhalt trägt und `github.io` Unterdomänen an jeden vergibt. Ein Test hält das fest, damit der Eintrag nicht aus Bequemlichkeit nachwächst | nein | nein — Konstante im Quelltext, Neubau nötig |
 | **`NetzKontext.anbieter`** (Suchanbieter je Lauf) | `src/main/harness/werkzeug-netz.ts`, gefüllt vom Aufrufer aus `waehleAnbieter` | Welcher Suchdienst `web_suchen` bedient. Ohne `netz`-Kontext antworten beide Werkzeuge **benannt**, dass für diesen Lauf kein Netzzugang eingerichtet ist — nie mit „keine Treffer" | nein | nein — heute im Quelltext des Aufrufers |
-| **`NetzKontext.modus`** | `src/main/harness/werkzeug-netz.ts` | `whitelist` (Hauptlauf, Positivliste gilt) oder `offen` (Unterlauf des Rechercheurs). Alle übrigen Regeln der netzwache gelten in beiden Modi unverändert | nein | nein |
+| **`NetzKontext.modus`** | `src/main/harness/werkzeug-netz.ts` | `whitelist` (Hauptlauf) oder `offen` (Unterlauf des Rechercheurs). Im Modus `whitelist` wirkt die Positivliste an **drei** Stellen: sie beschränkt die Suchanfrage (Tavily über `include_domains`, SearXNG und Brave über eine `site:`-Kette), sie filtert die Treffer vor der Ausgabe, und sie gilt in der netzwache beim Abruf. Alle übrigen Regeln der netzwache gelten in beiden Modi unverändert | nein | nein |
 | **`VORGABE_SEITE_GRENZEN`** (5 MB, 20.000 ms, 3 Weiterleitungen) | `src/main/harness/werkzeug-netz.ts` (§3.4), je Lauf über `NetzKontext.seiteGrenzen` überschreibbar | Download-, Zeit- und Weiterleitungsgrenze von `seite_lesen`. Anders als beim Suchabruf laufen sie durch die netzwache, weil das Ziel hier **modellgewählt** ist | nein | nein — Konstante im Quelltext, Neubau nötig |
 | **`TIEFEN`** (`kurz`: 1 Suche / 2 Seiten, `gruendlich`: 3 Suchen / 5 Seiten) | `src/main/harness/rechercheur.ts` (§3.4) | Wie viele Suchen und Seitenabrufe ein Unterlauf des Rechercheurs je Tiefe machen darf. Gezählt werden `tool.intent`-Ereignisse des Unterlaufs, nicht Erfolge — ein Abruf, der hinausging und dann fehlschlug, hat das Netz trotzdem berührt. Über der Grenze kommt eine **benannte** Absage, kein stiller Leerlauf | nein | nein — Konstante im Quelltext, Neubau nötig |
 | **`UNTERLAUF_RUNDEN`** (4), **`UNTERLAUF_WANDUHR_MS`** (90.000), **`ERGEBNIS_MAX_TOKEN`** (2.000) | `src/main/harness/rechercheur.ts` (§3.4) | Runden-, Zeit- und Ergebnisbudget des Rechercheur-Unterlaufs. Kosten- und Kontextanteil erbt er vom Elternauftrag — was dort als Obergrenze gilt, gilt hier nicht größer. Das Ergebnisbudget wird in Zeichen gemessen (Faktor 4), weil in diesem Prozess kein Tokenizer des Zielmodells liegt | nein | nein — Konstante im Quelltext, Neubau nötig |
@@ -245,6 +247,17 @@ angefragte und — allein im Erfolgsfall — die letzte URL. Es gibt dafür kein
    Domäne, die Unterdomänen an Fremde vergibt — `github.io`, `readthedocs.io`, `vercel.app`,
    `pages.dev` —, ist es eine Einladung: mit einem solchen Eintrag steht fremder Nutzerinhalt
    im Hauptlauf neben `datei_lesen` und den Graph-Werkzeugen.
+1a. **Die Beschränkung der Suchanfrage ist eine Bitte an den Anbieter, der Filter ist die
+   Zusage.** Was ein Suchdienst aus `site:` macht, steht in seiner Hand; `include_domains` bei
+   Tavily ist exakt, die `site:`-Kette bei SearXNG und Brave nicht garantiert. Wahr gemacht wird
+   „das Modell sieht im Hauptlauf nur, was es auch öffnen kann" deshalb erst durch den Filter über
+   den Treffern in `web_suchen` — und der verwirft nie still: die Zahl der verworfenen Treffer und
+   der Name des zweiten Wegs (`recherchieren`) stehen in der Antwort. Bis zum 2026-08-22 gab es
+   beides nicht: gesucht wurde im ganzen Netz, und erst `seite_lesen` wies den Treffer ab, nach
+   dem das Modell gegriffen hatte. Die `site:`-Kette wächst mit der Liste und zählt **nicht** gegen
+   `MAX_ANFRAGE_LAENGE` — sie schreibt keel, nicht das Modell. Lehnt ein Anbieter eine dadurch zu
+   lange Anfrage ab, kommt das als benanntes `HTTP 4xx` zurück; gekappt wird die Liste nicht.
+
 2. **Die Positivliste ist keine Ausleit-Grenze.** Eine erlaubte URL trägt ihren Query-String
    mit hinaus. Was diesen Kanal fast vollständig schließt, ist nicht die Liste, sondern die
    **Herkunftsprüfung** von `seite_lesen`: es nimmt ausschließlich URLs, die **bytegleich** in
