@@ -13,9 +13,12 @@
 > Netzfilter, der Erstkontakte hielt (5d), und ein Ollama-Container, der seinen GPU-Zugriff verlor
 > (5e); beide verfälschten hier jede Messung, und beide sind behoben. **Die Feldprobe der Budgets
 > ist gefahren und bestätigt** (Runde 5): `gruendlich` erreicht sein Ziel in 5 von 5 Läufen statt
-> in 0 von 5, und das Rundenbudget bindet nicht mehr. Offen ist damit nur noch eine einzige Probe —
-> ob der GPU-Zugriff einen `daemon-reload` übersteht —, und die lässt sich nicht erzwingen,
-> sondern muss von `snapd` ausgelöst werden.
+> in 0 von 5, und das Rundenbudget bindet nicht mehr. **Und M7 ist gefahren** — der laut Entwurf
+> wichtigste Messpunkt überhaupt: `faehigkeit_lesen` wurde in **40 von 40** Läufen gerufen, bevor
+> die Fähigkeit benutzt wurde, auch ohne jeden Hinweis im Auftrag; damit trägt die Annahme, auf der
+> keels Niveau B schon heute ruht. Offen ist damit nur noch eine einzige Probe — ob der GPU-Zugriff
+> einen `daemon-reload` übersteht —, und die lässt sich nicht erzwingen, sondern muss von `snapd`
+> ausgelöst werden.
 
 Diese Datei ist der Einstieg. Lies sie ganz, bevor du etwas anfasst — sie nennt auch, was *nicht*
 stimmt, und das ist der teurere Teil.
@@ -89,22 +92,26 @@ Alle übrigen Regeln gelten in beiden.
 
 ### Steht im Code, ist aber **nicht** an einem echten Modell erprobt
 
-- Die **Skill-Mechanik**. Ob ein 27B dem Satz „lies die Fähigkeit, bevor du sie benutzt"
-  tatsächlich folgt, ist unbelegt — **M7**, laut Entwurf der wichtigste Messpunkt überhaupt,
-  weil keels Niveau B schon heute auf derselben Annahme ruht. **Ein Teilbefund liegt jetzt vor:**
-  für *Werkzeugschemata* folgt das Modell dem gleichlautenden Satz in 8 von 10 Läufen, und zwar
-  auf eigene Kosten (zwei von vier Runden). Für Fähigkeiten fehlt der Beleg weiter —
-  `faehigkeit_lesen` wurde in zwanzig gemessenen Unterläufen kein einziges Mal gerufen, weil im
-  Messprojekt keine Fähigkeit hinterlegt war. Wer M7 fährt, muss zuerst eine hinterlegen.
+*Dieser Abschnitt ist seit dem 2026-08-22 leer.* Die **Skill-Mechanik** stand hier als der letzte
+unbelegte Posten — sie ist mit M7 belegt (40 von 40, siehe Abschnitt 6 Punkt 5). Für
+*Werkzeugschemata* lag der Teilbefund bei 8 von 10; für *Fähigkeiten* sind es 40 von 40, und der
+Unterschied ist nicht erklärt, sondern nur gemessen.
 
 ### Erprobt, seit dieser Fassung
 
-- **Der Rechercheur.** Zweimal zehn echte Fragen durch die laufende App, gegen
-  `keel-qwen38:27b` mit Tavily, Ereignisprotokoll je Lauf ausgewertet. Vorher: 3 von 33
-  versuchten Seitenabrufen gelesen, 7 von 10 Recherchen ohne eine einzige Quelle. Nachher:
-  11 von 35 und 4 von 10. Vier Behebungen dazwischen, ein offener Defekt (5d). Sechs Fragen des
+- **Der Rechercheur.** Fünfmal zehn echte Fragen durch die laufende App, gegen
+  `keel-qwen38:27b` mit Tavily, Ereignisprotokoll je Lauf ausgewertet. Am Anfang: 3 von 33
+  versuchten Seitenabrufen gelesen, 7 von 10 Recherchen ohne eine einzige Quelle. Zuletzt
+  (Runde 5): **21 von 32 gelesen, 0 von 10 ohne Quelle, 7 von 10 `ziel-erreicht`.** Fünf
+  Behebungen dazwischen, dazu zwei Defekte der Umgebung (5d, 5e). Sechs Fragen des
   Entwurf-Nachtrags beantwortet — das Protokoll steht in
   `docs/superpowers/plans/2026-08-22-m12-rechercheur.md`.
+- **Die Budgets je Tiefe.** Feldprobe gefahren: `gruendlich` endet in 5 von 5 Läufen
+  `ziel-erreicht` statt in 0 von 5, `kurz` als Kontrollgruppe unverändert. Siehe Abschnitt 6
+  Punkt 1.
+- **Die Skill-Mechanik (M7).** 40 Läufe, zwei Fähigkeiten, `faehigkeit_lesen` in **40 von 40**
+  gerufen — auch ohne Hinweis im Auftrag. Protokoll:
+  `docs/superpowers/plans/2026-08-22-m7-faehigkeiten.md`.
 - **Der eigene Zuordnungsplatz des Rechercheurs.** Hauptlauf auf `spark-qwen38-27b`, Unterlauf
   auf einem anderen Eintrag, belegt am `run.started` des Unterlaufs.
 
@@ -429,13 +436,18 @@ Runden mit fünf Behebungen, der hängende Abruf (5d) und der GPU-Zugriff des Sp
    3 HTTP 403 (Reddit, Stack Exchange sperren Klienten ohne Browser-Kennung). Beides ist benannt
    und kostet je einen Seitenplatz. Vor M12 war es hinter dem Filter unsichtbar.
 
-5. **M7 — folgt ein 27B dem Nachlade-Satz?** Ein Auftrag, dessen Lösung nur in einer Fähigkeit
-   steht, die im Präfix bloß mit Namen und Beschreibung erscheint. 20 Läufe, zwei Fähigkeiten,
-   `skill.geladen` im Protokoll zählen gegen die Fälle, in denen das Modell stattdessen geraten
-   hat. **Vorher eine Fähigkeit im Messprojekt hinterlegen** — in den M12-Läufen wurde
-   `faehigkeit_lesen` kein einziges Mal gerufen, weil es nichts zu lesen gab. *Teilbefund liegt
-   vor:* für Werkzeug**schemata** folgte das Modell dem gleichlautenden Satz in acht von zehn
-   Läufen, und zwar auf eigene Kosten.
+5. ~~**M7 — folgt ein 27B dem Nachlade-Satz?**~~ **Gefahren am 2026-08-22, 40 Läufe, und die
+   Antwort ist ja.** `faehigkeit_lesen` wurde in **40 von 40** Läufen gerufen, bevor die Fähigkeit
+   benutzt wurde — auch in den zwanzig Läufen, deren Auftrag **nicht** auf eine Hausregel hindeutete.
+   Die Regel wurde in 38 von 40 auch korrekt angewandt; beide Fehlschläge sind derselbe
+   Buchstabendreher bei einer Regel, die rechnen lässt (`WKR`/`WKZ` statt `WRK`), mit korrekter
+   Herleitung direkt daneben. Damit trägt die Annahme, auf der **keels Niveau B schon heute ruht**.
+   Das Protokoll steht in `docs/superpowers/plans/2026-08-22-m7-faehigkeiten.md`, samt drei
+   Einschränkungen, die der Aufbau nicht hergibt.
+
+   *Die brauchbare Nebenlehre für alle künftigen Fähigkeiten:* eine Hausregel, die das Modell
+   **rechnen** lässt, kostet Zuverlässigkeit; eine, die ihm eine **Form vorgibt**, kostet keine —
+   der Prüfbericht hatte 0 Fehler in 20 Läufen, die Kürzel-Arithmetik 2 in 20.
 
 6. **M6 — SearXNG gegen Tavily gegen Brave**, an denselben 20 Fragen. Vorher ist die Anbieterwahl
    geraten. *Nebenbefund aus M12: die Trefferqualität von Tavily war in keinem der Läufe das
