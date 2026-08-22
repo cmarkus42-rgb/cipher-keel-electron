@@ -40,8 +40,9 @@ gelesene Seite zum Befund. Nach vier Behebungen sind es **11 von 35** und **vier
 Der verbleibende Verlust hatte genau eine Ursache, und sie liegt **nicht in keel**: ein Netzfilter,
 der pro Anwendung und Ziel entscheidet (Little Snitch), hält den ersten Kontakt zu jedem neuen
 Host, bis eine Regel existiert — und in einem unbeaufsichtigten Lauf beantwortet niemand seinen
-Dialog. Die Untersuchung steht weiter unten; die fünfte Behebung sorgt dafür, dass keel ihm nicht
-mehr das ganze Zeitbudget schenkt.
+Dialog. Mit gesetzter Regel und dem eigenen Versuchsbudget sind es in einer dritten Runde
+**17 von 25** gelesenen Seiten und **ein** Lauf von zehn ohne Quelle. Die Untersuchung und die
+Gegenprobe stehen weiter unten.
 
 | | vorher | nachher |
 |---|---|---|
@@ -206,16 +207,59 @@ der ganzen Kette, still. Behoben:
   15,3 s statt 20 s). Er steht für den Fall, den diese Maschine nicht zeigen kann — ein einzeln
   verlorenes SYN.
 
-### Was der Betreiber tun kann, und was die nächste Messung wissen muss
+### Die Gegenprobe: Regel gesetzt, dieselben zehn Fragen noch einmal
 
 Der wirksame Handgriff liegt **außerhalb** des Repos: eine Little-Snitch-Regel, die der
-Electron-Binärdatei ausgehende Verbindungen auf 443 erlaubt, oder ein Little-Snitch-Profil für
-Messläufe. Ohne das kostet jeder neue Host im Rechercheur einen halben Seitenabruf.
+Electron-Binärdatei ausgehende Verbindungen erlaubt. Der Nutzer hat sie am 2026-08-22 gesetzt,
+danach dieselben zehn Fragen ein drittes Mal:
 
-Und für jede weitere Messung auf dieser Maschine gilt: **die ersten Läufe gegen frische Hosts
-messen den Filter mit.** Wer M6 (Anbietervergleich) oder M7 fährt, sollte die Zielhosts vorher
-einmal anlaufen lassen oder die Erstkontakte gesondert zählen — sonst schreibt er dem Suchanbieter
-zu, was der Firewall gehört.
+| | Runde 1 (vor allem) | Runde 2 (Harness-Behebungen) | **Runde 3 (+ Versuchsbudget + Regel)** |
+|---|---|---|---|
+| Verbindungsfehler | 1 | **15** (von 27 hinausgegangenen) | **1** (von 25) |
+| Seiten gelesen | 3 | 11 | **17** |
+| Läufe ohne eine einzige Seite | 7 von 10 | 4 von 10 | **1 von 10** |
+| Erstkontakte an der Verbindung gescheitert | — | 6 von 18 | **1 von 14** |
+| Folgekontakte an der Verbindung gescheitert | — | 0 von 10 | **0 von 11** |
+
+**Der Unterschied zwischen Erst- und Folgekontakt ist verschwunden** — genau das, was die
+Diagnose vorhergesagt hat. `arxiv.org`, `cheatsheetseries.owasp.org`, `news.ycombinator.com` und
+`electronjs.org` hingen vorher alle beim ersten Kontakt und gehen jetzt sofort durch. Der eine
+verbliebene Verbindungsfehler (`michaelheap.com`, Erstkontakt) ist bei 1 von 14 Rauschen und wird
+weder der Regel noch keel zugeschrieben.
+
+Damit ist die Diagnose nicht mehr die beste verfügbare Erklärung, sondern belegt: die Ursache
+verschwindet, wenn man genau sie abstellt.
+
+**Was jetzt noch verloren geht, ist Inhalt statt Netz** — und das war vorher hinter dem Filter
+unsichtbar:
+
+| Ausgang eines Seitenabrufs | Runde 2 | Runde 3 |
+|---|---|---|
+| gelesen | 11 | **17** |
+| an der Verbindung gescheitert | 11 | **1** |
+| am Netzbudget abgewiesen | 5 | **0** |
+| nicht extrahierbar (Readability) | 1 | 4 |
+| HTTP-Ablehnung (403 von Reddit, Stack Exchange) | 1 | 3 |
+
+Die letzten beiden Zeilen sind die nächsten sinnvollen Ziele: GitHub-Issue-Seiten und ähnliche
+JS-gerenderte Seiten scheitern an Readability, und Reddit wie Stack Exchange sperren Klienten ohne
+Browser-Kennung. Beides ist ehrlich benannt und kostet je einen Seitenplatz — kein stiller Verlust.
+
+Gebunden hat in Runde 3 wieder das **Rundenbudget** (6 von 10 Läufen `runden-erschoepft`, dazu
+einmal `zeit-erschoepft`), und erstmals endeten drei Läufe mit `ziel-erreicht` und echten Quellen.
+Damit ist die Budgetfrage aus dem nächsten Abschnitt jetzt ehrlich messbar.
+
+### Was die nächste Messung auf dieser Maschine wissen muss
+
+**Ohne die Regel messen die ersten Läufe gegen frische Hosts den Filter mit.** Wer M6
+(Anbietervergleich) oder M7 fährt, prüft zuerst, ob die Regel noch steht — sie hängt an der
+Electron-Binärdatei unter `node_modules/electron/dist/Electron.app`, und ein `npm ci` kann sie
+ungültig machen. Sonst schreibt er dem Suchanbieter zu, was der Firewall gehört.
+
+**Und ein Shell-`node` ist kein gültiger Vergleich zur laufenden App.** Für einen Filter, der nach
+Programm entscheidet, ist das ein anderes Programm mit anderen Regeln. Genau daran ist diese
+Untersuchung zuerst in die Irre gelaufen: „derselbe Code ist unter Node schnell" verglich nie
+dieselbe Strecke.
 
 ## Was danach ansteht, in dieser Reihenfolge
 

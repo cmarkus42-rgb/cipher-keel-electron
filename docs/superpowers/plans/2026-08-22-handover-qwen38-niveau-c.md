@@ -8,8 +8,9 @@ und lint sauber, Arbeitsbaum sauber · **Nicht integriert.**
 > Recherchen, vier Behebungen dazwischen, Messprotokoll in
 > `docs/superpowers/plans/2026-08-22-m12-rechercheur.md`. Der Rechercheur ist damit von
 > „gebaut, nicht brauchbar" auf „brauchbar, mit einem benannten offenen Defekt" gerückt. Der
-> Defekt aus Abschnitt 5d ist inzwischen ebenfalls geklärt: er lag nicht in keel, sondern in einem
-> Netzfilter dieser Maschine — mit Folgen für jede weitere Messung hier.
+> Defekt aus Abschnitt 5d ist geklärt **und behoben**: er lag nicht in keel, sondern in einem
+> Netzfilter dieser Maschine. Nach der Regel liest der Rechercheur 17 von 25 ausgewählten Seiten
+> statt 11 von 27 — mit Folgen für jede weitere Messung hier.
 
 Diese Datei ist der Einstieg. Lies sie ganz, bevor du etwas anfasst — sie nennt auch, was *nicht*
 stimmt, und das ist der teurere Teil.
@@ -265,13 +266,26 @@ eigenes Zeitbudget, ein gehaltener Erstkontakt verbrauchte still die vollen 20 S
 Kette. Jetzt bekommt jeder Verbindungsversuch ein Drittel davon, und die Absage nennt Host und
 Versuchszahl. Gemessen: Abbruch nach 7,7 s statt nach 20 s.
 
-**Was der Betreiber tun kann** — und das ist der wirksame Handgriff, er liegt außerhalb des Repos:
-eine Little-Snitch-Regel, die der Electron-Binärdatei ausgehende Verbindungen auf 443 erlaubt, oder
-ein eigenes Profil für Messläufe.
+**Die Regel ist gesetzt, und die Gegenprobe ist gefahren** (2026-08-22, dieselben zehn Fragen ein
+drittes Mal):
 
-**Was jede weitere Messung auf dieser Maschine wissen muss:** die ersten Läufe gegen frische Hosts
-messen den Filter mit. Wer M6 oder M7 fährt, lässt die Zielhosts vorher einmal anlaufen oder zählt
-Erstkontakte gesondert — sonst schreibt er dem Suchanbieter zu, was der Firewall gehört.
+| | Runde 2 (ohne Regel) | Runde 3 (mit Regel) |
+|---|---|---|
+| Verbindungsfehler | 15 von 27 | **1 von 25** |
+| Seiten gelesen | 11 | **17** |
+| Läufe ohne eine Seite | 4 von 10 | **1 von 10** |
+| Erstkontakte gescheitert | 6 von 18 | **1 von 14** |
+
+Der Unterschied zwischen Erst- und Folgekontakt ist verschwunden. Damit ist die Diagnose belegt und
+nicht bloß plausibel. Was jetzt noch verloren geht, ist Inhalt statt Netz: 4 Seiten waren für
+Readability nicht extrahierbar, 3 kamen als HTTP 403 (Reddit, Stack Exchange) zurück — beides
+ehrlich benannt und beides erst sichtbar, seit der Filter weg ist.
+
+**Was jede weitere Messung auf dieser Maschine wissen muss:** ohne die Regel messen die ersten
+Läufe gegen frische Hosts den Filter mit. Wer M6 oder M7 fährt, prüft zuerst, ob sie noch steht —
+sie hängt an `node_modules/electron/dist/Electron.app`, und ein `npm ci` kann sie ungültig machen.
+Und ein Shell-`node` ist **kein** gültiger Vergleich zur laufenden App: für einen Filter, der nach
+Programm entscheidet, ist das ein anderes Programm.
 
 ## 6. Die Arbeit, die ansteht, in der Reihenfolge, in der sie zählt
 
@@ -280,9 +294,9 @@ Erstkontakte gesondert — sonst schreibt er dem Suchanbieter zu, was der Firewa
    2026-08-22**, zweimal zehn Fragen, vier Behebungen, Protokoll in
    `docs/superpowers/plans/2026-08-22-m12-rechercheur.md`. Die sechs Fragen des Nachtrags sind
    beantwortet.
-3. ~~**Der hängende Abruf (5d).**~~ **Geklärt** — ein Netzfilter dieser Maschine, kein Defekt in
-   keel. Offen bleibt allein der Handgriff außerhalb des Repos: eine Little-Snitch-Regel für die
-   Electron-Binärdatei. Ohne sie kostet jeder neue Host im Rechercheur einen halben Seitenabruf.
+3. ~~**Der hängende Abruf (5d).**~~ **Geklärt und behoben** — ein Netzfilter dieser Maschine, kein
+   Defekt in keel. Regel gesetzt, Gegenprobe gefahren: Verbindungsfehler von 15 auf 1, gelesene
+   Seiten von 11 auf 17. Die nächsten Verluste sind Inhalt, nicht Netz (Readability, HTTP 403).
 4. **Die Budgets erst danach nachstellen.** Sie sind heute nicht das bindende Problem, und eine
    Zahl, die gegen einen bekannten Defekt eingestellt wird, muss danach wieder geändert werden.
    Wenn es so weit ist, sprechen die Daten für `kurz` auf **zwei** Suchen (in jedem einzelnen Lauf
