@@ -1,19 +1,21 @@
 # Übergabe: Qwen3.8 27B als Niveau-C-Modell mit Nachschlagen und Rechercheur
 
-**Stand:** 2026-08-22, dritte Fassung · **Zweig:** `qwen38-niveau-c`, 33 Commits über `main`,
+**Stand:** 2026-08-22, vierte Fassung · **Zweig:** `qwen38-niveau-c`, 35 Commits über `main`,
 2677 Tests grün, typecheck und lint sauber, Arbeitsbaum sauber · **Nicht integriert.**
 
-> **Was sich seit der ersten Fassung geändert hat, in vier Sätzen:**
+> **Was sich seit der ersten Fassung geändert hat, in fünf Sätzen:**
 >
 > Die zwei Konstruktionsfehler aus 5b sind behoben und an der laufenden App belegt. **M12 ist
-> gefahren** — vier Runden echter Recherchen, fünf Behebungen dazwischen; das Messprotokoll steht
+> gefahren** — fünf Runden echter Recherchen, fünf Behebungen dazwischen; das Messprotokoll steht
 > in `docs/superpowers/plans/2026-08-22-m12-rechercheur.md`, und der Rechercheur ist damit von
-> „gebaut, nicht brauchbar" auf brauchbar gerückt: 17 von 25 ausgewählten Seiten gelesen, gegen
+> „gebaut, nicht brauchbar" auf brauchbar gerückt: **21 von 32** ausgewählten Seiten gelesen, gegen
 > 3 von 33 am Anfang. Zwei Defekte der **Umgebung** waren dafür aufzuklären und sind es — ein
 > Netzfilter, der Erstkontakte hielt (5d), und ein Ollama-Container, der seinen GPU-Zugriff verlor
-> (5e); beide verfälschten hier jede Messung, und beide sind behoben. Was bleibt, ist eine
-> Feldprobe der Budgets, die auf einer gesunden Maschine nachzuholen ist (siehe 6.4), und zwei
-> Proben, die von selbst fällig werden.
+> (5e); beide verfälschten hier jede Messung, und beide sind behoben. **Die Feldprobe der Budgets
+> ist gefahren und bestätigt** (Runde 5): `gruendlich` erreicht sein Ziel in 5 von 5 Läufen statt
+> in 0 von 5, und das Rundenbudget bindet nicht mehr. Offen ist damit nur noch eine einzige Probe —
+> ob der GPU-Zugriff einen `daemon-reload` übersteht —, und die lässt sich nicht erzwingen,
+> sondern muss von `snapd` ausgelöst werden.
 
 Diese Datei ist der Einstieg. Lies sie ganz, bevor du etwas anfasst — sie nennt auch, was *nicht*
 stimmt, und das ist der teurere Teil.
@@ -327,9 +329,32 @@ alten cgroup-Injektion.
 alten leer. Gemessen: 1,68 s statt 53 s, `offloaded 66/66 layers to GPU`. Einzelheiten und der
 Startbefehl stehen in `docs/anpassbare-flaechen.md`.
 
-**Offen ist die Probe im Ernstfall.** Seit dem Umbau hat kein Reload stattgefunden. Sie braucht
-kein `sudo`, weil `snapd` den Auslöser von selbst liefert — **erster Handgriff der nächsten
-Sitzung:**
+**Der Mechanismus ist am 2026-08-22 nachgemessen und trägt:**
+
+```
+$ systemctl show docker-54fdbcc….scope -p DeviceAllow
+DeviceAllow=/dev/char/497:1 rwm     <- nvidia-uvm-tools
+DeviceAllow=/dev/char/497:0 rwm     <- nvidia-uvm
+DeviceAllow=/dev/char/195:255 rwm   <- nvidiactl
+DeviceAllow=/dev/char/195:254 rwm   <- nvidia-modeset
+DeviceAllow=/dev/char/195:0 rwm     <- nvidia0
+```
+
+Alle fünf Geräte stehen als Eigenschaft der systemd-Unit — nicht als Injektion, die ein Reload
+verwirft. Beim alten Container war diese Liste leer. Genau das ist die Behebung.
+
+**Offen bleibt trotzdem die Probe im Ernstfall**, denn ein Reload ist seither nicht vorgekommen.
+Erzwingen lässt er sich auf dieser Maschine nicht — gemessen, nicht vermutet:
+
+```
+$ systemctl daemon-reload
+Reload daemon failed: Interactive authentication required.
+$ sudo -n true
+sudo: Ein Passwort ist notwendig
+```
+
+Es bleibt also beim Warten auf `snapd`, wie die vorige Sitzung schon annahm — **erster Handgriff
+der nächsten Sitzung:**
 
 ```bash
 ssh DGX 'START=$(docker inspect ollama --format "{{.State.StartedAt}}");
@@ -369,18 +394,31 @@ Runden mit fünf Behebungen, der hängende Abruf (5d) und der GPU-Zugriff des Sp
 
 **Was ansteht:**
 
-1. **Die Feldprobe der Budgets — der erste Handgriff.** Runden und Uhr gehören seit Runde 4 zur
-   Tiefe (`gruendlich`: 8 statt 4 Runden), weil Runde 3 einen Widerspruch zeigte: `gruendlich`
-   sagt drei Suchen und fünf Seiten zu, hatte aber dieselben vier Runden wie `kurz` — und
-   schöpfte gemessen sein Suchbudget aus, sein Seitenbudget nicht. Die Änderung ist gegenprobiert
-   und von einem Wächtertest gehalten, **aber nicht im Feld bestätigt**: beim Nachmessen lief der
-   Spark auf der CPU. Das ist behoben, die Probe ist also fahrbar — dieselben zehn Fragen ein
-   viertes Mal.
+1. ~~**Die Feldprobe der Budgets.**~~ **Gefahren am 2026-08-22, Runde 5, und die Änderung ist
+   bestätigt.** `gruendlich` endet jetzt in **5 von 5** Läufen `ziel-erreicht` statt in 0 von 5,
+   schöpft sein Seitenbudget in 3 von 5 aus statt in 1, und **reizt die acht Runden nicht aus**
+   (höchstens sechs Züge, Uhr bei 210 s von 300 s). `kurz` diente als Kontrollgruppe — dort wurde
+   nur die Uhr angefasst, und dort ändert sich nichts. Über beide Tiefen: 21 von 32 Seiten gelesen
+   (Runde 3: 17 von 25), **null** Verbindungsfehler, **null** Läufe ohne Quelle. Das Protokoll
+   steht in `docs/superpowers/plans/2026-08-22-m12-rechercheur.md`, Abschnitt „Runde 5".
 
-2. **Zwei Proben, die von selbst fällig werden** und beide kein `sudo` brauchen. Erstens: hält der
-   GPU-Zugriff einen `daemon-reload` aus? Der Auslöser kommt von `snapd`, im Schnitt alle
-   dreieinhalb Stunden; der Einzeiler steht in 5e. Zweitens: bleibt die Little-Snitch-Regel nach
-   einem `npm ci` gültig? Sie hängt an `node_modules/electron/dist/Electron.app`.
+   **Die Folge für die nächste Messung:** das Rundenbudget bindet nicht mehr. Damit ist die
+   **Denkstufe** (`medium` gegen `low` im Unterlauf) die nächste sinnvolle Stellschraube — sie war
+   vorher hinter dem Rundenbudget unsichtbar, und der Entwurf-Nachtrag hatte sie genau deshalb als
+   „offen, aber nicht bindend" abgelegt.
+
+2. **Von den zwei Proben ist eine beantwortet, die andere steht weiter aus.**
+
+   *Beantwortet:* die **Little-Snitch-Regel gilt noch** — 15 Erstkontakte in Runde 5, **null**
+   davon an der Verbindung gescheitert. Ein `npm ci` hat seit dem Setzen der Regel nicht
+   stattgefunden (`node_modules` vom 2026-08-21), die Frage „übersteht sie eines?" ist damit nicht
+   beantwortet, sondern nur noch nicht gestellt.
+
+   *Steht aus:* hält der GPU-Zugriff einen `daemon-reload` aus? **Seit dem Umbau um 15:31 CEST hat
+   kein Reload stattgefunden** (geprüft um 15:56 und 16:22, beide Male 0). Erzwingen geht nicht:
+   `systemctl daemon-reload` antwortet `Interactive authentication required`, und `sudo` verlangt
+   dort ein Passwort — die Übergabe lag richtig, es bleibt beim Warten auf `snapd`. Der Einzeiler
+   steht in 5e; der Mechanismus-Nachweis ist unabhängig davon erbracht, siehe unten.
 
 3. **`WORKER_TIMEOUT_MS = 120_000`** (`src/main/worker/ollama-client.ts`) ist für den
    Ein-Schuss-Worker bemessen, nicht für keels Schleife gegen ein 27B. Auf der gesunden Maschine
@@ -439,11 +477,26 @@ node .claude/skills/run-keel/driver.mjs project-window \
 #   zurueckgeben, sondern im Fenster zaehlen — siehe die vierte Falle in Abschnitt 4.
 ```
 
-Das Messwerkzeug von M12 lag im Sitzungsverzeichnis und ist weg. Es war klein: ein Skript, das je
-Frage einen Hauptlauf mit dem Auftrag „rufe `recherchieren` mit dieser Frage und dieser Tiefe auf"
-startet, alle 15 s auf `run.finished` pollt und Haupt- plus Unterlauf als JSON ablegt; ein zweites,
-das daraus je Lauf Suchanfragen, gewählte URLs, Ablehnungsgründe und die Rückgabe ausschreibt. Für
-M6 und M7 ist es dieselbe Schleife mit anderen Fragen.
+**Das Messwerkzeug von M12 ist entgegen der vorigen Fassung *nicht* weg** — Job-Verzeichnis und
+Sitzung sind dieselben, es liegt vollständig unter `$CLAUDE_JOB_DIR/tmp/m12/`, samt den
+Rohprotokollen aller Runden. Runde 5 ist deshalb mit **denselben zehn Fragen** gefahren und nicht
+mit nachgebauten. Wer das Verzeichnis doch einmal verliert: `fahre.mjs` startet je Frage einen
+Hauptlauf mit dem Auftrag „rufe `recherchieren` mit dieser Frage und dieser Tiefe auf", pollt alle
+15 s auf `run.finished` und legt Haupt- plus Unterlauf als JSON ab; `werte.py` legt Netz und
+Inhalt offen, `tiefen.py` rechnet nach Tiefe. Für M6 und M7 ist es dieselbe Schleife mit anderen
+Fragen — `fahre-m7.mjs` steht schon daneben.
+
+**Für M7 liegen die zwei Fähigkeiten bereit**, unter einer **eigenen** Wurzel `/tmp/keel-m7`:
+`pruefbericht-form` (drei feste Überschriften plus Schlusszeile `PB-OK`/`PB-OFFEN`) und
+`ablage-kuerzel` (Pfad `ergebnisse/WRK/007.md` für das Thema `Werkzeug` — drei Konsonanten,
+laufende Nummer ab 007). Beide sind so gebaut, dass die Aufgabe **ohne** den Rumpf nicht lösbar
+ist; sonst misst M7 Vorwissen statt Gehorsam. `fahre-m7.mjs` zählt getrennt, ob gelesen
+(`skill.geladen`) und ob angewandt wurde — das ist nicht dasselbe.
+
+*Warum eine eigene Wurzel:* Fähigkeiten unter der M12-Wurzel landen über
+`ktx.eltern.praefixTeile.faehigkeiten` (`rechercheur.ts:625`) auch im Präfix des **Unterlaufs** und
+verändern damit jede Recherche-Messung. Das ist in dieser Sitzung genau einmal passiert und kostete
+eine Laufwiederholung.
 
 Die Registry-Zeile für das Modell ist `spark-qwen38-27b` in `src/main/model/defaults.ts`. Sie
 trägt `quelle: 'vermutet'` und behält das, bis es einen Kanarienauftrag gibt — auch die von Hand

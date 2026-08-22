@@ -315,15 +315,77 @@ Fehlerkreis wie bei `aufgeschobenesLaden` und bei `klemmeMaxZeichen`: eine Zahl,
 Verbraucher richtig war, gilt für den zweiten nicht mehr. **Nicht geändert** — auf einer Maschine,
 die viermal zu langsam ist, lässt sich die richtige Zahl nicht bestimmen.
 
+## Runde 5: die Feldprobe — **bestätigt**, und die Runden binden nicht mehr
+
+Gefahren am 2026-08-22 gegen 16 Uhr, dieselben zehn Fragen ein viertes Mal, gegen einen Spark, der
+**nachweislich auf der GPU rechnet** (`CUDA0`-Backend im Log, 8,8 s Laden, 31 Token/s — gegen 53 s
+je Zug auf der CPU in Runde 4). Die Little-Snitch-Regel stand: seit sie gesetzt wurde, hat kein
+`npm ci` stattgefunden.
+
+**`gruendlich` — hier lag die Änderung, und hier schlägt sie durch:**
+
+| | Runde 3 (4 Runden, 90 s) | **Runde 5 (8 Runden, 300 s)** |
+|---|---|---|
+| Seitenbudget ausgeschöpft | 1 von 5 | **3 von 5** |
+| Seiten gelesen | 11 | **14** |
+| Ende `ziel-erreicht` | **0 von 5** | **5 von 5** |
+| Ende `runden-` / `zeit-erschoepft` | 4 + 1 | **0** |
+| meiste Züge in einem Lauf | 5 (von 4 + 1) | 6 (von 8 + 1) |
+
+Der Widerspruch ist aufgelöst: `gruendlich` sagte fünf Seiten zu und holte zwei, weil die Runden
+vorher ausgingen. Jetzt holt es sie und kommt zum Befund. **Und es reizt die neue Zahl nicht aus** —
+sechs Züge waren das Höchste, die Uhr blieb mit 210 s unter ihren 300 s. Das Rundenbudget ist damit
+nicht mehr die bindende Grenze, sondern Luft.
+
+**`kurz` ist die Kontrollgruppe** — an ihm wurde nur die Uhr geändert (90 → 150 s), nicht die
+Rundenzahl. Es kommt gleich heraus: 5 von 5 Suchbudget voll, 5 von 5 Seitenbudget voll, 6 → 7
+Seiten. Die Endgründe kippten von 3:2 auf 2:3 zugunsten von `runden-erschoepft`; das ist die
+Streuung eines einzelnen Laufs, nicht die Änderung.
+
+**Das Netzbild, über beide Tiefen:**
+
+| | Runde 3 | **Runde 5** |
+|---|---|---|
+| Seiten gelesen | 17 von 25 | **21 von 32** |
+| an der Verbindung gescheitert | 1 | **0** |
+| Läufe ohne eine einzige Seite | 1 von 10 | **0 von 10** |
+| Erstkontakte gescheitert | 1 von 14 | **0 von 15** |
+| `ziel-erreicht` gesamt | 3 von 10 | **7 von 10** |
+
+Null Verbindungsfehler bei 15 Erstkontakten ist zugleich die zweite offene Probe aus der Übergabe:
+**die Little-Snitch-Regel gilt noch.** Der eine Restfehler aus Runde 3 war Rauschen, wie dort
+vermutet.
+
+**Was jetzt verloren geht, ist ausschließlich Inhalt:** 7 HTTP-Ablehnungen (Reddit, Stack Exchange)
+und 4 nicht extrahierbare Seiten. Die HTTP-Zeile ist gegenüber Runde 3 gestiegen (3 → 7), weil
+insgesamt mehr abgerufen wurde; der Anteil ist praktisch gleich.
+
+**Drei Dinge, die dieser Runde anzulasten sind, benannt statt verschwiegen:**
+
+1. **Lauf 3 wurde wiederholt.** Beim Vorbereiten von M7 lagen zwei `SKILL.md` rund zwei Minuten
+   unter `/tmp/keel-m12/.claude/skills/`; der Unterlauf erbt die Fähigkeiten des Hauptlaufs
+   (`rechercheur.ts:625`), sein Präfix wäre also gegen Runde 3 verändert gewesen. Der verworfene
+   Lauf endete `ziel-erreicht`, der saubere `runden-erschoepft` — die Wiederholung hat die Bilanz
+   also **verschlechtert**, nicht geschönt. M7 hat seitdem eine eigene Wurzel (`/tmp/keel-m7`).
+2. **Die Uhr bindet weicher, als ihre Zahl aussagt.** `pruefeBudgets` prüft Runden **vor** Uhr
+   (`budget.ts:73/77`) und nur zwischen den Zügen. In Runde 3 lief ein Lauf 197,6 s gegen eine
+   90-s-Uhr und meldete `runden-erschoepft`. Kein Defekt — die Uhr ist als Notbremse gedacht —,
+   aber wer aus `wanduhrMs` eine Obergrenze abliest, liest zu viel hinein. Der Überschuss ist bis
+   zu zwei Züge.
+3. **Runde 3 und Runde 5 liegen vier Stunden auseinander.** Fremde Seiten und der Suchindex sind
+   dazwischen nicht eingefroren. Das ist bei einem Sprung von 0 auf 5 `ziel-erreicht` keine
+   ernsthafte Alternativerklärung, aber es ist keine Laborbedingung.
+
 ## Was danach ansteht, in dieser Reihenfolge
 
 1. ~~**Den hängenden Abruf klären.**~~ **Geklärt** — siehe oben. Was bleibt, ist ein Handgriff
    außerhalb des Repos: eine Little-Snitch-Regel für die Electron-Binärdatei, sonst kostet jeder
    neue Host im Rechercheur weiterhin einen halben Seitenabruf.
-2. ~~**Die Budgets nachstellen.**~~ **Geändert** (Runde 4, siehe oben): Runden und Uhr gehören
-   jetzt zur Tiefe, `gruendlich` bekommt 8 Runden statt 4. **Die Feldprobe steht aus** — der Spark
-   lief beim Nachmessen auf der CPU. Erster Handgriff der nächsten Sitzung: prüfen, ob er wieder
-   auf der GPU rechnet, dann dieselben zehn Fragen ein viertes Mal.
+2. ~~**Die Budgets nachstellen.**~~ **Geändert und im Feld bestätigt** (Runde 5, siehe oben):
+   `gruendlich` erreicht sein Ziel jetzt in 5 von 5 Läufen statt in 0 von 5, schöpft sein
+   Seitenbudget in 3 von 5 aus statt in 1, und reizt die acht Runden nicht aus. Die Runden binden
+   nicht mehr — damit ist die **Denkstufe** die nächste sinnvolle Stellschraube, die vorher hinter
+   dem Rundenbudget unsichtbar war.
 3. **M7** — folgt ein 27B dem Nachlade-Satz für Fähigkeiten? Ein Teilbefund liegt schon vor: für
    **Werkzeugschemata** folgt es dem Satz in 8 von 10 Läufen, und zwar auf eigene Kosten. Das ist
    ein starkes Indiz für die Annahme, auf der keels Niveau B ruht — aber `faehigkeit_lesen` wurde
@@ -334,6 +396,15 @@ die viermal zu langsam ist, lässt sich die richtige Zahl nicht bestimmen.
 
 ## Rohdaten
 
-Ereignisprotokolle beider Runden liegen im Job-Verzeichnis dieser Sitzung unter `m12/laeufe`
-(vorher) und `m12/laeufe2` (nachher), je Lauf ein JSON mit Haupt- und Unterlauf. Sie überleben die
-Sitzung nicht — was aus ihnen folgt, steht oben.
+Ereignisprotokolle aller Runden liegen im Job-Verzeichnis unter `m12/`, je Lauf ein JSON mit
+Haupt- und Unterlauf: `laeufe` (Runde 1), `laeufe2` (Runde 2), `laeufe8` (Runde 3), `laeufe9`
+(Runde 4, verworfen — CPU), `laeufe10` (Runde 5). Dazu die Werkzeuge: `fahre.mjs` sammelt,
+`werte.py` legt Netz und Inhalt offen, `tiefen.py` rechnet **nach Tiefe** und trägt die
+Budget-Tabelle doppelt (`TIEFEN` und `TIEFEN_ALT`), damit eine ältere Runde nicht gegen eine
+Zusage gelesen wird, die es damals nicht gab — Aufruf `python3 tiefen.py laeufe8:alt laeufe10`.
+
+`tiefen.py` ist gegen Runde 3 geeicht: es reproduziert die dokumentierte Runde-3-Tabelle Zahl für
+Zahl, bevor es auf Runde 5 angewandt wurde. Eine Auswertung, die man nur auf das neue Ergebnis
+loslässt, misst auch ihre eigenen Fehler mit.
+
+Sie überleben die Sitzung nicht — was aus ihnen folgt, steht oben.
