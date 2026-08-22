@@ -18,7 +18,7 @@ import { ipcMain } from 'electron'
 import { configStore, type LlmEndpoint } from '../config/config-store'
 import { baueAnsicht } from '../model/ansicht'
 import { normaliseEintrag } from '../model/entry'
-import { slotFuerId } from '../model/slots'
+import { slotFuerId, type Rolle } from '../model/slots'
 import { storeInKeychain, keychainService } from '../worker/api-keys'
 import { normaliseEndpoint, type RawEndpoint } from '../worker/model-client'
 import { execFileAsync } from '../util/exec-util'
@@ -73,7 +73,7 @@ export function registerSettingsHandlers(): void {
       if (slot.art === 'tier') {
         zuordnung.tiers[slot.schluessel as 'light' | 'standard' | 'heavy'] = eintragId
       } else {
-        zuordnung.rollen[slot.schluessel as 'tagging' | 'worker'] = eintragId
+        zuordnung.rollen[slot.schluessel as Rolle] = eintragId
       }
       configStore.set('modelle', { ...modelle, zuordnung })
     })

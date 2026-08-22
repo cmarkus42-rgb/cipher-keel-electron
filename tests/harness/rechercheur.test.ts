@@ -52,6 +52,18 @@
 //      abgeschottete Rechercheur…' not to contain 'kein Dateisystem'`. Der Unterlauf hat seit dem
 //      Nachtrag `faehigkeit_lesen`.
 //
+// Nacharbeit 2026-08-22, eigener Zuordnungsplatz fuer das Modell des Unterlaufs. Beide
+// Gegenproben gegen den Stand *vor* der Behebung ausgefuehrt:
+//
+//  12. **`modellId: ktx.elternAuftrag.modellId`** (der Stand davor, Zeile 550): **2 rot** —
+//      `expected 'test-modell' to be 'rechercheur-modell'` und `expected +0 to be close to
+//      0.004`. Die zweite ist die interessantere: der Unterlauf wurde zum Preis des Modells
+//      verrechnet, das ihn gar nicht gefahren hat.
+//  13. **Nur den Eintrag uebernommen, nicht den Transport**: **3 rot**. Der Unterlauf fuhr dann
+//      gegen `sende` des Hauptlaufs, bekam dessen Antwortschlange und tat gar nichts —
+//      `expected [] to deeply equal [ 'rechercheur-modell' ]`. Deshalb sind Eintrag und `sende`
+//      ein Paar und kein Feld.
+//
 // Kein Netz: Modell, Suchanbieter, Aufloeser und Abrufer werden eingespeist.
 import { describe, it, expect } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -165,6 +177,8 @@ interface Baukasten {
   unter: ModelAntwort[]
   erreicht?: string[]
   ohneNetz?: boolean
+  /** Der eigene Zuordnungsplatz des Rechercheurs (`rolle:rechercheur`), wenn einer besetzt ist. */
+  rechercheurModell?: LaufUmgebung['rechercheurModell']
 }
 
 function umgebung(wurzel: string, b: Baukasten): LaufUmgebung {
@@ -180,6 +194,7 @@ function umgebung(wurzel: string, b: Baukasten): LaufUmgebung {
     },
     wache: { wurzel, heim: wurzel, userDataPfad: join(wurzel, 'ud') },
     graphDb: null,
+    rechercheurModell: b.rechercheurModell ?? null,
     netz: b.ohneNetz ? undefined : netzKontext(b.erreicht ?? []),
     registry: new WerkzeugRegistry([...DATEI_WERKZEUGE, rechercheurWerkzeug, faehigkeitLesenWerkzeug]),
     strom: () => {},
@@ -780,6 +795,136 @@ describe('Benannte Absagen', () => {
       expect(unterlaufIds(u.db, hauptId)).toEqual([])
       const f = lesen(u.db, hauptId).find(e => e.art === 'tool.failed')
       expect(String(f?.nutzlast.meldung)).toContain('Netzzugang')
+    })
+  })
+})
+
+// ===============================================================================================
+// Das Modell des Unterlaufs — eigener Zuordnungsplatz statt Erbschaft vom Hauptlauf
+// ===============================================================================================
+
+/**
+ * Ein zweiter Eintrag, unterscheidbar vom Hauptlauf-Eintrag: eigene Id, eigener Codec-Weg,
+ * eigenes Kontextfenster. Er ist local-http, weil das der Fall ist, um den es geht — der
+ * Rechercheur soll auf die billige lokale Ebene koennen, waehrend der Hauptlauf woanders faehrt.
+ */
+const RECHERCHEUR_EINTRAG: ModellEintrag = {
+  ...EINTRAG,
+  id: 'rechercheur-modell',
+  name: 'Rechercheur-Modell',
+  art: 'local-http',
+  erreichbarkeit: { art: 'local-http', host: '127.0.0.1', port: 11434, model: 'klein' },
+  oertlichkeit: 'eigenes-netz',
+}
+
+describe('Das Modell des Rechercheur-Unterlaufs (rolle:rechercheur)', () => {
+  it('faehrt den zugewiesenen Eintrag statt den des Hauptlaufs', async () => {
+    await mitWurzel(async (w) => {
+      const gefahren: string[] = []
+      const unter = [sagt('## Befund\n\nnichts Besonderes.')]
+      const u = umgebung(w, {
+        haupt: [ruft(RECHERCHIEREN_NAME, { frage: 'Was ist X?' }, 'r1'), sagt('fertig')],
+        unter: [],
+        rechercheurModell: {
+          eintrag: RECHERCHEUR_EINTRAG,
+          sende: async () => {
+            gefahren.push(RECHERCHEUR_EINTRAG.id)
+            const a = unter.shift()
+            if (!a) throw new Error('keine Antwort mehr fuer den Unterlauf')
+            return a
+          },
+        },
+      })
+      const hauptId = await starteLauf(AUFTRAG(w), u)
+
+      // (a) Der Transport des Zuordnungsplatzes hat gefahren, nicht der des Hauptlaufs. Ohne das
+      // waere der Rest Buchhaltung: die modellId im Protokoll koennte richtig stehen, waehrend
+      // die Anfrage an den Endpunkt des Hauptlaufs ginge.
+      expect(gefahren).toEqual([RECHERCHEUR_EINTRAG.id])
+
+      // (b) Und sie steht auch im Protokoll — daran haengt die Verrechnung des Unterlaufs.
+      const unterIds = unterlaufIds(u.db, hauptId)
+      expect(unterIds).toHaveLength(1)
+      const gestartet = lesen(u.db, unterIds[0]).find(e => e.art === 'run.started')
+      expect(gestartet?.nutzlast.modellId).toBe(RECHERCHEUR_EINTRAG.id)
+    })
+  })
+
+  it('faellt ohne Zuordnung auf das Modell des Hauptlaufs zurueck', async () => {
+    // Der Rueckfall ist die Vorgabe: eine Konfiguration ohne diesen Platz verhaelt sich genau
+    // wie vorher.
+    await mitWurzel(async (w) => {
+      const u = umgebung(w, {
+        haupt: [ruft(RECHERCHIEREN_NAME, { frage: 'Was ist X?' }, 'r1'), sagt('fertig')],
+        unter: [sagt('## Befund\n\nnichts Besonderes.')],
+      })
+      const hauptId = await starteLauf(AUFTRAG(w), u)
+      const unterIds = unterlaufIds(u.db, hauptId)
+      const gestartet = lesen(u.db, unterIds[0]).find(e => e.art === 'run.started')
+      expect(gestartet?.nutzlast.modellId).toBe(EINTRAG.id)
+    })
+  })
+
+  it('rechnet den Verbrauch des Unterlaufs unter dessen eigenem Modell ab', async () => {
+    // `verbrauchAusEreignissen` schlaegt den Preis ueber die modellId nach. Bliebe dort die des
+    // Hauptlaufs stehen, liefe ein Unterlauf zum Preis eines fremden Modells — und das
+    // Kostenbudget des Hauptlaufs pruefte gegen eine Zahl, die niemandem gehoert.
+    //
+    // Messbar gemacht ueber die Preistabelle: `test-modell` (Hauptlauf) steht nicht darin und
+    // kostet 0, `openrouter-qwen3-coder` schon. Die Zuordnung ist hier also absichtlich das
+    // *teurere* Modell — sonst waere der Test auch dann gruen, wenn die modellId gar nicht
+    // durchschlaegt.
+    await mitWurzel(async (w) => {
+      const unter = [sagt('## Befund\n\nnichts Besonderes.')]
+      const u = umgebung(w, {
+        haupt: [ruft(RECHERCHIEREN_NAME, { frage: 'Was ist X?' }, 'r1'), sagt('fertig')],
+        unter: [],
+        rechercheurModell: {
+          eintrag: { ...RECHERCHEUR_EINTRAG, id: 'openrouter-qwen3-coder' },
+          sende: async () => {
+            const a = unter.shift()
+            if (!a) throw new Error('keine Antwort mehr fuer den Unterlauf')
+            return a
+          },
+        },
+      })
+      const hauptId = await starteLauf(AUFTRAG(w), u)
+      const unterIds = unterlaufIds(u.db, hauptId)
+      const eigener = verbrauchAusEreignissen(lesen(u.db, unterIds[0]), 'openrouter-qwen3-coder', 0)
+      expect(eigener.kostenCent).toBeGreaterThan(0)
+      const angeschrieben = lesen(u.db, hauptId).find(e => e.art === 'unterlauf.verbraucht')
+      expect(angeschrieben?.nutzlast.kostenCent).toBeCloseTo(eigener.kostenCent, 6)
+    })
+  })
+
+  it('gibt dem Unterlauf trotz eigenem Modell dieselbe Registry und denselben Modus', async () => {
+    // Der Zuordnungsplatz aendert das Modell, nicht die Kapselung. Wer beides in einem Zug
+    // umbaut, verliert leicht das eine ueber dem anderen.
+    await mitWurzel(async (w) => {
+      const erreicht: string[] = []
+      const unter = [
+        ruft(WEB_SUCHEN_NAME, { anfrage: 'X' }, 's1'),
+        ruft(SEITE_LESEN_NAME, { url: TREFFER[0].url }, 'p1'),
+        sagt('## Befund\n\nX ist ein Y.'),
+      ]
+      const u = umgebung(w, {
+        erreicht,
+        haupt: [ruft(RECHERCHIEREN_NAME, { frage: 'Was ist X?' }, 'r1'), sagt('fertig')],
+        unter: [],
+        rechercheurModell: {
+          eintrag: RECHERCHEUR_EINTRAG,
+          sende: async () => {
+            const a = unter.shift()
+            if (!a) throw new Error('keine Antwort mehr fuer den Unterlauf')
+            return a
+          },
+        },
+      })
+      const hauptId = await starteLauf(AUFTRAG(w), u)
+      // `forum.beispiel.test` steht nicht auf der Positivliste des Hauptlaufs: der Abruf belegt
+      // den Modus 'offen'.
+      expect(erreicht).toEqual([TREFFER[0].url])
+      expect(JSON.stringify(lesen(u.db, hauptId))).not.toContain(GEHEIM)
     })
   })
 })

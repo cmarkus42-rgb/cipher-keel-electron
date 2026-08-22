@@ -12,6 +12,15 @@
  * naechste Werkzeug faengt: geprueft wird gegen die Registry, die `harness-handlers.ts`
  * tatsaechlich baut, nicht gegen eine im Test nachgebaute Liste. Ein nachgebauter Aufruf haette
  * den Befund nicht gefunden (tests/harness/werkzeugliste.test.ts baut nach und war gruen).
+ *
+ * Gegenproben zum Zuordnungsplatz des Rechercheurs (2026-08-22), beide ausgefuehrt und rot
+ * gesehen:
+ *   - `rechercheurModell: rechercheurModell()` aus `baueLaufUmgebung` entfernt: 1 rot. Genau der
+ *     Ausgang, um den es hier geht — die Aufloesung funktionierte weiter, nur benutzte sie
+ *     niemand, und alle Tests des Unterlaufs blieben gruen.
+ *   - Die Sperre gegen einen cli-harness-Eintrag ausgehebelt: 1 rot. Das Settings-Fenster
+ *     verspricht dort „Es gilt der Rueckfall"; ohne die Sperre wuerfe stattdessen `starteLauf`
+ *     mitten im Werkzeugaufruf des Hauptlaufs.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -92,6 +101,75 @@ describe('Verdrahtung: gebaute Werkzeuge sind vom Lauf aus erreichbar', () => {
     // Ohne Anbieter ist `undefined` die ehrliche Antwort: die Werkzeuge stehen weiter im Praefix
     // (sonst bewegte er sich zwischen Laeufen), melden aber benannt, dass nichts eingerichtet ist.
     await expect(baueNetzKontext()).resolves.toBeUndefined()
+  })
+
+  /**
+   * Die dritte Haelfte derselben Frage, und die einzige, die sich nicht ueber einen Aufruf
+   * pruefen laesst: **wird das aufgeloeste Modell des Rechercheurs auch eingesetzt?**
+   *
+   * `baueLaufUmgebung` ist die eine Stelle, an der eine `LaufUmgebung` entsteht, und sie ist
+   * nicht aufrufbar, ohne die echte `harness.db` und das echte `better-sqlite3`-Binding zu
+   * oeffnen. Also wird hier der Rumpf gelesen. Das ist grob, und es ist trotzdem der einzige
+   * Test, der den Ausgang faengt, um den es in dieser Datei geht: gebaut, getestet, exportiert,
+   * von niemandem eingesetzt. Der Aufruf selbst (`rechercheurModell()`) hat seine eigenen Tests
+   * darunter, und `tests/harness/rechercheur.test.ts` prueft, was der Unterlauf damit tut.
+   */
+  it('setzt das Modell des Rechercheurs in die LaufUmgebung ein', async () => {
+    const { readFileSync } = await import('node:fs')
+    const quelle = readFileSync(
+      new URL('../../src/main/harness-handlers.ts', import.meta.url), 'utf8')
+    const beginn = quelle.indexOf('async function baueLaufUmgebung(')
+    expect(beginn, 'baueLaufUmgebung wurde umbenannt — dieser Test muss mit').toBeGreaterThan(0)
+    const ende = quelle.indexOf('\n}', beginn)
+    const rumpf = quelle.slice(beginn, ende)
+    expect(rumpf, 'baueLaufUmgebung setzt `rechercheurModell` nicht — der Unterlauf faehrt dann ' +
+      'weiter das Modell des Hauptlaufs, obwohl der Zuordnungsplatz besetzt ist')
+      .toContain('rechercheurModell: rechercheurModell()')
+  })
+
+  it('loest ohne Zuordnung kein eigenes Rechercheur-Modell auf', async () => {
+    const { rechercheurModell } = await import('../../src/main/harness-handlers')
+    // Der Rueckfall ist die Vorgabe: ohne Zuordnung faehrt der Unterlauf das Modell des
+    // Hauptlaufs, und dafuer gibt es hier nichts zu bauen.
+    expect(rechercheurModell()).toBeNull()
+  })
+
+  /** Schreibt eine Konfiguration an den Ort, den der electron-Ersatz oben ausgibt. */
+  async function mitZuordnung<T>(eintragId: string, f: () => Promise<T>): Promise<T> {
+    const { mkdirSync, writeFileSync, rmSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const datei = join('/tmp/keel-test', 'cipher-keel-config.json')
+    mkdirSync('/tmp/keel-test', { recursive: true })
+    writeFileSync(datei, JSON.stringify({
+      modelle: { eintraege: [], zuordnung: { rollen: { rechercheur: eintragId } } },
+    }))
+    try {
+      return await f()
+    } finally {
+      rmSync(datei, { force: true })
+    }
+  }
+
+  it('loest eine Zuordnung auf einen Eintrag auf, den die eigene Schleife fahren kann', async () => {
+    await mitZuordnung('mac-qwen3-30b', async () => {
+      const { rechercheurModell } = await import('../../src/main/harness-handlers')
+      const m = rechercheurModell()
+      expect(m?.eintrag.id).toBe('mac-qwen3-30b')
+      // Eintrag und Transport nur gemeinsam — ein Unterlauf mit dem einen und dem Endpunkt des
+      // anderen waere ein Fehler, den nichts anzeigt.
+      expect(typeof m?.sende).toBe('function')
+    })
+  })
+
+  it('faellt bei einer Zuordnung auf ein CLI-Harness auf das Modell des Hauptlaufs zurueck', async () => {
+    // Das Settings-Fenster sperrt diese Wahl bereits und verspricht „Es gilt der Rueckfall".
+    // Ohne dieselbe Sperre hier waere das gelogen: `starteLauf` wuerfe mitten im Werkzeugaufruf
+    // des Hauptlaufs, und aus der Recherche wuerde ein `tool.failed`. Die Konfigurationsdatei
+    // ist ausserdem von Hand editierbar — das Fenster ist nicht der einzige Weg hinein.
+    await mitZuordnung('claude-opus-cli', async () => {
+      const { rechercheurModell } = await import('../../src/main/harness-handlers')
+      expect(rechercheurModell()).toBeNull()
+    })
   })
 
   it('haelt GitHub bewusst von der Positivliste fern', async () => {

@@ -524,8 +524,25 @@ export async function fuehreRecherche(
   }
 
   const unterLaufId = randomUUID()
+  /**
+   * Das Modell des Unterlaufs, oder nichts. Bis zum 2026-08-22 stand hier fest
+   * `ktx.elternAuftrag.modellId`, und der Unterlauf fuhr damit immer das Modell des Hauptlaufs.
+   *
+   * Das ist die falsche Kopplung. Der Unterlauf hat ein eigenes Aufgabenprofil — kurze Kette,
+   * viel fremder Text, drei Werkzeuge, am Ende eine Zusammenfassung — und das kann ein anderes
+   * Modell besser oder billiger als das, was gerade den Hauptlauf faehrt. Solange die Kopplung
+   * stand, war ausserdem die Frage „welches Modell recherchiert am besten" gar nicht fahrbar:
+   * jede Messung mass zugleich das Modell des Hauptlaufs.
+   *
+   * Der Rueckfall bleibt das Modell des Hauptlaufs. Eine Konfiguration ohne diesen Platz
+   * verhaelt sich damit genau wie vorher.
+   */
+  const eigenesModell = ktx.eltern.rechercheurModell ?? null
   const umgebung: LaufUmgebung = {
     ...ktx.eltern,
+    // Eintrag und Transport nur **gemeinsam**: ein Unterlauf mit dem Eintrag des einen und dem
+    // Endpunkt des anderen ist ein Fehler, den nichts anzeigt.
+    ...(eigenesModell ? { eintrag: eigenesModell.eintrag, sende: eigenesModell.sende } : {}),
     // Nicht bloss ueberfluessig, sondern Absicht: selbst wenn jemand spaeter ein Graph-Werkzeug in
     // `unterlaufRegistry` traegt, hat es hier keine Datenbank. Zwei Schloesser fuer eine Tuer, weil
     // das eine (die Registry) beim naechsten Umbau geoeffnet werden koennte.
@@ -547,7 +564,11 @@ export async function fuehreRecherche(
   }
   const unterAuftrag: Auftrag = {
     auftragstext: frage,
-    modellId: ktx.elternAuftrag.modellId,
+    // Zeichengleich mit `umgebung.eintrag.id`. Die beiden duerfen nicht auseinanderlaufen:
+    // `run.started` schreibt diese Zeile, und `verbrauchAusEreignissen` schlaegt den Preis
+    // darueber nach — stuende hier das Modell des Hauptlaufs, waere der Unterlauf zum Preis
+    // eines Modells verrechnet, das ihn gar nicht gefahren hat.
+    modellId: eigenesModell ? eigenesModell.eintrag.id : ktx.elternAuftrag.modellId,
     wurzel: ktx.elternAuftrag.wurzel,
     // Eigenes Runden- und Zeitbudget, hart aus §3.4. Kosten- und Kontextanteil kommen vom
     // Elternauftrag: was dort als Obergrenze gilt, gilt hier nicht groesser.

@@ -20,11 +20,24 @@ describe('the suitability rules have exactly one home', () => {
     path.join(SRC, 'main/model/eignung.ts'),
   ]
 
-  it('names the three Laeufer only in eignung.ts', () => {
+  /**
+   * slots.ts darf einen Laeufer nennen, und zwar genau einmal je Slot: sein eigener Modulkopf
+   * sagt, dass der Laeufer eine Eigenschaft des Slots ist und keine Nutzerwahl, und registry.ts
+   * verweist ausdruecklich darauf, statt ihn zu wiederholen.
+   *
+   * Bis zum 2026-08-22 fiel das nicht auf, weil der Test nur nach `'eigene-schleife'` suchte und
+   * kein Slot diesen Laeufer hatte — slots.ts nannte `'fremdes-cli'` und `'ein-schuss'` die ganze
+   * Zeit unbeanstandet. Der Test prueft jetzt **alle drei** Namen und nimmt slots.ts benannt aus,
+   * statt weiter nur einen davon zu treffen. Was er wirklich schuetzen soll, halten ohnehin die
+   * beiden Tests darunter: eine zweite Tabelle und ein zweiter Nutzertext.
+   */
+  const laeuferHeimat = [...erlaubt, path.join(SRC, 'main/model/slots.ts')]
+
+  it('names the three Laeufer only in eignung.ts and the slot table', () => {
     const treffer = alleQuelldateien(SRC)
-      .filter(f => !erlaubt.includes(f))
-      .filter(f => /'eigene-schleife'|"eigene-schleife"/.test(fs.readFileSync(f, 'utf8')))
-    expect(treffer, `Laeufer ausserhalb von eignung.ts: ${treffer.join(', ')}`).toEqual([])
+      .filter(f => !laeuferHeimat.includes(f))
+      .filter(f => /['"](?:eigene-schleife|fremdes-cli|ein-schuss)['"]/.test(fs.readFileSync(f, 'utf8')))
+    expect(treffer, `Laeufer ausserhalb von eignung.ts/slots.ts: ${treffer.join(', ')}`).toEqual([])
   })
 
   it('states the runner capability level only in eignung.ts', () => {

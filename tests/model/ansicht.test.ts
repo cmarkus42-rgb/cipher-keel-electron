@@ -33,10 +33,30 @@ describe('Ansichtsmodell', () => {
   const slot = (a: SettingsAnsicht, id: string) => a.slots.find(s => s.id === id)!
   const codes = (a: SettingsAnsicht, id: string) => slot(a, id).warnungen.map(w => w.code)
 
-  it('liefert fuenf Slots und alle gebuendelten Eintraege', async () => {
+  it('liefert sechs Slots und alle gebuendelten Eintraege', async () => {
     const a = await ansichtMit(null)
-    expect(a.slots).toHaveLength(5)
+    expect(a.slots).toHaveLength(6)
     expect(a.eintraege.map(e => e.id)).toContain('openrouter-qwen3-coder')
+  })
+
+  it('nennt beim Rechercheur als Rueckfall das Modell des Hauptlaufs, keinen llm-Endpunkt', async () => {
+    // Die anderen beiden Rollen fallen auf `llm.tagging` bzw. `llm.worker` zurueck. Der
+    // Rechercheur hat dort nichts: sein Rueckfall ist das Modell, das den Hauptlauf faehrt.
+    // Ein Rueckfalltext, der einen Endpunkt nennt, den es nicht gibt, waere eine Auskunft
+    // ueber etwas, das nie passiert.
+    const a = await ansichtMit(null)
+    const text = slot(a, 'rolle:rechercheur').rueckfallText
+    expect(text).toContain('Hauptlauf')
+    expect(text).not.toContain('llm.')
+  })
+
+  it('warnt beim Rechercheur nicht mit „unter-faehigkeit"', async () => {
+    // Der Unterlauf nutzt die Schleife voll aus — die Warnung waere falsch. Sie feuert auf
+    // Niveau C fuer jeden Laeufer oberhalb von C, deshalb steht der Slot auf B.
+    const a = await ansichtMit({
+      modelle: { eintraege: [], zuordnung: { rollen: { rechercheur: 'mac-qwen3-30b' } } },
+    })
+    expect(codes(a, 'rolle:rechercheur')).not.toContain('unter-faehigkeit')
   })
 
   it('sperrt einen local-http-Eintrag fuer ein Tier und nennt den Grund', async () => {

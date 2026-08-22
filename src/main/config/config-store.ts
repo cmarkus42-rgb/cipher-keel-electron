@@ -86,7 +86,12 @@ export interface CipherKeelConfig {
     eintraege: unknown[]
     zuordnung: {
       tiers: { light: string; standard: string; heavy: string }
-      rollen: { tagging: string; worker: string }
+      /**
+       * `rechercheur` ist der Unterlauf von `recherchieren` (harness/rechercheur.ts). Leer heisst
+       * hier — anders als bei `tagging` und `worker` — **nicht** „nimm den `llm.*`-Endpunkt",
+       * sondern „nimm das Modell des Hauptlaufs". Einen eigenen Endpunkt gibt es dafuer nicht.
+       */
+      rollen: { tagging: string; worker: string; rechercheur: string }
     }
   }
   /**
@@ -167,7 +172,10 @@ const defaults: CipherKeelConfig = {
     eintraege: [],
     zuordnung: {
       tiers: { light: '', standard: '', heavy: '' },
-      rollen: { tagging: '', worker: '' },
+      // Kein Migrationszweig noetig: `deepMerge` legt einen fehlenden Schluessel aus den
+      // Vorgaben nach, und '' ist genau der Zustand „keine Zuordnung", den eine aeltere Datei
+      // meint.
+      rollen: { tagging: '', worker: '', rechercheur: '' },
     },
   },
   netz: {

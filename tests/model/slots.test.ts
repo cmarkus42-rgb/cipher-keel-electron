@@ -3,8 +3,8 @@ import { SLOTS, slotFuerId, slotFuerTier } from '../../src/main/model/slots'
 import { CapabilityNiveau } from '../../src/main/preset/niveau'
 
 describe('Slot-Tabelle', () => {
-  it('kennt genau fuenf Slots', () => {
-    expect(SLOTS).toHaveLength(5)
+  it('kennt genau sechs Slots', () => {
+    expect(SLOTS).toHaveLength(6)
   })
 
   it('faehrt alle drei Tiers ueber fremdes-cli auf Niveau A', () => {
@@ -24,6 +24,26 @@ describe('Slot-Tabelle', () => {
       expect(slot?.niveau).toBe(CapabilityNiveau.C)
       expect(slot?.art).toBe('rolle')
     }
+  })
+
+  it('faehrt den Rechercheur ueber die eigene Schleife, nicht ueber ein-schuss', () => {
+    // Der Unterlauf ist eine Agentenschleife im Kleinen: suchen, lesen, noch einmal suchen,
+    // zusammenfassen. Ein `ein-schuss`-Laeufer kann das nicht — und `eigene-schleife` sperrt
+    // zugleich die cli-harness-Eintraege, die `pruefeStartbedingungen` sonst erst beim Start
+    // des Unterlaufs abweisen wuerde, mitten in einem Werkzeugaufruf des Hauptlaufs.
+    const slot = slotFuerId('rolle:rechercheur')
+    expect(slot?.laeufer).toBe('eigene-schleife')
+    expect(slot?.art).toBe('rolle')
+    expect(slot?.schluessel).toBe('rechercheur')
+    expect(slot?.wirkung).toBe('sofort')
+  })
+
+  it('stellt den Rechercheur nicht auf Niveau C', () => {
+    // Auf C feuerte `unter-faehigkeit` („Das laeuft, nutzt den Laeufer aber nicht aus") bei
+    // jeder Zuordnung — und das waere hier schlicht falsch: der Unterlauf nutzt die Schleife.
+    // Auf B feuert stattdessen `nicht-gemessen`, solange die Faehigkeitszeile vermutet ist,
+    // und das ist wahr.
+    expect(slotFuerId('rolle:rechercheur')?.niveau).toBe(CapabilityNiveau.B)
   })
 
   it('gibt jedem Slot eine deutsche Beschriftung', () => {

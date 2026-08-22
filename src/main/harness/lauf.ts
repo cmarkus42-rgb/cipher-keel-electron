@@ -71,6 +71,17 @@ export interface LaufUmgebung {
    * ausgehenden URLs des Unterlaufs in das Protokoll des Elternlaufs.
    */
   netz?: Omit<NetzKontext, 'ereignisse' | 'melde'>
+  /**
+   * Modell und Transport des Rechercheur-Unterlaufs, aus dem Zuordnungsplatz `rolle:rechercheur`.
+   * `null` heisst: der Unterlauf faehrt das Modell dieses Laufs (rechercheur.ts).
+   *
+   * **Warum ein Paar und kein blosser `ModellEintrag`.** `sende` wird ausserhalb von
+   * `src/main/harness/` gebaut — hier drinnen kennt kein Modul den Transport, und der
+   * Waechtertest verbietet den `electron`-Import. Nur den Eintrag mitzugeben hiesse, dass der
+   * Unterlauf mit dem Modell des einen und dem Endpunkt des anderen faehrt: ein Fehler, den
+   * nichts anzeigen wuerde, weil beide Felder fuer sich plausibel aussehen.
+   */
+  rechercheurModell?: { eintrag: ModellEintrag; sende: LaufUmgebung['sende'] } | null
   registry: WerkzeugRegistry
   /** Every appended event, for whoever wants to watch. */
   strom: (e: Ereignis) => void

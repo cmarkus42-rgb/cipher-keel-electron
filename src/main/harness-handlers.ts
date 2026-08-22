@@ -40,7 +40,9 @@ import {
 import type { HarnessAntwort, HarnessEreignis, LaufAnzeige, LaufStartWunsch } from '../shared/harness-types'
 import { broadcast } from './event-bus'
 import { resolveBetterSqliteBinding } from './graph/native-binding'
-import { eintragNachId } from './model/registry'
+import { eintragFuerRolle, eintragNachId } from './model/registry'
+import { laeuferKannArt, sperrgrund } from './model/eignung'
+import { slotFuerId } from './model/slots'
 import { toModelEndpoint, type Faehigkeiten, type ModellEintrag } from './model/entry'
 import { clientForEndpoint } from './worker/model-client'
 import { assemblePraefixTeile } from './harness-praefix-quelle'
@@ -205,6 +207,34 @@ function sendeUeberTransport(eintrag: ModellEintrag) {
 }
 
 /**
+ * Modell und Transport des Rechercheur-Unterlaufs, aus dem Zuordnungsplatz `rolle:rechercheur` —
+ * oder `null`, und dann faehrt der Unterlauf das Modell des Hauptlaufs (harness/rechercheur.ts).
+ *
+ * Gelesen wird beim Bau der Umgebung, also je Lauf: die Rolle wirkt `sofort` (slots.ts), und der
+ * naechste Lauf ist frueh genug — mitten in einem laufenden das Modell zu wechseln wuerde dessen
+ * Praefix-Cache verwerfen.
+ *
+ * **Die Sperre steht hier noch einmal, obwohl das Settings-Fenster sie schon zieht.** Die Ansicht
+ * verspricht bei einer nicht fahrbaren Zuordnung ausdruecklich „Es gilt der Rueckfall"; ohne diese
+ * Zeile waere das gelogen — `starteLauf` wuerfe stattdessen mitten im Werkzeugaufruf des
+ * Hauptlaufs, und aus einer Recherche wuerde ein `tool.failed`. Und die Konfigurationsdatei ist
+ * von Hand editierbar, das Fenster also gar nicht der einzige Weg hinein.
+ */
+export function rechercheurModell(): LaufUmgebung['rechercheurModell'] {
+  const eintrag = eintragFuerRolle('rechercheur')
+  if (!eintrag) return null
+  const laeufer = slotFuerId('rolle:rechercheur')!.laeufer
+  if (!laeuferKannArt(laeufer, eintrag.art)) {
+    console.warn(
+      `[harness-handlers] Der Zuordnungsplatz 'rolle:rechercheur' zeigt auf '${eintrag.id}'. ` +
+      `${sperrgrund(laeufer, eintrag.art)} Der Unterlauf faehrt das Modell des Hauptlaufs.`,
+    )
+    return null
+  }
+  return { eintrag, sende: sendeUeberTransport(eintrag) }
+}
+
+/**
  * The one place a LaufUmgebung gets built — starting a run and resuming one use exactly this
  * construction, not two that could drift apart. `aufJedesEreignis` is called with every event
  * `strom` sees; the caller decides what "the run has visibly started" means for its own race
@@ -235,6 +265,7 @@ async function baueLaufUmgebung(
     // Der Hauptlauf faehrt gegen die Positivliste ('whitelist'). Der Unterlauf des Rechercheurs
     // setzt in rechercheur.ts auf 'offen' um und bekommt dafuer keine Datei- und Graph-Werkzeuge.
     netz: await baueNetzKontext(),
+    rechercheurModell: rechercheurModell(),
     strom: (ev) => {
       broadcast(HARNESS_EREIGNIS, ev as HarnessEreignis)
       aufJedesEreignis(ev as HarnessEreignis)

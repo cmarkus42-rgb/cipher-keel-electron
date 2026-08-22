@@ -12,7 +12,7 @@ import { configStore } from '../config/config-store'
 import { DEFAULT_EINTRAEGE } from './defaults'
 import { ladeEintraege } from './registry'
 import { sperrgrund, warnungen } from './eignung'
-import { SLOTS, type Slot } from './slots'
+import { SLOTS, type Rolle, type Slot } from './slots'
 import type { ModellEintrag } from './entry'
 import { envVarName, readFromEnv, readFromKeychain } from '../worker/api-keys'
 import { splitShellArgs } from '../util/shell-quote'
@@ -95,6 +95,16 @@ function rueckfallText(slot: Slot): string {
     const handle = configStore.get('agent').modelTiers[slot.schluessel as 'light' | 'standard' | 'heavy']
     return `Keine Zuordnung — es gilt der Wert aus agent.modelTiers: '${handle}'.`
   }
+  // Der Rechercheur hat keinen `llm.*`-Endpunkt und soll keinen bekommen: sein Rueckfall ist das
+  // Modell, das gerade den Hauptlauf faehrt (rechercheur.ts). Ein Rueckfalltext, der stattdessen
+  // `llm.rechercheur` naehme, naennte einen Endpunkt, den es nicht gibt — und das Feld waere
+  // `undefined`, also stuende hier `undefined:undefined, Modell 'undefined'`.
+  if (slot.schluessel === 'rechercheur') {
+    return (
+      'Keine Zuordnung — der Unterlauf faehrt dann das Modell des Hauptlaufs. ' +
+      'Einen eigenen Endpunkt gibt es fuer diese Rolle nicht.'
+    )
+  }
   const e = configStore.get('llm')[slot.schluessel as 'tagging' | 'worker']
   const ziel = e.baseUrl ? e.baseUrl : `${e.host}:${e.port}`
   return `Keine Zuordnung — es gilt der Wert aus llm.${slot.schluessel}: ${ziel}, Modell '${e.model}'.`
@@ -104,7 +114,7 @@ function slotAnsicht(slot: Slot, eintraege: ModellEintrag[]): SlotAnsicht {
   const zuordnung = configStore.get('modelle').zuordnung
   const gewaehlt = slot.art === 'tier'
     ? zuordnung.tiers[slot.schluessel as 'light' | 'standard' | 'heavy']
-    : zuordnung.rollen[slot.schluessel as 'tagging' | 'worker']
+    : zuordnung.rollen[slot.schluessel as Rolle]
 
   const optionen: SlotOptionAnsicht[] = eintraege.map(e => ({
     eintragId: e.id,

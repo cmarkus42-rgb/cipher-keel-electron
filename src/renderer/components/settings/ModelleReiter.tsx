@@ -117,9 +117,17 @@ export function ModelleReiter({
               />
             </div>
           )}
+          {/*
+            Gepruefte Bedingung ist der **Endpunkt**, nicht das Praefix `rolle:`. Der
+            Rechercheur ist eine Rolle ohne `llm.*`-Endpunkt — sein Rueckfall ist das Modell des
+            Hauptlaufs. Ueber das Praefix zu gehen ergab hier `endpunkt === undefined` und damit
+            ein Formular, das `undefined:undefined` anbot und beim Schreiben einen Endpunkt
+            angelegt haette, den niemand liest.
+          */}
           {slot.id.startsWith('rolle:') && (() => {
-            const rolle = slot.id.slice(6) as 'tagging' | 'worker'
+            const rolle = slot.id.slice(6) as keyof SettingsAnsicht['rueckfallEndpunkte']
             const endpunkt = ansicht.rueckfallEndpunkte[rolle]
+            if (!endpunkt) return null
             return (
               // Keyed on the endpoint's own values, same discipline as the tier field
               // above: without it the form would keep showing what it was mounted with
