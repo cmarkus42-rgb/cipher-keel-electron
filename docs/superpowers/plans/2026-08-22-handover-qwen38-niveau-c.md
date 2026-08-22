@@ -1,16 +1,19 @@
 # Übergabe: Qwen3.8 27B als Niveau-C-Modell mit Nachschlagen und Rechercheur
 
-**Stand:** 2026-08-22, zweite Fassung · **Zweig:** `qwen38-niveau-c`, 2671 Tests grün, typecheck
-und lint sauber, Arbeitsbaum sauber · **Nicht integriert.**
+**Stand:** 2026-08-22, dritte Fassung · **Zweig:** `qwen38-niveau-c`, 33 Commits über `main`,
+2677 Tests grün, typecheck und lint sauber, Arbeitsbaum sauber · **Nicht integriert.**
 
-> **Was sich seit der ersten Fassung geändert hat:** die zwei Konstruktionsfehler aus 5b sind
-> behoben und an der laufenden App belegt, und **M12 ist gefahren** — zweimal zehn echte
-> Recherchen, vier Behebungen dazwischen, Messprotokoll in
-> `docs/superpowers/plans/2026-08-22-m12-rechercheur.md`. Der Rechercheur ist damit von
-> „gebaut, nicht brauchbar" auf „brauchbar, mit einem benannten offenen Defekt" gerückt. Der
-> Defekt aus Abschnitt 5d ist geklärt **und behoben**: er lag nicht in keel, sondern in einem
-> Netzfilter dieser Maschine. Nach der Regel liest der Rechercheur 17 von 25 ausgewählten Seiten
-> statt 11 von 27 — mit Folgen für jede weitere Messung hier.
+> **Was sich seit der ersten Fassung geändert hat, in vier Sätzen:**
+>
+> Die zwei Konstruktionsfehler aus 5b sind behoben und an der laufenden App belegt. **M12 ist
+> gefahren** — vier Runden echter Recherchen, fünf Behebungen dazwischen; das Messprotokoll steht
+> in `docs/superpowers/plans/2026-08-22-m12-rechercheur.md`, und der Rechercheur ist damit von
+> „gebaut, nicht brauchbar" auf brauchbar gerückt: 17 von 25 ausgewählten Seiten gelesen, gegen
+> 3 von 33 am Anfang. Zwei Defekte der **Umgebung** waren dafür aufzuklären und sind es — ein
+> Netzfilter, der Erstkontakte hielt (5d), und ein Ollama-Container, der seinen GPU-Zugriff verlor
+> (5e); beide verfälschten hier jede Messung, und beide sind behoben. Was bleibt, ist eine
+> Feldprobe der Budgets, die auf einer gesunden Maschine nachzuholen ist (siehe 6.4), und zwei
+> Proben, die von selbst fällig werden.
 
 Diese Datei ist der Einstieg. Lies sie ganz, bevor du etwas anfasst — sie nennt auch, was *nicht*
 stimmt, und das ist der teurere Teil.
@@ -155,28 +158,6 @@ Die Handgriffe stehen in Abschnitt 7.
 
 ---
 
-## 5c. Was der erste echte Netzlauf gezeigt hat — die ersten M12-Befunde
-
-Lauf `79ac98bc-…`, `spark-qwen38-27b`, Frage nach einer Node.js-API. 36 Ereignisse, sechs Runden,
-`fertig / ziel-erreicht` mit der richtigen Antwort. Und zwei Befunde, die zeigen, wofür M12 da ist:
-
-**Zwei von sechs Runden gingen an Anführungszeichen verloren.** Das Modell schickte zweimal
-`"anzahl": "5"` — eine Zeichenkette, obwohl das Schema `number` sagt — und wurde zweimal benannt
-abgewiesen. Erst im dritten Anlauf ließ es das Feld weg. **Behoben:** `klemmeAnzahl` nimmt jetzt
-eine Zeichenkette, wenn sie eine Zahl ist, und die Ablehnung nennt den erhaltenen Wert. Das ist
-kein Raten — `"5"` hat eine Lesart, `"viele"` fällt weiterhin durch. Ein 27B tippt JSON-Typen
-regelmäßig falsch; streng zu bleiben hätte hier nichts gesichert und ein Drittel des
-Rundenbudgets gekostet.
-
-**Das Modell suchte zuerst im lokalen Projekt.** `verzeichnis_listen` und `inhalt_suchen` liefen,
-bevor `web_suchen` drankam — bei einer Frage nach einer Node.js-API. Genau die Verwechslung
-zwischen `inhalt_suchen` (Dateien) und `web_suchen` (Netz), die der Entwurf für diese
-Größenklasse vorhergesagt hat (§6.4: bei Zweifelsfällen 21-facher Fehlgriff). **Nicht behoben** —
-das gehört zu M12 und wird über die Beschreibungstexte gelöst, nicht über eine Umbenennung im
-Vorbeigehen.
-
----
-
 ## 5b. Zwei Konstruktionsfehler, die vor M12 gehörten — **beide erledigt**
 
 Beide sind beim Durchsprechen mit dem Nutzer aufgefallen, beide sind klein zu beheben, und beide
@@ -241,6 +222,28 @@ sperrt cli-harness-Einträge und fällt bei leerem Platz auf das Modell des Haup
 'eigene-schleife'` und `niveau: B`; auf C hätte `unter-faehigkeit` bei jeder Zuordnung gefeuert,
 und das wäre hier unwahr.
 
+## 5c. Was der erste echte Netzlauf gezeigt hat — die ersten M12-Befunde
+
+Lauf `79ac98bc-…`, `spark-qwen38-27b`, Frage nach einer Node.js-API. 36 Ereignisse, sechs Runden,
+`fertig / ziel-erreicht` mit der richtigen Antwort. Und zwei Befunde, die zeigen, wofür M12 da ist:
+
+**Zwei von sechs Runden gingen an Anführungszeichen verloren.** Das Modell schickte zweimal
+`"anzahl": "5"` — eine Zeichenkette, obwohl das Schema `number` sagt — und wurde zweimal benannt
+abgewiesen. Erst im dritten Anlauf ließ es das Feld weg. **Behoben:** `klemmeAnzahl` nimmt jetzt
+eine Zeichenkette, wenn sie eine Zahl ist, und die Ablehnung nennt den erhaltenen Wert. Das ist
+kein Raten — `"5"` hat eine Lesart, `"viele"` fällt weiterhin durch. Ein 27B tippt JSON-Typen
+regelmäßig falsch; streng zu bleiben hätte hier nichts gesichert und ein Drittel des
+Rundenbudgets gekostet.
+
+**Das Modell suchte zuerst im lokalen Projekt.** `verzeichnis_listen` und `inhalt_suchen` liefen,
+bevor `web_suchen` drankam — bei einer Frage nach einer Node.js-API. Genau die Verwechslung
+zwischen `inhalt_suchen` (Dateien) und `web_suchen` (Netz), die der Entwurf für diese
+Größenklasse vorhergesagt hat (§6.4: bei Zweifelsfällen 21-facher Fehlgriff). **Nicht behoben** —
+das gehört zu M12 und wird über die Beschreibungstexte gelöst, nicht über eine Umbenennung im
+Vorbeigehen.
+
+---
+
 ## 5d. Der hängende Abruf — **geklärt**, und es war nicht keel
 
 Die Hälfte aller Seitenabrufe des Rechercheurs lief ins Zeitbudget, immer im Abschnitt `Abruf`,
@@ -287,9 +290,9 @@ sie hängt an `node_modules/electron/dist/Electron.app`, und ein `npm ci` kann s
 Und ein Shell-`node` ist **kein** gültiger Vergleich zur laufenden App: für einen Filter, der nach
 Programm entscheidet, ist das ein anderes Programm.
 
-## 5e. Zwei Befunde aus Runde 4 — beide unbehoben, beide benannt
+## 5e. Zwei Befunde aus Runde 4 — der GPU-Zugriff (behoben) und ein Zeitbudget (benannt)
 
-**Der Spark rechnete auf der CPU — Ursache gefunden, Behebung offen.**
+**Der Spark rechnete auf der CPU — Ursache gefunden und behoben.**
 
 Der Container hat seine **cgroup-Geräterechte** verloren. Er ist mit `--gpus all` gestartet
 (`DeviceRequests` steht in `docker inspect`), die Geräteknoten `/dev/nvidia0`, `nvidiactl` und
@@ -360,40 +363,47 @@ nicht bestimmen.
 
 ## 6. Die Arbeit, die ansteht, in der Reihenfolge, in der sie zählt
 
-1. ~~**Die zwei Konstruktionsfehler aus 5b.**~~ **Erledigt 2026-08-22**, siehe dort.
-2. ~~**M12 — den inneren Ablauf des Rechercheurs austesten und nachstellen.**~~ **Gefahren
-   2026-08-22**, zweimal zehn Fragen, vier Behebungen, Protokoll in
-   `docs/superpowers/plans/2026-08-22-m12-rechercheur.md`. Die sechs Fragen des Nachtrags sind
-   beantwortet.
-3. ~~**Der hängende Abruf (5d).**~~ **Geklärt und behoben** — ein Netzfilter dieser Maschine, kein
-   Defekt in keel. Regel gesetzt, Gegenprobe gefahren: Verbindungsfehler von 15 auf 1, gelesene
-   Seiten von 11 auf 17. Die nächsten Verluste sind Inhalt, nicht Netz (Readability, HTTP 403).
-4. **Die Feldprobe der Budgets nachholen — der erste Handgriff.** Runden und Uhr gehören seit
-   Runde 4 zur Tiefe (`gruendlich`: 8 statt 4 Runden), weil Runde 3 einen Widerspruch zeigte:
-   `gruendlich` sagt drei Suchen und fünf Seiten zu, hatte aber dieselben vier Runden wie `kurz` —
-   und schöpfte gemessen sein Suchbudget aus, sein Seitenbudget nicht. Die Änderung ist
-   gegenprobiert und von einem Wächtertest gehalten, **aber nicht im Feld bestätigt**: beim
-   Nachmessen lief der Spark auf der CPU (siehe 5e). Also zuerst die Maschine prüfen, dann
-   dieselben zehn Fragen ein viertes Mal.
+**Erledigt in dieser Welle** — hier nur der Vollständigkeit halber, Einzelheiten stehen jeweils
+oben: die zwei Konstruktionsfehler (5b), der Reiter „Netz" im Settings-Fenster (5), M12 in vier
+Runden mit fünf Behebungen, der hängende Abruf (5d) und der GPU-Zugriff des Spark-Containers (5e).
 
-5. **Zwei Befunde aus Runde 4, beide unbehoben und beide benannt** — siehe 5e.
-6. **M7 — folgt ein 27B dem Nachlade-Satz?** Ein Auftrag, dessen Lösung nur in einer Fähigkeit
+**Was ansteht:**
+
+1. **Die Feldprobe der Budgets — der erste Handgriff.** Runden und Uhr gehören seit Runde 4 zur
+   Tiefe (`gruendlich`: 8 statt 4 Runden), weil Runde 3 einen Widerspruch zeigte: `gruendlich`
+   sagt drei Suchen und fünf Seiten zu, hatte aber dieselben vier Runden wie `kurz` — und
+   schöpfte gemessen sein Suchbudget aus, sein Seitenbudget nicht. Die Änderung ist gegenprobiert
+   und von einem Wächtertest gehalten, **aber nicht im Feld bestätigt**: beim Nachmessen lief der
+   Spark auf der CPU. Das ist behoben, die Probe ist also fahrbar — dieselben zehn Fragen ein
+   viertes Mal.
+
+2. **Zwei Proben, die von selbst fällig werden** und beide kein `sudo` brauchen. Erstens: hält der
+   GPU-Zugriff einen `daemon-reload` aus? Der Auslöser kommt von `snapd`, im Schnitt alle
+   dreieinhalb Stunden; der Einzeiler steht in 5e. Zweitens: bleibt die Little-Snitch-Regel nach
+   einem `npm ci` gültig? Sie hängt an `node_modules/electron/dist/Electron.app`.
+
+3. **`WORKER_TIMEOUT_MS = 120_000`** (`src/main/worker/ollama-client.ts`) ist für den
+   Ein-Schuss-Worker bemessen, nicht für keels Schleife gegen ein 27B. Auf der gesunden Maschine
+   fiel die Grenze nie auf, auf der CPU riss sie jeden Zug. Bewusst nicht geändert — siehe 5e.
+
+4. **Die nächsten Verluste des Rechercheurs sind Inhalt, nicht Netz.** Von 25 Abrufen in Runde 3:
+   4 „nicht extrahierbar" (Readability an JS-gerenderten Seiten, darunter GitHub-Issues) und
+   3 HTTP 403 (Reddit, Stack Exchange sperren Klienten ohne Browser-Kennung). Beides ist benannt
+   und kostet je einen Seitenplatz. Vor M12 war es hinter dem Filter unsichtbar.
+
+5. **M7 — folgt ein 27B dem Nachlade-Satz?** Ein Auftrag, dessen Lösung nur in einer Fähigkeit
    steht, die im Präfix bloß mit Namen und Beschreibung erscheint. 20 Läufe, zwei Fähigkeiten,
    `skill.geladen` im Protokoll zählen gegen die Fälle, in denen das Modell stattdessen geraten
-   hat. **Vorher eine Fähigkeit im Messprojekt hinterlegen** — in den zwanzig M12-Läufen wurde
-   `faehigkeit_lesen` kein einziges Mal gerufen, weil es nichts zu lesen gab.
-4. ~~**Das Settings-Fenster** kennt die Netz-Felder nicht.~~ **Erledigt 2026-08-22:** Reiter
-   „Netz" mit Anbieterwahl, beiden Schlüsselfeldern, SearXNG-Endpunkt und der Positivliste. Durch
-   die laufende App belegt (Knopf geklickt, Inhalt gewechselt, Schreiben über das `<select>` in
-   der Konfiguration angekommen).
+   hat. **Vorher eine Fähigkeit im Messprojekt hinterlegen** — in den M12-Läufen wurde
+   `faehigkeit_lesen` kein einziges Mal gerufen, weil es nichts zu lesen gab. *Teilbefund liegt
+   vor:* für Werkzeug**schemata** folgte das Modell dem gleichlautenden Satz in acht von zehn
+   Läufen, und zwar auf eigene Kosten.
 
-   Alter Text: `netz.searxngEndpunkt`,
-   `netz.bevorzugt` und `netz.zusaetzlichePositivliste` sind heute nur über die Konfigurationsdatei
-   erreichbar. Das ist im Inventar so benannt, aber es ist eine offene CK-NFR-012-Lücke.
-7. **M6 — SearXNG gegen Tavily gegen Brave**, an denselben 20 Fragen. Vorher ist die
-   Anbieterwahl geraten. *Nebenbefund aus M12: die Trefferqualität von Tavily war in keinem der
-   zwanzig Läufe das Problem — die Trefferlisten waren durchweg einschlägig.*
-8. **Integration** nach `main` über `superpowers:finishing-a-development-branch`.
+6. **M6 — SearXNG gegen Tavily gegen Brave**, an denselben 20 Fragen. Vorher ist die Anbieterwahl
+   geraten. *Nebenbefund aus M12: die Trefferqualität von Tavily war in keinem der Läufe das
+   Problem — die Trefferlisten waren durchweg einschlägig.*
+
+7. **Integration** nach `main` über `superpowers:finishing-a-development-branch`.
 
 Was ausdrücklich **nicht** ansteht: der `ollama-native`-Codec (M2 hat gezeigt, dass er nichts
 kaufen würde), Vision und Dokumente über `/v1` (strukturell beschädigt bzw. Sackgasse), YaRN,
