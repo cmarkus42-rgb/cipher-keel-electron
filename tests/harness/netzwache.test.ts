@@ -702,19 +702,100 @@ describe('holeSicher: Groesse und Zeit', () => {
     expect(e.ok === false && e.grund).toContain('Groessengrenze')
   })
 
-  it('bricht ab, wenn das Zeitbudget verstreicht, und benennt es', async () => {
+  it('bricht einen haengenden Abruf ab und benennt ihn', async () => {
     // The fetch never answers. Only the AbortSignal ends this.
+    //
+    // Seit dem 2026-08-22 endet das **nicht** mehr am Kettenbudget, sondern am Budget des
+    // einzelnen Versuchs — und die Absage sagt genau das. Wer sie liest, soll nicht nach einer
+    // langsamen Kette suchen, wenn keine Verbindung zustande kam. Dass das Kettenbudget selbst
+    // benannt wird, halten die beiden Tests zur Namensaufloesung und zum Lesen fest: die zwei
+    // Abschnitte, die nicht wiederholt werden.
     const haengend: Abrufer = (auftrag) =>
       new Promise<Response>((_fertig, ablehnen) => {
         auftrag.init.signal?.addEventListener('abort', () => ablehnen(new Error('Dieser Vorgang wurde abgebrochen')))
       })
-    const e = await holeSicher('https://nodejs.org/langsam', haupt(), { ...GRENZEN, zeitbudgetMs: 20 }, {
+    const begonnen = Date.now()
+    const e = await holeSicher('https://nodejs.org/langsam', haupt(), { ...GRENZEN, zeitbudgetMs: 60 }, {
       melde: () => {},
       aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
       abrufen: haengend,
     })
     expect(e.ok).toBe(false)
-    expect(e.ok === false && e.grund).toContain('Zeitbudget')
+    expect(e.ok === false && e.grund).toContain('Verbindungsversuch')
+    expect(e.ok === false && e.grund).toContain('nodejs.org')
+    expect(Date.now() - begonnen).toBeLessThan(200)
+  })
+
+  it('gibt einem haengenden Verbindungsversuch ein eigenes, kurzes Budget und versucht es erneut', async () => {
+    // Der Befund vom 2026-08-22, gemessen an der laufenden App: keel loest **einmal** auf und
+    // bindet die Verbindung an genau die gepruefte Adressmenge — das muss es, sonst urteilt die
+    // Wache ueber eine Adresse und der Socket geht zu einer anderen. Liefert DNS nur **eine**
+    // Adresse, hat Nodes Happy Eyeballs nichts zum Ausweichen, und ein verlorenes SYN laesst den
+    // Verbindungsaufbau die Wiederholungen des Betriebssystems abwarten: 1+2+4+8 Sekunden.
+    // Gemessen: `bind!(4:23.218.171.247)` → `tcp@16331`, waehrend Ziele mit drei bzw. vier
+    // Adressen in 15 und 30 ms standen. Das frass in der Messung die Haelfte aller Seitenabrufe.
+    //
+    // Der ganze Kettenzeitbudget-Wecker half dagegen nicht: er feuert erst, wenn alles vorbei
+    // ist. Was hilft, ist ein **eigenes Budget je Versuch** — und danach ein zweiter Versuch,
+    // denn ein neues SYN kommt meist durch.
+    let versuche = 0
+    const ersterHaengt: Abrufer = (auftrag) => {
+      versuche += 1
+      if (versuche === 1) {
+        return new Promise<Response>((_f, ablehnen) => {
+          auftrag.init.signal?.addEventListener('abort', () => ablehnen(new Error('abgebrochen')))
+        })
+      }
+      return Promise.resolve(new Response('endlich da', { status: 200 }))
+    }
+    const gemeldet: number[] = []
+    const begonnen = Date.now()
+    const e = await holeSicher('https://nodejs.org/a', haupt(),
+      { ...GRENZEN, zeitbudgetMs: 3_000 }, {
+        melde: (s) => { gemeldet.push(s.sprung) },
+        aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
+        abrufen: ersterHaengt,
+      })
+
+    expect(e).toEqual({ ok: true, text: 'endlich da', endUrl: 'https://nodejs.org/a' })
+    expect(versuche).toBe(2)
+    // Und der zweite Versuch steht im Protokoll: eine Anfrage, die hinausging, wird gemeldet —
+    // auch die, die nichts wurde (§4.1 (4)).
+    expect(gemeldet).toEqual([0, 0])
+    // Der erste Versuch hat nicht das ganze Kettenbudget verbraucht.
+    expect(Date.now() - begonnen).toBeLessThan(2_500)
+  })
+
+  it('gibt nach dem zweiten haengenden Versuch benannt auf, statt einen dritten zu starten', async () => {
+    let versuche = 0
+    const haengtImmer: Abrufer = (auftrag) => {
+      versuche += 1
+      return new Promise<Response>((_f, ablehnen) => {
+        auftrag.init.signal?.addEventListener('abort', () => ablehnen(new Error('abgebrochen')))
+      })
+    }
+    const e = await holeSicher('https://nodejs.org/a', haupt(),
+      { ...GRENZEN, zeitbudgetMs: 3_000 }, {
+        melde: () => {},
+        aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
+        abrufen: haengtImmer,
+      })
+    expect(versuche).toBe(2)
+    expect(e.ok).toBe(false)
+    expect(e.ok === false && e.grund).toContain('Verbindungsversuch')
+  })
+
+  it('wiederholt einen benannten Fehlschlag nicht — nur einen haengenden Versuch', async () => {
+    // Ein Ziel, das ECONNREFUSED sagt, hat geantwortet. Es noch einmal zu fragen waere eine
+    // Verdopplung der Last ohne Aussicht, und `holeSicher` soll nicht zum Wiederholer werden.
+    let versuche = 0
+    const e = await holeSicher('https://nodejs.org/a', haupt(), GRENZEN, {
+      melde: () => {},
+      aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
+      abrufen: (() => { versuche += 1; return Promise.reject(new Error('ECONNREFUSED')) }) as Abrufer,
+    })
+    expect(versuche).toBe(1)
+    expect(e.ok === false && e.grund).toContain('ECONNREFUSED')
   })
 
   it('nennt in der Zeitabsage den Abschnitt, in dem die Zeit hinging', async () => {
@@ -733,13 +814,15 @@ describe('holeSicher: Groesse und Zeit', () => {
       })
     expect(langsameAufloesung.ok === false && langsameAufloesung.grund).toContain('Namensaufloesung')
 
+    // Der Abruf hat seit dem 2026-08-22 sein eigenes Budget je Versuch und deshalb eine eigene
+    // Absage — sie nennt die Zahl der Versuche und den Host, nicht das Kettenbudget.
     const langsamerAbruf = await holeSicher(
-      'https://nodejs.org/a', haupt(), { ...GRENZEN, zeitbudgetMs: 30 }, {
+      'https://nodejs.org/a', haupt(), { ...GRENZEN, zeitbudgetMs: 60 }, {
         melde: () => {},
         aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
         abrufen: (() => new Promise<Response>(() => {})) as Abrufer,
       })
-    expect(langsamerAbruf.ok === false && langsamerAbruf.grund).toContain('Abruf')
+    expect(langsamerAbruf.ok === false && langsamerAbruf.grund).toContain('Verbindungsversuch')
     expect(langsamerAbruf.ok === false && langsamerAbruf.grund).not.toContain('Namensaufloesung')
 
     const langsamesLesen = await holeSicher(
@@ -770,22 +853,28 @@ describe('holeSicher: Groesse und Zeit', () => {
   })
 
   it('teilt sich das Zeitbudget ueber die ganze Kette, nicht pro Sprung', async () => {
-    // Two hops, each answering after 30 ms, against a 40 ms budget. A per-hop timer would let
-    // this through; the run as a whole must not outlive its budget.
+    // Vier Spruenge, jeder **innerhalb** seines Versuchsbudgets (25 ms von 30 ms), gegen ein
+    // Kettenbudget von 90 ms. Jeder einzelne Sprung ist also unauffaellig; erst ihre Summe reisst
+    // das Budget. Ein Zeitgeber je Sprung liesse das durch.
+    //
+    // Der Zuschnitt ist seit dem 2026-08-22 enger geworden: das Versuchsbudget ist ein Drittel
+    // des Kettenbudgets, also faellt ein einzelner langsamer Sprung schon vorher. Sichtbar bleibt
+    // das Kettenbudget deshalb nur ueber die **Zahl** der Spruenge — und genau das ist die
+    // Eigenschaft, um die es hier geht.
     const langsam: Abrufer = (auftrag) =>
       new Promise<Response>((fertig, ablehnen) => {
+        const n = Number(auftrag.url.slice(auftrag.url.lastIndexOf('/') + 1))
         const uhr = setTimeout(() => {
-          fertig(auftrag.url.endsWith('/0')
-            ? new Response(null, { status: 302, headers: { location: 'https://nodejs.org/1' } })
-            : new Response('spaet', { status: 200 }))
-        }, 30)
+          fertig(new Response(null, { status: 302, headers: { location: `https://nodejs.org/${n + 1}` } }))
+        }, 25)
         auftrag.init.signal?.addEventListener('abort', () => { clearTimeout(uhr); ablehnen(new Error('abgebrochen')) })
       })
-    const e = await holeSicher('https://nodejs.org/0', haupt(), { ...GRENZEN, zeitbudgetMs: 40 }, {
-      melde: () => {},
-      aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
-      abrufen: langsam,
-    })
+    const e = await holeSicher('https://nodejs.org/0', haupt(),
+      { ...GRENZEN, zeitbudgetMs: 90, maxWeiterleitungen: 10 }, {
+        melde: () => {},
+        aufloesen: aufloeser({ 'nodejs.org': ['104.20.22.46'] }),
+        abrufen: langsam,
+      })
     expect(e.ok).toBe(false)
     expect(e.ok === false && e.grund).toContain('Zeitbudget')
   })

@@ -8,7 +8,8 @@ und lint sauber, Arbeitsbaum sauber · **Nicht integriert.**
 > Recherchen, vier Behebungen dazwischen, Messprotokoll in
 > `docs/superpowers/plans/2026-08-22-m12-rechercheur.md`. Der Rechercheur ist damit von
 > „gebaut, nicht brauchbar" auf „brauchbar, mit einem benannten offenen Defekt" gerückt. Der
-> Defekt steht in Abschnitt 5d und ist die nächste Arbeit.
+> Defekt aus Abschnitt 5d ist inzwischen ebenfalls geklärt: er lag nicht in keel, sondern in einem
+> Netzfilter dieser Maschine — mit Folgen für jede weitere Messung hier.
 
 Diese Datei ist der Einstieg. Lies sie ganz, bevor du etwas anfasst — sie nennt auch, was *nicht*
 stimmt, und das ist der teurere Teil.
@@ -239,29 +240,38 @@ sperrt cli-harness-Einträge und fällt bei leerem Platz auf das Modell des Haup
 'eigene-schleife'` und `niveau: B`; auf C hätte `unter-faehigkeit` bei jeder Zuordnung gefeuert,
 und das wäre hier unwahr.
 
-## 5d. Der offene Defekt: die Abrufe hängen im Hauptprozess der App
+## 5d. Der hängende Abruf — **geklärt**, und es war nicht keel
 
-**Das ist die nächste Arbeit.** 15 von 27 Seitenabrufen, die in der Messung wirklich hinausgingen,
-liefen ins 20-Sekunden-Budget. Die nachgeschärfte Absage sagt, wo: **immer im Abschnitt `Abruf`,
-immer Sprung 0** — nie die Namensauflösung, nie das Lesen des Körpers.
+Die Hälfte aller Seitenabrufe des Rechercheurs lief ins Zeitbudget, immer im Abschnitt `Abruf`,
+immer beim ersten Sprung. Die Ursache steht im Messbericht mit allen Ausschlussmessungen; hier die
+Kurzfassung:
 
-Derselbe Code holt dieselben URLs unter Node in 84–738 ms, gemessen über `holeSicher` mit
-`aufloeserDesSystems` und `abruferDesSystems`, also ohne jeden Ersatz. Ausgeschlossen sind damit:
-das Netz, die Zielseiten, der Code-Pfad, die Nebenläufigkeit, das Anhäufen liegengelassener
-Weiterleitungskörper und IPv6/Happy Eyeballs (die meisten betroffenen Hosts haben gar kein
-AAAA-Record). Übrig bleibt der **Electron-Hauptprozess**; die Ursache ist offen.
+**Ein Netzfilter, der pro Anwendung und Ziel entscheidet** — Little Snitch, auf dieser Maschine
+aktiv — hält den **ersten** Kontakt der Electron-Binärdatei zu jedem neuen Host, bis eine Regel
+existiert. In einem unbeaufsichtigten Lauf beantwortet niemand seinen Dialog. Der Socket steht
+dann in „connecting", ohne `connect` und ohne `error`, bis keels Wecker kommt.
 
-Zwei Dinge, die schon versucht und **gemessen verworfen** sind — nicht noch einmal machen, ohne
-den Messbericht zu lesen: ein eigener `user-agent` samt `accept-language` (Zeitfehler 5→4,
-gelesene Seiten 2→1, HTTP-Ablehnungen 1→3 über drei Läufe — kein Beleg), und das Hochsetzen des
-Zeitbudgets (ein Ziel, das unter Node 131 ms braucht, wird von 40 Sekunden nicht schneller, und
-ein größeres Budget verdeckt den Befund).
+Der Beleg, ohne root und ohne Vermutung: über alle Läufe hinweg hingen **6 von 18 Erstkontakten**
+zu einem Host und **0 von 10 Folgekontakten**. `cheatsheetseries.owasp.org` scheiterte beim ersten
+Mal und antwortete danach in 30 und 22 ms; `api.tavily.com` und `github.com`, in jedem Lauf
+kontaktiert, hingen kein einziges Mal.
 
-Der naheliegendste ungeprüfte Verdacht steht im Messbericht: Electron bringt BoringSSL mit, Node
-OpenSSL — der TLS-Fingerabdruck ist ein anderer, und alle betroffenen Ziele sitzen hinter
-Bot-Abwehr. **Das ist eine Vermutung.** Belegt ist nur der Unterschied, nicht seine Ursache.
+*Und die Falle, in die ich zuerst gelaufen bin: mein Vergleichsprozess war ein Shell-`node`. Für
+einen Filter, der nach Programm entscheidet, ist das ein anderes Programm. „Derselbe Code ist unter
+Node schnell" verglich nie dieselbe Strecke.*
 
----
+**Was keel dagegen geändert hat** (nicht die Ursache, aber der Schaden): der Abruf hatte kein
+eigenes Zeitbudget, ein gehaltener Erstkontakt verbrauchte still die vollen 20 Sekunden der ganzen
+Kette. Jetzt bekommt jeder Verbindungsversuch ein Drittel davon, und die Absage nennt Host und
+Versuchszahl. Gemessen: Abbruch nach 7,7 s statt nach 20 s.
+
+**Was der Betreiber tun kann** — und das ist der wirksame Handgriff, er liegt außerhalb des Repos:
+eine Little-Snitch-Regel, die der Electron-Binärdatei ausgehende Verbindungen auf 443 erlaubt, oder
+ein eigenes Profil für Messläufe.
+
+**Was jede weitere Messung auf dieser Maschine wissen muss:** die ersten Läufe gegen frische Hosts
+messen den Filter mit. Wer M6 oder M7 fährt, lässt die Zielhosts vorher einmal anlaufen oder zählt
+Erstkontakte gesondert — sonst schreibt er dem Suchanbieter zu, was der Firewall gehört.
 
 ## 6. Die Arbeit, die ansteht, in der Reihenfolge, in der sie zählt
 
@@ -270,9 +280,9 @@ Bot-Abwehr. **Das ist eine Vermutung.** Belegt ist nur der Unterschied, nicht se
    2026-08-22**, zweimal zehn Fragen, vier Behebungen, Protokoll in
    `docs/superpowers/plans/2026-08-22-m12-rechercheur.md`. Die sechs Fragen des Nachtrags sind
    beantwortet.
-3. **Der hängende Abruf (5d).** Der größte verbleibende Verlust und der einzige, der den
-   Rechercheur heute noch unter seinen Möglichkeiten hält: rund die Hälfte der Seiten, die er
-   ausgewählt hat, bekommt er nicht. Lokalisiert, aber nicht erklärt.
+3. ~~**Der hängende Abruf (5d).**~~ **Geklärt** — ein Netzfilter dieser Maschine, kein Defekt in
+   keel. Offen bleibt allein der Handgriff außerhalb des Repos: eine Little-Snitch-Regel für die
+   Electron-Binärdatei. Ohne sie kostet jeder neue Host im Rechercheur einen halben Seitenabruf.
 4. **Die Budgets erst danach nachstellen.** Sie sind heute nicht das bindende Problem, und eine
    Zahl, die gegen einen bekannten Defekt eingestellt wird, muss danach wieder geändert werden.
    Wenn es so weit ist, sprechen die Daten für `kurz` auf **zwei** Suchen (in jedem einzelnen Lauf

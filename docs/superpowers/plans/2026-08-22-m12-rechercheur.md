@@ -35,9 +35,13 @@ wurde ja kaum eine Seite gelesen.
 
 Der Rechercheur war **gebaut, nicht brauchbar**: in zehn Läufen wurden **3 von 33** versuchten
 Seitenabrufen wirklich gelesen, und **sieben von zehn** Recherchen kamen ohne eine einzige
-gelesene Seite zum Befund. Nach vier Behebungen sind es **11 von 35** und **vier von zehn**, und
-der verbleibende Verlust hat genau eine Ursache, die benannt und lokalisiert, aber noch nicht
-behoben ist.
+gelesene Seite zum Befund. Nach vier Behebungen sind es **11 von 35** und **vier von zehn**.
+
+Der verbleibende Verlust hatte genau eine Ursache, und sie liegt **nicht in keel**: ein Netzfilter,
+der pro Anwendung und Ziel entscheidet (Little Snitch), hält den ersten Kontakt zu jedem neuen
+Host, bis eine Regel existiert — und in einem unbeaufsichtigten Lauf beantwortet niemand seinen
+Dialog. Die Untersuchung steht weiter unten; die fünfte Behebung sorgt dafür, dass keel ihm nicht
+mehr das ganze Zeitbudget schenkt.
 
 | | vorher | nachher |
 |---|---|---|
@@ -45,7 +49,7 @@ behoben ist.
 | Züge, die für `werkzeug_schema` draufgingen | 17 | **0** |
 | Seiten gelesen | 3 von 33 Versuchen | **11 von 35** |
 | Läufe ohne eine einzige gelesene Seite | 7 von 10 | **4 von 10** |
-| Abrufe, die am 20-Sekunden-Budget scheiterten | 1 | **15** |
+| Abrufe, die am Zeitbudget scheiterten | 1 | **15** (Ursache gefunden, siehe unten) |
 
 Die letzte Zeile sieht aus wie eine Verschlechterung und ist keine: vorher **kam** kaum ein Abruf
 bis zum Netz (5 gingen in zehn Läufen wirklich hinaus, 27 danach). Der Zeitfehler war vorher
@@ -130,75 +134,94 @@ Auskunft im Protokoll die Zahl, die man ohnehin schon hatte.
 
 ---
 
-## Was offen bleibt: die Abrufe hängen im Hauptprozess der App
+## Der hängende Abruf: Ursache gefunden — es ist nicht keel
 
-**Der verbleibende Verlust, und der größte.** 15 von 27 Seitenabrufen, die wirklich hinausgingen,
-liefen ins 20-Sekunden-Budget. Die nachgeschärfte Absage sagt, wo:
+**Der Befund vorweg:** ein **Netzfilter, der pro Anwendung und pro Ziel entscheidet** (Little
+Snitch, auf dieser Maschine aktiv) hält den **ersten** Kontakt der Electron-Binärdatei zu jedem
+neuen Host, bis eine Regel existiert. In einem unbeaufsichtigten Lauf beantwortet niemand seinen
+Dialog, also bleibt die Verbindung im Zustand „connecting" hängen — Socket erzeugt, danach weder
+`connect` noch `error` — bis keels Zeitbudget zuschlägt.
+
+### Wie das gefunden wurde
+
+Die nachgeschärfte Absage sagte zuerst nur den Abschnitt: **immer `Abruf`, immer Sprung 0.** Nie
+die Namensauflösung, nie das Lesen. Dann wurde der Socket-Lebenslauf mitgeschrieben, und das Bild
+wurde eindeutig:
 
 ```
-Zeitbudget von 20000 ms ueberschritten (Abruf von dasroot.net (Sprung 0))
-Zeitbudget von 20000 ms ueberschritten (Abruf von www.firecrawl.dev (Sprung 0))
-Zeitbudget von 20000 ms ueberschritten (Abruf von morningcoffee.io (Sprung 0))
-Zeitbudget von 20000 ms ueberschritten (Abruf von superuser.com (Sprung 0))
-Zeitbudget von 20000 ms ueberschritten (Abruf von unix.stackexchange.com (Sprung 0))
+OK unit42… :: bind?(all=true)@0 bind!(4:23.218.171.247)@0 socket(neu=true)@1 tcp@16331 tls@17613
+FEHLER dev.to… ::                                        socket(neu=true)@1 (nie ein tcp-Marker)
 ```
 
-Immer der **Abruf**, immer **Sprung 0**, nie die Namensauflösung und nie das Lesen.
+Nacheinander ausgeschlossen, jedes mit einer eigenen Messung:
 
-Derselbe Code holt dieselben URLs unter Node in Millisekunden — gemessen über `holeSicher` mit
-`aufloeserDesSystems` und `abruferDesSystems`, also ohne jeden Ersatz:
-
-| Ziel | unter Node | in der App |
+| Verdacht | Messung | Ergebnis |
 |---|---|---|
-| `dasroot.net` | 131 ms, 32.481 Zeichen | Zeitbudget |
-| `www.firecrawl.dev` | 738 ms, 1.200.987 Zeichen | Zeitbudget |
-| `morningcoffee.io` | 134 ms, 22.652 Zeichen | Zeitbudget |
-| `superuser.com` | 121 ms, ehrliches HTTP 403 | Zeitbudget |
-| `unix.stackexchange.com` | 84 ms, ehrliches HTTP 403 | Zeitbudget |
-| `electronjs.org` (mit Weiterleitung) | 332 ms, 43.900 Zeichen | Zeitbudget |
-| `vitest.dev` | 154 ms, 99.640 Zeichen | Zeitbudget |
+| Das Netz / die Zielseiten | Dieselben URLs über denselben Code unter Node | 84–782 ms, alle |
+| Der Electron-Hauptprozess als solcher | Dieselbe Diagnose beim App-Start, im Leerlauf | 114–782 ms, alle |
+| Blockierte Ereignisschleife | Verzögerungsmesser im Hauptprozess, ganzer Lauf | 4 Blockaden, zusammen 3,9 s — erklärt keine 20 s |
+| Liegengelassene Weiterleitungskörper | 12 Abrufe hintereinander in einem Prozess | 151–177 ms, kein Anstieg |
+| Nebenläufigkeit | 5 gleichzeitige Abrufe unter Node | 318–1763 ms |
+| IPv6 / Happy Eyeballs | DNS-Familien der betroffenen Hosts | Die meisten haben gar kein AAAA |
+| Socket- oder fd-Erschöpfung | `lsof` auf den echten Hauptprozess während eines Laufs | 3 Sockets |
+| Paketverlust auf der Strecke | 20 ICMP-Pakete an genau die hängende Adresse | 0 % Verlust, 10 ms |
 
-**Ausgeschlossen ist damit:** das Netz, die Zielseiten, der Code-Pfad selbst, die Nebenläufigkeit
-(fünf gleichzeitige Abrufe unter Node: 318–1.763 ms), das Anhäufen liegengelassener
-Weiterleitungskörper (zwölf Abrufe hintereinander in einem Prozess: 151–177 ms, kein Anstieg) und
-**Happy Eyeballs / IPv6** — die meisten betroffenen Hosts haben gar kein AAAA-Record.
+Übrig blieb: **derselbe Rechner, dieselbe Adresse, derselbe Augenblick — ein Prozess kommt durch,
+der andere nicht.** Auf TCP-Ebene ist das unmöglich; ein SYN trägt keine Programmkennung. Also
+entscheidet etwas oberhalb, und das kann auf macOS nur eine Netzwerk-Erweiterung sein.
+`systemextensionsctl list` nennt zwei aktive: Tailscale und **Little Snitch**.
 
-Was übrig bleibt: es liegt am **Electron-Hauptprozess**. Alle betroffenen Ziele sitzen hinter
-Bot-Abwehr (Cloudflare, CloudFront, Vercel, Stack Exchange), und keels Abrufer schickt weder
-`user-agent` noch `accept-language`. Electron bringt außerdem BoringSSL mit, Node OpenSSL — der
-TLS-Fingerabdruck ist also ein anderer als der, unter dem die Messung oben gelingt. Das ist eine
-Vermutung und ausdrücklich als solche gekennzeichnet; **belegt ist nur der Unterschied, nicht
-seine Ursache.**
+### Der Beleg ohne root
 
-**Ein Versuch, gemessen und verworfen.** Naheliegend war, dass die fehlenden Kopfzeilen das
-Signal sind: keel schickt weder `user-agent` noch `accept-language`, und eine Anfrage ganz ohne
-User-Agent ist der stärkste Bot-Hinweis, den es gibt. Also einmal einen ehrlichen eigenen
-User-Agent (`cipher-keel/0.1 (Rechercheur; …)`) plus `accept-language` gesetzt, neu gebaut und
-dieselben drei Fragen gefahren:
+Der CLI von Little Snitch verlangt root; das war nicht nötig. Die Vorhersage eines Filters, der
+pro Anwendung und Ziel entscheidet, ist prüfbar: **der erste Kontakt zu einem Host hängt, jeder
+spätere geht durch.** Über alle Läufe hinweg gezählt:
 
-| | ohne Kopfzeilen | mit Kopfzeilen |
+| | schnell | langsam oder gescheitert |
 |---|---|---|
-| Abrufe hinausgegangen | 11 | 11 |
-| davon am Zeitbudget gescheitert | 5 | 4 |
-| davon mit benanntem HTTP-Fehler | 1 | 3 |
-| Seiten gelesen | 2 | 1 |
+| **Erster** Kontakt zu einem Host | 12 | **6** |
+| Späterer Kontakt (ohne Wiederholung derselben Anfrage) | 10 | **0** |
 
-**Kein Beleg.** Ein Hänger wurde zu einer ehrlichen Absage, dafür lehnten zwei weitere Ziele ab,
-und gelesen wurde weniger. Bei drei Läufen ist das Rauschen. Die Kopfzeilen sind deshalb wieder
-draußen: eine Änderung, die sich nicht messen lässt, gehört nicht in den Quelltext — auch dann
-nicht, wenn sie plausibel klingt.
+Einzelfälle, die es festnageln: `cheatsheetseries.owasp.org` scheiterte beim ersten Mal und
+antwortete danach in 30 und 22 ms. `christian-schneider.net` scheiterte beim ersten Mal, danach
+46 ms. `unit42.paloaltonetworks.com` brauchte beim ersten Mal 16.331 ms, danach nichts mehr.
+`api.tavily.com` und `github.com` — in **jedem** Lauf kontaktiert — hingen **kein einziges Mal**.
 
-**Ebenfalls nicht getan und mit Absicht:** das Zeitbudget hochsetzen. Ein Ziel, das unter Node
-131 ms braucht, wird von 20 auf 40 Sekunden nicht schneller — und ein längeres Budget verdeckt den
-Befund, statt ihn zu beheben. Ein falscher Grund im Kommentar ist schlimmer als kein Kommentar.
+Und die Gegenprobe zur Shell erklärt sich damit auch: mein Vergleichsprozess war `node`, für den
+Filter ein anderes Programm mit anderen Regeln. Der Vergleich war nie derselbe Weg.
 
----
+### Was das für keel heißt
+
+**Kein Defekt in keel** — aber eine Stelle, an der keel dem Filter unnötig viel geschenkt hat. Der
+Abruf hatte kein eigenes Zeitbudget; ein gehaltener Erstkontakt verbrauchte die vollen 20 Sekunden
+der ganzen Kette, still. Behoben:
+
+- **Ein eigenes Budget je Verbindungsversuch**, ein Drittel des Kettenbudgets (6,6 s bei den
+  20 s der Vorgabe). Gemessen an der laufenden App: der Versuch bricht jetzt nach 7,7 s ab statt
+  nach 20 s, und dem Unterlauf bleibt Zeit für eine andere Seite.
+- **Eine benannte Absage** statt eines allgemeinen Zeitfehlers: *„Kein Verbindungsversuch kam
+  durch: 2 mal 6666 ms ohne Antwort von arxiv.org."* Sie nennt Host und Versuchszahl.
+- **Ein zweiter Versuch je Sprung.** Das ist eine Abwägung, keine Messung, und im Quelltext steht
+  es auch so: auf dieser Maschine half er nicht (bei `arxiv.org` scheiterten beide, zusammen
+  15,3 s statt 20 s). Er steht für den Fall, den diese Maschine nicht zeigen kann — ein einzeln
+  verlorenes SYN.
+
+### Was der Betreiber tun kann, und was die nächste Messung wissen muss
+
+Der wirksame Handgriff liegt **außerhalb** des Repos: eine Little-Snitch-Regel, die der
+Electron-Binärdatei ausgehende Verbindungen auf 443 erlaubt, oder ein Little-Snitch-Profil für
+Messläufe. Ohne das kostet jeder neue Host im Rechercheur einen halben Seitenabruf.
+
+Und für jede weitere Messung auf dieser Maschine gilt: **die ersten Läufe gegen frische Hosts
+messen den Filter mit.** Wer M6 (Anbietervergleich) oder M7 fährt, sollte die Zielhosts vorher
+einmal anlaufen lassen oder die Erstkontakte gesondert zählen — sonst schreibt er dem Suchanbieter
+zu, was der Firewall gehört.
 
 ## Was danach ansteht, in dieser Reihenfolge
 
-1. **Den hängenden Abruf klären** (oben). Bis dahin bleibt der Rechercheur zwar deutlich besser
-   als vorher, aber unter seinen Möglichkeiten: ungefähr die Hälfte der Seiten, die er ausgewählt
-   hat, bekommt er nicht.
+1. ~~**Den hängenden Abruf klären.**~~ **Geklärt** — siehe oben. Was bleibt, ist ein Handgriff
+   außerhalb des Repos: eine Little-Snitch-Regel für die Electron-Binärdatei, sonst kostet jeder
+   neue Host im Rechercheur weiterhin einen halben Seitenabruf.
 2. **Die Budgets erst danach nachstellen.** Sie sind heute nicht das bindende Problem, und eine
    Zahl, die gegen einen bekannten Defekt eingestellt wird, muss danach wieder geändert werden.
    Wenn es so weit ist, sprechen die Daten für: `kurz` auf **zwei** Suchen (in jedem einzelnen

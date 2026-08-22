@@ -489,6 +489,47 @@ function gegenDieUhr<T>(versprechen: Promise<T>, signal: AbortSignal, grund: str
  * Satz Adressen geht als Bindung an den Abrufer, damit zwischen Urteil und Socket keine zweite
  * Aufloesung mehr passt.
  */
+/**
+ * Wie oft ein einzelner Sprung angefasst wird, bevor er als tot gilt — und, wichtiger, dass er
+ * ueberhaupt ein **eigenes** Zeitbudget bekommt statt des ganzen Kettenbudgets.
+ *
+ * **Der Fehlerfall dahinter, gemessen am 2026-08-22 an der laufenden App (M12).** Die Haelfte
+ * aller Seitenabrufe des Rechercheurs lief ins 20-Sekunden-Budget, immer im Abruf, immer beim
+ * ersten Sprung: Socket erzeugt, danach weder `connect` noch `error`, bis der Wecker kam. Die
+ * Ursache lag nicht in keel und nicht im Netz — sie steht im Messbericht
+ * (`docs/superpowers/plans/2026-08-22-m12-rechercheur.md`): ein Filter, der **pro Anwendung und
+ * Ziel** entscheidet, haelt den ersten Kontakt zu einem neuen Host, und in einem unbeaufsichtigten
+ * Lauf beantwortet niemand seinen Dialog. Zahlen: von 18 Erstkontakten hingen 6, von 10
+ * Folgekontakten keiner.
+ *
+ * Was das hier aendert, und was nicht: keel kann den Filter nicht abstellen, aber es muss ihm
+ * nicht das ganze Budget schenken. Ein eigenes Budget je Versuch macht aus einem stillen
+ * 20-Sekunden-Verlust eine benannte Absage nach einem Drittel davon — gemessen 7,7 s statt 20 s —
+ * und laesst dem Unterlauf Zeit, eine andere Seite zu holen.
+ *
+ * **Zwei Versuche statt einem ist eine Abwaegung, keine Messung.** Auf dieser Maschine half der
+ * zweite Versuch nicht (bei arxiv.org scheiterten beide, zusammen 15,3 s statt 20 s). Er steht
+ * hier fuer den Fall, den diese Maschine nicht zeigen kann: ein einzeln verlorenes SYN, gegen das
+ * ein neuer Versuch das Naheliegende ist. Wer ihn streicht, verliert nichts Gemessenes — und
+ * gewinnt auf einem gefilterten Rechner ein Drittel des Budgets zurueck.
+ */
+const VERSUCHE_JE_SPRUNG = 2
+
+/**
+ * Das Budget eines einzelnen Versuchs: ein Drittel des Kettenbudgets, also ein Anteil und keine
+ * zweite feste Zahl. Zwei Versuche passen damit hinein und lassen noch ein Drittel fuer
+ * Namensaufloesung und Lesen — und wer das Kettenbudget aendert, muss nicht zwei Zahlen im Kopf
+ * behalten.
+ *
+ * Bei den 20 Sekunden von `VORGABE_SEITE_GRENZEN` sind das 6,6 s je Versuch. Das deckt eine
+ * einzelne SYN-Wiederholung (1 s) samt Handschlag ab; gemessene Handschlaege lagen bei 26 bis
+ * 170 ms, in der Spitze 2,4 s. Es deckt ausdruecklich **nicht** die volle Wiederholungsreihe des
+ * Betriebssystems ab — genau die abzuschneiden ist der Zweck.
+ */
+export function versuchsbudgetMs(zeitbudgetMs: number): number {
+  return Math.floor(zeitbudgetMs / (VERSUCHE_JE_SPRUNG + 1))
+}
+
 export async function holeSicher(
   url: string,
   ktx: NetzWacheKontext,
@@ -566,35 +607,61 @@ export async function holeSicher(
       const urteil = pruefeUrl(aktuell, { ...ktx, adressen })
       if (!urteil.ok) return urteil
 
-      let antwort: Response
-      try {
-        abschnitt = `Abruf von ${host} (Sprung ${sprung})`
-        // Gegen die Uhr geklammert, nicht bloss mit dem Signal in der Hand — dieselbe Klammer und
-        // dieselbe Begruendung wie in `such-anbieter.holeJson`: **das Signal allein reicht nicht,
-        // weil ein Abrufer es ignorieren darf.** `Abrufer` ist eine Schnittstelle; sie sagt zu,
-        // dass `init.signal` mitkommt, nicht dass jemand darauf hoert. Aufloesung und Lesen liefen
-        // seit Runde 3 in dieser Klammer, der Abruf dazwischen nicht — der eine Abschnitt, der die
-        // Zusage von `zeitbudgetMs` („fuer die ganze Kette") am ehesten braucht.
-        antwort = await gegenDieUhr(abhaengigkeiten.abrufen({
-          url: urteil.url,
-          host,
-          adressen,
-          bindung: bindeAufAdressen(host, adressen),
-          init: {
-            method: 'GET',
-            redirect: 'manual',
-            signal,
-            // No cookie jar, no credentials, no referrer: nothing may travel between two calls of
-            // this function, and nothing about the previous page may travel to the next host.
-            credentials: 'omit',
-            referrerPolicy: 'no-referrer',
-            headers: { accept: 'text/html,text/plain;q=0.9,*/*;q=0.5' },
-          },
-        }), signal, zeitGrund())
-      } catch (fehler) {
-        if (signal.aborted) return { ok: false, grund: zeitGrund() }
-        return { ok: false, grund: `Abruf fehlgeschlagen: ${(fehler as Error).message}` }
+      abschnitt = `Abruf von ${host} (Sprung ${sprung})`
+      const versuchsbudget = versuchsbudgetMs(grenzen.zeitbudgetMs)
+      let antwort: Response | null = null
+      let letzterGrund = ''
+      for (let versuch = 1; versuch <= VERSUCHE_JE_SPRUNG; versuch++) {
+        // Der zweite Versuch geht genauso hinaus wie der erste und wird genauso gemeldet
+        // (§4.1 (4)). Der erste ist oben schon gemeldet, hier kommt nur der Nachschlag.
+        if (versuch > 1) abhaengigkeiten.melde({ sprung, url: aktuell, host })
+        // Ein eigener Abbruch je Versuch, gekettet an den der ganzen Kette. Ohne die Kette waere
+        // ein aufgegebener Versuch ein Socket, den niemand mehr schliesst; ohne den eigenen
+        // liefe der Versuch bis zum Kettenbudget weiter.
+        const versuchssteuerung = new AbortController()
+        const uhrVersuch = setTimeout(() => versuchssteuerung.abort(), versuchsbudget)
+        const durchreichen = () => versuchssteuerung.abort()
+        signal.addEventListener('abort', durchreichen, { once: true })
+        try {
+          // Gegen die Uhr geklammert, nicht bloss mit dem Signal in der Hand — dieselbe Klammer
+          // und dieselbe Begruendung wie in `such-anbieter.holeJson`: **das Signal allein reicht
+          // nicht, weil ein Abrufer es ignorieren darf.** `Abrufer` ist eine Schnittstelle; sie
+          // sagt zu, dass `init.signal` mitkommt, nicht dass jemand darauf hoert.
+          antwort = await gegenDieUhr(abhaengigkeiten.abrufen({
+            url: urteil.url,
+            host,
+            adressen,
+            bindung: bindeAufAdressen(host, adressen),
+            init: {
+              method: 'GET',
+              redirect: 'manual',
+              signal: versuchssteuerung.signal,
+              // No cookie jar, no credentials, no referrer: nothing may travel between two calls
+              // of this function, and nothing about the previous page may travel to the next host.
+              credentials: 'omit',
+              referrerPolicy: 'no-referrer',
+              headers: { accept: 'text/html,text/plain;q=0.9,*/*;q=0.5' },
+            },
+          }), versuchssteuerung.signal, `Verbindungsversuch ${versuch} ohne Antwort nach ${versuchsbudget} ms`)
+          break
+        } catch (fehler) {
+          // Drei Ausgaenge, und sie duerfen nicht zusammenfallen. Das Kettenbudget ist zu Ende:
+          // dann hilft kein zweiter Versuch. Der Versuch lief in sein eigenes Budget: dann schon,
+          // denn ein neues SYN kommt meist durch. Und ein **benannter** Fehlschlag (ECONNREFUSED,
+          // Zertifikat) ist eine Antwort — die zu wiederholen verdoppelt nur die Last.
+          if (signal.aborted) return { ok: false, grund: zeitGrund() }
+          if (!versuchssteuerung.signal.aborted) {
+            return { ok: false, grund: `Abruf fehlgeschlagen: ${(fehler as Error).message}` }
+          }
+          letzterGrund =
+            `Kein Verbindungsversuch kam durch: ${VERSUCHE_JE_SPRUNG} mal ${versuchsbudget} ms ` +
+            `ohne Antwort von ${host}.`
+        } finally {
+          clearTimeout(uhrVersuch)
+          signal.removeEventListener('abort', durchreichen)
+        }
       }
+      if (antwort === null) return { ok: false, grund: letzterGrund }
 
       if (WEITERLEITUNGEN.has(antwort.status)) {
         const ort = antwort.headers.get('location')
