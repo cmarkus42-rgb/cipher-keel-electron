@@ -1,7 +1,15 @@
 # Übergabe: Qwen3.8 27B als Niveau-C-Modell mit Nachschlagen und Rechercheur
 
-**Stand:** 2026-08-22, vierte Fassung · **Zweig:** `qwen38-niveau-c`, 37 Commits über `main`,
-2677 Tests grün, typecheck und lint sauber, Arbeitsbaum sauber · **Nicht integriert.**
+**Stand:** 2026-08-22, vierte Fassung · **Zweig:** `qwen38-niveau-c`, 2677 Tests grün, typecheck
+und lint sauber, Arbeitsbaum sauber · **Nicht integriert.**
+
+<!-- Die Commit-Zahl stand hier bis zur vierten Fassung und war jedes Mal um eins veraltet: sie
+     aendert sich durch genau den Commit, der sie nachfuehrt. `git rev-list --count main..HEAD`
+     sagt sie ohnehin genauer, als eine Datei es kann. -->
+
+> **Erster Handgriff der nächsten Sitzung:** der Einzeiler aus 5e, der prüft, ob der GPU-Zugriff
+> des Spark-Containers einen `daemon-reload` überstanden hat. Das ist die **einzige** noch offene
+> Probe dieser Welle, und sie hängt an einem Reload, den `snapd` von selbst auslöst.
 
 > **Was sich seit der ersten Fassung geändert hat, in fünf Sätzen:**
 >
