@@ -99,7 +99,7 @@ import {
 } from '../../src/main/harness/werkzeug-netz'
 import {
   MAX_QUELL_TITEL_ZEICHEN, MAX_QUELL_URL_ZEICHEN, MAX_RECHERCHEN_JE_LAUF, RECHERCHIEREN_NAME,
-  SYSTEMTEXT, TIEFEN, UNTERLAUF_RUNDEN, baueRueckgabe, quellenAusProtokoll, rechercheurWerkzeug,
+  SYSTEMTEXT, TIEFEN, baueRueckgabe, quellenAusProtokoll, rechercheurWerkzeug,
   unterlaufRegistry,
 } from '../../src/main/harness/rechercheur'
 import { verbrauchAusEreignissen } from '../../src/main/harness/verbrauch'
@@ -455,6 +455,46 @@ describe('Der Unterlauf bekommt seine Schemata sofort, nicht auf Abruf', () => {
   })
 })
 
+describe('Das Rundenbudget muss tragen, was die Tiefe verspricht', () => {
+  it('gibt jeder Tiefe so viele Runden, dass ihre Suchen und Lesezuege hineinpassen', () => {
+    // Der Widerspruch, den M12 aufgedeckt hat (2026-08-22): §3.4 gab `gruendlich` drei Suchen und
+    // fuenf Seiten, aber **beiden** Tiefen dieselben vier Runden. Drei Suchen und drei Lesezuege
+    // sind sechs — in vier Runden nicht unterzubringen. Gemessen an zehn echten Recherchen:
+    // `gruendlich` schoepfte sein Suchbudget in vier von fuenf Laeufen voll aus und sein
+    // Seitenbudget nur in einem; vier von fuenf endeten `runden-erschoepft`. Die Tiefe war eine
+    // Zusage, die das Rundenbudget nicht hielt.
+    //
+    // Die Untergrenze: je Suche ein Suchzug und ein Lesezug. Der Abschlusszug ist gratis — die
+    // Schleife laesst nach erschoepftem Rundenbudget noch einen werkzeuglosen Zug zu (lauf.ts).
+    for (const [name, g] of Object.entries(TIEFEN)) {
+      expect(g.runden, `Tiefe '${name}' verspricht ${g.suchen} Suchen und ${g.seiten} Seiten, ` +
+        `hat aber nur ${g.runden} Runden`).toBeGreaterThanOrEqual(2 * g.suchen)
+    }
+  })
+
+  it('gibt der gruendlichen Tiefe mehr Runden und mehr Zeit als der kurzen', () => {
+    expect(TIEFEN.gruendlich.runden).toBeGreaterThan(TIEFEN.kurz.runden)
+    expect(TIEFEN.gruendlich.wanduhrMs).toBeGreaterThan(TIEFEN.kurz.wanduhrMs)
+  })
+
+  it('faehrt einen gruendlichen Unterlauf wirklich mit seinem eigenen Rundenbudget', () => {
+    // Nicht nur die Tabelle, sondern der Auftrag: die Zahl muss beim Unterlauf ankommen.
+    return mitWurzel(async (w) => {
+      const schema = (i: number) => ruft(FAEHIGKEIT_WERKZEUG_NAME, { name: 'gibtsnicht' }, `x${i}`)
+      const unter = Array.from({ length: TIEFEN.gruendlich.runden + 2 }, (_, i) => schema(i))
+      const u = umgebung(w, {
+        haupt: [ruft(RECHERCHIEREN_NAME, { frage: 'Was ist X?', tiefe: 'gruendlich' }, 'r1'), sagt('fertig')],
+        unter,
+      })
+      const hauptId = await starteLauf(AUFTRAG(w), u)
+      const [unterId] = unterlaufIds(u.db, hauptId)
+      const ev = lesen(u.db, unterId)
+      expect(ev.filter(e => e.art === 'model.answered'))
+        .toHaveLength(TIEFEN.gruendlich.runden + 1)
+    })
+  })
+})
+
 describe('Obergrenzen des Unterlaufs (§3.4)', () => {
   it('meldet das Seitenbudget benannt, statt still eine dritte Seite zu holen', async () => {
     await mitWurzel(async (w) => {
@@ -617,7 +657,7 @@ describe('Obergrenzen des Unterlaufs (§3.4)', () => {
       const [unterId] = unterlaufIds(u.db, hauptId)
       const ev = lesen(u.db, unterId)
 
-      expect(ev.filter(e => e.art === 'model.answered')).toHaveLength(UNTERLAUF_RUNDEN + 1)
+      expect(ev.filter(e => e.art === 'model.answered')).toHaveLength(TIEFEN.kurz.runden + 1)
       expect(ev.at(-1)?.nutzlast).toMatchObject({ grund: 'runden-erschoepft' })
 
       // Und der Hauptlauf erfaehrt davon — benannt, nicht als vollwertiger Befund.

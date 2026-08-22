@@ -287,6 +287,30 @@ sie hängt an `node_modules/electron/dist/Electron.app`, und ein `npm ci` kann s
 Und ein Shell-`node` ist **kein** gültiger Vergleich zur laufenden App: für einen Filter, der nach
 Programm entscheidet, ist das ein anderes Programm.
 
+## 5e. Zwei Befunde aus Runde 4 — beide unbehoben, beide benannt
+
+**Der Spark lief auf der CPU.** `nvidia-smi` meldete 0 % GPU-Auslastung, `llama-server` stand bei
+1894 % CPU, und eine Anfrage mit 19 Prompt- und 36 Antwort-Token brauchte **53 Sekunden** — gegen
+22–40 Sekunden für einen ganzen Zug in Runde 3. Ob das dauerhaft ist, weiß ich nicht. **Bevor hier
+wieder jemand eine Zeit misst, gehört das an den Anfang:**
+
+```bash
+curl -s http://100.78.7.108:11434/api/ps        # welches Modell, welcher Kontext
+ssh DGX nvidia-smi                              # rechnet die GPU ueberhaupt?
+```
+
+Eine Zahl von einer CPU-Ausführung ist keine Zahl über keel. Runde 4 ist deshalb verworfen und
+nicht hineingerechnet.
+
+**`WORKER_TIMEOUT_MS = 120_000` ist für den falschen Verbraucher bemessen.** Die Konstante in
+`src/main/worker/ollama-client.ts` stammt vom Ein-Schuss-Worker, der eine kleine Anfrage schickt.
+keels eigene Schleife gegen ein 27B ist ein anderes Profil: wachsende Historie, geteilte GPU,
+Denkstufe `medium`. Auf der gesunden Maschine fiel die Grenze nie auf; auf der CPU reißt sie jeden
+Zug, und der Unterlauf endet `transportfehler`. Derselbe Fehlerkreis wie bei `aufgeschobenesLaden`
+und `klemmeMaxZeichen`: eine Zahl, die für einen Verbraucher richtig war, gilt für den zweiten
+nicht. **Nicht geändert** — auf einer viermal zu langsamen Maschine lässt sich die richtige Zahl
+nicht bestimmen.
+
 ## 6. Die Arbeit, die ansteht, in der Reihenfolge, in der sie zählt
 
 1. ~~**Die zwei Konstruktionsfehler aus 5b.**~~ **Erledigt 2026-08-22**, siehe dort.
@@ -297,12 +321,16 @@ Programm entscheidet, ist das ein anderes Programm.
 3. ~~**Der hängende Abruf (5d).**~~ **Geklärt und behoben** — ein Netzfilter dieser Maschine, kein
    Defekt in keel. Regel gesetzt, Gegenprobe gefahren: Verbindungsfehler von 15 auf 1, gelesene
    Seiten von 11 auf 17. Die nächsten Verluste sind Inhalt, nicht Netz (Readability, HTTP 403).
-4. **Die Budgets erst danach nachstellen.** Sie sind heute nicht das bindende Problem, und eine
-   Zahl, die gegen einen bekannten Defekt eingestellt wird, muss danach wieder geändert werden.
-   Wenn es so weit ist, sprechen die Daten für `kurz` auf **zwei** Suchen (in jedem einzelnen Lauf
-   wollte das Modell nach dem ersten Trefferbild eine verfeinerte zweite Anfrage stellen) und für
-   eine Wanduhr über 90 s, die nach dem Wegfall der Schema-Züge zu binden beginnt.
-5. **M7 — folgt ein 27B dem Nachlade-Satz?** Ein Auftrag, dessen Lösung nur in einer Fähigkeit
+4. **Die Feldprobe der Budgets nachholen — der erste Handgriff.** Runden und Uhr gehören seit
+   Runde 4 zur Tiefe (`gruendlich`: 8 statt 4 Runden), weil Runde 3 einen Widerspruch zeigte:
+   `gruendlich` sagt drei Suchen und fünf Seiten zu, hatte aber dieselben vier Runden wie `kurz` —
+   und schöpfte gemessen sein Suchbudget aus, sein Seitenbudget nicht. Die Änderung ist
+   gegenprobiert und von einem Wächtertest gehalten, **aber nicht im Feld bestätigt**: beim
+   Nachmessen lief der Spark auf der CPU (siehe 5e). Also zuerst die Maschine prüfen, dann
+   dieselben zehn Fragen ein viertes Mal.
+
+5. **Zwei Befunde aus Runde 4, beide unbehoben und beide benannt** — siehe 5e.
+6. **M7 — folgt ein 27B dem Nachlade-Satz?** Ein Auftrag, dessen Lösung nur in einer Fähigkeit
    steht, die im Präfix bloß mit Namen und Beschreibung erscheint. 20 Läufe, zwei Fähigkeiten,
    `skill.geladen` im Protokoll zählen gegen die Fälle, in denen das Modell stattdessen geraten
    hat. **Vorher eine Fähigkeit im Messprojekt hinterlegen** — in den zwanzig M12-Läufen wurde
@@ -315,10 +343,10 @@ Programm entscheidet, ist das ein anderes Programm.
    Alter Text: `netz.searxngEndpunkt`,
    `netz.bevorzugt` und `netz.zusaetzlichePositivliste` sind heute nur über die Konfigurationsdatei
    erreichbar. Das ist im Inventar so benannt, aber es ist eine offene CK-NFR-012-Lücke.
-6. **M6 — SearXNG gegen Tavily gegen Brave**, an denselben 20 Fragen. Vorher ist die
+7. **M6 — SearXNG gegen Tavily gegen Brave**, an denselben 20 Fragen. Vorher ist die
    Anbieterwahl geraten. *Nebenbefund aus M12: die Trefferqualität von Tavily war in keinem der
    zwanzig Läufe das Problem — die Trefferlisten waren durchweg einschlägig.*
-7. **Integration** nach `main` über `superpowers:finishing-a-development-branch`.
+8. **Integration** nach `main` über `superpowers:finishing-a-development-branch`.
 
 Was ausdrücklich **nicht** ansteht: der `ollama-native`-Codec (M2 hat gezeigt, dass er nichts
 kaufen würde), Vision und Dokumente über `/v1` (strukturell beschädigt bzw. Sackgasse), YaRN,

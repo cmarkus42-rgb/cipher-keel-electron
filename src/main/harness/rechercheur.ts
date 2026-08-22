@@ -94,17 +94,42 @@ export type Tiefe = 'kurz' | 'gruendlich'
 export interface TiefenGrenzen {
   suchen: number
   seiten: number
+  /** Zuege mit Werkzeugen. Der Abschlusszug kommt gratis dazu — siehe unten. */
+  runden: number
+  wanduhrMs: number
 }
 
-/** §3.4: kurz = eine Suche, hoechstens zwei Seiten. gruendlich = bis zu drei Suchen, fuenf Seiten. */
+/**
+ * §3.4: kurz = eine Suche, hoechstens zwei Seiten. gruendlich = bis zu drei Suchen, fuenf Seiten.
+ *
+ * **Runden und Uhr gehoeren seit dem 2026-08-22 zur Tiefe, nicht danebengelegt** — und das ist die
+ * Behebung eines Widerspruchs, den erst M12 sichtbar gemacht hat. Vorher stand hier eine einzige
+ * Zahl fuer beide Tiefen (`UNTERLAUF_RUNDEN = 4`), waehrend `gruendlich` drei Suchen und fuenf
+ * Seiten zusagte. Drei Suchen und drei Lesezuege sind sechs; in vier Runden passen sie nicht.
+ *
+ * Gemessen an zehn echten Recherchen: `gruendlich` schoepfte sein **Suchbudget** in vier von fuenf
+ * Laeufen voll aus und sein **Seitenbudget** nur in einem, und vier von fuenf endeten
+ * `runden-erschoepft`. Die Tiefe war eine Zusage, die das Rundenbudget nicht hielt.
+ *
+ * Die Zahlen, hergeleitet statt geraten:
+ *
+ * - **Runden.** Untergrenze ist `2 × suchen`: je Suche ein Suchzug und ein Lesezug. Der
+ *   Abschlusszug ist gratis, weil die Schleife nach erschoepftem Rundenbudget noch einen
+ *   werkzeuglosen Zug zulaesst (lauf.ts). `kurz` braucht damit 2 und bekommt 4 — gemessen kamen
+ *   drei von fuenf Laeufen in genau drei Zuegen zum Ziel, der Rest ist Luft fuer einen Fehlgriff.
+ *   `gruendlich` braucht 6 und bekommt 8.
+ * - **Uhr.** Eine Notbremse, kein Ziel; die Runden binden zuerst. Gemessen lag `kurz` bei 68–105 s
+ *   und `gruendlich` bei 106–198 s (bei damals vier Runden, also 22–40 s je Zug). Mit acht Runden
+ *   liegt `gruendlich` bei rund 200–320 s.
+ *
+ * **Der Preis, benannt:** drei gruendliche Recherchen koennen zusammen die 900-Sekunden-Wanduhr
+ * des Hauptlaufs (`STANDARD_BUDGETS`) sprengen. Dann endet der Hauptlauf benannt — richtig so, und
+ * `MAX_RECHERCHEN_JE_LAUF` ist die Obergrenze, nicht der Normalfall.
+ */
 export const TIEFEN: Record<Tiefe, TiefenGrenzen> = {
-  kurz: { suchen: 1, seiten: 2 },
-  gruendlich: { suchen: 3, seiten: 5 },
+  kurz: { suchen: 1, seiten: 2, runden: 4, wanduhrMs: 150_000 },
+  gruendlich: { suchen: 3, seiten: 5, runden: 8, wanduhrMs: 300_000 },
 }
-
-/** Harte Obergrenzen des Unterlaufs aus §3.4. */
-export const UNTERLAUF_RUNDEN = 4
-export const UNTERLAUF_WANDUHR_MS = 90_000
 
 /**
  * §3.4 kappt das Ergebnis auf 2.000 Token. Gemessen wird in Zeichen, mit dem groben Faktor 4 —
@@ -611,8 +636,8 @@ export async function fuehreRecherche(
     // Eigenes Runden- und Zeitbudget, hart aus §3.4. Kosten- und Kontextanteil kommen vom
     // Elternauftrag: was dort als Obergrenze gilt, gilt hier nicht groesser.
     budgets: {
-      runden: UNTERLAUF_RUNDEN,
-      wanduhrMs: UNTERLAUF_WANDUHR_MS,
+      runden: TIEFEN[tiefe.tiefe].runden,
+      wanduhrMs: TIEFEN[tiefe.tiefe].wanduhrMs,
       kostenCent: ktx.elternAuftrag.budgets.kostenCent,
       kontextAnteil: ktx.elternAuftrag.budgets.kontextAnteil,
     },

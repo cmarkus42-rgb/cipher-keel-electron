@@ -261,17 +261,63 @@ Programm entscheidet, ist das ein anderes Programm mit anderen Regeln. Genau dar
 Untersuchung zuerst in die Irre gelaufen: „derselbe Code ist unter Node schnell" verglich nie
 dieselbe Strecke.
 
+## Runde 4: die Budgets je Tiefe — geändert, Feldprobe offen
+
+Runde 3 hat einen **Widerspruch in den Budgets selbst** sichtbar gemacht, und zwar erst, seit die
+zwei Störgrößen weg waren:
+
+| Tiefe | Suchbudget genutzt | Seitenbudget genutzt | Ende |
+|---|---|---|---|
+| `kurz` (5 Läufe) | 5× voll (1/1) | 5× voll (2/2) | 3× `ziel-erreicht` in drei Zügen |
+| `gruendlich` (5 Läufe) | 4× voll (3/3) | nur 1× voll (2–5 von 5) | 4× `runden-erschoepft` |
+
+§3.4 gab `gruendlich` drei Suchen und fünf Seiten, aber **beiden** Tiefen dieselben vier Runden.
+Drei Such- und drei Lesezüge sind sechs; in vier Runden passen sie nicht. Die Tiefe war eine
+Zusage, die das Rundenbudget nicht hielt — und man sieht es genau daran, dass `gruendlich` sein
+Suchbudget ausschöpft und sein Seitenbudget nicht.
+
+**Geändert:** Runden und Uhr gehören jetzt zur Tiefe. `kurz` bleibt bei 4 Runden (belegt: drei von
+fünf Läufen kamen in drei Zügen zum Ziel, der vierte Zug ist Luft), `gruendlich` bekommt 8. Die
+Untergrenze `2 × suchen` hält ein Wächtertest fest — wer die Tiefen ändert und die Runden vergisst,
+sieht ihn fallen. Uhr: 150 s für `kurz`, 300 s für `gruendlich`; sie ist eine Notbremse, die
+Runden binden zuerst.
+
+**Die Feldprobe steht aus, und der Grund gehört hierher:** beim Nachmessen fuhr der Spark
+`keel-qwen38:27b` **auf der CPU**. `nvidia-smi` meldet 0 % GPU-Auslastung, `llama-server` steht bei
+1894 % CPU, und eine Anfrage mit 19 Prompt- und 36 Antwort-Token braucht **53 Sekunden** — gegen
+22–40 Sekunden für einen ganzen Zug in Runde 3. Drei von drei Unterläufen endeten dadurch
+`transportfehler`. Das misst die Maschine, nicht die Änderung, und die Runde ist deshalb verworfen
+statt hineingerechnet.
+
+Die Änderung steht trotzdem: ihre **Diagnose** ist an einer gesunden Maschine gemessen (Runde 3),
+die Herleitung ist strukturell, und die Verdrahtung ist gegenprobiert (Runden nicht durchgereicht:
+1 rot; eine Zahl für beide Tiefen: 2 rot, davon eine mit dem Widerspruch im Klartext). Was fehlt,
+ist die Bestätigung — sie gehört in die nächste Sitzung, sobald der Spark wieder auf der GPU läuft.
+
+### Zwei Befunde, die Runde 4 nebenbei freigelegt hat
+
+**1. Der Spark läuft auf der CPU.** Ob dauerhaft oder vorübergehend, ist offen. Bevor irgendjemand
+hier wieder eine Zeit misst, gehört `curl -s http://100.78.7.108:11434/api/ps` und ein Blick auf
+`ssh DGX nvidia-smi` an den Anfang. Eine Zahl von einer CPU-Ausführung ist keine Zahl über keel.
+
+**2. `WORKER_TIMEOUT_MS = 120_000` ist für den falschen Verbraucher bemessen.** Die Konstante in
+`src/main/worker/ollama-client.ts` stammt vom **Ein-Schuss-Worker**, der eine kleine Anfrage
+schickt. keels eigene Schleife gegen ein 27B ist ein anderes Profil: ein Zug mit wachsender
+Historie, auf einer geteilten GPU, mit Denkstufe `medium`. Auf der gesunden Maschine blieb ein Zug
+bei 22–40 s und die Grenze fiel nie auf; auf der CPU reißt sie jeden Zug. Das ist derselbe
+Fehlerkreis wie bei `aufgeschobenesLaden` und bei `klemmeMaxZeichen`: eine Zahl, die für einen
+Verbraucher richtig war, gilt für den zweiten nicht mehr. **Nicht geändert** — auf einer Maschine,
+die viermal zu langsam ist, lässt sich die richtige Zahl nicht bestimmen.
+
 ## Was danach ansteht, in dieser Reihenfolge
 
 1. ~~**Den hängenden Abruf klären.**~~ **Geklärt** — siehe oben. Was bleibt, ist ein Handgriff
    außerhalb des Repos: eine Little-Snitch-Regel für die Electron-Binärdatei, sonst kostet jeder
    neue Host im Rechercheur weiterhin einen halben Seitenabruf.
-2. **Die Budgets erst danach nachstellen.** Sie sind heute nicht das bindende Problem, und eine
-   Zahl, die gegen einen bekannten Defekt eingestellt wird, muss danach wieder geändert werden.
-   Wenn es so weit ist, sprechen die Daten für: `kurz` auf **zwei** Suchen (in jedem einzelnen
-   Lauf wollte das Modell nach dem ersten Trefferbild eine verfeinerte zweite Anfrage stellen) und
-   für eine Wanduhr über 90 s, weil sie nach dem Wegfall der Schema-Züge zu binden beginnt
-   (`zeit-erschoepft` trat erstmals nach den Behebungen auf).
+2. ~~**Die Budgets nachstellen.**~~ **Geändert** (Runde 4, siehe oben): Runden und Uhr gehören
+   jetzt zur Tiefe, `gruendlich` bekommt 8 Runden statt 4. **Die Feldprobe steht aus** — der Spark
+   lief beim Nachmessen auf der CPU. Erster Handgriff der nächsten Sitzung: prüfen, ob er wieder
+   auf der GPU rechnet, dann dieselben zehn Fragen ein viertes Mal.
 3. **M7** — folgt ein 27B dem Nachlade-Satz für Fähigkeiten? Ein Teilbefund liegt schon vor: für
    **Werkzeugschemata** folgt es dem Satz in 8 von 10 Läufen, und zwar auf eigene Kosten. Das ist
    ein starkes Indiz für die Annahme, auf der keels Niveau B ruht — aber `faehigkeit_lesen` wurde
