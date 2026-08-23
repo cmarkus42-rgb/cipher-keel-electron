@@ -1,6 +1,8 @@
 # Anpassbare Flächen — Inventar (CK-NFR-012)
 
-**Stand:** 2026-08-22 — der GPU-Zugriff des Spark-Containers benannt (er geht bei jedem `daemon-reload` verloren und verfälscht dann jede Zeitmessung); der Netzfilter der Maschine benannt (er hält Erstkontakte und verfälscht jede Messung); neuer Zuordnungsplatz `rolle:rechercheur` (das Modell des Unterlaufs war
+**Stand:** 2026-08-23 — neuer Zuordnungsplatz `sitzung:niveau-b` (keels eigene Agentenschleife
+im Gitter bekommt eine eigene Modellzuweisung statt keiner; kein Rückfall bei leerem Platz,
+siehe Zeile unten). Davor 2026-08-22, der GPU-Zugriff des Spark-Containers benannt (er geht bei jedem `daemon-reload` verloren und verfälscht dann jede Zeitmessung); der Netzfilter der Maschine benannt (er hält Erstkontakte und verfälscht jede Messung); neuer Zuordnungsplatz `rolle:rechercheur` (das Modell des Unterlaufs war
 an den Hauptlauf gekoppelt); der Nachschlage-Weg beschränkt jetzt die **Suchanfrage** und filtert die
 Treffer, nicht erst den Abruf; die Zeilen zum Reiter „Netz" nachgeführt, die noch „noch kein
 Config-Schlüssel" sagten. Davor 2026-08-21, Netz-Werkzeuge (Vorgabe-Positivliste, Suchanbieter und
@@ -31,8 +33,9 @@ dasselbe Muster fortgesetzt, gegen das diese Strecke antritt.
 |---|---|---|---|
 | `agent.startArgs` | Freitext-Startparameter je CLI-Adapter (ersetzt das frühere `agent.skipPermissions`); Vorgabe `--dangerously-skip-permissions` für `claude-code` | ja — Settings-Fenster, Reiter „CLI-Start" | ja — Settings-Fenster |
 | `agent.modelTiers` | Tier → Modell-Handle (`light`/`standard`/`heavy`), Rückfall für einen leeren `tier:*`-Slot | ja — Settings-Fenster, Reiter „Modelle" (Rückfall-Handle je Tier), auch in der Prompt-Vorschau als aufgelöstes Modell | ja — Settings-Fenster |
-| `modelle.eintraege` / `modelle.zuordnung` | Der Modell-Registry: eigene und überschreibende Einträge, die **sechs** Zuordnungsslots | ja — Settings-Fenster, Reiter „Modelle" | ja — Settings-Fenster (anlegen, bearbeiten, löschen, zuordnen) |
+| `modelle.eintraege` / `modelle.zuordnung` | Der Modell-Registry: eigene und überschreibende Einträge, die **sieben** Zuordnungsslots | ja — Settings-Fenster, Reiter „Modelle" | ja — Settings-Fenster (anlegen, bearbeiten, löschen, zuordnen) |
 | `modelle.zuordnung.rollen.rechercheur` | Das Modell des **Rechercheur-Unterlaufs** (`recherchieren`). Bis 2026-08-22 erbte er das Modell des Hauptlaufs; damit war die Frage „welches Modell recherchiert am besten" nicht fahrbar. Leer heißt hier — anders als bei `tagging` und `worker` — **nicht** „nimm den `llm.*`-Endpunkt", sondern „nimm das Modell des Hauptlaufs"; einen eigenen Endpunkt gibt es für diese Rolle nicht. Gelesen wird je Lauf (`baueLaufUmgebung`), eine Änderung gilt also ab dem nächsten Lauf. Eine Zuordnung, die die eigene Schleife nicht fahren kann (cli-harness), fällt **benannt** auf den Rückfall zurück, statt den Lauf mitten im Werkzeugaufruf sterben zu lassen | ja — Settings-Fenster, Reiter „Modelle", Slot „Rolle Rechercheur — der abgeschottete Unterlauf" | ja — Settings-Fenster |
+| `modelle.zuordnung.sitzungen['niveau-b']` | Modell der Niveau-B-Gitterzelle | ja (Einstellungen → Modelle) | ja |
 | `modelle.eintraege[].faehigkeiten.sampler` | Die vier Sampler plus Denkstufe, die **allein der Codec `openai-chat`** je Anfrage mitschickt: `temperature`, `topP`, `presencePenalty`, `maxTokens`, `reasoningEffort`. `anthropicCodec.toWire` liest den Block nicht — bei jedem anderen Codec werden die Werte gespeichert, erreichen den Server aber nie; das Formular warnt dann an Ort und Stelle. Der Block ist optional; **ihn wegzulassen ist aber keine Enthaltung** (siehe unten) | ja — Settings-Fenster, Reiter „Modelle" → Eintrag bearbeiten → Block „Faehigkeitszeile" → Kontrollkaestchen „Sampler selbst setzen"; die fünf Felder erscheinen erst, wenn es angekreuzt ist | ja — Settings-Fenster |
 | `voice.enabled` | Sprachausgabe an/aus | ja — Settings-Fenster, Reiter „Sprachausgabe" | ja — Settings-Fenster |
 | `voice.piperVoice` | Stimme der Sprachausgabe | ja — Settings-Fenster, Reiter „Sprachausgabe" | ja — Settings-Fenster |

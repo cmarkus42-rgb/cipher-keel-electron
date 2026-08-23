@@ -16,9 +16,9 @@ import { configStore } from '../config/config-store'
 import { DEFAULT_EINTRAEGE } from './defaults'
 import { normaliseEintrag, type ModellEintrag } from './entry'
 import { sperrgrund } from './eignung'
-import { slotFuerTier, type Tier, type Rolle } from './slots'
+import { slotFuerTier, type Tier, type Rolle, type Sitzungsschluessel } from './slots'
 
-export type { Tier, Rolle } from './slots'
+export type { Tier, Rolle, Sitzungsschluessel } from './slots'
 
 /** One config entry that did not survive validation, with the reason it did not. */
 export interface EintragsBefund {
@@ -74,6 +74,10 @@ export function eintragFuerTier(tier: Tier): ModellEintrag | null {
 
 export function eintragFuerRolle(rolle: Rolle): ModellEintrag | null {
   return eintragNachId(configStore.get('modelle').zuordnung.rollen[rolle])
+}
+
+export function eintragFuerSitzung(schluessel: Sitzungsschluessel): ModellEintrag | null {
+  return eintragNachId(configStore.get('modelle').zuordnung.sitzungen[schluessel])
 }
 
 /** What resolving a tier's CLI handle produced. Never both fields absent and set at once. */

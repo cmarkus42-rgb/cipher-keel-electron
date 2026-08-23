@@ -15,10 +15,10 @@
  */
 
 import { ipcMain } from 'electron'
-import { configStore, type LlmEndpoint } from '../config/config-store'
+import { configStore, type LlmEndpoint, type CipherKeelConfig } from '../config/config-store'
 import { baueAnsicht } from '../model/ansicht'
 import { normaliseEintrag } from '../model/entry'
-import { slotFuerId, type Rolle } from '../model/slots'
+import { slotFuerId, type Rolle, type Tier, type Sitzungsschluessel, type Slot } from '../model/slots'
 import { storeInKeychain, keychainService } from '../worker/api-keys'
 import { normaliseEndpoint, type RawEndpoint } from '../worker/model-client'
 import { execFileAsync } from '../util/exec-util'
@@ -58,6 +58,39 @@ const EINFACHFELDER = new Set([
 /** Die Anbieter, die `waehleAnbieter` kennt. Leer heisst automatisch. */
 const ANBIETER = new Set(['', 'searxng', 'tavily', 'brave'])
 
+type Zuordnung = CipherKeelConfig['modelle']['zuordnung']
+
+/**
+ * Traegt eine Zuweisung in die Gruppe ein, die zum Slot gehoert — tier, rolle oder sitzung.
+ * Als reine Funktion herausgezogen, dem Muster von `pruefeAnhaenge` in harness-handlers.ts
+ * folgend: kein Test in diesem Repo erreicht `ipcMain`, ohne diese Extraktion bliebe der
+ * Handler ungeprueft. tests/settings/zuordnung-schreibpfad.test.ts prueft genau diese
+ * Konstruktion.
+ *
+ * Schreibt mit `{ ...bisher, <gruppe>: { ...bisher.<gruppe>, ... } }` statt die drei Gruppen
+ * einzeln neu aufzuzaehlen. Der Unterschied ist kein Stil, sondern die eigentliche Behebung:
+ * die vorige Fassung baute `{ tiers: {...}, rollen: {...} }` von Grund auf neu und nannte
+ * `sitzungen` darin nicht — jede Zuweisung an irgendeinen anderen Platz haette die
+ * Sitzungs-Zuordnungen dabei stillschweigend geloescht (deepMerge legt beim naechsten Laden
+ * nur die Vorgabe `''` nach, was wie „nie zugewiesen" aussieht, nicht wie ein Verlust). Ein
+ * Aufbau, der jede Gruppe unveraendert mitfuehrt und nur die eine anfasst, um die es geht,
+ * kann eine kuenftige vierte Gruppe nicht auf dieselbe Art vergessen.
+ */
+export function zuordnungMitPlatz(
+  bisher: Zuordnung, slot: Slot, eintragId: string,
+): Zuordnung {
+  if (slot.art === 'tier') {
+    return { ...bisher, tiers: { ...bisher.tiers, [slot.schluessel as Tier]: eintragId } }
+  }
+  if (slot.art === 'rolle') {
+    return { ...bisher, rollen: { ...bisher.rollen, [slot.schluessel as Rolle]: eintragId } }
+  }
+  return {
+    ...bisher,
+    sitzungen: { ...bisher.sitzungen, [slot.schluessel as Sitzungsschluessel]: eintragId },
+  }
+}
+
 export function registerSettingsHandlers(): void {
   ipcMain.handle(SETTINGS_ANSICHT, async () => baueAnsicht())
 
@@ -66,16 +99,10 @@ export function registerSettingsHandlers(): void {
       const slot = slotFuerId(slotId)
       if (!slot) throw new Error(`Unbekannter Zuordnungsplatz '${slotId}'.`)
       const modelle = configStore.get('modelle')
-      const zuordnung = {
-        tiers: { ...modelle.zuordnung.tiers },
-        rollen: { ...modelle.zuordnung.rollen },
-      }
-      if (slot.art === 'tier') {
-        zuordnung.tiers[slot.schluessel as 'light' | 'standard' | 'heavy'] = eintragId
-      } else {
-        zuordnung.rollen[slot.schluessel as Rolle] = eintragId
-      }
-      configStore.set('modelle', { ...modelle, zuordnung })
+      configStore.set('modelle', {
+        ...modelle,
+        zuordnung: zuordnungMitPlatz(modelle.zuordnung, slot, eintragId),
+      })
     })
   )
 

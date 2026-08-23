@@ -12,7 +12,7 @@ import { configStore } from '../config/config-store'
 import { DEFAULT_EINTRAEGE } from './defaults'
 import { ladeEintraege } from './registry'
 import { sperrgrund, warnungen } from './eignung'
-import { SLOTS, type Rolle, type Slot } from './slots'
+import { SLOTS, type Rolle, type Slot, type Sitzungsschluessel } from './slots'
 import type { ModellEintrag } from './entry'
 import { envVarName, readFromEnv, readFromKeychain } from '../worker/api-keys'
 import { splitShellArgs } from '../util/shell-quote'
@@ -91,11 +91,25 @@ function kurzfassung(roh: unknown): string {
   return text.length > 120 ? `Eintrag ${text.slice(0, 120)}…` : `Eintrag ${text}`
 }
 
+// Jede Art bekommt ihren eigenen Zweig, ausdruecklich an `slot.art` gebunden — keiner faellt
+// ueber ein "sonst" in einen anderen. Vor der Sitzungs-Art endete der Rolle-Zweig ohne eigene
+// Bedingung: "kein Tier" hiess dort stillschweigend "also eine Rolle", was so lange stimmte, wie
+// es nur zwei Arten gab. Fuer `art: 'sitzung'` waere das falsch gewesen — der Zweig haette
+// `configStore.get('llm')['niveau-b']` gelesen, ein Feld, das es nicht gibt, und waere an
+// `e.baseUrl` auf `undefined` zerschellt statt einen Rueckfalltext zu liefern.
 function rueckfallText(slot: Slot): string {
   if (slot.art === 'tier') {
     const handle = configStore.get('agent').modelTiers[slot.schluessel as 'light' | 'standard' | 'heavy']
     return `Keine Zuordnung — es gilt der Wert aus agent.modelTiers: '${handle}'.`
   }
+  if (slot.art === 'sitzung') {
+    return (
+      'Ohne Belegung startet keine Niveau-B-Zelle. Es gibt hier keinen Rueckfall: der ' +
+      'naechstliegende waere der Worker-Endpunkt, und der ist fuer einen einzelnen Job ' +
+      'bemessen, nicht fuer eine Sitzung.'
+    )
+  }
+  // Ab hier gilt slot.art === 'rolle'.
   // Der Rechercheur hat keinen `llm.*`-Endpunkt und soll keinen bekommen: sein Rueckfall ist das
   // Modell, das gerade den Hauptlauf faehrt (rechercheur.ts). Ein Rueckfalltext, der stattdessen
   // `llm.rechercheur` naehme, naennte einen Endpunkt, den es nicht gibt — und das Feld waere
@@ -115,7 +129,9 @@ function slotAnsicht(slot: Slot, eintraege: ModellEintrag[]): SlotAnsicht {
   const zuordnung = configStore.get('modelle').zuordnung
   const gewaehlt = slot.art === 'tier'
     ? zuordnung.tiers[slot.schluessel as 'light' | 'standard' | 'heavy']
-    : zuordnung.rollen[slot.schluessel as Rolle]
+    : slot.art === 'rolle'
+      ? zuordnung.rollen[slot.schluessel as Rolle]
+      : zuordnung.sitzungen[slot.schluessel as Sitzungsschluessel]
 
   const optionen: SlotOptionAnsicht[] = eintraege.map(e => ({
     eintragId: e.id,

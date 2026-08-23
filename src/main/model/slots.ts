@@ -1,5 +1,5 @@
 /**
- * slots — the five assignment slots, and the one place their runner and niveau are stated.
+ * slots — the seven assignment slots, and the one place their runner and niveau are stated.
  *
  * A slot's Laeufer is a property of the slot, never a user choice: a tier drives a CLI
  * harness, a role dispatches a single job. The settings surface therefore offers no runner
@@ -15,6 +15,12 @@ import { CapabilityNiveau } from '../preset/niveau'
 
 export type Tier = 'light' | 'standard' | 'heavy'
 export type Rolle = 'tagging' | 'worker' | 'rechercheur'
+/**
+ * Die dritte Art. Ein Tier faehrt ein CLI-Harness, eine Rolle verteilt einen einzelnen Job —
+ * eine Sitzung ist keines von beidem, und sie unter `rollen` zu haengen machte den Satz im
+ * Modulkopf falsch.
+ */
+export type Sitzungsschluessel = 'niveau-b'
 
 export type SlotId =
   | 'tier:light'
@@ -23,6 +29,7 @@ export type SlotId =
   | 'rolle:tagging'
   | 'rolle:worker'
   | 'rolle:rechercheur'
+  | 'sitzung:niveau-b'
 
 export interface Slot {
   id: SlotId
@@ -30,8 +37,8 @@ export interface Slot {
   beschriftung: string
   laeufer: Laeufer
   niveau: CapabilityNiveau
-  art: 'tier' | 'rolle'
-  schluessel: Tier | Rolle
+  art: 'tier' | 'rolle' | 'sitzung'
+  schluessel: Tier | Rolle | Sitzungsschluessel
   /**
    * When a change takes effect. Tiers are read at session launch
    * (ipc-handlers.ts), roles on every resolution (rollen.ts).
@@ -89,6 +96,24 @@ export const SLOTS: readonly Slot[] = [
     id: 'rolle:rechercheur', beschriftung: 'Rolle „Rechercheur" — der abgeschottete Unterlauf',
     laeufer: 'eigene-schleife', niveau: CapabilityNiveau.B,
     art: 'rolle', schluessel: 'rechercheur', wirkung: 'sofort',
+  },
+  /**
+   * Die Niveau-B-Sitzung im Gitter (agent/adapters/keel-harness.ts). Der einzige Platz, dessen
+   * Laeufer eine ganze Sitzung traegt statt eines einzelnen Zuges oder Jobs.
+   *
+   * `wirkung: 'naechste-session'` wie bei den Tiers: gelesen wird beim Zellenstart. Mitten in
+   * einem laufenden Auftrag das Modell zu wechseln, verwuerfe dessen Praefix-Zwischenspeicher.
+   *
+   * **Kein Rueckfall bei leerem Platz** — anders als `rolle:rechercheur`, wo das Modell des
+   * Hauptlaufs einspringt. Der naechstliegende Rueckfall waere hier `llm.worker`, und das ist
+   * ein Ein-Schuss-Endpunkt fuer einen einzelnen Job, keine Sitzung. ansicht.ts sagt das im
+   * Rueckfalltext, und der Start scheitert benannt (session/schleifen-start.ts).
+   */
+  {
+    id: 'sitzung:niveau-b',
+    beschriftung: 'Sitzung „Niveau B" — die eigene Schleife im Gitter',
+    laeufer: 'eigene-schleife', niveau: CapabilityNiveau.B,
+    art: 'sitzung', schluessel: 'niveau-b', wirkung: 'naechste-session',
   },
 ]
 

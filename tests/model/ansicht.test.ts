@@ -33,9 +33,9 @@ describe('Ansichtsmodell', () => {
   const slot = (a: SettingsAnsicht, id: string) => a.slots.find(s => s.id === id)!
   const codes = (a: SettingsAnsicht, id: string) => slot(a, id).warnungen.map(w => w.code)
 
-  it('liefert sechs Slots und alle gebuendelten Eintraege', async () => {
+  it('liefert sieben Slots und alle gebuendelten Eintraege', async () => {
     const a = await ansichtMit(null)
-    expect(a.slots).toHaveLength(6)
+    expect(a.slots).toHaveLength(7)
     expect(a.eintraege.map(e => e.id)).toContain('openrouter-qwen3-coder')
   })
 
