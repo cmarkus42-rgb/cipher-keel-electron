@@ -1303,8 +1303,13 @@ export function baueSchleifenSitzung(args: {
     praefix: {
       body: args.def.body,
       persona: args.def.persona ?? '',
-      // Leer, solange das Preset keine Faehigkeitspakete traegt. Ein Platzhaltertext waere ein
-      // Byte im stabilen Praefix, das nichts sagt.
+      // Leer, und zwar dauerhaft: die Faehigkeiten dieser Entitaet erreichen das Modell NICHT
+      // ueber dieses Feld, sondern ueber die Faehigkeitswurzel. `materialiseCapabilities`
+      // schreibt sie nach `.claude/capabilities/`, `leseFaehigkeiten` findet sie dort, und
+      // `baueStabilenTeil` setzt Name und Beschreibung als Stummel in den Praefix — der Rumpf
+      // kommt auf Abruf ueber `faehigkeit_lesen`. Den vollen Text hier einzusetzen hiesse, das
+      // aufgeschobene Laden zu umgehen und jeden Zug fuer Text zu bezahlen, den das Modell in
+      // den meisten Zuegen nicht braucht.
       capabilities: '',
       globaleRegeln: getGlobalRules(args.def.rahmen.capabilityNiveau),
     },
@@ -1334,11 +1339,18 @@ In `src/main/ipc-handlers.ts` das `isAvailable`-Tor ersetzen:
 und hinter `const def = getEntityDefinition(...)` den Fork einziehen, **vor** `materialiseCapabilities`:
 
 ```ts
-      // Ab hier trennen sich die beiden Sitzungsarten. Der Schleifen-Weg schreibt weder
-      // .claude/capabilities/ ins Projekt noch eine Prompt-Datei: beides existiert fuer ein CLI,
-      // das dort nachliest. keels Schleife bekommt den zusammengesetzten Body ueber den stabilen
-      // Praefix (harness-praefix-quelle.ts), und dieselben Dateien ins Projekt zu schreiben waere
-      // eine Nebenwirkung ohne Verbraucher.
+      // Ab hier trennen sich die beiden Sitzungsarten — aber weniger weit, als dieser Plan
+      // zuerst behauptete. `materialiseCapabilities` laeuft auf BEIDEN Wegen: es schreibt nach
+      // `<projekt>/.claude/capabilities/`, und genau dort liest `leseFaehigkeiten` (WURZELN =
+      // ['skills','capabilities']), der Faehigkeitsleser von keels eigener Schleife. Der
+      // Verbraucher, den die urspruengliche Fassung fuer nicht existent hielt, ist die Schleife
+      // selbst. Die Faehigkeiten erreichen das Modell damit ueber das aufgeschobene Laden des
+      // Harness — Stummel im stabilen Praefix, Rumpf auf Abruf ueber `faehigkeit_lesen` — statt
+      // ueber den vollen Text im zwischengespeicherten Praefix.
+      //
+      // Was auf dem Schleifen-Weg wirklich entfaellt: `writeEntityPromptFile` (der Body geht
+      // ueber `assemblePraefixTeile` hinein, nicht ueber Datei plus Kommandozeilenschalter) und
+      // der ganze Pane samt `buildLaunchCommand`.
       if (istSchleifenAdapter(adapter)) {
         const gebaut = baueSchleifenSitzung({
           name, cwd, entityId, def, eintrag: eintragFuerSitzung('niveau-b'),
