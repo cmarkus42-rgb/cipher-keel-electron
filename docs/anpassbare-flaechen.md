@@ -1,6 +1,9 @@
 # Anpassbare Flächen — Inventar (CK-NFR-012)
 
-**Stand:** 2026-08-23 — neuer Zuordnungsplatz `sitzung:niveau-b` (keels eigene Agentenschleife
+**Stand:** 2026-08-23 — `FOLGE_RESERVE` benannt (die Schwelle, ab der ein Folgeauftrag noch in
+denselben Lauf darf statt einen neuen zu öffnen; nicht editierbar, geschätzt statt gemessen —
+siehe Abschnitt „Die vier Lauf-Budgets" unten). Davor am selben Tag der neue Zuordnungsplatz
+`sitzung:niveau-b` (keels eigene Agentenschleife
 im Gitter bekommt eine eigene Modellzuweisung statt keiner; kein Rückfall bei leerem Platz,
 siehe Zeile unten). Davor 2026-08-22, der GPU-Zugriff des Spark-Containers benannt (er geht bei jedem `daemon-reload` verloren und verfälscht dann jede Zeitmessung); der Netzfilter der Maschine benannt (er hält Erstkontakte und verfälscht jede Messung); neuer Zuordnungsplatz `rolle:rechercheur` (das Modell des Unterlaufs war
 an den Hauptlauf gekoppelt); der Nachschlage-Weg beschränkt jetzt die **Suchanfrage** und filtert die
@@ -402,6 +405,14 @@ Das ist eine anpassbare Flaeche ohne Oberflaeche im Sinne von CK-NFR-012, ehrlic
 verschwiegen: Wer ein Rundenbudget, ein Zeitbudget, ein Kostenbudget oder einen Kontextanteil
 abweichend vom Vorgabewert braucht, muss heute Quelltext aendern und die App neu bauen. Ein
 Budget-Feld im Harness-Fenster ist Folgearbeit, keine dieser Strecke.
+
+`FOLGE_RESERVE` bildet aus genau diesen vier Budgets die Schwelle, ab der ein Folgeauftrag noch
+in denselben Lauf darf (`src/main/harness/fortsetzbarkeit.ts`, `weiterOderFrisch`), und ist
+ebenso wenig editierbar — mit dem Unterschied, dass hinter dem Wert keine Messung steht:
+
+| Fläche | Wirkung | In der App sichtbar | Editierbar |
+|---|---|---|---|
+| `FOLGE_RESERVE` (`src/main/harness/fortsetzbarkeit.ts`) | Wie viel Budget frei sein muss, damit ein Folgeauftrag in denselben Lauf geht statt einen neuen zu oeffnen | nein | nein — geschaetzt, nicht gemessen |
 
 ---
 
