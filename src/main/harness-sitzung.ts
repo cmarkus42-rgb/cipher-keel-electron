@@ -40,6 +40,7 @@ import {
 } from './harness'
 import type { ModelAntwort, Auftrag, LaufUmgebung } from './harness'
 import type { AppServices } from './window-manager'
+import type { EntitaetsTeile } from './agent/agent-adapter'
 
 let db: ReturnType<typeof oeffneHarnessDb> | null = null
 /** Run ids marked for cancellation. Read at the loop's turn boundary, never mid-request (9.1). */
@@ -235,6 +236,7 @@ export function rechercheurModell(): LaufUmgebung['rechercheurModell'] {
 export async function baueLaufUmgebung(
   laufId: string, eintrag: ModellEintrag, auftragstext: string, wurzel: string,
   services: AppServices, aufJedesEreignis: (ev: HarnessEreignis) => void,
+  entitaet?: EntitaetsTeile,
 ): Promise<LaufUmgebung> {
   // Gelesen wird beim Bau der Umgebung, einmal je Lauf — nicht je Zug: der stabile Praefix muss
   // ueber alle Zuege zeichengleich bleiben, und ein Leser, der pro Zug wieder auf die Platte geht,
@@ -250,7 +252,7 @@ export async function baueLaufUmgebung(
   return {
     db: harnessDb(),
     eintrag,
-    praefixTeile: assemblePraefixTeile(auftragstext, befund.faehigkeiten),
+    praefixTeile: assemblePraefixTeile(auftragstext, befund.faehigkeiten, entitaet),
     wache: { wurzel, heim: homedir(), userDataPfad: app.getPath('userData') },
     graphDb: services.graphDb,
     registry: baueWerkzeugRegistry(),
@@ -403,6 +405,7 @@ export async function starteHarnessLauf(args: {
   wurzel: string
   services: AppServices
   anhaenge?: string[]
+  entitaet?: EntitaetsTeile
   /** Laeuft nach dem Ende des Laufs — egal ob Erfolg, Fehler oder Abbruch. */
   beiEnde?: () => void
 }): Promise<void> {
@@ -426,7 +429,7 @@ export async function starteHarnessLauf(args: {
     // writes it before entering the loop. Once it lands, startup has succeeded.
     await baueLaufUmgebung(laufId, eintrag, auftragstext, wurzel, services, () => {
       if (markiereGestartet) { markiereGestartet(); markiereGestartet = null }
-    }),
+    }, args.entitaet),
     laufId,
   )
 
