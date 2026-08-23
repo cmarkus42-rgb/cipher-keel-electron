@@ -1,6 +1,11 @@
 # Anpassbare Flächen — Inventar (CK-NFR-012)
 
-**Stand:** 2026-08-22 — der GPU-Zugriff des Spark-Containers benannt (er geht bei jedem `daemon-reload` verloren und verfälscht dann jede Zeitmessung); der Netzfilter der Maschine benannt (er hält Erstkontakte und verfälscht jede Messung); neuer Zuordnungsplatz `rolle:rechercheur` (das Modell des Unterlaufs war
+**Stand:** 2026-08-23 — `FOLGE_RESERVE` benannt (die Schwelle, ab der ein Folgeauftrag noch in
+denselben Lauf darf statt einen neuen zu öffnen; nicht editierbar, geschätzt statt gemessen —
+siehe Abschnitt „Die vier Lauf-Budgets" unten). Davor am selben Tag der neue Zuordnungsplatz
+`sitzung:niveau-b` (keels eigene Agentenschleife
+im Gitter bekommt eine eigene Modellzuweisung statt keiner; kein Rückfall bei leerem Platz,
+siehe Zeile unten). Davor 2026-08-22, der GPU-Zugriff des Spark-Containers benannt (er geht bei jedem `daemon-reload` verloren und verfälscht dann jede Zeitmessung); der Netzfilter der Maschine benannt (er hält Erstkontakte und verfälscht jede Messung); neuer Zuordnungsplatz `rolle:rechercheur` (das Modell des Unterlaufs war
 an den Hauptlauf gekoppelt); der Nachschlage-Weg beschränkt jetzt die **Suchanfrage** und filtert die
 Treffer, nicht erst den Abruf; die Zeilen zum Reiter „Netz" nachgeführt, die noch „noch kein
 Config-Schlüssel" sagten. Davor 2026-08-21, Netz-Werkzeuge (Vorgabe-Positivliste, Suchanbieter und
@@ -31,8 +36,9 @@ dasselbe Muster fortgesetzt, gegen das diese Strecke antritt.
 |---|---|---|---|
 | `agent.startArgs` | Freitext-Startparameter je CLI-Adapter (ersetzt das frühere `agent.skipPermissions`); Vorgabe `--dangerously-skip-permissions` für `claude-code` | ja — Settings-Fenster, Reiter „CLI-Start" | ja — Settings-Fenster |
 | `agent.modelTiers` | Tier → Modell-Handle (`light`/`standard`/`heavy`), Rückfall für einen leeren `tier:*`-Slot | ja — Settings-Fenster, Reiter „Modelle" (Rückfall-Handle je Tier), auch in der Prompt-Vorschau als aufgelöstes Modell | ja — Settings-Fenster |
-| `modelle.eintraege` / `modelle.zuordnung` | Der Modell-Registry: eigene und überschreibende Einträge, die **sechs** Zuordnungsslots | ja — Settings-Fenster, Reiter „Modelle" | ja — Settings-Fenster (anlegen, bearbeiten, löschen, zuordnen) |
+| `modelle.eintraege` / `modelle.zuordnung` | Der Modell-Registry: eigene und überschreibende Einträge, die **sieben** Zuordnungsslots | ja — Settings-Fenster, Reiter „Modelle" | ja — Settings-Fenster (anlegen, bearbeiten, löschen, zuordnen) |
 | `modelle.zuordnung.rollen.rechercheur` | Das Modell des **Rechercheur-Unterlaufs** (`recherchieren`). Bis 2026-08-22 erbte er das Modell des Hauptlaufs; damit war die Frage „welches Modell recherchiert am besten" nicht fahrbar. Leer heißt hier — anders als bei `tagging` und `worker` — **nicht** „nimm den `llm.*`-Endpunkt", sondern „nimm das Modell des Hauptlaufs"; einen eigenen Endpunkt gibt es für diese Rolle nicht. Gelesen wird je Lauf (`baueLaufUmgebung`), eine Änderung gilt also ab dem nächsten Lauf. Eine Zuordnung, die die eigene Schleife nicht fahren kann (cli-harness), fällt **benannt** auf den Rückfall zurück, statt den Lauf mitten im Werkzeugaufruf sterben zu lassen | ja — Settings-Fenster, Reiter „Modelle", Slot „Rolle Rechercheur — der abgeschottete Unterlauf" | ja — Settings-Fenster |
+| `modelle.zuordnung.sitzungen['niveau-b']` | Modell der Niveau-B-Gitterzelle. Gelesen beim Zellenstart (`wirkung: naechste-session`, wie bei den Tiers) — eine Änderung wirkt erst auf die nächste Zelle. **Kein Rückfall bei leerem Platz**: anders als bei den Rollen gibt es hier keinen Endpunkt, der einspringt; ohne Zuordnung startet keine Niveau-B-Zelle | ja (Einstellungen → Modelle) | ja |
 | `modelle.eintraege[].faehigkeiten.sampler` | Die vier Sampler plus Denkstufe, die **allein der Codec `openai-chat`** je Anfrage mitschickt: `temperature`, `topP`, `presencePenalty`, `maxTokens`, `reasoningEffort`. `anthropicCodec.toWire` liest den Block nicht — bei jedem anderen Codec werden die Werte gespeichert, erreichen den Server aber nie; das Formular warnt dann an Ort und Stelle. Der Block ist optional; **ihn wegzulassen ist aber keine Enthaltung** (siehe unten) | ja — Settings-Fenster, Reiter „Modelle" → Eintrag bearbeiten → Block „Faehigkeitszeile" → Kontrollkaestchen „Sampler selbst setzen"; die fünf Felder erscheinen erst, wenn es angekreuzt ist | ja — Settings-Fenster |
 | `voice.enabled` | Sprachausgabe an/aus | ja — Settings-Fenster, Reiter „Sprachausgabe" | ja — Settings-Fenster |
 | `voice.piperVoice` | Stimme der Sprachausgabe | ja — Settings-Fenster, Reiter „Sprachausgabe" | ja — Settings-Fenster |
@@ -393,12 +399,20 @@ dort ist die netzwache Pflicht.
 
 | Fläche | Herkunft | Wirkung | In der App sichtbar | Editierbar |
 |---|---|---|---|---|
-| `STANDARD_BUDGETS` (Runden, Wanduhr in ms, Kosten in Cent, Kontextanteil 0..1) | `src/main/harness-handlers.ts`, Konstante `STANDARD_BUDGETS` | Jeder Lauf ueber `HARNESS_LAUF_STARTEN` bekommt exakt dieselben vier Budgets — es gibt noch kein Fenster-Feld, das sie je Lauf setzt (siehe Kommentar an der Konstante: „Placeholder until the harness window can set its own budgets"). `src/main/harness/budget.ts`s `pruefeBudgets` prueft danach gegen genau diese Werte. | nein | **nein — heute nur durch Aendern der Konstante und Neubau der App.** Der Beleg dafuer steht im Messprotokoll (`docs/superpowers/plans/2026-08-18-harness-kern.md`, Beleg 7): fuer die Budget-Probe wurde `STANDARD_BUDGETS.runden` von `12` auf `2` gesetzt, die App neu gebaut, geprueft, danach zurueckgesetzt und erneut gebaut. |
+| `STANDARD_BUDGETS` (Runden, Wanduhr in ms, Kosten in Cent, Kontextanteil 0..1) | `src/main/harness-sitzung.ts`, Konstante `STANDARD_BUDGETS` | Jeder Lauf ueber `HARNESS_LAUF_STARTEN` bekommt exakt dieselben vier Budgets — es gibt noch kein Fenster-Feld, das sie je Lauf setzt (siehe Kommentar an der Konstante: „Placeholder until the harness window can set its own budgets"). `src/main/harness/budget.ts`s `pruefeBudgets` prueft danach gegen genau diese Werte. | nein | **nein — heute nur durch Aendern der Konstante und Neubau der App.** Der Beleg dafuer steht im Messprotokoll (`docs/superpowers/plans/2026-08-18-harness-kern.md`, Beleg 7): fuer die Budget-Probe wurde `STANDARD_BUDGETS.runden` von `12` auf `2` gesetzt, die App neu gebaut, geprueft, danach zurueckgesetzt und erneut gebaut. |
 
 Das ist eine anpassbare Flaeche ohne Oberflaeche im Sinne von CK-NFR-012, ehrlich gefuehrt statt
 verschwiegen: Wer ein Rundenbudget, ein Zeitbudget, ein Kostenbudget oder einen Kontextanteil
 abweichend vom Vorgabewert braucht, muss heute Quelltext aendern und die App neu bauen. Ein
 Budget-Feld im Harness-Fenster ist Folgearbeit, keine dieser Strecke.
+
+`FOLGE_RESERVE` bildet aus genau diesen vier Budgets die Schwelle, ab der ein Folgeauftrag noch
+in denselben Lauf darf (`src/main/harness/fortsetzbarkeit.ts`, `weiterOderFrisch`), und ist
+ebenso wenig editierbar — mit dem Unterschied, dass hinter dem Wert keine Messung steht:
+
+| Fläche | Wirkung | In der App sichtbar | Editierbar |
+|---|---|---|---|
+| `FOLGE_RESERVE` (`src/main/harness/fortsetzbarkeit.ts`) | Wie viel Budget frei sein muss, damit ein Folgeauftrag in denselben Lauf geht statt einen neuen zu oeffnen | nein | nein — geschaetzt, nicht gemessen |
 
 ---
 
@@ -422,7 +436,7 @@ Budget-Feld im Harness-Fenster ist Folgearbeit, keine dieser Strecke.
 | ~~`OLLAMA_HOST` auf dem Spark~~ — **erledigt 2026-08-14**, und anders als hier beschrieben: Ollama läuft dort im Container mit `OLLAMA_HOST=0.0.0.0`, zu war allein Dockers Host-Bindung. Der Container ist jetzt auf die Tailscale-Adresse gebunden | Docker auf fremdem Host | ja, mit Zugang — **war es** |
 | systemd-Drop-in `After=tailscaled.service` auf dem Spark | systemd, **braucht root** | nein — kein passwortloses `sudo` dort |
 | `llm.worker.model` und ggf. Host setzen | Config-Datei | **nein** — keine Oberfläche (CK-NFR-012) |
-| Niveau-B-Harness einrichten | noch kein Trägercode — keel baut sein eigenes Harness erst noch (siehe unten) | **offen** — es gibt noch nichts, das man einrichten müsste |
+| Niveau-B-Harness einrichten | gebaut (siehe unten) — keine Fremdinstallation, die Einrichtung ist die Modellzuweisung im Zuordnungsplatz `sitzung:niveau-b` | **erledigt** — die Zuweisung läuft über das Settings-Fenster (siehe Modell-Layer oben) |
 
 ## Der Konflikt, der die Harness-Entscheidung ausgelöst hat — gelöst, nicht verschwunden (CK-NFR-013)
 
@@ -443,19 +457,21 @@ keine Fremdinstallation, die einer Claude-Code-Session grundsätzlich verboten w
 Konflikt mit CK-NFR-013 entfällt damit strukturell statt durch einen Kompromiss. Das ist der
 Grund, warum es dieses Harness gibt, nicht nur eine Umbenennung des Trägers. Der NanoClaw-
 Bestand selbst ist am 2026-08-17 aus dem Repo entfernt worden (Rückbau, siehe
-`docs/superpowers/specs/2026-08-17-nanoclaw-rueckbau-design.md`); die Einrichtung des neuen
-Harness ist eigener, noch offener Bau-Strang (siehe „Was fehlt" unten).
+`docs/superpowers/specs/2026-08-17-nanoclaw-rueckbau-design.md`); das neue Harness ist seit
+2026-08-23 gebaut, mit der Modellzuweisung im Zuordnungsplatz `sitzung:niveau-b` als seiner
+Einrichtung (siehe „Was fehlt" unten) — kein eigener Bau-Strang mehr.
 
 ## Was fehlt
 
-- **Das Niveau-B-Harness und sein Einrichtungspfad.** Ersetzt NanoClaw als Träger (siehe
-  CK-NFR-013 oben); der `nanoclaw-skill`-Ladeweg bleibt bestehen, aber das eigene Harness
-  selbst — wie es eingerichtet und ohne Fremdinstallation betrieben wird — ist noch nicht
-  gebaut. Eigener Bau-Strang.
+- ~~Das Niveau-B-Harness und sein Einrichtungspfad.~~ — **erledigt 2026-08-23.** Das eigene
+  Harness (Harness-Kern, `keel-harness`-Adapter, `keel-Arbeiter`-Preset) ersetzt NanoClaw als
+  Träger (siehe CK-NFR-013 oben) und läuft ohne Fremdinstallation; Einrichtung ist die
+  Modellzuweisung im Zuordnungsplatz `sitzung:niveau-b` (Settings-Fenster, siehe Modell-Layer
+  oben) — kein eigener Bau-Strang mehr.
 - **Editierbarkeit generell.** Sie braucht ein Overlay-Verzeichnis für nutzereigene
   Fassungen, eine Vorrangregel gegenüber den gebündelten Inhalten und eine Validierung.
   Eigene Phase.
 - ~~Eine Einstellungsoberfläche.~~ — **erledigt 2026-08-17.** Das Settings-Fenster deckt die
   Einstellungen-Tabelle oben ab. Weiterhin nicht editierbar: die Prompt-Schichten und
-  Preset-Eigenschaften (siehe die Tabellen dort) und das Niveau-B-Harness, das es noch
-  nicht gibt.
+  Preset-Eigenschaften (siehe die Tabellen dort) sowie das Niveau-B-Harness selbst (gebaut seit
+  2026-08-23; seine vier Lauf-Budgets bleiben hart verdrahtet, siehe Tabelle oben).

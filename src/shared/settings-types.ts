@@ -119,7 +119,10 @@ export interface SlotAnsicht {
   warnungen: WarnungAnsicht[]
   /**
    * German, non-null when the current assignment cannot be used: the entry is locked for
-   * this slot, or it names an id nothing defines. In both cases the fallback applies.
+   * this slot, or it names an id nothing defines. Ends with the same sentence `rueckfallText`
+   * below carries — for most slots that names the fallback value which applies instead; for
+   * a slot with none (`sitzung:niveau-b`) it says so plainly, since the renderer shows
+   * `rueckfallText` on its own only while the slot is empty, never alongside this hint.
    *
    * The renderer displays this instead of reconciling `gewaehlt` against `optionen`
    * itself. Reconciling is a rule, and rules do not cross this boundary.

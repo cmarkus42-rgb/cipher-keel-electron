@@ -24,6 +24,8 @@ import {
   SESSION_LIST,
   SESSION_CREATE,
   SESSION_DESTROY,
+  SESSION_AUFTRAG,
+  SESSION_STATUS_CHANGED,
   PRESET_PREVIEW_PROMPT,
   TERMINAL_DATA_OUTBOUND,
   TERMINAL_RESIZE,
@@ -112,7 +114,7 @@ import { registerWindow, broadcast } from './event-bus'
 import { normalizeToP1Format } from './p1/normalizer'
 import { getEntityDefinition, getEntityRahmen } from './preset/registry'
 import { resolveModel, tierAus } from './session/model-resolver'
-import { cliHandleFuerTier } from './model/registry'
+import { cliHandleFuerTier, eintragFuerSitzung } from './model/registry'
 import { getGlobalRules } from './preset/global-rules'
 import { getCapabilityPackages } from './preset/capabilities'
 import { CapabilityNiveau } from './preset/niveau'
@@ -123,7 +125,12 @@ import { materialiseCapabilities } from './session/materialise-capabilities'
 import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-file'
 import { formatShellCommand, splitShellArgs } from './util/shell-quote'
 import { AdapterRegistry } from './agent/registry'
-import { describeMissingTool } from './util/missing-tool'
+import { istSchleifenAdapter, SITZUNG_EIGENE_SCHLEIFE, type EntitaetsTeile } from './agent/agent-adapter'
+import { neuesRegister, pruefeZelleFrei, type SchleifenZelle } from './session/schleifen-sitzungen'
+import { baueSchleifenSitzung } from './session/schleifen-start'
+import { harnessDb } from './harness-sitzung'
+import { lesen } from './harness'
+import type { SessionStatusChanged } from '../shared/harness-types'
 
 // Tracks the active grid window for focus-or-create logic (CK-UI-002)
 let activeGridWindow: BrowserWindow | null = null
@@ -132,6 +139,19 @@ let activeSettingsWindow: BrowserWindow | null = null
 // Tracks the active harness window for focus-or-create logic
 let activeHarnessWindow: BrowserWindow | null = null
 
+// The grid cells of keel's own loop (SchleifenSitzungsAdapter). Module-level like
+// activeGridWindow above: the main process is the one and only source of cell state (see
+// schleifen-sitzungen.ts) — a per-call registry would let two SESSION_CREATE calls race
+// past each other without ever seeing the other's cell.
+const schleifenZellen = neuesRegister()
+/**
+ * The prefix parts per cell, taken from the entity definition. Kept separate from the
+ * register because they never reach the renderer: it sees events, never a provider, never
+ * an endpoint, never a capability row (shared/harness-types.ts) — and a prompt body or
+ * persona is exactly that kind of content.
+ */
+const praefixJeZelle = new Map<string, EntitaetsTeile>()
+
 export function registerIpcHandlers(services: AppServices): void {
   // The registry demands its config reader — see Task 6. This is the one place that has
   // both Electron and the ConfigStore loaded, which is why the reading happens here and
@@ -139,7 +159,7 @@ export function registerIpcHandlers(services: AppServices): void {
   const adapterRegistry = new AdapterRegistry({
     getStartArgs: (adapterId: string) =>
       splitShellArgs(configStore.get('agent').startArgs[adapterId] ?? ''),
-  })
+  }, services)
 
   // Project manager — wired to configStore for persistence (CK-INF-020)
   const projectManager = new ProjectManager(
@@ -213,9 +233,11 @@ export function registerIpcHandlers(services: AppServices): void {
         return {
           id: null,
           name: null,
-          error: adapter.id === 'claude-code'
-            ? describeMissingTool('claude')
-            : `Adapter '${adapter.displayName}' is not available — session not started`,
+          // The adapter knows why it is unavailable; the fallback only fires if an
+          // adapter reports unavailable and stays silent about why, which would be a
+          // contract violation on its side, not a case this handler should invent text for.
+          error: adapter.nichtVerfuegbarGrund() ??
+            `Adapter '${adapter.displayName}' ist nicht verfuegbar — Sitzung nicht gestartet`,
         }
       }
 
@@ -226,11 +248,76 @@ export function registerIpcHandlers(services: AppServices): void {
         return { id: null, name: null, error: `Unknown entity '${entityId}'` }
       }
 
+      // From here the two Sitzungsarten fork — but less far than an earlier draft of this
+      // plan claimed. materialiseCapabilities runs on BOTH paths: it writes to
+      // `<project>/.claude/capabilities/`, and that is exactly what `leseFaehigkeiten`
+      // (WURZELN = ['skills', 'capabilities'] in harness/faehigkeiten.ts), keel's own
+      // loop's capability reader, reads from. The consumer that draft thought did not
+      // exist is the loop itself: its capabilities reach the model through the harness's
+      // own lazy loading — a name/description stub in the stable prefix, the body on
+      // demand via `faehigkeit_lesen` — instead of the full text in a cached prefix.
+      //
+      // What genuinely drops on the loop path: `writeEntityPromptFile` (the body enters
+      // via `assemblePraefixTeile`, not a file plus a command-line flag) and the whole
+      // pane, `buildLaunchCommand` included.
+      //
+      // Order matters here, and it is the same "gate before any file is written" rule as
+      // isAvailable() above, one step later: baueSchleifenSitzung runs FIRST, purely, and
+      // returns before materialiseCapabilities ever touches disk if the sitzung:niveau-b
+      // slot is empty. Only once that gate is past does the (single) materialiseCapabilities
+      // call below run — shared by both Sitzungsarten rather than written out twice, so the
+      // two copies cannot drift the way two hand-written copies of the same call would.
+      let schleifenTeile: { zelle: SchleifenZelle; praefix: EntitaetsTeile } | null = null
+      if (istSchleifenAdapter(adapter)) {
+        const gebaut = baueSchleifenSitzung({
+          name, cwd, entityId, def, eintrag: eintragFuerSitzung('niveau-b'),
+        })
+        if (!gebaut.ok) return { id: null, name: null, error: gebaut.meldung }
+        schleifenTeile = { zelle: gebaut.zelle, praefix: gebaut.praefix }
+      }
+
       const materialised = materialiseCapabilities(def.rahmen.capabilityAnbindung, cwd)
       if (materialised.unknown.length > 0) {
         console.warn(
           `[ipc] entity '${entityId}': no SKILL.md asset for ${materialised.unknown.join(', ')}`
         )
+      }
+
+      if (schleifenTeile) {
+        schleifenZellen.setze(schleifenTeile.zelle)
+        praefixJeZelle.set(name, schleifenTeile.praefix)
+
+        if (ctx && services.graphWriter) {
+          try {
+            writeSessionNode(services.graphWriter, { ...ctx, name })
+          } catch (err) {
+            console.warn('[ipc] session node write failed:', err)
+          }
+        }
+        // Deliberately the imported constant here, not its own string value written out —
+        // laeuferHeimat (tests/model/eignung-einzige-quelle.test.ts) only allows that
+        // Laeufer literal in eignung.ts, slots.ts and agent-adapter.ts.
+        //
+        // eintragId ist der Registry-Eintrag, den baueSchleifenSitzung aus dem
+        // 'sitzung:niveau-b'-Zuordnungsplatz aufgeloest und in die Zelle geschrieben hat (siehe
+        // SchleifenZelle in schleifen-sitzungen.ts) — nicht der Platz selbst. Der Renderer zeigt
+        // damit im Zellenkopf, was diese Zelle tatsaechlich faehrt, auch wenn der Platz spaeter
+        // umbelegt wird: 'naechste-session' (model/slots.ts) heisst, die naechste NEUE Zelle
+        // bekommt die Aenderung, diese hier nicht mehr.
+        return {
+          id: name, name, error: null, sitzungsart: SITZUNG_EIGENE_SCHLEIFE,
+          eintragId: schleifenTeile.zelle.eintragId, hinweis: null,
+        }
+      }
+
+      // istSchleifenAdapter(adapter) already returned above for every loop adapter that
+      // reaches this line (see schleifenTeile) — this re-states that for the type checker,
+      // which cannot follow the narrowing through the intervening materialiseCapabilities
+      // call and the `schleifenTeile` check. Also a real safety net, not just a cast: if
+      // that invariant ever breaks, this throws instead of handing a loop adapter to
+      // buildLaunchCommand, a method it does not implement.
+      if (istSchleifenAdapter(adapter)) {
+        throw new Error('[ipc] unreachable: Schleifen-Adapter erreichte den Fremdes-CLI-Pfad')
       }
 
       const prompt = assembleEntityClaudeMd({
@@ -295,6 +382,34 @@ export function registerIpcHandlers(services: AppServices): void {
 
   ipcMain.handle(SESSION_DESTROY, async (_event, name: string) => {
     try {
+      const zelle = schleifenZellen.hole(name)
+      if (zelle) {
+        // If one is running, it ends at the next turn boundary — like every abort — and
+        // writes its own run.finished to the log. The cell is already gone by then; the
+        // log stays readable in the harness window. That is more honest than leaving the
+        // cell standing until the run ends and pretending it is still there.
+        if (zelle.laufId && zelle.zustand === 'laeuft') {
+          const adapter = adapterRegistry.get('keel-harness')
+          if (adapter && istSchleifenAdapter(adapter)) {
+            adapter.brichAb(zelle.laufId)
+          } else {
+            // Nothing silently swallowed, even for a branch believed unreachable today
+            // (registerIpcHandlers always registers 'keel-harness'): KeelHarnessAdapter's
+            // own brichAb() logs a failed abort from inside itself (its dynamic-import
+            // .catch) — this is the sibling case, the lookup failing before brichAb is ever
+            // called, and without this branch that failure would vanish along with the
+            // cell being removed two lines below.
+            console.error(
+              `[ipc] Zelle '${name}' hatte einen laufenden Auftrag (${zelle.laufId}), aber ` +
+              `der keel-harness-Adapter war nicht auffindbar oder keine Schleife — Abbruch ` +
+              `nicht gesetzt.`
+            )
+          }
+        }
+        schleifenZellen.entferne(name)
+        praefixJeZelle.delete(name)
+        return { ok: true, error: null }
+      }
       services.tmux.unwatchSession(name)
       await services.tmux.killSession(name)
       removeEntityPromptFile(app.getPath('userData'), name)
@@ -302,6 +417,95 @@ export function registerIpcHandlers(services: AppServices): void {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       return { ok: false, error: msg }
+    }
+  })
+
+  // Ein Auftrag an eine Niveau-B-Gitterzelle — der Sender von SESSION_STATUS_CHANGED. Der Hoerer
+  // sitzt im Renderer (index.tsx, Task 10) und schreibt zustand/laufId/letzterEndzustand direkt
+  // aus dieser Nutzlast in den Gitterplatz, ohne etwas davon aus dem Ereignisstrom abzuleiten.
+  ipcMain.handle(SESSION_AUFTRAG, async (_e, args: { name?: string; auftragstext?: string }) => {
+    const name = typeof args?.name === 'string' ? args.name : ''
+    const text = typeof args?.auftragstext === 'string' ? args.auftragstext.trim() : ''
+    if (text === '') return { ok: false, meldung: 'Der Auftrag ist leer.' }
+
+    const frei = pruefeZelleFrei(name, schleifenZellen)
+    if (!frei.ok) return { ok: false, meldung: frei.meldung }
+
+    const adapter = adapterRegistry.get('keel-harness')
+    if (!adapter || !istSchleifenAdapter(adapter)) {
+      return { ok: false, meldung: 'Der keel-harness-Adapter ist nicht registriert.' }
+    }
+    const praefix = praefixJeZelle.get(name)
+    if (!praefix) {
+      return { ok: false, meldung: `Fuer die Zelle '${name}' liegen keine Praefixteile vor.` }
+    }
+
+    // Typgebunden statt einer rohen broadcast()-Nutzlast an jeder der drei Stellen unten: ein
+    // Tippfehler in einer der beiden Formen (SessionStatusChanged, harness-types.ts) faellt so
+    // dem Typcheck auf, statt erst zur Laufzeit beim Renderer, der den Kanal hoert
+    // (renderer/index.tsx:183).
+    const sendeStatus = (status: SessionStatusChanged) => broadcast(SESSION_STATUS_CHANGED, status)
+
+    // Von beiStart gesetzt, sobald die laufId feststeht — die einzige Stelle, an der der Catch
+    // unten weiss, welcher Lauf ueberhaupt zu dieser Zelle gehoert. Bleibt null, wenn der Start
+    // scheitert, bevor beiStart je gerufen wurde (z. B. ein unbekannter Registry-Eintrag) — dann
+    // hat dieser Aufruf die Zelle nie angefasst, und der Catch hat nichts zurueckzunehmen.
+    let gestarteterLauf: string | null = null
+
+    try {
+      const ergebnis = await adapter.starteAuftrag({
+        wurzel: frei.zelle.wurzel, sitzungsname: name, auftragstext: text,
+        eintragId: frei.zelle.eintragId, praefix, letzteLaufId: frei.zelle.laufId,
+
+        // Der Hauptprozess fuehrt den Zellenzustand — der Renderer leitet nichts aus dem
+        // Ereignisstrom ab.
+        //
+        // beiStart, nicht der Rueckgabewert: `starteAuftrag` kehrt heim, sobald das erste
+        // `run.started` steht, und der Rest faehrt im Hintergrund. Wer die laufId erst danach
+        // eintruege, verloere gegen einen sehr kurzen Lauf — dessen beiEnde kippte die Zelle,
+        // bevor sie je auf 'laeuft' stand, und das nachfolgende setzeLauf liesse sie fuer
+        // immer darauf stehen.
+        beiStart: (laufId) => {
+          gestarteterLauf = laufId
+          schleifenZellen.setzeLauf(name, laufId)
+          sendeStatus({ name, zustand: 'laeuft', laufId })
+        },
+
+        beiEnde: (beendeterLauf) => {
+          const zelle = schleifenZellen.hole(name)
+          // Gehoert der beendete Lauf noch zu dieser Zelle? Nach einem Zerstoeren und
+          // Neuanlegen unter demselben Namen laeuft sonst das finally des alten Laufs in die
+          // neue Zelle.
+          if (!zelle || zelle.laufId !== beendeterLauf) return
+          const letztes = [...lesen(harnessDb(), beendeterLauf)]
+            .reverse().find(e => e.art === 'run.finished')
+          const endzustand = typeof letztes?.nutzlast.endzustand === 'string'
+            ? letztes.nutzlast.endzustand : null
+          schleifenZellen.setzeZustand(name, 'leerlaufend', endzustand)
+          sendeStatus({ name, zustand: 'leerlaufend', endzustand })
+        },
+      })
+      return { ok: true, wert: ergebnis }
+    } catch (err) {
+      // beiStart kann VOR diesem Wurf gelaufen sein (im frischen Zweig steht es synchron vor
+      // starteHarnessLauf) — dann steht die Zelle bereits auf 'laeuft', ohne dass je ein
+      // beiEnde kaeme, denn `starteHarnessLauf` registriert sein `.finally()` erst NACH
+      // `baueLaufUmgebung`. Derselbe Id-Vergleich wie in beiEnde oben, aus demselben Grund: waehrend
+      // dieses Await-Fensters koennte die Zelle zerstoert und mit einem neuen, wirklich laufenden
+      // Auftrag neu belegt worden sein — der darf hier nicht zurueckgekippt werden.
+      if (gestarteterLauf) {
+        const zelle = schleifenZellen.hole(name)
+        if (zelle && zelle.laufId === gestarteterLauf) {
+          // M-2 (Review Task 10): explizit null statt des dritten Arguments wegzulassen — der
+          // Rundruf unten sagt endzustand: null, und ohne das dritte Argument liesse
+          // setzeZustand den ALTEN letzterEndzustand im Register stehen (siehe dessen eigenen
+          // Kommentar: "if (endzustand !== undefined)"). Register und Rundruf wichen sonst
+          // genau in diesem Fehlerpfad voneinander ab.
+          schleifenZellen.setzeZustand(name, 'leerlaufend', null)
+          sendeStatus({ name, zustand: 'leerlaufend', endzustand: null })
+        }
+      }
+      return { ok: false, meldung: err instanceof Error ? err.message : String(err) }
     }
   })
 

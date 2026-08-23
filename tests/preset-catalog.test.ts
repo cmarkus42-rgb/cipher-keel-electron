@@ -1,18 +1,22 @@
 /**
- * tests/preset-catalog.test.ts — die 0.1-Presets plus Testing Assistant als UI-Metadaten.
+ * tests/preset-catalog.test.ts — die 0.1-Presets plus Testing Assistant und keel-Arbeiter als
+ * UI-Metadaten.
  *
  * M6 Abschnitt 3.1 (BG-1) legt fuer Release 0.1 genau vier Rollen fest.
  * M5 kennt elf — die uebrigen sechs sind post-0.1 und hier bewusst nicht enthalten.
  * Der Testing Assistant wurde danach nachgezogen und ist jetzt Teil des Katalogs.
+ * keel-arbeiter kam mit dem keel-harness-Adapter (M8) dazu — kein M5-Phasenrolle, sondern die
+ * BeauftragteInstanz fuer keels eigene Schleife (Niveau B), siehe preset-catalog.ts Modulkopf.
  */
 import { describe, it, expect } from 'vitest'
 import { PRESET_CATALOG, isKnownPresetId, defaultPresetId } from '../src/shared/preset-catalog'
 import { listEntityIds } from '../src/main/preset/registry'
 
 describe('PRESET_CATALOG', () => {
-  it('offers the four ratified 0.1 roles plus the Testing Assistant', () => {
+  it('offers the four ratified 0.1 roles plus the Testing Assistant and keel-arbeiter', () => {
     expect(PRESET_CATALOG.map(p => p.id)).toEqual([
-      'systems-engineer', 'architect', 'cyber-factory', 'testing-assistant', 'workshop',
+      'systems-engineer', 'architect', 'cyber-factory', 'testing-assistant',
+      'keel-arbeiter', 'workshop',
     ])
   })
 
@@ -44,12 +48,19 @@ describe('PRESET_CATALOG', () => {
 })
 
 describe('preset catalog after the Testing Assistant', () => {
-  it('offers five presets', () => {
-    expect(PRESET_CATALOG).toHaveLength(5)
+  // 6, not 5: keel-arbeiter (Task 5, keel-harness adapter) landed after the Testing Assistant
+  // and moved this count by one. Adjusted here rather than left at 5 with the catalog
+  // shortened to match — the catalog is the thing under test, not this number.
+  it('offers six presets', () => {
+    expect(PRESET_CATALOG).toHaveLength(6)
   })
 
   it('knows the testing assistant', () => {
     expect(isKnownPresetId('testing-assistant')).toBe(true)
+  })
+
+  it('knows keel-arbeiter', () => {
+    expect(isKnownPresetId('keel-arbeiter')).toBe(true)
   })
 
   it('keeps workshop as the default', () => {

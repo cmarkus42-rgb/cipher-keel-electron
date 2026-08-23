@@ -22,6 +22,7 @@ export const FARBE: Record<string, string> = {
   'budget.warned': '#ff9e64',
   'netz.ausgehend': '#f7768e',
   'unterlauf.verbraucht': '#bb9af7',
+  'auftrag.folgend': '#7aa2f7',
   'run.finished': '#7dcfff',
 }
 
@@ -54,6 +55,10 @@ export function kurzfassung(e: HarnessEreignis): string {
       return `${String(n.werkzeug)} · Sprung ${String(n.sprung)} · ${String(n.host)}`
     case 'unterlauf.verbraucht':
       return `${String(n.runden)} Runden · ${String(n.kostenCent)} Cent (${String(n.unterLaufId)})`
+    case 'auftrag.folgend':
+      // Wie bei run.started zaehlt hier nur, dass ein Auftragstext ankam — der Praefix bleibt
+      // unveraendert, dieses Ereignis ist die einzige Stelle, an der der Folgeauftrag sichtbar ist.
+      return `${String(n.auftragstext ?? '').length} Zeichen`
     case 'run.finished':
       return `${String(n.endzustand)} / ${String(n.grund)}`
     default:

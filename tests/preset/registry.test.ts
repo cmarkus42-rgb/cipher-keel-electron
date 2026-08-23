@@ -60,9 +60,11 @@ describe('entity registry', () => {
     }
   })
 
-  // toBeLessThan, not toBeLessThanOrEqual: all four narrow strictly (architect 7→1,
-  // cyber-factory 8→1, systems-engineer 7→1, workshop 7→5, counted in the sources on
-  // 2026-08-10). ToBeLessThanOrEqual would pass even if the niveau were ignored entirely.
+  // toBeLessThan, not toBeLessThanOrEqual: all six narrow strictly (architect 7→1,
+  // cyber-factory 8→1, systems-engineer 7→1, testing-assistant 5→1, workshop 7→5, counted in
+  // the sources on 2026-08-10; keel-arbeiter 3→2 added Task 5 — the narrowest margin in the
+  // field, resting on ka-graph-abfrage's single niveauMinimum: 'B', see ka-capabilities.ts).
+  // ToBeLessThanOrEqual would pass even if the niveau were ignored entirely.
   it('narrows the capability set at Niveau C relative to Niveau A', () => {
     for (const choice of PRESET_CATALOG) {
       const a = getEntityDefinition(choice.id, CapabilityNiveau.A)!

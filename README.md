@@ -59,7 +59,9 @@ planned around NanoClaw as a third-party peer runtime, connected through a chann
 over a Unix domain socket; NanoClaw was superseded on 2026-08-16 in favour of a harness
 keel builds itself, for the reason recorded in
 [`docs/anpassbare-flaechen.md`](docs/anpassbare-flaechen.md). The runtime value
-`keel-harness` is known to the preset schema; no adapter serves it yet.
+`keel-harness` now has an adapter (2026-08-23) — it backs exactly one preset,
+`keel-Arbeiter (Niveau B)`, as a grid cell around keel's own loop. OpenCode, Codex and
+Gemini remain unbuilt as adapters.
 
 The two legs run *next to* each other, not inside each other. Cross-runtime orchestration
 — one leg spawning a sub-session on the other — is explicitly deferred to a later version.
@@ -80,11 +82,10 @@ as a full realisation of a role. Level B is the recommended minimum for a role t
 carry its own weight.
 
 **The level follows the harness, not the user.** Each adapter declares the level it can
-serve — `claude-code` serves A. No adapter serves B yet: the `keel-harness` runtime is
-known to the preset schema but unbacked (`RUNTIMES_WITHOUT_ADAPTER` in
-`src/main/agent/registry.ts`). A session inherits the level of the adapter that will
-actually run it; there is no free choice, because the level describes a capability of the
-harness rather than a preference.
+serve — `claude-code` serves A, `keel-harness` serves B (`RUNTIMES_WITHOUT_ADAPTER` in
+`src/main/agent/registry.ts` is empty as of 2026-08-23). A session inherits the level of
+the adapter that will actually run it; there is no free choice, because the level
+describes a capability of the harness rather than a preference.
 
 What the level changes, concretely, is how the capability layer reaches the agent. At A the
 prompt carries `@`-references and the harness resolves them on demand; **measured on
@@ -94,8 +95,11 @@ the same capabilities arrive as an inventory of name, description and path, beca
 non-Claude harness would not resolve an `@`-line and would lose the whole layer without a
 single error message.
 
-Level B is assembled and inspectable today (see the prompt preview below), but nothing runs
-it yet — there is no adapter for `keel-harness` at all, let alone a launch path.
+Level B is assembled and inspectable today (see the prompt preview below), and since
+2026-08-23 one preset actually runs on it end to end — `keel-Arbeiter (Niveau B)`, the
+`keel-harness` adapter's grid cell (see [Current state](#current-state) and
+[What a Niveau-B cell can and cannot do](#what-is-not-there-yet)). No other level-B
+harness (OpenCode, Codex, Gemini) exists yet.
 
 ### 3. Level service — the granularity obligation
 
@@ -194,7 +198,7 @@ improvising.
 
 ## Current state
 
-All 2678 tests pass across 187 test files (`npm test`, ~5s).
+All 2760 tests pass across 203 test files (`npm test`, ~7s).
 
 | Phase | Content | Status |
 |-------|---------|--------|
@@ -212,9 +216,10 @@ All 2678 tests pass across 187 test files (`npm test`, ~5s).
 | Phase 7 | CI pipeline — typecheck, lint, test and build gating every push and PR | Done |
 | Phase 8 | Packaging — separate build output, an archive limited to the built app, an Apple-Silicon-only DMG target, a generated app icon, the asar path fix that lets the knowledge graph initialise inside a package, an automated smoke test against the packaged app, and comprehensible messages for missing CLI tools | Done, unreleased |
 | Entity start path | `session:create` assembles the entity prompt and launches the CLI with it — before this, it opened a bare shell | Done |
-| Level and adapter wiring | The level follows the adapter, model tiers resolve, capability packages are the single source per entity, level B emits an inventory instead of nothing, and a prompt preview shows all of it before anything starts | Done — the NanoClaw adapter this phase originally registered was removed 2026-08-17 with the rest of the subsystem; level B has no adapter again until keel's own harness lands |
+| Level and adapter wiring | The level follows the adapter, model tiers resolve, capability packages are the single source per entity, level B emits an inventory instead of nothing, and a prompt preview shows all of it before anything starts | Done — the NanoClaw adapter this phase originally registered was removed 2026-08-17 with the rest of the subsystem; level B now runs on keel's own harness (see the `keel-harness` adapter row below) |
+| `keel-harness` adapter | Turns the harness loop into a grid session: a `keel-Arbeiter (Niveau B)` preset, a `sitzung:niveau-b` assignment slot, a cell with its own order field, event panel and cancel button. Verified end to end in the running app, not only in tests — see the bullet below and the field protocol it links | Done — 2026-08-23, field-verified |
 | Phaseninput layer | The fifth assembly layer: the preceding phase's output artefacts, resolved from the graph into the prompt | Done |
-| Model layer | A model registry with capability records, six tier/role slots (three tiers, plus tagging, worker and researcher), endpoint resolution and keychain-backed API keys, all editable in the settings window | Done |
+| Model layer | A model registry with capability records, seven tier/role/session slots (three tiers, plus tagging, worker, researcher, and the `sitzung:niveau-b` grid-cell assignment), endpoint resolution and keychain-backed API keys, all editable in the settings window | Done |
 | Harness core | keel's own agent loop around a model: build the prompt, read the answer, run tools, check budgets, write everything to an event log. Read-only tools (file, directory, content search, knowledge graph), a stable/volatile prefix split for cache reuse, deferred schema loading | Done — 2026-08-18 |
 | Net access and researcher | Two network paths at different trust levels. `web_suchen`/`seite_lesen` run in the main loop but only against an allowlist of vendor documentation; `recherchieren` is an encapsulated sub-run for everything else, with its own registry that carries no file and no graph tool, returning text plus a source list. The difference is one field — the netwatch's mode. Search providers: SearXNG (self-hosted) and Tavily | Done — 2026-08-23, measured |
 
@@ -232,7 +237,7 @@ formal audit step; their work is tracked in `docs/superpowers/plans/` instead.
 Every preset in the launcher carries an eye button next to it. It assembles that entity's
 full prompt — body, capabilities, persona, global rules, phase input — and shows it without
 starting a session, writing a file or touching the project directory, with a switch for all
-three levels including the ones no adapter serves yet.
+three levels including C, which no adapter serves yet.
 
 The preview is built by the same code path `session:create` uses, and that is checked rather
 than assumed: in the running app the preview text and the file handed to the CLI were
@@ -266,16 +271,44 @@ than what is delivered would be worse than none (CK-NFR-012).
 - **Idle RAM budget and cold-start time unverified.** The <300 MB / <5s targets are
   architecturally supported (lazy init, WAL, no in-memory cache, deferred service start)
   but have not been measured against a production build
-- **The harness runs, but it is not yet a session.** keel's own loop exists and does real
-  work — it drives a model through tool calls, budgets and an event log, and the network
-  stretch above was measured through it against a local 27B. What is still missing is the
-  step that turns it into a *session*: `RUNTIMES_WITHOUT_ADAPTER` still contains
-  `keel-harness`, `AdapterRegistry` holds one live entry (`claude-code`), and no slot in
-  `model/slots.ts` offers the runtime. So the loop is reachable over IPC and from tests, but
-  no preset can start a level-B session in the grid, with its own cell, lifecycle and output
-  events. That gap is deliberate and named in `agent/registry.ts` — a slot before its
-  adapter would be a surface for a dummy. (An earlier NanoClaw bridge served this role until
-  it was superseded on 2026-08-16 and removed 2026-08-17; see
+- **What a Niveau-B cell can and cannot do.** `RUNTIMES_WITHOUT_ADAPTER` is empty now —
+  `keel-harness` has an adapter, a `sitzung:niveau-b` assignment slot in
+  `model/slots.ts`, and a real cell in the grid. Verified in the running app (not only in
+  tests, which cannot reach `ipcMain` at all — see
+  [`docs/superpowers/plans/2026-08-23-keel-harness-adapter-protokoll.md`](docs/superpowers/plans/2026-08-23-keel-harness-adapter-protokoll.md)):
+  a cell is started from the launcher like any preset, and it freezes the registry entry
+  the `sitzung:niveau-b` slot named *at cell creation* — reassigning the slot afterwards
+  changes what the *next* cell gets, not this one, confirmed by opening a cell, changing
+  the slot, and reading the open cell's own header unchanged. Real orders against the DGX
+  Spark landed a second order into the *same* run (`auftrag.folgend`, one `laufId`) four
+  times running — five real orders total, the first of which opened the run rather than
+  continuing one — because the budget check that decides this (`weiterOderFrisch`) found
+  headroom left each time: by the fifth order, runden stood at 56% of its narrowed
+  threshold and wall-clock time at 61% of its own — the higher of the two — while
+  context stayed under 5%, so a sixth or seventh order would plausibly have tripped the
+  wall clock, not the context window. A model-specific
+  "this one always falls back to fresh" rule does not exist; the same check starts a
+  fresh `laufId` once it finds no headroom, which this field session never forced far
+  enough to trigger (the fresh-on-exhaustion side is unit-tested, not field-forced here —
+  see the protocol for the exact numbers). Starting a cell against an empty slot refuses
+  with a named reason in the launcher tile itself. A second order into a cell that
+  already has one running is blocked one step earlier than that: the cell disables its
+  own order field and button as soon as it goes `laeuft`, so an ordinary user never
+  reaches a rejection message here at all — the backend guard behind it
+  (`session:auftrag` returning a named refusal) is real and was exercised directly, not
+  through a click, since the UI's own protection stands in the way of reaching it by
+  clicking.
+
+  What it does **not** do, on purpose, in 0.1: **no beauftragen von oben** — only a human
+  typing into that cell's own field can give it an order; no other role or phase step can
+  hand it a follow-up job programmatically. **No attachments** — the order field is text
+  only; `HARNESS_LAUF_STARTEN`'s `anhaenge` parameter exists for the standalone Harness
+  window, the grid cell offers no picker for it. **No "Fortsetzen" button** — the cell
+  only ever continues a dormant run automatically, as a side effect of sending a new
+  order that fits the remaining budget; there is no control to resume an arbitrary past
+  run by picking it, the way `HARNESS_LAUF_FORTSETZEN` lets the Harness window do.
+  (An earlier NanoClaw bridge served the level-B role until it was superseded on
+  2026-08-16 and removed 2026-08-17; see
   [`docs/anpassbare-flaechen.md`](docs/anpassbare-flaechen.md) for why.)
 - **Codex and Gemini adapters** remain a design target, untouched.
 - **What the network stretch still loses is content, not connectivity.** Pages behind an
@@ -345,7 +378,7 @@ src/renderer/      — React 19 UI: SessionGrid, ProjectView, Timeline, KanbanBo
                      KickoffWizard, NotesCell, settings tabs
 src/shared/        — Typed IPC channels and domain types
 src/preload.ts     — contextBridge API (window.cipherKeel)
-tests/             — 2678 Vitest tests
+tests/             — 2760 Vitest tests
 docs/superpowers/  — Implementation plans, design specs and audit reports per phase
 ```
 

@@ -15,8 +15,9 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { SITZUNG_FREMDES_CLI } from '../agent-adapter'
 import type {
-  AgentAdapter,
+  CliSitzungsAdapter,
   LaunchCommand,
   LaunchOpts,
   AdapterContext,
@@ -28,6 +29,7 @@ import type { AdapterFeature, AdapterCapabilities } from '../../../shared/types'
 import { CapabilityNiveau } from '../../preset/niveau'
 import { runCommand, isCommandOnPath } from '../../util/exec-util'
 import { formatShellCommand } from '../../util/shell-quote'
+import { describeMissingTool } from '../../util/missing-tool'
 
 /** Minimal interface for reading the agent config section. */
 export interface AgentConfigReader {
@@ -35,11 +37,12 @@ export interface AgentConfigReader {
   getStartArgs(adapterId: string): string[]
 }
 
-export class ClaudeCodeAdapter implements AgentAdapter {
+export class ClaudeCodeAdapter implements CliSitzungsAdapter {
   readonly id = 'claude-code'
   readonly displayName = 'Claude Code'
   readonly tier = 'tier-1' as const
   readonly niveau = CapabilityNiveau.A
+  readonly sitzungsart = SITZUNG_FREMDES_CLI
   readonly appGesteuerteParameter = [
     '--resume', '--fork-session', '--model', '--append-system-prompt-file',
   ] as const
@@ -209,6 +212,16 @@ export class ClaudeCodeAdapter implements AgentAdapter {
    */
   isAvailable(): boolean {
     return isCommandOnPath('claude')
+  }
+
+  /**
+   * The reason now lives on the adapter instead of SESSION_CREATE. Until this fix round
+   * the handler assembled it itself with
+   * `adapter.id === 'claude-code' ? describeMissingTool('claude') : …` — a special case
+   * in the one place that had the least information about it.
+   */
+  nichtVerfuegbarGrund(): string | null {
+    return this.isAvailable() ? null : describeMissingTool('claude')
   }
 
   /**

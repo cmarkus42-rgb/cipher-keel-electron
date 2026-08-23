@@ -3,8 +3,8 @@ import { SLOTS, slotFuerId, slotFuerTier } from '../../src/main/model/slots'
 import { CapabilityNiveau } from '../../src/main/preset/niveau'
 
 describe('Slot-Tabelle', () => {
-  it('kennt genau sechs Slots', () => {
-    expect(SLOTS).toHaveLength(6)
+  it('kennt genau sieben Slots', () => {
+    expect(SLOTS).toHaveLength(7)
   })
 
   it('faehrt alle drei Tiers ueber fremdes-cli auf Niveau A', () => {

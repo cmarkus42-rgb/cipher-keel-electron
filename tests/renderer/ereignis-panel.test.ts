@@ -38,6 +38,7 @@ const NUTZLAST: Record<string, unknown> = {
   unterLaufId: 'u1',
   kostenCent: 3,
   runden: 4,
+  auftragstext: 'ein Folgeauftrag mit Substanz',
 }
 
 function ereignis(art: string): HarnessEreignis {
@@ -59,6 +60,16 @@ describe('EreignisPanel — jede Ereignisart ist sichtbar', () => {
     // Der Name ist der Punkt: bei Messpunkt M7 wird gezaehlt, *welche* Faehigkeit ein Modell
     // geholt hat. Eine Kurzfassung, die nur 'geladen' sagt, macht die Messung unmoeglich.
     expect(kurzfassung(ereignis('skill.geladen'))).toContain('web-recherche')
+  })
+
+  it('nennt bei auftrag.folgend die tatsaechliche Laenge des Auftragstexts', () => {
+    // Ohne eine feste Erwartung an die Zahl selbst waere diese Zeile bloss der allgemeine
+    // Nicht-leer-Test von oben noch einmal: `${n.auftragstext ?? ''}.length` liefert auch fuer
+    // eine fehlende Angabe "0 Zeichen" — nicht leer, aber falsch. Erst der Abgleich gegen die
+    // Laenge des Fixture-Texts zeigt, dass die Kurzfassung wirklich die Nutzlast liest und nicht
+    // eine Konstante, die diesen Test genauso bestuende.
+    const laenge = String(NUTZLAST.auftragstext).length
+    expect(kurzfassung(ereignis('auftrag.folgend'))).toBe(`${laenge} Zeichen`)
   })
 
   it('erfindet fuer eine unbekannte Art nichts', () => {

@@ -5,9 +5,10 @@
  * "spawn tmux ENOENT" tells nobody there what to do.
  */
 
+// German: these reach a user (status panel, session:create error). See describeMissingTool.
 const INSTALL_HINTS: Record<string, string> = {
-  tmux: 'tmux not found. Install it with: brew install tmux',
-  claude: 'Claude Code CLI not found. Install it from: https://claude.com/claude-code',
+  tmux: 'tmux nicht gefunden. Installation mit: brew install tmux',
+  claude: 'Claude Code CLI nicht gefunden. Installation unter: https://claude.com/claude-code',
 }
 
 /**
@@ -31,14 +32,20 @@ export function looksLikeMissingCommand(err: unknown): boolean {
   return /^spawn \S+ ENOENT$/.test(message)
 }
 
-/** Actionable message for a missing tool. */
+/** Actionable message for a missing tool. German — reaches a user, see INSTALL_HINTS. */
 export function describeMissingTool(cmd: string): string {
-  return INSTALL_HINTS[cmd] ?? `${cmd} not found on PATH. Install it and make sure it is reachable.`
+  return INSTALL_HINTS[cmd] ?? `${cmd} nicht auf dem PATH gefunden. Installieren und erreichbar machen.`
 }
 
 /**
  * Replaces a "command missing" error with the install instruction and
  * passes every other error through unchanged.
+ *
+ * Only the missing-tool branch is guaranteed German. The passthrough branch hands back
+ * whatever the underlying tool or Node wrote to its error message — arbitrary text (tmux
+ * stderr, a Node system error) this function has no way to translate without inventing
+ * words the failure never said. Known, pre-existing gap in the "user text is German" rule;
+ * not something this fix closes.
  */
 export function describeToolFailure(cmd: string, err: unknown): string {
   if (looksLikeMissingCommand(err)) return describeMissingTool(cmd)

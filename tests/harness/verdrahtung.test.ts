@@ -116,8 +116,11 @@ describe('Verdrahtung: gebaute Werkzeuge sind vom Lauf aus erreichbar', () => {
    */
   it('setzt das Modell des Rechercheurs in die LaufUmgebung ein', async () => {
     const { readFileSync } = await import('node:fs')
+    // baueLaufUmgebung selbst zog nach harness-sitzung.ts um (2026-08-23, harness-sitzung.ts
+    // bekam die Lauf-Maschinerie) — dieser Test liest weiterhin den Rumpf der echten Funktion,
+    // nur an ihrem neuen Ort.
     const quelle = readFileSync(
-      new URL('../../src/main/harness-handlers.ts', import.meta.url), 'utf8')
+      new URL('../../src/main/harness-sitzung.ts', import.meta.url), 'utf8')
     const beginn = quelle.indexOf('async function baueLaufUmgebung(')
     expect(beginn, 'baueLaufUmgebung wurde umbenannt — dieser Test muss mit').toBeGreaterThan(0)
     const ende = quelle.indexOf('\n}', beginn)

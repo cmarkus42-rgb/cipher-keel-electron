@@ -265,3 +265,43 @@ describe('Verlauf gegen den Anbietervertrag', () => {
     expect(ersteRollenwiederholung(koerper.messages)).toBeNull()
   })
 })
+
+describe('Verlauf gegen den Anbietervertrag: Folgeauftrag nach Abbruch mitten im Zug', () => {
+  // Derselbe Abbruch-Fall wie oben bei Schema und Faehigkeit, hier fuer `auftrag.folgend`: ein
+  // Lauf, der mitten im Zug abgerissen ist, endet mit einer NUTZER-Nachricht — den
+  // Werkzeugergebnissen. Ein Folgeauftrag als zweite Nutzer-Nachricht dahinter waere derselbe
+  // Fehler, der diesem Repo schon einen Abnahmelauf gekostet hat.
+  const abgerissenerLauf: Ereignis[] = [
+    ev(1, 'run.started', { auftragstext: 'lies die README' }),
+    ev(2, 'model.answered', { bloecke: [
+      { art: 'werkzeug-aufruf', id: 'c1', name: 'datei_lesen', eingabe: { pfad: 'README.md' } },
+    ] }),
+    ev(3, 'tool.intent', { aufrufId: 'c1', name: 'datei_lesen', eingabe: { pfad: 'README.md' } }),
+    ev(4, 'tool.completed', { aufrufId: 'c1', name: 'datei_lesen',
+      inhalt: [{ art: 'text', text: 'Inhalt von README.md' }] }),
+    ev(5, 'auftrag.folgend', { auftragstext: 'nenne jetzt die Kennzahl' }),
+  ]
+
+  it('haelt nach einem Folgeauftrag die Anthropic-Nachbarschaft von tool_use und tool_result ein', () => {
+    const koerper = anthropicCodec.toWire(projiziere(abgerissenerLauf), [], kann) as {
+      messages: Array<Record<string, unknown>>
+    }
+    expect(ersterVerstoss(koerper.messages)).toBeNull()
+  })
+
+  it('erzeugt nach einem Folgeauftrag keine zwei Nutzernachrichten hintereinander', () => {
+    const koerper = anthropicCodec.toWire(projiziere(abgerissenerLauf), [], kann) as {
+      messages: Array<Record<string, unknown>>
+    }
+    expect(ersteRollenwiederholung(koerper.messages)).toBeNull()
+  })
+
+  it('traegt den Folgeauftrag trotzdem in den Verlauf, hinter dem Werkzeugergebnis', () => {
+    const koerper = anthropicCodec.toWire(projiziere(abgerissenerLauf), [], kann) as {
+      messages: Array<Record<string, unknown>>
+    }
+    const text = JSON.stringify(koerper.messages)
+    expect(text).toContain('nenne jetzt die Kennzahl')
+    expect(text.indexOf('Inhalt von README.md')).toBeLessThan(text.indexOf('nenne jetzt die Kennzahl'))
+  })
+})

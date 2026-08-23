@@ -92,6 +92,11 @@ export interface CipherKeelConfig {
        * sondern „nimm das Modell des Hauptlaufs". Einen eigenen Endpunkt gibt es dafuer nicht.
        */
       rollen: { tagging: string; worker: string; rechercheur: string }
+      /**
+       * Die Sitzungsplaetze. Leer heisst hier — anders als bei `tagging` und `worker` —
+       * **kein Rueckfall**, sondern „keine Niveau-B-Zelle startet". Siehe slots.ts.
+       */
+      sitzungen: { 'niveau-b': string }
     }
   }
   /**
@@ -176,6 +181,10 @@ const defaults: CipherKeelConfig = {
       // Vorgaben nach, und '' ist genau der Zustand „keine Zuordnung", den eine aeltere Datei
       // meint.
       rollen: { tagging: '', worker: '', rechercheur: '' },
+      // Kein Migrationszweig noetig: `deepMerge` legt einen fehlenden Schluessel aus den
+      // Vorgaben nach, und '' ist genau der Zustand „keine Zuordnung", den eine aeltere
+      // Datei meint — dieselbe Begruendung wie bei `rechercheur`.
+      sitzungen: { 'niveau-b': '' },
     },
   },
   netz: {

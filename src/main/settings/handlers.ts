@@ -15,10 +15,10 @@
  */
 
 import { ipcMain } from 'electron'
-import { configStore, type LlmEndpoint } from '../config/config-store'
+import { configStore, type LlmEndpoint, type CipherKeelConfig } from '../config/config-store'
 import { baueAnsicht } from '../model/ansicht'
 import { normaliseEintrag } from '../model/entry'
-import { slotFuerId, type Rolle } from '../model/slots'
+import { slotFuerId, type Rolle, type Tier, type Sitzungsschluessel, type Slot } from '../model/slots'
 import { storeInKeychain, keychainService } from '../worker/api-keys'
 import { normaliseEndpoint, type RawEndpoint } from '../worker/model-client'
 import { execFileAsync } from '../util/exec-util'
@@ -58,6 +58,51 @@ const EINFACHFELDER = new Set([
 /** Die Anbieter, die `waehleAnbieter` kennt. Leer heisst automatisch. */
 const ANBIETER = new Set(['', 'searxng', 'tavily', 'brave'])
 
+type Zuordnung = CipherKeelConfig['modelle']['zuordnung']
+
+/**
+ * Traegt eine Zuweisung in die Gruppe ein, die zum Slot gehoert — tier, rolle oder sitzung.
+ * Als reine Funktion herausgezogen, dem Muster von `pruefeAnhaenge` in harness-handlers.ts
+ * folgend: kein Test in diesem Repo erreicht `ipcMain`, ohne diese Extraktion bliebe der
+ * Handler ungeprueft. tests/settings/zuordnung-schreibpfad.test.ts prueft genau diese
+ * Konstruktion.
+ *
+ * Zwei Absicherungen, gegen zwei verschiedene Fehler:
+ *
+ * 1. Schreibt mit `{ ...bisher, <gruppe>: { ...bisher.<gruppe>, ... } }` statt die drei
+ *    Gruppen einzeln neu aufzuzaehlen. Die vorige Fassung baute `{ tiers: {...}, rollen: {...} }`
+ *    von Grund auf neu und nannte `sitzungen` darin nicht — jede Zuweisung an irgendeinen
+ *    anderen Platz haette die Sitzungs-Zuordnungen dabei stillschweigend geloescht (deepMerge
+ *    legt beim naechsten Laden nur die Vorgabe `''` nach, was wie „nie zugewiesen" aussieht,
+ *    nicht wie ein Verlust). Das sichert, dass keine Gruppe verloren geht.
+ * 2. Ein `switch` mit einem `never`-Arm statt einer `if`/`if`/`else`-Kette. Das sichert etwas
+ *    anderes: dass eine Zuweisung in der *richtigen* Gruppe ankommt. Eine `if`/`else`-Kette mit
+ *    `slot.schluessel as Sitzungsschluessel` im letzten Zweig wuerde eine kuenftige vierte Art
+ *    klaglos in `sitzungen` schreiben — kein Compilerfehler, kein Laufzeitfehler, falsche
+ *    Gruppe. Mit dem `switch` erzwingt eine neue vierte Art, dass ihr eigener Zweig geschrieben
+ *    wird, bevor der Code ueberhaupt kompiliert: `slot.art` waere im `default`-Fall nicht mehr
+ *    auf `never` zuweisbar.
+ */
+export function zuordnungMitPlatz(
+  bisher: Zuordnung, slot: Slot, eintragId: string,
+): Zuordnung {
+  switch (slot.art) {
+    case 'tier':
+      return { ...bisher, tiers: { ...bisher.tiers, [slot.schluessel as Tier]: eintragId } }
+    case 'rolle':
+      return { ...bisher, rollen: { ...bisher.rollen, [slot.schluessel as Rolle]: eintragId } }
+    case 'sitzung':
+      return {
+        ...bisher,
+        sitzungen: { ...bisher.sitzungen, [slot.schluessel as Sitzungsschluessel]: eintragId },
+      }
+    default: {
+      const nie: never = slot.art
+      throw new Error(`Unbekannter Zuordnungsplatz der Art '${nie}'.`)
+    }
+  }
+}
+
 export function registerSettingsHandlers(): void {
   ipcMain.handle(SETTINGS_ANSICHT, async () => baueAnsicht())
 
@@ -66,16 +111,10 @@ export function registerSettingsHandlers(): void {
       const slot = slotFuerId(slotId)
       if (!slot) throw new Error(`Unbekannter Zuordnungsplatz '${slotId}'.`)
       const modelle = configStore.get('modelle')
-      const zuordnung = {
-        tiers: { ...modelle.zuordnung.tiers },
-        rollen: { ...modelle.zuordnung.rollen },
-      }
-      if (slot.art === 'tier') {
-        zuordnung.tiers[slot.schluessel as 'light' | 'standard' | 'heavy'] = eintragId
-      } else {
-        zuordnung.rollen[slot.schluessel as Rolle] = eintragId
-      }
-      configStore.set('modelle', { ...modelle, zuordnung })
+      configStore.set('modelle', {
+        ...modelle,
+        zuordnung: zuordnungMitPlatz(modelle.zuordnung, slot, eintragId),
+      })
     })
   )
 

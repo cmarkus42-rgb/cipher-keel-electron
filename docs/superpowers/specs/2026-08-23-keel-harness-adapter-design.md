@@ -17,6 +17,12 @@ Sie ist nur **noch keine Arbeitskraft.** `RUNTIMES_WITHOUT_ADAPTER` enthält wei
 Lebenszyklus und Ausgabeereignissen. Genau ein Schritt trennt „Motor läuft" von „Gefälle
 funktioniert", und dies ist er.
 
+> **Nachtrag (Abschluss-Fixwelle, 2026-08-23):** Das war die Problemstellung bei Entwurfszeit.
+> Der Schritt ist inzwischen gegangen: `RUNTIMES_WITHOUT_ADAPTER` ist heute leer
+> (`src/main/agent/registry.ts`), der `keel-harness`-Adapter, das `keel-Arbeiter`-Preset und die
+> Niveau-B-Zelle im Gitter sind gebaut und im Feld verifiziert (README.md, Zeile zum
+> `keel-harness`-Adapter).
+
 Der Motor darunter ist fertig und gemessen. Dies ist Anschlussarbeit, keine Forschung.
 
 ---
@@ -100,6 +106,8 @@ IPC-Oberfläche: `auftragAusProtokoll`, `laufAbgeschlossen`, `istUnterlauf`, `pr
 keine bestehende Importstelle bricht — dieselbe Bewegung, mit der `verbrauch.ts` aus `lauf.ts`
 herausgezogen wurde. `pruefeAnhaenge` und `dialogAusgewaehlt` bleiben **im Handler**: der
 Anhang-Herkunftsnachweis hängt am Dateidialog des Fensters, und die Zelle hat keine Anhänge (§10).
+(Nachtrag: `laufUebersicht` fehlt in dieser Liste, ist aber ebenfalls mitgewandert — siehe die
+Korrektur bei §9.1.)
 
 Kein zweiter Zusammenbau. Das Modul liegt **außerhalb** von `src/main/harness/`, weil es
 `electron` braucht (`app.getPath('userData')`) und der Wächter `tests/harness/waechter-kern.test.ts`
@@ -122,10 +130,34 @@ Alles bis zur Adapterwahl bleibt: Projekt, Entität, `getForRuntime`, `isAvailab
   `writeEntityPromptFile`, kein tmux; stattdessen Eintrag im Zellenregister, Zustand
   `leerlaufend`, Rückgabe `{ id, name, sitzungsart }`
 
-Der Unterschied ist inhaltlich, nicht bequem. `materialiseCapabilities` schreibt
-`.claude/capabilities/` ins **Projektverzeichnis**, für ein CLI, das dort nachliest. keels Schleife
-liest ihre Fähigkeiten über `faehigkeit_lesen` aus ihrer eigenen Wurzel; dieselben Dateien ins
-Projekt zu schreiben wäre eine Nebenwirkung ohne Verbraucher.
+> **Korrektur vom 2026-08-23, beim Bau von Aufgabe 6 gefunden.** Der folgende Absatz war
+> **falsch**, und zwar an der tragenden Stelle. Er stand hier so:
+>
+> > *„`materialiseCapabilities` schreibt `.claude/capabilities/` ins Projektverzeichnis, für ein
+> > CLI, das dort nachliest. keels Schleife liest ihre Fähigkeiten über `faehigkeit_lesen` aus
+> > ihrer eigenen Wurzel; dieselben Dateien ins Projekt zu schreiben wäre eine Nebenwirkung ohne
+> > Verbraucher."*
+>
+> Nachgemessen am Code: `materialiseCapabilities` schreibt nach
+> `<projekt>/.claude/capabilities/<id>/SKILL.md` (`session/materialise-capabilities.ts:61,72`),
+> und `leseFaehigkeiten` — keels **eigener** Leser — durchläuft `WURZELN = ['skills',
+> 'capabilities']` unter `<projektwurzel>/.claude/` (`harness/faehigkeiten.ts:51,140`). **Das ist
+> dasselbe Verzeichnis.** Der Verbraucher, den es angeblich nicht gibt, ist keels eigene Schleife.
+>
+> Was daraus folgt, ist besser als das, was hier stand: der Schleifen-Weg **materialisiert
+> ebenfalls**, und die Fähigkeiten erreichen das Modell über den Mechanismus, den das Harness
+> schon hat — Name und Beschreibung als Stummel im stabilen Präfix, der Rumpf auf Abruf über
+> `faehigkeit_lesen`. Das ist genau das aufgeschobene Laden aus §7 der Harness-Spec, statt den
+> vollen Text in den zwischengespeicherten Präfix zu pressen.
+>
+> `EntitaetsTeile.capabilities` bleibt damit leer — aber aus einem **wahren** Grund: die
+> Fähigkeiten kommen über die Fähigkeitswurzel, nicht über dieses Feld.
+
+Der Unterschied zum CLI-Weg ist damit **kleiner**, als dieser Entwurf zunächst behauptete, und
+liegt woanders: `writeEntityPromptFile` entfällt (keels Schleife bekommt den zusammengesetzten
+Body über `assemblePraefixTeile`, nicht über eine Datei und einen Kommandozeilenschalter), und
+`buildLaunchCommand` entfällt mit dem ganzen Pane. `materialiseCapabilities` läuft auf **beiden**
+Wegen.
 
 Der zusammengesetzte Body geht stattdessen dorthin, wo `harness-praefix-quelle.ts` sich im
 Modulkopf **selbst als Naht bezeichnet**: *„heute ein schlichter Body und die Hausregeln, später
@@ -336,9 +368,25 @@ dreimal bezahlt hat — eine Zahl, die für einen Verbraucher richtig war, gilt 
 Die Reserve garantiert, dass ein fortgesetzter Auftrag Platz hat, statt in Runde eins ins
 Abschlussverhalten zu fallen.
 
-Praktisch, **ohne dass irgendwo eine Modellgröße steht**: das 27B mit knappem Fenster fällt nach
-einem echten Lauf auf `frisch`; ein Modell mit großem Fenster und leichtem Auftrag führt fort. Der
-Schalter ist die Messung, nicht der Modellname.
+Praktisch, **ohne dass irgendwo eine Modellgröße steht**: wer Platz hat, führt fort; wer keinen
+hat, fängt frisch an. Der Schalter ist die Messung, nicht der Modellname.
+
+> **Korrektur vom 2026-08-23, in der Beweisfahrt gemessen.** Hier stand bis zuletzt der Satz
+> *„das 27B mit knappem Fenster fällt nach einem echten Lauf auf `frisch`"* — als Beispiel für den
+> Mechanismus und als Begründung dafür, dass der `weiter`-Zweig im Feld womöglich gar nicht
+> fahrbar sei.
+>
+> **Das war falsch, und zwar ungeprüft behauptet.** `spark-qwen38-27b` trägt
+> `nutzbaresKontextfenster: 65536` (`model/defaults.ts`), die Schwelle liegt damit bei
+> 65536 · 0,8 · 0,75 = **39 322 Token**. Gemessen wurden **1,7–1,9k je Zug**. Fünf aufeinander
+> folgende echte Aufträge in dieselbe Zelle liefen deshalb alle in **denselben** Lauf — der erste
+> hat ihn eröffnet, die **vier** übrigen kamen als echter `auftrag.folgend` hinzu — gegen die
+> Protokolldatenbank geprüft, nicht gegen den Fenstertext.
+>
+> Der Mechanismus ist damit **bestätigt**, nicht widerlegt: er hat gemessen entschieden, und die
+> Messung fiel anders aus als meine Annahme. Falsch war die Illustration, nicht die Regel — und
+> genau deshalb steht sie hier korrigiert statt gelöscht. Wer diesen Absatz künftig als Beispiel
+> zitiert, zitiert eine Zahl aus `defaults.ts`, die selbst noch `quelle: 'vermutet'` trägt.
 
 `FOLGE_RESERVE` ist eine anpassbare Fläche → Eintrag in `docs/anpassbare-flaechen.md`, auch wenn sie
 in der App nicht editierbar ist (CK-NFR-012, dasselbe Argument wie beim `num_ctx` im Modelfile).
@@ -388,6 +436,20 @@ reine, exportierte Funktionen, die der Handler nur noch aufruft — `waehleSitzu
 `pruefeZelleFrei(name, register)`, `modellFuerSitzung()`. Getestet wird gegen **diese**
 Konstruktion, nicht gegen einen Nachbau; der Nachbau in `werkzeugliste.test.ts` war grün, während
 die halbe Liste nicht verdrahtet war.
+
+> **Nachtrag (Abschluss-Fixwelle, 2026-08-23):** Zwei Abweichungen vom Entwurf, beide belegt statt
+> stillschweigend korrigiert:
+> - Von den drei "rein herausgezogenen" Funktionen existiert nur die mittlere,
+>   `pruefeZelleFrei` (`src/main/session/schleifen-sitzungen.ts:66`). Statt `waehleSitzungsweg(adapter)`
+>   wurde `istSchleifenAdapter` gebaut (`src/main/agent/agent-adapter.ts:295`), statt
+>   `modellFuerSitzung()` wurde `eintragFuerSitzung(schluessel)` gebaut
+>   (`src/main/model/registry.ts:79`) — Namen und Signaturen sind andere, der Testbarkeits-Zweck
+>   ("gegen diese Konstruktion, nicht gegen einen Nachbau") gilt für die gebauten drei genauso.
+> - `pruefeLaufLaeuftNicht` und `laufUebersicht` sind seit dem Modulumzug (§4) **nicht** mehr in
+>   `harness-handlers.ts` definiert, sondern in `src/main/harness-sitzung.ts` (Zeile 75 bzw. im
+>   selben Modul) — `harness-handlers.ts` importiert und re-exportiert beide nur noch. `pruefeAnhaenge`
+>   ist die einzige der drei, die tatsächlich dort geblieben ist (§4 nennt `laufUebersicht` in seiner
+>   Wanderliste gar nicht, obwohl es mitgewandert ist).
 
 ### 9.2 Wächter, jeder einmal rot gesehen
 

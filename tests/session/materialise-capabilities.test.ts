@@ -21,6 +21,16 @@ import { CapabilityNiveau } from '../../src/main/preset/niveau'
 const SE_CAPABILITIES_A = getSECapabilityPackages(CapabilityNiveau.A).map(p => p.name)
 import { TA_CAPABILITIES } from '../../src/main/preset/testing-assistant/ta-preset'
 import { WORKSHOP_CAPABILITY_PAKETE } from '../../src/main/preset/workshop/workshop-preset'
+// keel-arbeiter carries no *_CAPABILITIES export of its own (Task 5) — derived the same way as
+// SE_CAPABILITIES_A above, by calling the same getter createKaRahmen(niveau) actually calls
+// (ka-preset.ts), rather than importing the raw KA_PACKAGES constant and assuming it equals
+// the Niveau-A result. That assumption happens to hold — filterByNiveau returns the full
+// array at Niveau A regardless of any niveauMinimum value, not because of anything specific to
+// KA_PACKAGES's current contents — but asserting it a second time here would only be an
+// opportunity for this comment and filterByNiveau's real behaviour to drift apart.
+import { getKaCapabilityPackages } from '../../src/main/preset/keel-arbeiter/ka-capabilities'
+
+const KA_CAPABILITIES_A = getKaCapabilityPackages(CapabilityNiveau.A).map(p => p.name)
 
 let projectDir: string
 
@@ -56,7 +66,11 @@ describe('materialiseCapabilities', () => {
     expect(fs.readFileSync(file, 'utf-8')).not.toBe('stale')
   })
 
-  it('carries exactly the capabilities the five presets declare — no more, no fewer', () => {
+  // Six presets, not five: keel-arbeiter (Task 5, keel-harness adapter) added a sixth
+  // declaration (KA_CAPABILITIES_A) after this test was written for the original five.
+  // Adjusted here, not by leaving keel-arbeiter's capabilities out to keep the old count —
+  // that would hide exactly the drift this test exists to catch.
+  it('carries exactly the capabilities the six presets declare — no more, no fewer', () => {
     // A count check alone would miss a typo that swaps one id for another while
     // keeping the total the same — the map would then silently orphan a real
     // capability under a wrong key. Set equality catches that; a count does not.
@@ -66,6 +80,7 @@ describe('materialiseCapabilities', () => {
       ...SE_CAPABILITIES_A,
       ...TA_CAPABILITIES,
       ...WORKSHOP_CAPABILITY_PAKETE,
+      ...KA_CAPABILITIES_A,
     ])
     expect(Object.keys(CAPABILITY_SKILLS).sort()).toEqual([...declared].sort())
   })

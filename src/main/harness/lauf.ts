@@ -161,7 +161,7 @@ export async function starteLauf(
     auftragstext: auftrag.auftragstext,
     modellId: auftrag.modellId,
     // Carried so a resumed run can rebuild the same Auftrag from this one event instead of a
-    // second, possibly different one the caller assembles fresh (see harness-handlers.ts's
+    // second, possibly different one the caller assembles fresh (see harness-sitzung.ts's
     // auftragAusProtokoll). Attachments are deliberately not carried the same way — they
     // already land in `anhangBloecke` below and need no separate path reconstructed from it.
     wurzel: auftrag.wurzel,
@@ -179,27 +179,89 @@ export async function starteLauf(
   return laufId
 }
 
-/** Same entry point after a restart: read, project, carry on. No second implementation. */
-export async function setzeFort(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise<void> {
-  // Unlike starteLauf() (where this same throw is fine: no run.started exists yet, so nothing is
-  // left hanging, and the rejection reaches the caller, which reports it to the UI), a resumed
-  // run already has an open protocol. The realistic trigger is a user editing an entry's
-  // capability row -- to an unbuilt codec, or to werkzeugmodus 'text' -- while a run on that
-  // entry is still open, then resuming it. Before this fix the throw fell straight out of
-  // setzeFort() past this function's caller with no run.finished ever written, leaving the run
-  // "laeuft" forever -- the same class of bug as CodecKannNicht escaping toWire() in fahre()
-  // (see the comment on that catch below). 'auftrag-unvereinbar' fits for the same reason: the
-  // entry cannot carry this order at all, decided before anything is sent, and would fail
-  // identically on the next resumption attempt too.
+/**
+ * Der gemeinsame Abfang von `setzeFort` und `setzeFolgeauftrag`: eine Faehigkeitszeile, die den
+ * Auftrag nicht mehr tragen kann (unbekannter Codec, oder werkzeugmodus 'text'), waere ohne diesen
+ * Abfang ein Wurf, der aus der jeweiligen Funktion und an deren Aufrufer vorbei faellt, mit keinem
+ * `run.finished` je geschrieben -- der Lauf bliebe fuer immer "laeuft" (dieselbe Fehlerklasse wie
+ * CodecKannNicht, das aus `toWire()` in `fahre()` entkommt -- siehe der Kommentar an dem Catch
+ * dort). 'auftrag-unvereinbar' passt aus demselben Grund an beiden Aufrufstellen: der Eintrag kann
+ * diesen Auftrag gar nicht tragen, das steht fest bevor etwas gesendet wird, und es schluege beim
+ * naechsten Versuch identisch fehl.
+ *
+ * Realistischer Ausloeser: ein Nutzer aendert die Faehigkeitszeile eines Eintrags, waehrend ein
+ * Lauf auf diesem Eintrag noch offen ist, und stoesst danach Fortsetzen oder einen Folgeauftrag an.
+ *
+ * Gibt `true` zurueck, wenn der Lauf deswegen bereits beendet wurde -- der Aufrufer bricht dann ab,
+ * ohne `fahre` zu starten.
+ */
+function abfangUnvereinbar(u: LaufUmgebung, laufId: string): boolean {
   try {
     pruefeStartbedingungen(u.eintrag)
+    return false
   } catch (err) {
     beende(u, laufId, lesen(u.db, laufId), {
       code: 'auftrag-unvereinbar', endzustand: 'abgebrochen',
       anweisung: err instanceof Error ? err.message : String(err),
     }, '')
-    return
+    return true
   }
+}
+
+/** Same entry point after a restart: read, project, carry on. No second implementation. */
+export async function setzeFort(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise<void> {
+  if (abfangUnvereinbar(u, laufId)) return
+  await fahre(laufId, auftrag, u)
+}
+
+/**
+ * Ein zweiter Auftrag in denselben Lauf. **Neben** setzeFort und nicht darin: setzeFort heisst
+ * „derselbe Auftrag nach einem Abriss", und ihm eine zweite Bedeutung zu geben, waere eine
+ * Funktion, die zwei Dinge heisst.
+ *
+ * `auftrag` ist der **urspruengliche** aus auftragAusProtokoll — Budgets und modellId kommen
+ * von dort, nicht aus einem zweiten Zusammenbau. `u.praefixTeile.auftragstext` bleibt ebenfalls
+ * der erste: der stabile Teil muss zeichengleich bleiben, und der Folgeauftrag steht im Verlauf.
+ *
+ * **Der Verbrauch ist kumulativ, und diese Funktion prueft kein eigenes Budget.**
+ * `verbrauchAusEreignissen` zaehlt ueber das gesamte Protokoll und misst die Wanduhr ab dem
+ * Zeitstempel von `run.started` -- nicht ab diesem Aufruf. Ein Folgeauftrag in einen laengst
+ * fertigen, stundenalten Lauf landet deshalb im ersten Zug direkt im Abschlussverhalten: ein
+ * werkzeugloser Zug, dann `run.finished`. Ob ein Folgeauftrag ueberhaupt hineindarf, entscheidet
+ * der Aufrufer (harness/fortsetzbarkeit.ts, Funktion `weiterOderFrisch`) -- hier steht nur das
+ * Koennen, nicht das Duerfen.
+ *
+ * **Vorbedingung: der Lauf ruht.** Diese Funktion oeffnet eine **eigene** `fahre`-Schleife und
+ * setzt damit voraus, dass gerade keine andere ueber denselben `laufId` laeuft. Traefe
+ * `auftrag.folgend` mitten in einem laufenden Zug ein, schloesse `ergebnisseAusspuelen(true)` in
+ * der Projektion nebenlaeufig offene Intents zwangsweise als "Ausfuehrung unbekannt" ab -- genau
+ * der Fehler, den `tool.schema_loaded` in projektion.ts mit seinem `false` vermeidet (siehe dort,
+ * und `pruefeLaufLaeuftNicht` -- definiert in harness-sitzung.ts, aus harness-handlers.ts nur
+ * re-exportiert -- fuer denselben Schutz bei `setzeFort`). Der Waechter dafuer ist gebaut:
+ * `beauftrageSchleife` ruft `pruefeLaufLaeuftNicht` selbst, bevor es `setzeFolgeauftrag` startet
+ * (harness-sitzung.ts, im Folgeauftrags-Zweig).
+ *
+ * Ein Lauf, der schon ein run.finished traegt, bekommt am Ende ein zweites. laufUebersicht liest
+ * ohnehin das letzte, also traegt die Uebersicht das ohne Aenderung.
+ */
+export async function setzeFolgeauftrag(
+  laufId: string, auftrag: Auftrag, u: LaufUmgebung, text: string,
+): Promise<void> {
+  // Erst pruefen, ob der Eintrag den Lauf ueberhaupt tragen kann -- und zwar vor jedem Urteil
+  // ueber den Inhalt des Auftrags. Ein inkompatibler Eintrag gehoert ins Protokoll
+  // (`abfangUnvereinbar` schreibt `run.finished`), nicht in einen rohen `Error`, der an dieser
+  // Funktion vorbei aus dem Aufrufer faellt. In der falschen Reihenfolge waere ein leerer
+  // Folgeauftragstext auf einen inzwischen inkompatibel gewordenen Eintrag genau die Fehlerklasse,
+  // die `abfangUnvereinbar` verhindern soll: kein `run.finished`, der Lauf steht fuer immer auf
+  // "laeuft" (siehe fixierender Test dazu).
+  if (abfangUnvereinbar(u, laufId)) return
+  if (text.trim() === '') {
+    // Benannt und hier, statt eines leeren `text`-Blocks, der erst beim Anbieter auffaellt:
+    // Anthropic lehnt leere text-Bloecke ab, und dieser wuerde an eine sonst gueltige
+    // Nutzer-Nachricht angeschweisst (projektion.ts, case 'auftrag.folgend').
+    throw new Error(`setzeFolgeauftrag('${laufId}'): der Folgeauftragstext ist leer.`)
+  }
+  schreibe(u, laufId, 'auftrag.folgend', { auftragstext: text })
   await fahre(laufId, auftrag, u)
 }
 

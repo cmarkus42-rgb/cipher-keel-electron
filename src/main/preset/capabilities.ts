@@ -15,6 +15,7 @@ import { CapabilityNiveau } from './niveau'
 import { capabilityRefPath } from '../session/capability-refs'
 import { getArchitectCapabilities } from './architect/architect-capabilities'
 import { getCfCapabilities } from './cyber-factory/cf-capabilities'
+import { getKaCapabilityPackages } from './keel-arbeiter/ka-capabilities'
 import { getSECapabilityPackages } from './systems-engineer/se-capabilities'
 import { getTaCapabilityPackages } from './testing-assistant/ta-capabilities'
 import { getWorkshopCapabilityPackages } from './workshop/workshop-capabilities'
@@ -32,6 +33,7 @@ const PACKAGES_BY_ENTITY: Record<string, PackageFactory> = {
   'cyber-factory': getCfCapabilities,
   'workshop': getWorkshopCapabilityPackages,
   'testing-assistant': getTaCapabilityPackages,
+  'keel-arbeiter': getKaCapabilityPackages,
 }
 
 /**

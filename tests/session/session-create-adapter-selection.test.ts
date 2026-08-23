@@ -21,11 +21,12 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { SITZUNG_FREMDES_CLI } from '../../src/main/agent/agent-adapter'
 
 type SessionCreateHandler = (
   event: unknown,
   opts: { name?: string; entityId?: string; cwd?: string },
-) => Promise<{ id: string | null; name: string | null; error: string | null }>
+) => Promise<{ id: string | null; name: string | null; error: string | null; sitzungsart?: string }>
 
 describe('session:create — adapter selection', () => {
   let userDataDir: string
@@ -86,7 +87,18 @@ describe('session:create — adapter selection', () => {
             id: 'claude-code',
             displayName: 'Claude Code',
             niveau,
+            // Explicit, not left absent: SESSION_CREATE now forks on `sitzungsart`
+            // (istSchleifenAdapter), and an attrappe without it would fall into the
+            // fremdes-cli branch only by accident (undefined !== 'eigene-schleife'), not
+            // because the test asserted anything about which branch it exercises. Naming
+            // it real value makes "this mock is a fremdes-cli session" an assertion this
+            // test actually holds, not an implicit side effect of the fork's shape.
+            sitzungsart: SITZUNG_FREMDES_CLI,
             isAvailable: () => available,
+            // The real gate now reads this instead of building its own text (I-1 fix
+            // round) — a mock without it would throw TypeError the moment isAvailable()
+            // is false, before ever reaching the assertions this test cares about.
+            nichtVerfuegbarGrund: () => (available ? null : 'CLI-Adapter nicht verfuegbar (Testattrappe)'),
             buildLaunchCommand: (opts: { model?: string }) => {
               if (!available) {
                 throw new Error('buildLaunchCommand must not run for an unavailable adapter')
@@ -139,6 +151,14 @@ describe('session:create — adapter selection', () => {
     const promptFile = path.join(userDataDir, 'entity-prompts', 'niveau-b-session.md')
     const prompt = fs.readFileSync(promptFile, 'utf8')
     expect(prompt).not.toMatch(/^@/m)
+    // I-2 (Review Task 10): der Renderer (index.tsx) unterscheidet die Schleifen-Sitzungsart
+    // von einer tmux-Sitzung ueber `if (result.sitzungsart)` — richtig, weil der fremdes-cli-Pfad
+    // das Feld heute gar nicht setzt. Diese Zeile haelt genau diese Invariante fest: kommt sie
+    // je zu wackeln (eine dritte Sitzungsart, oder ein zweiter Pfad, der sitzungsart setzt),
+    // faellt der Renderer sonst still in den falschen Zweig und zeigt eine tmux-Sitzung als
+    // Harness-Zelle. Dieser Mock-Adapter ist explizit fremdes-cli (SITZUNG_FREMDES_CLI oben) —
+    // dieser Handler-Pfad reicht `sitzungsart` nicht in die Rueckgabe durch.
+    expect(result.sitzungsart).toBeUndefined()
   })
 
   it('keeps emitting @-references for a Niveau-A adapter', async () => {

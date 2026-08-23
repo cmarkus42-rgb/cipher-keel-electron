@@ -13,8 +13,21 @@ export const SESSION_CREATE = 'session:create' as const
 export const SESSION_DESTROY = 'session:destroy' as const
 export const SESSION_LIST = 'session:list' as const
 export const SESSION_FOCUS = 'session:focus' as const
+/**
+ * Main -> Renderer: a Niveau-B Gitterzelle's own state changed. Sent by SESSION_AUFTRAG's
+ * handler (ipc-handlers.ts); heard by the renderer (index.tsx, Task 10), which writes
+ * zustand/laufId/letzterEndzustand straight from the payload — never derived from the harness
+ * event stream. Nutzlast `SessionStatusChanged` (harness-types.ts) — two shapes under this one
+ * channel, discriminated by `zustand`.
+ */
 export const SESSION_STATUS_CHANGED = 'session:status-changed' as const
 export const SESSION_OUTPUT = 'session:output' as const
+/**
+ * Ein Auftrag an eine Niveau-B-Gitterzelle. Getrennt von SESSION_CREATE, weil eine Zelle ein
+ * Platz ist und ein Auftrag ein Ereignis: dieselbe Zelle nimmt nacheinander mehrere an.
+ * Nutzlast `{ name, auftragstext }`, Antwort `HarnessAntwort<{ laufId, fortgesetzt }>`.
+ */
+export const SESSION_AUFTRAG = 'session:auftrag' as const
 
 // ---------------------------------------------------------------------------
 // Preset channels (entity assembly, read-only)
@@ -227,6 +240,7 @@ export type RendererToMainChannel =
   | typeof SESSION_DESTROY
   | typeof SESSION_LIST
   | typeof SESSION_FOCUS
+  | typeof SESSION_AUFTRAG
   | typeof PRESET_PREVIEW_PROMPT
   | typeof TERMINAL_DATA_OUTBOUND
   | typeof TERMINAL_RESIZE

@@ -200,6 +200,27 @@ export interface SchleifenStartOpts {
    * Lauf-Maschinerie.
    */
   letzteLaufId: string | null
+
+  /**
+   * Gerufen, sobald die laufId feststeht und **bevor** die Schleife anlaeuft — synchron, im
+   * selben Zug. Der Aufrufer traegt sie damit in sein Register ein.
+   *
+   * Es gibt sie, weil die naheliegende Reihenfolge ein Rennen ist: `starteAuftrag` kehrt heim,
+   * sobald das erste `run.started` geschrieben ist, und der Rest des Laufs faehrt im
+   * Hintergrund weiter. Wer die laufId erst aus dem Rueckgabewert ins Register schriebe,
+   * verloere gegen einen sehr kurzen Lauf — dessen `beiEnde` kippte die Zelle auf
+   * `leerlaufend`, bevor sie je auf `laeuft` stand, und das nachfolgende `setzeLauf` liesse sie
+   * fuer immer auf `laeuft` stehen.
+   */
+  beiStart?: (laufId: string) => void
+
+  /**
+   * Gerufen, wenn der Lauf endet — Erfolg, Fehler oder Abbruch. Die laufId kommt mit, damit der
+   * Aufrufer pruefen kann, ob sie noch die aktuelle ist, statt eine fremde Zelle zu kippen.
+   *
+   * Der Aufrufer kippt damit den Zellenzustand: der Hauptprozess fuehrt ihn, nicht der Renderer.
+   */
+  beiEnde?: (laufId: string) => void
 }
 
 export interface SchleifenStartErgebnis {
@@ -1282,8 +1303,13 @@ export function baueSchleifenSitzung(args: {
     praefix: {
       body: args.def.body,
       persona: args.def.persona ?? '',
-      // Leer, solange das Preset keine Faehigkeitspakete traegt. Ein Platzhaltertext waere ein
-      // Byte im stabilen Praefix, das nichts sagt.
+      // Leer, und zwar dauerhaft: die Faehigkeiten dieser Entitaet erreichen das Modell NICHT
+      // ueber dieses Feld, sondern ueber die Faehigkeitswurzel. `materialiseCapabilities`
+      // schreibt sie nach `.claude/capabilities/`, `leseFaehigkeiten` findet sie dort, und
+      // `baueStabilenTeil` setzt Name und Beschreibung als Stummel in den Praefix — der Rumpf
+      // kommt auf Abruf ueber `faehigkeit_lesen`. Den vollen Text hier einzusetzen hiesse, das
+      // aufgeschobene Laden zu umgehen und jeden Zug fuer Text zu bezahlen, den das Modell in
+      // den meisten Zuegen nicht braucht.
       capabilities: '',
       globaleRegeln: getGlobalRules(args.def.rahmen.capabilityNiveau),
     },
@@ -1313,11 +1339,18 @@ In `src/main/ipc-handlers.ts` das `isAvailable`-Tor ersetzen:
 und hinter `const def = getEntityDefinition(...)` den Fork einziehen, **vor** `materialiseCapabilities`:
 
 ```ts
-      // Ab hier trennen sich die beiden Sitzungsarten. Der Schleifen-Weg schreibt weder
-      // .claude/capabilities/ ins Projekt noch eine Prompt-Datei: beides existiert fuer ein CLI,
-      // das dort nachliest. keels Schleife bekommt den zusammengesetzten Body ueber den stabilen
-      // Praefix (harness-praefix-quelle.ts), und dieselben Dateien ins Projekt zu schreiben waere
-      // eine Nebenwirkung ohne Verbraucher.
+      // Ab hier trennen sich die beiden Sitzungsarten — aber weniger weit, als dieser Plan
+      // zuerst behauptete. `materialiseCapabilities` laeuft auf BEIDEN Wegen: es schreibt nach
+      // `<projekt>/.claude/capabilities/`, und genau dort liest `leseFaehigkeiten` (WURZELN =
+      // ['skills','capabilities']), der Faehigkeitsleser von keels eigener Schleife. Der
+      // Verbraucher, den die urspruengliche Fassung fuer nicht existent hielt, ist die Schleife
+      // selbst. Die Faehigkeiten erreichen das Modell damit ueber das aufgeschobene Laden des
+      // Harness — Stummel im stabilen Praefix, Rumpf auf Abruf ueber `faehigkeit_lesen` — statt
+      // ueber den vollen Text im zwischengespeicherten Praefix.
+      //
+      // Was auf dem Schleifen-Weg wirklich entfaellt: `writeEntityPromptFile` (der Body geht
+      // ueber `assemblePraefixTeile` hinein, nicht ueber Datei plus Kommandozeilenschalter) und
+      // der ganze Pane samt `buildLaunchCommand`.
       if (istSchleifenAdapter(adapter)) {
         const gebaut = baueSchleifenSitzung({
           name, cwd, entityId, def, eintrag: eintragFuerSitzung('niveau-b'),
@@ -1827,6 +1860,9 @@ export async function beauftrageSchleife(
         const u = await baueLaufUmgebung(
           laufId, eintrag, alt.auftragstext, opts.wurzel, services, () => {}, opts.praefix,
         )
+        // Vor dem Start, synchron: sonst kann `beiEnde` eines kurzen Laufs vor dem Eintrag ins
+        // Register liegen. Siehe SchleifenStartOpts.beiStart.
+        opts.beiStart?.(laufId)
         setzeFolgeauftrag(laufId, alt, u, opts.auftragstext)
           .catch((err) => {
             console.error(
@@ -1837,7 +1873,7 @@ export async function beauftrageSchleife(
           .finally(() => {
             abbruchmarken.delete(laufId)
             laufendeLaeufe.delete(laufId)
-            opts.beiEnde?.()
+            opts.beiEnde?.(laufId)
           })
         return { laufId, fortgesetzt: true }
       }
@@ -1851,9 +1887,10 @@ export async function beauftrageSchleife(
   }
 
   const laufId = randomUUID()
+  opts.beiStart?.(laufId)
   await starteHarnessLauf({
     laufId, eintrag, auftragstext: opts.auftragstext, wurzel: opts.wurzel,
-    services, entitaet: opts.praefix, beiEnde: opts.beiEnde,
+    services, entitaet: opts.praefix, beiEnde: () => opts.beiEnde?.(laufId),
   })
   return { laufId, fortgesetzt: false }
 }
@@ -1863,7 +1900,39 @@ export function markiereAbbruch(laufId: string): void {
 }
 ```
 
-`SchleifenStartOpts` (Task 1) bekommt dafür ein optionales `beiEnde?: () => void`. Der Kommentar dort sagt: *der Aufrufer kippt damit den Zellenzustand — der Hauptprozess führt ihn, nicht der Renderer.*
+`SchleifenStartOpts` trägt `beiStart?` und `beiEnde?` bereits aus Task 1 — beide sind dort mit ihrem Grund kommentiert. Diese Aufgabe ruft sie nur.
+
+**Der Test dazu gehört hierher**, weil das Rennen sonst niemand fängt. In `tests/session/session-auftrag.test.ts` ergänzen:
+
+```ts
+it('ein Lauf, der vor der Rueckkehr endet, laesst die Zelle nicht auf laeuft stehen', () => {
+  // Das Rennen in Worten: beiStart traegt die laufId ein, beiEnde kippt zurueck. Faellt
+  // beiEnde vor beiStart, steht die Zelle danach fuer immer auf 'laeuft'. Deshalb ruft
+  // beauftrageSchleife beiStart SYNCHRON vor dem Schleifenstart.
+  const r = neuesRegister()
+  r.setze({
+    name: 'z1', wurzel: '/p', entityId: 'keel-arbeiter', eintragId: 'm1',
+    zustand: 'leerlaufend', laufId: null, letzterEndzustand: null,
+  })
+  // Reihenfolge wie im Handler: erst setzeLauf (beiStart), dann setzeZustand (beiEnde).
+  r.setzeLauf('z1', 'l1')
+  r.setzeZustand('z1', 'leerlaufend', 'ziel-erreicht')
+  expect(r.hole('z1')!.zustand).toBe('leerlaufend')
+  expect(pruefeZelleFrei('z1', r).ok).toBe(true)
+})
+
+it('das Ende eines fremden Laufs kippt die Zelle nicht', () => {
+  const r = neuesRegister()
+  r.setze({
+    name: 'z1', wurzel: '/p', entityId: 'keel-arbeiter', eintragId: 'm1',
+    zustand: 'laeuft', laufId: 'l2', letzterEndzustand: null,
+  })
+  // Der Id-Vergleich im Handler: nur der eigene Lauf kippt die Zelle.
+  const zelle = r.hole('z1')!
+  expect(zelle.laufId === 'l1').toBe(false)   // 'l1' ist der beendete, 'l2' der laufende
+  expect(zelle.zustand).toBe('laeuft')
+})
+```
 
 - [ ] **Step 4: Den Handler schreiben**
 
@@ -1891,20 +1960,33 @@ In `src/main/ipc-handlers.ts`:
       const ergebnis = await adapter.starteAuftrag({
         wurzel: frei.zelle.wurzel, sitzungsname: name, auftragstext: text,
         eintragId: frei.zelle.eintragId, praefix, letzteLaufId: frei.zelle.laufId,
+
         // Der Hauptprozess fuehrt den Zellenzustand — der Renderer leitet nichts aus dem
-        // Ereignisstrom ab. Gekippt im selben finally, das die Laufmarken aufraeumt.
-        beiEnde: () => {
-          const ereignisse = lesen(harnessDb(), schleifenZellen.hole(name)?.laufId ?? '')
-          const letztes = [...ereignisse].reverse().find(e => e.art === 'run.finished')
+        // Ereignisstrom ab.
+        //
+        // beiStart, nicht der Rueckgabewert: `starteAuftrag` kehrt heim, sobald das erste
+        // `run.started` steht, und der Rest faehrt im Hintergrund. Wer die laufId erst danach
+        // eintruege, verloere gegen einen sehr kurzen Lauf — dessen beiEnde kippte die Zelle,
+        // bevor sie je auf 'laeuft' stand, und das nachfolgende setzeLauf liesse sie fuer
+        // immer darauf stehen.
+        beiStart: (laufId) => {
+          schleifenZellen.setzeLauf(name, laufId)
+          broadcast(SESSION_STATUS_CHANGED, { name, zustand: 'laeuft', laufId })
+        },
+
+        beiEnde: (beendeterLauf) => {
+          const zelle = schleifenZellen.hole(name)
+          // Gehoert der beendete Lauf noch zu dieser Zelle? Nach einem Zerstoeren und
+          // Neuanlegen unter demselben Namen laeuft sonst das finally des alten Laufs in die
+          // neue Zelle.
+          if (!zelle || zelle.laufId !== beendeterLauf) return
+          const letztes = [...lesen(harnessDb(), beendeterLauf)]
+            .reverse().find(e => e.art === 'run.finished')
           const endzustand = typeof letztes?.nutzlast.endzustand === 'string'
             ? letztes.nutzlast.endzustand : null
           schleifenZellen.setzeZustand(name, 'leerlaufend', endzustand)
           broadcast(SESSION_STATUS_CHANGED, { name, zustand: 'leerlaufend', endzustand })
         },
-      })
-      schleifenZellen.setzeLauf(name, ergebnis.laufId)
-      broadcast(SESSION_STATUS_CHANGED, {
-        name, zustand: 'laeuft', laufId: ergebnis.laufId, fortgesetzt: ergebnis.fortgesetzt,
       })
       return { ok: true, wert: ergebnis }
     } catch (err) {

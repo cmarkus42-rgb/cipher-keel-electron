@@ -18,10 +18,11 @@ import type { PresetRahmen } from './schema'
 import { CapabilityNiveau } from './niveau'
 import { createArchitectRahmen } from './architect/architect-preset'
 import { createCfRahmen } from './cyber-factory/cf-preset'
+import { createKaRahmen } from './keel-arbeiter/ka-preset'
 import { createSERahmen } from './systems-engineer/se-preset'
 import { createTaRahmen } from './testing-assistant/ta-preset'
 import { createWorkshopRahmen } from './workshop/workshop-preset'
-import { ARCHITECT_BODY, CF_BODY, SE_BODY, TA_BODY, WORKSHOP_BODY } from './bodies'
+import { ARCHITECT_BODY, CF_BODY, KA_BODY, SE_BODY, TA_BODY, WORKSHOP_BODY } from './bodies'
 import { resolvePersona, getDefaultPersona } from './shared/persona-loader'
 
 export interface EntityDefinition {
@@ -48,6 +49,7 @@ const ENTITIES: Record<string, EntityEntry> = {
   'cyber-factory': { rahmen: createCfRahmen, body: CF_BODY },
   'workshop': { rahmen: createWorkshopRahmen, body: WORKSHOP_BODY },
   'testing-assistant': { rahmen: createTaRahmen, body: TA_BODY },
+  'keel-arbeiter': { rahmen: createKaRahmen, body: KA_BODY },
 }
 
 /** All entity ids the registry can build. */

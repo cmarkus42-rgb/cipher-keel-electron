@@ -12,7 +12,7 @@
  * also faengt der Compiler eine im Fenster vergessene Art nicht: `skill.geladen` fehlte nach
  * seiner Einfuehrung sowohl in der Farbtabelle als auch in der Kurzfassung des Ereignis-Panels
  * und wurde stumm als leere Zeile dargestellt — ausgerechnet das Ereignis, dessen einziger Zweck
- * Sichtbarkeit ist. Die Liste hier ist die Grundlage des Waechters, der das kuenftig faengt
+ * Sichtbarkeit ist. Die Liste hier ist die Grundlage des Waechters, der das faengt
  * (tests/renderer/ereignis-panel.test.ts).
  */
 export const EREIGNIS_ARTEN = [
@@ -49,6 +49,17 @@ export const EREIGNIS_ARTEN = [
    * damit unsichtbar, und `pruefeBudgets` schlug nie an, egal wie viele Unterlaeufe liefen.
    */
   'unterlauf.verbraucht',
+  /**
+   * Nutzlast `{auftragstext}`. Ein zweiter Auftrag in denselben Lauf, wenn dessen Budgets und
+   * Kontext ihn noch tragen (harness/fortsetzbarkeit.ts).
+   *
+   * Eigenes Ereignis und **kein** umgeschriebener Praefix: der Auftragstext steht im stabilen
+   * Teil (praefix.ts, `## Auftrag`), und der muss ueber alle Zuege zeichengleich bleiben, sonst
+   * verfehlt der Anbieter-Zwischenspeicher bei jedem Folgeauftrag. Ausserdem behauptete
+   * `run.started` dann etwas, das der Lauf nicht tut — ein falscher Grund im Protokoll ist
+   * schlimmer als eine fehlende Funktion.
+   */
+  'auftrag.folgend',
   'run.finished',
 ] as const
 

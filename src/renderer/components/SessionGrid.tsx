@@ -10,13 +10,24 @@
 import { useCallback } from 'react'
 import { SessionCell, type VoiceDotState } from './SessionCell'
 import { LauncherCell } from './LauncherCell'
+import { HarnessCell } from './HarnessCell'
+import type { HarnessEreignis } from '../../shared/harness-types'
 
 interface SessionSlot {
-  type: 'session' | 'launcher'
+  type: 'session' | 'launcher' | 'harness'
   sessionId?: string
   sessionName?: string
   status?: 'active' | 'closing' | 'stopped'
   contextUsage?: number
+  /**
+   * Nur fuer type 'harness'. Gefuehrt vom Hauptprozess ueber SESSION_STATUS_CHANGED, nie hier
+   * abgeleitet — siehe den Modulkopf von HarnessCell.tsx.
+   */
+  zustand?: 'leerlaufend' | 'laeuft'
+  laufId?: string | null
+  letzterEndzustand?: string | null
+  /** SchleifenZelle.eintragId, festgehalten bei Anlage der Zelle (siehe HarnessCell.tsx). */
+  eintragId?: string
 }
 
 interface SessionGridProps {
@@ -27,9 +38,15 @@ interface SessionGridProps {
   /** Resolves to an error message on failure, or null on success (F-6). */
   onStartSession: (slotIndex: number, entityId: string) => Promise<string | null>
   onCloseSession: (sessionId: string) => void
+  /** Alle Harness-Ereignisse aller Zellen — jede HarnessCell filtert selbst auf ihre laufId. */
+  harnessEreignisse: HarnessEreignis[]
+  onAuftrag: (sessionName: string, auftragstext: string) => Promise<string | null>
+  onAbbrechen: (laufId: string) => Promise<string | null>
 }
 
-export function SessionGrid({ cols, rows, slots, voiceDot, onStartSession, onCloseSession }: SessionGridProps) {
+export function SessionGrid({
+  cols, rows, slots, voiceDot, onStartSession, onCloseSession, harnessEreignisse, onAuftrag, onAbbrechen,
+}: SessionGridProps) {
   const handleClose = useCallback((sessionId: string) => {
     onCloseSession(sessionId)
   }, [onCloseSession])
@@ -62,6 +79,31 @@ export function SessionGrid({ cols, rows, slots, voiceDot, onStartSession, onClo
             contextUsage={slot.contextUsage}
             voiceDot={voiceDot}
             onClose={handleClose}
+          />
+        ) : slot.type === 'harness' && slot.sessionName ? (
+          <HarnessCell
+            key={slot.sessionName}
+            sessionName={slot.sessionName}
+            eintragId={slot.eintragId ?? ''}
+            zustand={slot.zustand ?? 'leerlaufend'}
+            laufId={slot.laufId ?? null}
+            letzterEndzustand={slot.letzterEndzustand ?? null}
+            ereignisse={harnessEreignisse}
+            onAuftrag={(auftragstext) => onAuftrag(slot.sessionName!, auftragstext)}
+            onAbbrechen={() => {
+              // zellenansicht() macht den Abbrechen-Knopf nur klickbar, solange zustand ===
+              // 'laeuft' — und die Zelle setzt laufId in genau demselben SESSION_STATUS_CHANGED,
+              // das zustand auf 'laeuft' setzt (siehe SESSION_AUFTRAG in ipc-handlers.ts). Ein
+              // fehlendes laufId hier waere also ein Bug in dieser Verdrahtung, kein normaler
+              // Fall — sichtbar gemacht statt stillschweigend nichts zu tun.
+              if (!slot.laufId) {
+                return Promise.resolve(
+                  `Interner Fehler: Zelle '${slot.sessionName}' hat keine laufende laufId.`
+                )
+              }
+              return onAbbrechen(slot.laufId)
+            }}
+            onClose={() => onCloseSession(slot.sessionId ?? slot.sessionName!)}
           />
         ) : (
           <LauncherCell
