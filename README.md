@@ -212,7 +212,8 @@ All 2678 tests pass across 187 test files (`npm test`, ~5s).
 | Phase 7 | CI pipeline — typecheck, lint, test and build gating every push and PR | Done |
 | Phase 8 | Packaging — separate build output, an archive limited to the built app, an Apple-Silicon-only DMG target, a generated app icon, the asar path fix that lets the knowledge graph initialise inside a package, an automated smoke test against the packaged app, and comprehensible messages for missing CLI tools | Done, unreleased |
 | Entity start path | `session:create` assembles the entity prompt and launches the CLI with it — before this, it opened a bare shell | Done |
-| Level and adapter wiring | The level follows the adapter, model tiers resolve, capability packages are the single source per entity, level B emits an inventory instead of nothing, and a prompt preview shows all of it before anything starts | Done — the NanoClaw adapter this phase originally registered was removed 2026-08-17 with the rest of the subsystem; level B has no adapter again until keel's own harness lands |
+| Level and adapter wiring | The level follows the adapter, model tiers resolve, capability packages are the single source per entity, level B emits an inventory instead of nothing, and a prompt preview shows all of it before anything starts | Done — the NanoClaw adapter this phase originally registered was removed 2026-08-17 with the rest of the subsystem; level B now runs on keel's own harness (see the `keel-harness` adapter row below) |
+| `keel-harness` adapter | Turns the harness loop into a grid session: a `keel-Arbeiter (Niveau B)` preset, a `sitzung:niveau-b` assignment slot, a cell with its own order field, event panel and cancel button. Verified end to end in the running app, not only in tests — see the bullet below and the field protocol it links | Done — 2026-08-23, field-verified |
 | Phaseninput layer | The fifth assembly layer: the preceding phase's output artefacts, resolved from the graph into the prompt | Done |
 | Model layer | A model registry with capability records, six tier/role slots (three tiers, plus tagging, worker and researcher), endpoint resolution and keychain-backed API keys, all editable in the settings window | Done |
 | Harness core | keel's own agent loop around a model: build the prompt, read the answer, run tools, check budgets, write everything to an event log. Read-only tools (file, directory, content search, knowledge graph), a stable/volatile prefix split for cache reuse, deferred schema loading | Done — 2026-08-18 |
@@ -266,16 +267,35 @@ than what is delivered would be worse than none (CK-NFR-012).
 - **Idle RAM budget and cold-start time unverified.** The <300 MB / <5s targets are
   architecturally supported (lazy init, WAL, no in-memory cache, deferred service start)
   but have not been measured against a production build
-- **The harness runs, but it is not yet a session.** keel's own loop exists and does real
-  work — it drives a model through tool calls, budgets and an event log, and the network
-  stretch above was measured through it against a local 27B. What is still missing is the
-  step that turns it into a *session*: `RUNTIMES_WITHOUT_ADAPTER` still contains
-  `keel-harness`, `AdapterRegistry` holds one live entry (`claude-code`), and no slot in
-  `model/slots.ts` offers the runtime. So the loop is reachable over IPC and from tests, but
-  no preset can start a level-B session in the grid, with its own cell, lifecycle and output
-  events. That gap is deliberate and named in `agent/registry.ts` — a slot before its
-  adapter would be a surface for a dummy. (An earlier NanoClaw bridge served this role until
-  it was superseded on 2026-08-16 and removed 2026-08-17; see
+- **What a Niveau-B cell can and cannot do.** `RUNTIMES_WITHOUT_ADAPTER` is empty now —
+  `keel-harness` has an adapter, a `sitzung:niveau-b` assignment slot in
+  `model/slots.ts`, and a real cell in the grid. Verified in the running app (not only in
+  tests, which cannot reach `ipcMain` at all — see
+  [`docs/superpowers/plans/2026-08-23-keel-harness-adapter-protokoll.md`](docs/superpowers/plans/2026-08-23-keel-harness-adapter-protokoll.md)):
+  a cell is started from the launcher like any preset, and it freezes the registry entry
+  the `sitzung:niveau-b` slot named *at cell creation* — reassigning the slot afterwards
+  changes what the *next* cell gets, not this one, confirmed by opening a cell, changing
+  the slot, and reading the open cell's own header unchanged. Real orders against the DGX
+  Spark landed a second order into the *same* run (`auftrag.folgend`, one `laufId`) five
+  times in a row, because the budget check that decides this (`weiterOderFrisch`) found
+  headroom left each time — a model-specific "this one always falls back to fresh" rule
+  does not exist; it would start a fresh `laufId` once that same check finds no headroom,
+  which the field session never forced (budgets stayed comfortably under threshold
+  throughout; the fresh-on-exhaustion side is unit-tested, not field-forced here — see the
+  protocol). Starting a cell against an empty slot, and sending a second order into a cell
+  that already has one running, both refuse with a named reason in the window itself
+  (the launcher tile, or the cell's own error line) instead of a console message.
+
+  What it does **not** do, on purpose, in 0.1: **no beauftragen von oben** — only a human
+  typing into that cell's own field can give it an order; no other role or phase step can
+  hand it a follow-up job programmatically. **No attachments** — the order field is text
+  only; `HARNESS_LAUF_STARTEN`'s `anhaenge` parameter exists for the standalone Harness
+  window, the grid cell offers no picker for it. **No "Fortsetzen" button** — the cell
+  only ever continues a dormant run automatically, as a side effect of sending a new
+  order that fits the remaining budget; there is no control to resume an arbitrary past
+  run by picking it, the way `HARNESS_LAUF_FORTSETZEN` lets the Harness window do.
+  (An earlier NanoClaw bridge served the level-B role until it was superseded on
+  2026-08-16 and removed 2026-08-17; see
   [`docs/anpassbare-flaechen.md`](docs/anpassbare-flaechen.md) for why.)
 - **Codex and Gemini adapters** remain a design target, untouched.
 - **What the network stretch still loses is content, not connectivity.** Pages behind an
