@@ -15,6 +15,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { SITZUNG_FREMDES_CLI } from '../agent-adapter'
 import type {
   CliSitzungsAdapter,
   LaunchCommand,
@@ -41,7 +42,7 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
   readonly displayName = 'Claude Code'
   readonly tier = 'tier-1' as const
   readonly niveau = CapabilityNiveau.A
-  readonly sitzungsart = 'fremdes-cli' as const
+  readonly sitzungsart = SITZUNG_FREMDES_CLI
   readonly appGesteuerteParameter = [
     '--resume', '--fork-session', '--model', '--append-system-prompt-file',
   ] as const

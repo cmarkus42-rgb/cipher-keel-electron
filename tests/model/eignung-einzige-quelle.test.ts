@@ -32,18 +32,19 @@ describe('the suitability rules have exactly one home', () => {
    * beiden Tests darunter: eine zweite Tabelle und ein zweiter Nutzertext.
    *
    * agent-adapter.ts (seit dem Harness-Adapter-Plan, 2026-08-23) nennt beide Werte ebenfalls,
-   * weil `Sitzungsart` dort per `Extract<Laeufer, ...>` aus dieser Liste abgeleitet ist, nicht
-   * weil es eine eigene Wortliste fuehrt. Kein zweiter Nenner, sondern derselbe.
-   *
-   * claude-code.ts nennt aus demselben Grund genau einen der beiden Werte: ein konkreter
-   * Adapter muss sein `sitzungsart`-Feld auf einen Literalwert festlegen, so wie ein Slot
-   * seinen Laeufer festlegt — auch das ist keine zweite Tabelle, sondern eine Zuweisung.
+   * weil `Sitzungsart` dort per `Extract<Laeufer, ...>` aus dieser Liste abgeleitet ist. Es ist
+   * die Adapter-seitige Heimat des Vokabulars und nennt die Werte genau zweimal, als die
+   * Konstanten `SITZUNG_FREMDES_CLI`/`SITZUNG_EIGENE_SCHLEIFE` — jeder konkrete Adapter
+   * (claude-code.ts und was noch kommt) zieht seinen Wert von dort statt ihn selbst zu
+   * schreiben, und bleibt deshalb ausserhalb dieser Liste. Eine Ausnahmeliste, die mit jedem
+   * neuen Adapter waechst, waere keine Ausnahmeliste mehr, sondern eine Wache, die aufgehoert
+   * hat zu wachen — deshalb bleibt es bei drei Eintraegen, unabhaengig davon, wie viele
+   * Adapter-Dateien noch dazukommen.
    */
   const laeuferHeimat = [
     ...erlaubt,
     path.join(SRC, 'main/model/slots.ts'),
     path.join(SRC, 'main/agent/agent-adapter.ts'),
-    path.join(SRC, 'main/agent/adapters/claude-code.ts'),
   ]
 
   it('names the three Laeufer only in eignung.ts and the slot table', () => {

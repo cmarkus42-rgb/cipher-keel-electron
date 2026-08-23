@@ -103,6 +103,18 @@ export interface OutputEvent {
  */
 export type Sitzungsart = Extract<Laeufer, 'fremdes-cli' | 'eigene-schleife'>
 
+/**
+ * Die beiden Sitzungsarten als Werte, damit ein konkreter Adapter sie **zuweisen** kann, ohne
+ * den Laeufer-Literal selbst zu schreiben.
+ *
+ * Ohne sie musste jeder Adapter in die Ausnahmeliste von
+ * tests/model/eignung-einzige-quelle.test.ts — und eine Liste, die mit jeder neuen Datei ihrer
+ * Sorte waechst, bewacht bald nichts mehr. So bleibt die Liste bei drei Eintraegen
+ * (eignung.ts, slots.ts, diese Datei), egal wie viele Adapter noch kommen.
+ */
+export const SITZUNG_FREMDES_CLI = 'fremdes-cli' as const
+export const SITZUNG_EIGENE_SCHLEIFE = 'eigene-schleife' as const
+
 /** Was jeder Adapter ehrlich beantworten kann — unabhaengig davon, wie seine Sitzung laeuft. */
 export interface AgentAdapterBasis {
   readonly id: string
@@ -156,7 +168,7 @@ export interface AgentAdapterBasis {
  * output batcher respectively — they describe exactly the separation this union now carries.
  */
 export interface CliSitzungsAdapter extends AgentAdapterBasis {
-  readonly sitzungsart: 'fremdes-cli'
+  readonly sitzungsart: typeof SITZUNG_FREMDES_CLI
   readonly appGesteuerteParameter?: readonly string[]
   buildLaunchCommand(opts: LaunchOpts): LaunchCommand
   postLaunchInjection?(ctx: AdapterContext): Promise<void>
@@ -221,7 +233,7 @@ export interface SchleifenStartErgebnis {
 
 /** keels eigene Schleife im Hauptprozess. Kein Pane, kein Kommandozeilenaufruf. */
 export interface SchleifenSitzungsAdapter extends AgentAdapterBasis {
-  readonly sitzungsart: 'eigene-schleife'
+  readonly sitzungsart: typeof SITZUNG_EIGENE_SCHLEIFE
   starteAuftrag(opts: SchleifenStartOpts): Promise<SchleifenStartErgebnis>
   /** Setzt die Abbruchmarke. Der Lauf endet am naechsten Zugrand, nicht sofort. */
   brichAb(laufId: string): void
@@ -230,5 +242,5 @@ export interface SchleifenSitzungsAdapter extends AgentAdapterBasis {
 export type AgentAdapter = CliSitzungsAdapter | SchleifenSitzungsAdapter
 
 export function istSchleifenAdapter(a: AgentAdapter): a is SchleifenSitzungsAdapter {
-  return a.sitzungsart === 'eigene-schleife'
+  return a.sitzungsart === SITZUNG_EIGENE_SCHLEIFE
 }
