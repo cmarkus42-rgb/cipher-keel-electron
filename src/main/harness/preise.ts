@@ -11,31 +11,39 @@
  *
  * The cost calculator (`kostenCent`, called from `lauf.ts`'s `verbrauchAusEreignissen`) keys
  * this table by `Auftrag.modellId`, which is the model registry's `id` field
- * (src/main/model/defaults.ts) — not a vendor model name. Of the seven shipped registry
- * entries, only one runs against a metered API: `openrouter-qwen3-coder`. The three
- * `claude-*-cli` entries run over the Claude Code subscription's quota, not a per-token API
- * meter, so they have no comparable marginal price to enter here; and the three local-http
- * entries (`mac-qwen3-30b`, `spark-gemma4-26b`, `spark-gpt-oss-120b`) already cost nothing per
- * token — the machine is paid for either way. None of those six ids belong in this table, and
- * leaving them out (rather than entering a guess or a zero that looks like a measurement) is
- * the correct state, not a gap.
+ * (src/main/model/defaults.ts) — not a vendor model name. Of the fifteen shipped registry
+ * entries, nine run against a metered API: `openrouter-qwen3-coder` and the eight OpenRouter
+ * entries added 2026-08-24. The three `claude-*-cli` entries run over the Claude Code
+ * subscription's quota, not a per-token API meter, so they have no comparable marginal price to
+ * enter here; and the three local-http entries (`mac-qwen3-30b`, `spark-gemma4-26b`,
+ * `spark-gpt-oss-120b`) already cost nothing per token — the machine is paid for either way.
+ * None of those six ids belong in this table, and leaving them out (rather than entering a
+ * guess or a zero that looks like a measurement) is the correct state, not a gap.
  *
- * `openrouter-qwen3-coder` is the one entry that should be priced and, before this table was
- * corrected, was not: the table's earlier keys (`claude-opus-5`, `claude-sonnet-5`,
+ * `openrouter-qwen3-coder` was the one entry that should be priced and, before this table was
+ * first corrected, was not: the table's earlier keys (`claude-opus-5`, `claude-sonnet-5`,
  * `claude-haiku-4-5-20251001`, `gemma4:26b`) matched no registry id and no vendor model
  * string, so the cost budget silently priced every real run at zero, including the only one
- * that actually costs money. The rate below is OpenRouter's own published headline rate for
+ * that actually costs money. Its rate is OpenRouter's own published headline rate for
  * `qwen/qwen3-coder` (fetched from openrouter.ai/qwen/qwen3-coder on 2026-08-19: $0.22 / $1.80
  * per 1M input/output tokens). OpenRouter routes this model across five providers whose prices
  * can differ, and Alibaba's own endpoint prices by context length above 128k input tokens —
  * so this is a headline figure, not a per-provider guarantee, and PREISTABELLE_STAND is the
  * signal for how stale it may be.
  *
+ * The eight rows added 2026-08-24 (model/defaults.ts, the OpenRouter block comment there) come
+ * straight from `GET https://openrouter.ai/api/v1/models` on that date — the `pricing.prompt`/
+ * `pricing.completion` fields, which are USD per token, converted to cent per million tokens
+ * (`usd_per_token * 1_000_000 * 100`). Every one of them is the same kind of headline figure as
+ * `openrouter-qwen3-coder` above: OpenRouter can route across several providers per model, and a
+ * provider can price by context length the way Alibaba does — this table is not a guarantee for
+ * a specific request, only the best available anchor, dated so its staleness stays visible.
+ *
  * CK-NFR-012: this is an adjustable surface. It has an entry in docs/anpassbare-flaechen.md,
  * and tests/docs/anpassbare-flaechen.test.ts holds that entry in place.
  */
 
-export const PREISTABELLE_STAND = '2026-08-19'
+export const PREISTABELLE_STAND = '2026-08-24'
 
 export interface Preis {
   /** Cent per million input tokens. */
@@ -48,6 +56,17 @@ export const VORGABE_PREISE: Record<string, Preis> = {
   // OpenRouter headline rate for qwen/qwen3-coder, keyed by the registry id
   // 'openrouter-qwen3-coder' (src/main/model/defaults.ts) — see the module comment above.
   'openrouter-qwen3-coder': { eingabeProMillion: 22, ausgabeProMillion: 180 },
+
+  // The eight rows below: fetched from https://openrouter.ai/api/v1/models on 2026-08-24,
+  // USD-per-token converted to cent-per-million-tokens — see the module comment above.
+  'openrouter-qwen3-coder-plus': { eingabeProMillion: 65, ausgabeProMillion: 325 },
+  'openrouter-kimi-k27-code': { eingabeProMillion: 67, ausgabeProMillion: 340 },
+  'openrouter-codestral-2508': { eingabeProMillion: 30, ausgabeProMillion: 90 },
+  'openrouter-deepseek-v4-pro': { eingabeProMillion: 39.69, ausgabeProMillion: 79.38 },
+  'openrouter-glm-53': { eingabeProMillion: 140, ausgabeProMillion: 440 },
+  'openrouter-minimax-m3': { eingabeProMillion: 30, ausgabeProMillion: 120 },
+  'openrouter-qwen38-27b': { eingabeProMillion: 40, ausgabeProMillion: 300 },
+  'openrouter-gpt-oss-120b': { eingabeProMillion: 3.70, ausgabeProMillion: 17 },
 }
 
 export function kostenCent(

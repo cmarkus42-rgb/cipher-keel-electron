@@ -14,8 +14,12 @@ reduzierten Mechanismen zu.
 
 ## Vorgehen
 
-**Sieben Tools, keine anderen.** Der Graph-MCP-Server stellt genau sieben `graph_*`-Tools zur
-Verfügung — es gibt keine weiteren:
+**Sieben Tools, keine anderen — und Stand 2026-08-23 ohne Transport.** Der Graph-MCP-Server
+stellt genau sieben `graph_*`-Tools zur Verfügung — es gibt keine weiteren. Ob eine laufende
+Sitzung sie tatsächlich erreichen kann, ist eine andere Frage: es gibt heute keinen Transport
+und keine Registrierung beim Sitzungsstart (siehe `docs/anpassbare-flaechen.md`, Abschnitt „Was
+fehlt"). Diese Beschreibung gilt für den Vertrag der Tools, nicht als Zusage, dass sie in dieser
+Sitzung aufrufbar sind:
 
 - **`graph_search`** — Volltext-/Vektor-Suche. Pflichtparameter `query`; optional `limit`
   (Default 10) und `kind` (Knotentyp-Filter). Liefert kompakte Treffer (uid, kind, title,
