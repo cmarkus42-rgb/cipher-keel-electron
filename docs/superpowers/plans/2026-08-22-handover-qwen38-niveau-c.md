@@ -1,7 +1,6 @@
 # Übergabe: Qwen3.8 27B als Niveau-C-Modell mit Nachschlagen und Rechercheur
 
-**Stand:** 2026-08-22, vierte Fassung · **Zweig:** `qwen38-niveau-c`, 2677 Tests grün, typecheck
-und lint sauber, Arbeitsbaum sauber · **Nicht integriert.**
+**Stand:** 2026-08-23, fünfte Fassung · **Integriert nach `main` am 2026-08-23** (`58c979e`), 2678 Tests grün, typecheck, lint und CI sauber. Der Zweig `qwen38-niveau-c` ist gelöscht — diese Datei ist ab hier ein **Protokoll**, keine Übergabe mehr. Was noch offen ist, steht in Abschnitt 6.
 
 <!-- Die Commit-Zahl stand hier bis zur vierten Fassung und war jedes Mal um eins veraltet: sie
      aendert sich durch genau den Commit, der sie nachfuehrt. `git rev-list --count main..HEAD`
