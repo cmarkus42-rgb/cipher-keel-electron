@@ -56,10 +56,15 @@ export const abbruchmarken = new Set<string>()
  * itself right now": a click on "Fortsetzen" for the run that is this process's own current run
  * started a second `fahre()` loop over the same run id and the same database — every tool call
  * doubled, two interleaved conversations in one append-only protocol, and the model endpoint
- * billed twice. Set in both HARNESS_LAUF_STARTEN and HARNESS_LAUF_FORTSETZEN before the loop
- * starts, deleted in the same `finally` that already cleans up `abbruchmarken` once it ends —
- * same lifetime as the abort mark, checked in the main process, never trusted to the renderer
- * merely hiding the button (same rule as every other decision in this file).
+ * billed twice. Set in all three places that open a `fahre()` loop over an existing laufId —
+ * HARNESS_LAUF_STARTEN, HARNESS_LAUF_FORTSETZEN, and `beauftrageSchleife`'s follow-up-job branch
+ * (~line 516) — before the loop starts, deleted in the same `finally` that already cleans up
+ * `abbruchmarken` once it ends. The third of these is not a late addition alongside the other
+ * two: it is the one this whole set exists to guard, since `beauftrageSchleife` is the only
+ * caller that can race against itself over the *same* laufId from two different entry points
+ * (a resumed cell and a fresh `HARNESS_LAUF_FORTSETZEN` on the same run) — same lifetime as the
+ * abort mark, checked in the main process, never trusted to the renderer merely hiding the
+ * button (same rule as every other decision in this file).
  */
 export const laufendeLaeufe = new Set<string>()
 
@@ -475,7 +480,8 @@ export async function starteHarnessLauf(args: {
  * (agent/adapters/keel-harness.ts) diese Funktion schon per `await import(...)` ruft — ein
  * `await import()` wird typgeprueft, ein noch nicht existierendes Modul waere ein sofortiger
  * `npm run typecheck`-Fehler. Der IPC-Kanal, der `beauftrageSchleife` tatsaechlich aufruft, ist
- * noch nicht verdrahtet; diese Funktion ist vollstaendig, ihr Aufrufer kommt erst mit Task 9.
+ * seit Task 9 verdrahtet: `SESSION_AUFTRAG` (ipc-handlers.ts) ruft ihn ueber
+ * `KeelHarnessAdapter.starteAuftrag`.
  */
 export async function beauftrageSchleife(
   opts: SchleifenStartOpts, services: AppServices,

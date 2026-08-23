@@ -1,8 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { weiterOderFrisch, FOLGE_RESERVE } from '../../src/main/harness/fortsetzbarkeit'
+import { STANDARD_BUDGETS } from '../../src/main/harness-sitzung'
 import type { Ereignis } from '../../src/main/harness/ereignisse'
 
-const BUDGETS = { runden: 12, wanduhrMs: 900_000, kostenCent: 200, kontextAnteil: 0.8 }
+// Die echte Konstante, nicht ein Nachbau: `grep -rn STANDARD_BUDGETS tests/` war vor diesem
+// Import leer, und ein wortgleicher Literal-Nachbau haette eine Aenderung an
+// harness-sitzung.ts nicht bemerkt -- derselbe Fehler, den `werkzeugliste.test.ts` schon einmal
+// gemacht hat (siehe dessen Kommentar). Die „wortwoertlich"-Tests unten (9, 675.000, 150, ...)
+// rechnen von hier weiter; wer STANDARD_BUDGETS aendert, sieht sie rot, nicht nur den Import.
+const BUDGETS = STANDARD_BUDGETS
 const FENSTER = 32_000
 const START = Date.parse('2026-08-23T10:00:00.000Z')
 
@@ -143,5 +149,19 @@ describe('weiterOderFrisch — der Wert der Reserve, nicht nur ihre Verdrahtung'
     ]
     const r = weiterOderFrisch(e, 'm1', BUDGETS, FENSTER, START + 1_000)
     expect(r.weiter).toBe(true)
+  })
+})
+
+/**
+ * `STANDARD_BUDGETS` selbst, direkt und wertfest -- nicht nur ueber die abgeleiteten Schwellen
+ * oben. Die Zahlen hier stehen auch in `fortsetzbarkeit.ts` (Kommentar zur Beweisfahrt),
+ * `docs/superpowers/plans/2026-08-23-keel-harness-adapter-protokoll.md` und README.md als
+ * Feldzahlen ("675 s / 9 Runden"). Bricht dieser Test, muessen die mitgezogen werden.
+ */
+describe('STANDARD_BUDGETS — die Werte, die die Tests oben voraussetzen', () => {
+  it('hat exakt die vier Werte, auf denen 9 Runden / 675.000 ms / 150 Cent / 19.200 Token beruhen', () => {
+    expect(STANDARD_BUDGETS).toEqual({
+      runden: 12, wanduhrMs: 900_000, kostenCent: 200, kontextAnteil: 0.8,
+    })
   })
 })

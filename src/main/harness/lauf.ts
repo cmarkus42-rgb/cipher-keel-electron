@@ -228,16 +228,18 @@ export async function setzeFort(laufId: string, auftrag: Auftrag, u: LaufUmgebun
  * Zeitstempel von `run.started` -- nicht ab diesem Aufruf. Ein Folgeauftrag in einen laengst
  * fertigen, stundenalten Lauf landet deshalb im ersten Zug direkt im Abschlussverhalten: ein
  * werkzeugloser Zug, dann `run.finished`. Ob ein Folgeauftrag ueberhaupt hineindarf, entscheidet
- * der Aufrufer (kuenftig harness/fortsetzbarkeit.ts) -- hier steht nur das Koennen, nicht das
- * Duerfen.
+ * der Aufrufer (harness/fortsetzbarkeit.ts, Funktion `weiterOderFrisch`) -- hier steht nur das
+ * Koennen, nicht das Duerfen.
  *
  * **Vorbedingung: der Lauf ruht.** Diese Funktion oeffnet eine **eigene** `fahre`-Schleife und
  * setzt damit voraus, dass gerade keine andere ueber denselben `laufId` laeuft. Traefe
  * `auftrag.folgend` mitten in einem laufenden Zug ein, schloesse `ergebnisseAusspuelen(true)` in
  * der Projektion nebenlaeufig offene Intents zwangsweise als "Ausfuehrung unbekannt" ab -- genau
  * der Fehler, den `tool.schema_loaded` in projektion.ts mit seinem `false` vermeidet (siehe dort,
- * und `pruefeLaufLaeuftNicht` in harness-handlers.ts fuer denselben Schutz bei `setzeFort`). Der
- * Waechter dafuer ist Sache des Aufrufers, in einer spaeteren Aufgabe.
+ * und `pruefeLaufLaeuftNicht` -- definiert in harness-sitzung.ts, aus harness-handlers.ts nur
+ * re-exportiert -- fuer denselben Schutz bei `setzeFort`). Der Waechter dafuer ist gebaut:
+ * `beauftrageSchleife` ruft `pruefeLaufLaeuftNicht` selbst, bevor es `setzeFolgeauftrag` startet
+ * (harness-sitzung.ts, im Folgeauftrags-Zweig).
  *
  * Ein Lauf, der schon ein run.finished traegt, bekommt am Ende ein zweites. laufUebersicht liest
  * ohnehin das letzte, also traegt die Uebersicht das ohne Aenderung.

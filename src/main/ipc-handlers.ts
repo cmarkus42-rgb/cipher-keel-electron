@@ -442,7 +442,8 @@ export function registerIpcHandlers(services: AppServices): void {
 
     // Typgebunden statt einer rohen broadcast()-Nutzlast an jeder der drei Stellen unten: ein
     // Tippfehler in einer der beiden Formen (SessionStatusChanged, harness-types.ts) faellt so
-    // dem Typcheck auf, statt erst dem Renderer, der den Kanal noch nicht hoert.
+    // dem Typcheck auf, statt erst zur Laufzeit beim Renderer, der den Kanal hoert
+    // (renderer/index.tsx:183).
     const sendeStatus = (status: SessionStatusChanged) => broadcast(SESSION_STATUS_CHANGED, status)
 
     // Von beiStart gesetzt, sobald die laufId feststeht — die einzige Stelle, an der der Catch

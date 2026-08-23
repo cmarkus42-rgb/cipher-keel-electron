@@ -12,7 +12,7 @@
  * also faengt der Compiler eine im Fenster vergessene Art nicht: `skill.geladen` fehlte nach
  * seiner Einfuehrung sowohl in der Farbtabelle als auch in der Kurzfassung des Ereignis-Panels
  * und wurde stumm als leere Zeile dargestellt — ausgerechnet das Ereignis, dessen einziger Zweck
- * Sichtbarkeit ist. Die Liste hier ist die Grundlage des Waechters, der das kuenftig faengt
+ * Sichtbarkeit ist. Die Liste hier ist die Grundlage des Waechters, der das faengt
  * (tests/renderer/ereignis-panel.test.ts).
  */
 export const EREIGNIS_ARTEN = [

@@ -17,6 +17,12 @@ Sie ist nur **noch keine Arbeitskraft.** `RUNTIMES_WITHOUT_ADAPTER` enthält wei
 Lebenszyklus und Ausgabeereignissen. Genau ein Schritt trennt „Motor läuft" von „Gefälle
 funktioniert", und dies ist er.
 
+> **Nachtrag (Abschluss-Fixwelle, 2026-08-23):** Das war die Problemstellung bei Entwurfszeit.
+> Der Schritt ist inzwischen gegangen: `RUNTIMES_WITHOUT_ADAPTER` ist heute leer
+> (`src/main/agent/registry.ts`), der `keel-harness`-Adapter, das `keel-Arbeiter`-Preset und die
+> Niveau-B-Zelle im Gitter sind gebaut und im Feld verifiziert (README.md, Zeile zum
+> `keel-harness`-Adapter).
+
 Der Motor darunter ist fertig und gemessen. Dies ist Anschlussarbeit, keine Forschung.
 
 ---
@@ -100,6 +106,8 @@ IPC-Oberfläche: `auftragAusProtokoll`, `laufAbgeschlossen`, `istUnterlauf`, `pr
 keine bestehende Importstelle bricht — dieselbe Bewegung, mit der `verbrauch.ts` aus `lauf.ts`
 herausgezogen wurde. `pruefeAnhaenge` und `dialogAusgewaehlt` bleiben **im Handler**: der
 Anhang-Herkunftsnachweis hängt am Dateidialog des Fensters, und die Zelle hat keine Anhänge (§10).
+(Nachtrag: `laufUebersicht` fehlt in dieser Liste, ist aber ebenfalls mitgewandert — siehe die
+Korrektur bei §9.1.)
 
 Kein zweiter Zusammenbau. Das Modul liegt **außerhalb** von `src/main/harness/`, weil es
 `electron` braucht (`app.getPath('userData')`) und der Wächter `tests/harness/waechter-kern.test.ts`
@@ -428,6 +436,20 @@ reine, exportierte Funktionen, die der Handler nur noch aufruft — `waehleSitzu
 `pruefeZelleFrei(name, register)`, `modellFuerSitzung()`. Getestet wird gegen **diese**
 Konstruktion, nicht gegen einen Nachbau; der Nachbau in `werkzeugliste.test.ts` war grün, während
 die halbe Liste nicht verdrahtet war.
+
+> **Nachtrag (Abschluss-Fixwelle, 2026-08-23):** Zwei Abweichungen vom Entwurf, beide belegt statt
+> stillschweigend korrigiert:
+> - Von den drei "rein herausgezogenen" Funktionen existiert nur die mittlere,
+>   `pruefeZelleFrei` (`src/main/session/schleifen-sitzungen.ts:66`). Statt `waehleSitzungsweg(adapter)`
+>   wurde `istSchleifenAdapter` gebaut (`src/main/agent/agent-adapter.ts:295`), statt
+>   `modellFuerSitzung()` wurde `eintragFuerSitzung(schluessel)` gebaut
+>   (`src/main/model/registry.ts:79`) — Namen und Signaturen sind andere, der Testbarkeits-Zweck
+>   ("gegen diese Konstruktion, nicht gegen einen Nachbau") gilt für die gebauten drei genauso.
+> - `pruefeLaufLaeuftNicht` und `laufUebersicht` sind seit dem Modulumzug (§4) **nicht** mehr in
+>   `harness-handlers.ts` definiert, sondern in `src/main/harness-sitzung.ts` (Zeile 75 bzw. im
+>   selben Modul) — `harness-handlers.ts` importiert und re-exportiert beide nur noch. `pruefeAnhaenge`
+>   ist die einzige der drei, die tatsächlich dort geblieben ist (§4 nennt `laufUebersicht` in seiner
+>   Wanderliste gar nicht, obwohl es mitgewandert ist).
 
 ### 9.2 Wächter, jeder einmal rot gesehen
 

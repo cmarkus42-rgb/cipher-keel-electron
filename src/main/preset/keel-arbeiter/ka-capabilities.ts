@@ -14,13 +14,16 @@
  * capability text gets nothing — the *road* differs (a CLI preset gets files materialised into
  * the project, keel's own loop gets text in the stable prefix) but the requirement does not.
  *
- * Declared here, not yet delivered: getKaCapabilityPackages feeds capabilityAnbindung
- * (ka-preset.ts), which the registry and its cross-checks (tests/preset/capability-packages.ts,
- * tests/preset/capability-assets-coverage.test.ts) require to be real and asset-backed — and
- * now is. But nothing on the keel-harness run path reads these packages into the assembled
- * prefix: assemblePraefixTeile (harness-praefix-quelle.ts) takes capabilities off an
- * EntitaetsTeile the caller passes in, and nothing yet builds that EntitaetsTeile from
- * getEntityDefinition's output for keel-arbeiter. Wiring that delivery is a later task.
+ * Declared here and delivered — but not through the field its name suggests. getKaCapabilityPackages
+ * feeds capabilityAnbindung (ka-preset.ts), which the registry and its cross-checks
+ * (tests/preset/capability-packages.ts, tests/preset/capability-assets-coverage.test.ts) require
+ * to be real and asset-backed. `session/schleifen-start.ts` builds the keel-harness run's
+ * EntitaetsTeile from getEntityDefinition's output, but leaves `EntitaetsTeile.capabilities`
+ * deliberately empty (see the comment there): these packages reach the model through
+ * `materialiseCapabilities` (called unconditionally for both the CLI and the loop path,
+ * ipc-handlers.ts) writing them to `.claude/capabilities/`, from where `leseFaehigkeiten` and
+ * the `faehigkeit_lesen` tool load them on demand — the same lazy-loading route a CLI preset's
+ * capabilities take, not a copy of the text sitting in the stable prefix.
  */
 
 import { LoaderType, filterByNiveau } from '../capability-schema'

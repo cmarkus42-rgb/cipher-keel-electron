@@ -15,7 +15,8 @@
  *
  * As of the harness stretch (2026-08-23) `AgentAdapter` is no longer a single interface: it
  * is a union of `CliSitzungsAdapter` (a tmux pane and a command line — Claude Code today) and
- * `SchleifenSitzungsAdapter` (keel's own in-process loop, arriving in a later task). Both grew
+ * `SchleifenSitzungsAdapter` (keel's own in-process loop — built in this same stretch as the
+ * `keel-harness` adapter, agent/adapters/keel-harness.ts). Both grew
  * out of the same tmux-shaped interface, which is why every field that once lived on it now
  * has to justify which side it belongs to: `buildLaunchCommand`/`executeCommand`/`streamOutput`
  * describe a pane, `starteAuftrag`/`brichAb` describe a loop with no pane at all. Folding both
@@ -243,8 +244,19 @@ export interface SchleifenStartOpts {
   letzteLaufId: string | null
 
   /**
-   * Called as soon as the laufId is known and **before** the loop actually starts —
-   * synchronously, in the same tick. This is how the caller records it in its own registry.
+   * Called once the laufId is fixed and **before** the loop's first turn actually starts,
+   * with no `await` between this call and the call that starts the loop. This is how the
+   * caller records the laufId in its own registry before anything could end the run.
+   *
+   * **What this does not guarantee: the same tick as the laufId being decided.** In
+   * `beauftrageSchleife`'s follow-up-job branch (harness-sitzung.ts) the laufId is fixed
+   * before `await baueLaufUmgebung(...)`, and `beiStart` only fires after that await
+   * resolves — a real await sits between "laufId known" and "caller told". An earlier version
+   * of this comment claimed "synchronously, in the same tick" for both; that was the reason a
+   * TOCTOU gap in the `frisch` branch (no guard analogous to the `weiter` branch's
+   * `pruefeLaufLaeuftNicht`) was plausible to miss on read. See the open finding in
+   * `docs/superpowers/plans/2026-08-23-keel-harness-adapter-protokoll.md`
+   * ("Offener Befund aus dem Lesen des Codes — ausdruecklich ohne Feldbeleg").
    *
    * It exists because the obvious ordering is a race: `starteAuftrag` returns home as soon
    * as the first `run.started` is written, and the rest of the run continues in the

@@ -198,7 +198,7 @@ improvising.
 
 ## Current state
 
-All 2759 tests pass across 203 test files (`npm test`, ~7s).
+All 2760 tests pass across 203 test files (`npm test`, ~7s).
 
 | Phase | Content | Status |
 |-------|---------|--------|
@@ -219,7 +219,7 @@ All 2759 tests pass across 203 test files (`npm test`, ~7s).
 | Level and adapter wiring | The level follows the adapter, model tiers resolve, capability packages are the single source per entity, level B emits an inventory instead of nothing, and a prompt preview shows all of it before anything starts | Done — the NanoClaw adapter this phase originally registered was removed 2026-08-17 with the rest of the subsystem; level B now runs on keel's own harness (see the `keel-harness` adapter row below) |
 | `keel-harness` adapter | Turns the harness loop into a grid session: a `keel-Arbeiter (Niveau B)` preset, a `sitzung:niveau-b` assignment slot, a cell with its own order field, event panel and cancel button. Verified end to end in the running app, not only in tests — see the bullet below and the field protocol it links | Done — 2026-08-23, field-verified |
 | Phaseninput layer | The fifth assembly layer: the preceding phase's output artefacts, resolved from the graph into the prompt | Done |
-| Model layer | A model registry with capability records, six tier/role slots (three tiers, plus tagging, worker and researcher), endpoint resolution and keychain-backed API keys, all editable in the settings window | Done |
+| Model layer | A model registry with capability records, seven tier/role/session slots (three tiers, plus tagging, worker, researcher, and the `sitzung:niveau-b` grid-cell assignment), endpoint resolution and keychain-backed API keys, all editable in the settings window | Done |
 | Harness core | keel's own agent loop around a model: build the prompt, read the answer, run tools, check budgets, write everything to an event log. Read-only tools (file, directory, content search, knowledge graph), a stable/volatile prefix split for cache reuse, deferred schema loading | Done — 2026-08-18 |
 | Net access and researcher | Two network paths at different trust levels. `web_suchen`/`seite_lesen` run in the main loop but only against an allowlist of vendor documentation; `recherchieren` is an encapsulated sub-run for everything else, with its own registry that carries no file and no graph tool, returning text plus a source list. The difference is one field — the netwatch's mode. Search providers: SearXNG (self-hosted) and Tavily | Done — 2026-08-23, measured |
 
@@ -378,7 +378,7 @@ src/renderer/      — React 19 UI: SessionGrid, ProjectView, Timeline, KanbanBo
                      KickoffWizard, NotesCell, settings tabs
 src/shared/        — Typed IPC channels and domain types
 src/preload.ts     — contextBridge API (window.cipherKeel)
-tests/             — 2759 Vitest tests
+tests/             — 2760 Vitest tests
 docs/superpowers/  — Implementation plans, design specs and audit reports per phase
 ```
 

@@ -436,7 +436,7 @@ ebenso wenig editierbar — mit dem Unterschied, dass hinter dem Wert keine Mess
 | ~~`OLLAMA_HOST` auf dem Spark~~ — **erledigt 2026-08-14**, und anders als hier beschrieben: Ollama läuft dort im Container mit `OLLAMA_HOST=0.0.0.0`, zu war allein Dockers Host-Bindung. Der Container ist jetzt auf die Tailscale-Adresse gebunden | Docker auf fremdem Host | ja, mit Zugang — **war es** |
 | systemd-Drop-in `After=tailscaled.service` auf dem Spark | systemd, **braucht root** | nein — kein passwortloses `sudo` dort |
 | `llm.worker.model` und ggf. Host setzen | Config-Datei | **nein** — keine Oberfläche (CK-NFR-012) |
-| Niveau-B-Harness einrichten | noch kein Trägercode — keel baut sein eigenes Harness erst noch (siehe unten) | **offen** — es gibt noch nichts, das man einrichten müsste |
+| Niveau-B-Harness einrichten | gebaut (siehe unten) — keine Fremdinstallation, die Einrichtung ist die Modellzuweisung im Zuordnungsplatz `sitzung:niveau-b` | **erledigt** — die Zuweisung läuft über das Settings-Fenster (siehe Modell-Layer oben) |
 
 ## Der Konflikt, der die Harness-Entscheidung ausgelöst hat — gelöst, nicht verschwunden (CK-NFR-013)
 
@@ -462,14 +462,15 @@ Harness ist eigener, noch offener Bau-Strang (siehe „Was fehlt" unten).
 
 ## Was fehlt
 
-- **Das Niveau-B-Harness und sein Einrichtungspfad.** Ersetzt NanoClaw als Träger (siehe
-  CK-NFR-013 oben); der `nanoclaw-skill`-Ladeweg bleibt bestehen, aber das eigene Harness
-  selbst — wie es eingerichtet und ohne Fremdinstallation betrieben wird — ist noch nicht
-  gebaut. Eigener Bau-Strang.
+- ~~Das Niveau-B-Harness und sein Einrichtungspfad.~~ — **erledigt 2026-08-23.** Das eigene
+  Harness (Harness-Kern, `keel-harness`-Adapter, `keel-Arbeiter`-Preset) ersetzt NanoClaw als
+  Träger (siehe CK-NFR-013 oben) und läuft ohne Fremdinstallation; Einrichtung ist die
+  Modellzuweisung im Zuordnungsplatz `sitzung:niveau-b` (Settings-Fenster, siehe Modell-Layer
+  oben) — kein eigener Bau-Strang mehr.
 - **Editierbarkeit generell.** Sie braucht ein Overlay-Verzeichnis für nutzereigene
   Fassungen, eine Vorrangregel gegenüber den gebündelten Inhalten und eine Validierung.
   Eigene Phase.
 - ~~Eine Einstellungsoberfläche.~~ — **erledigt 2026-08-17.** Das Settings-Fenster deckt die
   Einstellungen-Tabelle oben ab. Weiterhin nicht editierbar: die Prompt-Schichten und
-  Preset-Eigenschaften (siehe die Tabellen dort) und das Niveau-B-Harness, das es noch
-  nicht gibt.
+  Preset-Eigenschaften (siehe die Tabellen dort) sowie das Niveau-B-Harness selbst (gebaut seit
+  2026-08-23; seine vier Lauf-Budgets bleiben hart verdrahtet, siehe Tabelle oben).
