@@ -1,6 +1,8 @@
 # Anpassbare Flächen — Inventar (CK-NFR-012)
 
-**Stand:** 2026-08-23 — `FOLGE_RESERVE` benannt (die Schwelle, ab der ein Folgeauftrag noch in
+**Stand:** 2026-08-23 — drei neue MCP-Werkzeuge (`keel_zellen`, `keel_zelle_beauftragen`,
+`keel_zelle_ergebnis`, graph/mcp-server.ts) gebaut, geprüft, **aber nicht erreichbar** — siehe
+„Was fehlt" unten für den vollen Befund. Davor am selben Tag `FOLGE_RESERVE` benannt (die Schwelle, ab der ein Folgeauftrag noch in
 denselben Lauf darf statt einen neuen zu öffnen; nicht editierbar, geschätzt statt gemessen —
 siehe Abschnitt „Die vier Lauf-Budgets" unten). Davor am selben Tag der neue Zuordnungsplatz
 `sitzung:niveau-b` (keels eigene Agentenschleife
@@ -475,3 +477,30 @@ Einrichtung (siehe „Was fehlt" unten) — kein eigener Bau-Strang mehr.
   Einstellungen-Tabelle oben ab. Weiterhin nicht editierbar: die Prompt-Schichten und
   Preset-Eigenschaften (siehe die Tabellen dort) sowie das Niveau-B-Harness selbst (gebaut seit
   2026-08-23; seine vier Lauf-Budgets bleiben hart verdrahtet, siehe Tabelle oben).
+- **Der Transportweg für den MCP-Server (`src/main/graph/mcp-server.ts`) — nicht nur eine
+  fehlende Oberfläche, sondern keine erreichbare Fläche.** Geprüft am 2026-08-23, anlässlich des
+  Baus von `keel_zellen`/`keel_zelle_beauftragen`/`keel_zelle_ergebnis` (den drei Werkzeugen,
+  die einer starken Sitzung erlauben sollen, eine Niveau-B-Gitterzelle zu beauftragen): **keines
+  der jetzt zehn Werkzeuge dieses Servers — auch nicht die sieben `graph_*`-Werkzeuge, die schon
+  seit CK-GRAPH-037 dort liegen — ist von einer laufenden Sitzung aus erreichbar.**
+  `GraphMcpServer.handleRequest` wird nirgends außerhalb der eigenen Tests und
+  `startStdioServer` gerufen; `startStdioServer` selbst nirgends; es gibt keinen `bin`-Eintrag
+  in `package.json`. Und `ClaudeCodeAdapter.postLaunchInjection` — die Methode, die eine
+  laufende Claude-Code-Sitzung überhaupt erst auf einen MCP-Server hinweisen würde — hat
+  ebenfalls keinen Aufrufer irgendwo in `src/` oder `tests/`; der einzige Treffer ist ein
+  Kommentar in `session/materialise-capabilities.ts:9`. Was fehlt, ist ein **Transport** (ein
+  lokaler HTTP-Server mit eigener Authentifizierung und eigenem Lebenszyklus — `AdapterContext`
+  trägt bereits `mcpUrl`/`mcpApiKey`, aber niemand befüllt oder bedient sie) **und** eine
+  **Registrierung** beim Sitzungsstart, die einer gestarteten Sitzung sagt, wo der Server steht.
+  Das ist eine eigene Sicherheitsfläche und eine eigene Entscheidung — nicht nebenbei gebaut.
+  Die drei neuen Werkzeuge selbst (samt der mit `SESSION_AUFTRAG` geteilten Auftragslogik in
+  `session/schleifen-auftrag.ts`) sind fertig und geprüft; sie werden erreichbar, sobald der
+  Transport steht, nicht vorher.
+
+  **Auth ist nicht die einzige offene Frage, wenn der Transport kommt — Scoping ist eine
+  zweite.** `keel_zelle_beauftragen` kann heute jede Zelle beim Namen ansprechen, nicht nur
+  eine, die zur aufrufenden Sitzung gehört; `keel_zelle_ergebnis` liefert den Ergebnisblock
+  **jedes** Laufs in der Harness-Datenbank zu einer beliebigen `laufId`, nicht nur eines
+  selbst gestarteten. Heute folgenlos, weil nichts das Werkzeug ruft — sobald ein Transport
+  eine Sitzung an diese Werkzeuge heranlässt, muss geklärt sein, ob und wie eine Sitzung auf
+  fremde Zellen und fremde Läufe beschränkt wird, nicht nur, ob sie sich authentifizieren kann.

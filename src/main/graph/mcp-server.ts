@@ -1,11 +1,11 @@
 /**
- * mcp-server.ts — MCP Server for the Knowledge Graph.
+ * mcp-server.ts — MCP Server for the Knowledge Graph and keel's own Niveau-B loop.
  *
  * CK-GRAPH-037: Graph tools as MCP server with 5-8 tools.
  *               JSON-RPC 2.0 over stdio, consistent with cipher-mux MCP pattern.
  *               Tool schemas precise enough for agent use.
  *
- * 7 tools:
+ * 7 graph tools:
  *   graph_search       — FTS5 + vec score fusion search (CK-GRAPH-018)
  *   graph_get_node     — Load full node by uid (CK-GRAPH-019)
  *   graph_expand       — Neighborhood expansion (CK-GRAPH-020)
@@ -13,6 +13,32 @@
  *   graph_upsert_node  — Idempotent node write (CK-GRAPH-022)
  *   graph_link         — Edge write with pair derivation (CK-GRAPH-023)
  *   graph_maintain     — Maintenance operations (CK-GRAPH-024)
+ *
+ * 3 more tools (2026-08-23), the connection upward the harness-adapter design (§10) named but
+ * deliberately did not build: once a transport exists (see the note below), a strong session
+ * (Systems Engineer, Architect, Cyber Factory) would beauftragt a Niveau-B-Gitterzelle the same
+ * way it would reach the graph — neither is reachable today, see below:
+ *   keel_zellen             — list Niveau-B cells and their state
+ *   keel_zelle_beauftragen  — give a cell an order; returns the laufId immediately, does not
+ *                             wait for the run to finish (a run takes minutes; a blocking MCP
+ *                             call would be a time bomb)
+ *   keel_zelle_ergebnis     — poll a laufId for its end state and result block
+ *
+ * **This entire class has no reachable caller today — not one line of the above included.**
+ * Verified 2026-08-23: `handleRequest` is called nowhere outside this file's own tests and
+ * `startStdioServer`. `startStdioServer` itself is called nowhere. There is no `bin` entry in
+ * package.json, and `ClaudeCodeAdapter.postLaunchInjection` — the method that would register an
+ * MCP server with a live Claude Code session — also has no caller anywhere in `src/` or
+ * `tests/` (the sole hit is a comment in `session/materialise-capabilities.ts:9`). What is
+ * missing is a transport (this class only speaks newline-delimited JSON-RPC over an already-
+ * open stdin/stdout, or takes a request object directly — neither is wired to a real process
+ * boundary) AND a registration step at session start that tells a spawned Claude Code session
+ * where to find it. That is a local HTTP server with its own auth and lifecycle — a separate
+ * decision, not made here. This affects the seven graph_* tools exactly as much as the three
+ * keel_zellen* tools below: none of the ten has ever been reachable from a running session.
+ * Named here on purpose, the same way `RUNTIMES_WITHOUT_ADAPTER` (agent/registry.ts) names a
+ * gap instead of leaving it silent — see docs/anpassbare-flaechen.md, section "Was fehlt", for
+ * the human-facing half of this note.
  */
 
 import type Database from 'better-sqlite3'
@@ -27,6 +53,26 @@ import type { SearchParams, ExpandParams } from './search'
 import type { QueryParams } from './query'
 import type { MaintainParams } from './maintain'
 import type { UpsertNodeInput, LinkEdgeInput } from './writer'
+import type { Zellenregister } from '../session/schleifen-sitzungen'
+import { beauftrageZelle } from '../session/schleifen-auftrag'
+import type { EntitaetsTeile } from '../agent/agent-adapter'
+import { istSchleifenAdapter } from '../agent/agent-adapter'
+import type { AdapterRegistry } from '../agent/registry'
+// Renamed on import (not the constructor param names below) so a test can inject a fake
+// harnessDb/lesen pair without ever loading harness-sitzung.ts — which touches
+// electron's `app.getPath` — just to exercise keel_zelle_ergebnis.
+import { harnessDb as harnessDbEcht } from '../harness-sitzung'
+import { lesen as lesenEcht } from '../harness'
+import type { Ereignis } from '../harness/ereignisse'
+// Same rename-on-import reasoning as harnessDb/lesen above, and the same production default:
+// SESSION_STATUS_CHANGED is a broadcast to every window, not a reply to whoever called
+// starteAuftrag — the grid window's cell (renderer/index.tsx) has no second way to learn the
+// state changed (schleifen-sitzungen.ts: "der Renderer leitet nichts ab"), so an MCP-triggered
+// order that skipped this would leave that cell showing leerlaufend while the main process
+// tracks laeuft, permanently, since the renderer only initialises the cell at session:create.
+import { broadcast as broadcastEcht } from '../event-bus'
+import { SESSION_STATUS_CHANGED } from '../../shared/ipc-channels'
+import type { SessionStatusChanged } from '../../shared/harness-types'
 
 // ---------------------------------------------------------------------------
 // Runtime validation (P2-SEC: replaces double-casts)
@@ -112,6 +158,38 @@ export function validateLinkEdgeInput(args: Record<string, unknown>): LinkEdgeIn
 export function validateMaintainParams(args: Record<string, unknown>): MaintainParams {
   return {
     operation: assertString(args.operation, 'operation'),
+  }
+}
+
+export interface ZelleBeauftragenParams {
+  name: string
+  auftragstext: string
+}
+
+/**
+ * `name` must be non-empty (assertString) — an empty cell name can never match a real cell.
+ * `auftragstext` deliberately does NOT use assertString: an empty order is a valid, distinct
+ * rejection ("Der Auftrag ist leer.") that `beauftrageZelle` (session/schleifen-auftrag.ts)
+ * owns — assertString's generic "expected non-empty string" would shadow that one message with
+ * a second, slightly different one for the same case.
+ */
+export function validateZelleBeauftragenParams(args: Record<string, unknown>): ZelleBeauftragenParams {
+  if (typeof args.auftragstext !== 'string') {
+    throw new Error(`Expected string for 'auftragstext', got ${typeof args.auftragstext}`)
+  }
+  return {
+    name: assertString(args.name, 'name'),
+    auftragstext: args.auftragstext,
+  }
+}
+
+export interface ZelleErgebnisParams {
+  laufId: string
+}
+
+export function validateZelleErgebnisParams(args: Record<string, unknown>): ZelleErgebnisParams {
+  return {
+    laufId: assertString(args.laufId, 'laufId'),
   }
 }
 
@@ -218,6 +296,38 @@ export const TOOL_DEFINITIONS: McpToolDef[] = [
       },
       required: ['operation']
     }
+  },
+  {
+    name: 'keel_zellen',
+    description: 'List keel\'s own Niveau-B Gitterzellen (its local-model agent loop cells). Each entry: name, zustand (leerlaufend/laeuft), the model registry entry id it runs, its most recent laufId and end state.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'keel_zelle_beauftragen',
+    description: 'Give a Niveau-B Gitterzelle an order. Returns the laufId immediately once the run has started — it does NOT wait for the run to finish (a run takes minutes). Poll keel_zelle_ergebnis with the returned laufId for the end state.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Cell name' },
+        auftragstext: { type: 'string', description: 'The order text' }
+      },
+      required: ['name', 'auftragstext']
+    }
+  },
+  {
+    name: 'keel_zelle_ergebnis',
+    description: 'Poll a laufId for its end state and result block from the run log (run.finished: endzustand, grund, ergebnis). If the run has not finished yet, endzustand and ergebnis come back null with a hint.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        laufId: { type: 'string', description: 'The laufId returned by keel_zelle_beauftragen' }
+      },
+      required: ['laufId']
+    }
   }
 ]
 
@@ -228,21 +338,61 @@ export const TOOL_DEFINITIONS: McpToolDef[] = [
 export class GraphMcpServer {
   private db: Database.Database
   private writer: GraphWriter
+  // The three fields below back the keel_zellen* tools. Null is a real, expected value here
+  // (see the doc comment on AppServices in window-manager.ts) — this class only ever stores
+  // them, never dereferences them at construction time, so a caller who has none of this
+  // wiring yet (every existing test that does `new GraphMcpServer(db)`) still gets a working
+  // graph server; the three new tools just answer "nicht verfuegbar" instead of crashing.
+  private schleifenZellen: Zellenregister | null
+  private praefixJeZelle: ReadonlyMap<string, EntitaetsTeile> | null
+  private adapterRegistry: AdapterRegistry | null
+  // Defaulted to the real, electron-backed singletons (harness-sitzung.ts/harness/protokoll.ts)
+  // so every production call site (service-lifecycle.ts) is unaffected — injectable so a test
+  // of keel_zelle_ergebnis never has to load electron just to reach this constructor.
+  private harnessDb: () => Database.Database
+  private lesen: (db: Database.Database, laufId: string) => Ereignis[]
+  // Same story as harnessDb/lesen: defaulted to the real broadcast() so service-lifecycle.ts
+  // needs no change here, injectable so a test can capture calls instead of touching the real
+  // event bus.
+  private sendeStatus: (status: SessionStatusChanged) => void
 
-  constructor(db: Database.Database) {
+  constructor(
+    db: Database.Database,
+    schleifenZellen: Zellenregister | null = null,
+    praefixJeZelle: ReadonlyMap<string, EntitaetsTeile> | null = null,
+    adapterRegistry: AdapterRegistry | null = null,
+    harnessDb: () => Database.Database = harnessDbEcht,
+    lesen: (db: Database.Database, laufId: string) => Ereignis[] = lesenEcht,
+    sendeStatus: (status: SessionStatusChanged) => void =
+      (status) => broadcastEcht(SESSION_STATUS_CHANGED, status),
+  ) {
     this.db = db
     this.writer = new GraphWriter(db)
+    this.schleifenZellen = schleifenZellen
+    this.praefixJeZelle = praefixJeZelle
+    this.adapterRegistry = adapterRegistry
+    this.harnessDb = harnessDb
+    this.lesen = lesen
+    this.sendeStatus = sendeStatus
   }
 
-  /** Handle a JSON-RPC 2.0 request and return the response object. */
-  handleRequest(request: JsonRpcRequest): JsonRpcResponse {
+  /**
+   * Handle a JSON-RPC 2.0 request and return the response object — or, for exactly one method
+   * (`tools/call` on `keel_zelle_beauftragen`), a Promise of it. `starteAuftrag` behind that one
+   * tool is genuinely async (see the header comment on `SchleifenStartOpts.beiStart`,
+   * agent-adapter.ts); the other nine tools stay synchronous, unchanged, and still return a
+   * plain object. A caller that always awaits the result (as it must, since it cannot tell in
+   * advance which branch it will get) is unaffected either way — `await` on a non-Promise
+   * value resolves immediately.
+   */
+  handleRequest(request: JsonRpcRequest): JsonRpcResponse | Promise<JsonRpcResponse> {
     try {
       switch (request.method) {
         case 'initialize':
           return this.success(request.id, {
             protocolVersion: '2024-11-05',
             capabilities: { tools: {} },
-            serverInfo: { name: 'cipher-keel-graph', version: '0.1.0' }
+            serverInfo: { name: 'cipher-keel', version: '0.1.0' }
           })
 
         case 'tools/list':
@@ -262,13 +412,19 @@ export class GraphMcpServer {
     }
   }
 
-  private handleToolCall(request: JsonRpcRequest): JsonRpcResponse {
+  private handleToolCall(request: JsonRpcRequest): JsonRpcResponse | Promise<JsonRpcResponse> {
     const params = request.params as { name: string; arguments?: Record<string, unknown> } | undefined
     if (!params?.name) {
       return this.error(request.id, -32602, 'Missing tool name')
     }
 
     const args = params.arguments ?? {}
+
+    // Branched out before the switch below so the other nine tools keep returning a plain
+    // JsonRpcResponse, unchanged — see the doc comment on handleRequest.
+    if (params.name === 'keel_zelle_beauftragen') {
+      return this.handleZelleBeauftragen(request.id, args)
+    }
 
     try {
       let result: unknown
@@ -298,6 +454,42 @@ export class GraphMcpServer {
         case 'graph_maintain':
           result = graphMaintain(this.db, validateMaintainParams(args))
           break
+        case 'keel_zellen': {
+          if (!this.schleifenZellen) {
+            return this.toolError(request.id, 'Das Zellenregister ist nicht verfuegbar.')
+          }
+          result = this.schleifenZellen.alle().map((z) => ({
+            name: z.name,
+            zustand: z.zustand,
+            eintragId: z.eintragId,
+            laufId: z.laufId,
+            letzterEndzustand: z.letzterEndzustand,
+          }))
+          break
+        }
+        case 'keel_zelle_ergebnis': {
+          const { laufId } = validateZelleErgebnisParams(args)
+          const ereignisse = this.lesen(this.harnessDb(), laufId)
+          if (ereignisse.length === 0) {
+            return this.toolError(request.id, `Kein Lauf mit der laufId '${laufId}' gefunden.`)
+          }
+          const letztes = [...ereignisse].reverse().find((e) => e.art === 'run.finished')
+          if (!letztes) {
+            result = {
+              laufId, endzustand: null, ergebnis: null,
+              hinweis: 'Der Lauf laeuft noch — noch kein run.finished im Protokoll.',
+            }
+          } else {
+            result = {
+              laufId,
+              endzustand: typeof letztes.nutzlast.endzustand === 'string'
+                ? letztes.nutzlast.endzustand : null,
+              ergebnis: letztes.nutzlast.ergebnis ?? null,
+              grund: typeof letztes.nutzlast.grund === 'string' ? letztes.nutzlast.grund : null,
+            }
+          }
+          break
+        }
         default:
           return this.toolError(request.id, `Unknown tool: ${params.name}`)
       }
@@ -308,6 +500,58 @@ export class GraphMcpServer {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err)
       return this.success(request.id, {
+        content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
+        isError: true
+      })
+    }
+  }
+
+  /**
+   * keel_zelle_beauftragen — the one tool that awaits `starteAuftrag`. Never rejects: every
+   * error path (validation, missing wiring, a thrown starteAuftrag) resolves to a valid
+   * JsonRpcResponse with `isError: true`, the same contract the synchronous tools' catch block
+   * keeps above — so handleRequest's own (synchronous) try/catch never needs to see a rejection
+   * from this method.
+   */
+  private async handleZelleBeauftragen(
+    id: JsonRpcId, args: Record<string, unknown>,
+  ): Promise<JsonRpcResponse> {
+    try {
+      const { name, auftragstext } = validateZelleBeauftragenParams(args)
+      if (!this.schleifenZellen || !this.praefixJeZelle) {
+        return this.toolError(id, 'Das Zellenregister ist nicht verfuegbar.')
+      }
+      const registryEintrag = this.adapterRegistry?.get('keel-harness')
+      const adapter = registryEintrag && istSchleifenAdapter(registryEintrag)
+        ? registryEintrag : undefined
+
+      const ergebnis = await beauftrageZelle({
+        name, auftragstext,
+        register: this.schleifenZellen,
+        praefixJeZelle: this.praefixJeZelle,
+        adapter,
+        harnessDb: this.harnessDb, lesen: this.lesen,
+        // SESSION_STATUS_CHANGED is a broadcast() to every window, not a reply to whoever called
+        // starteAuftrag — so this is not optional the way it looked at first: the grid window's
+        // cell (renderer/index.tsx) has no other way to learn the state changed
+        // (schleifen-sitzungen.ts: "der Renderer leitet nichts ab"), and it only initialises a
+        // cell at session:create. Skipping this would leave that cell showing leerlaufend
+        // forever while the main process tracks laeuft — the exact two-source drift this file
+        // argues against.
+        sendeStatus: this.sendeStatus,
+      })
+      if (!ergebnis.ok) {
+        return this.toolError(id, ergebnis.meldung)
+      }
+      return this.success(id, {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ laufId: ergebnis.wert.laufId, fortgesetzt: ergebnis.wert.fortgesetzt }),
+        }],
+      })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      return this.success(id, {
         content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
         isError: true
       })
@@ -357,24 +601,54 @@ export interface JsonRpcResponse {
 /**
  * Start the MCP server on stdio (newline-delimited JSON-RPC).
  *
- * Usage: import and call startStdioServer(db) from a CLI entry point.
+ * Usage: import and call startStdioServer(db) from a CLI entry point — there is none today,
+ * see the header comment on this file for the reachability gap this is one half of.
+ *
+ * The `'line'` listener is `async` since `handleRequest` can now return a Promise (the
+ * `keel_zelle_beauftragen` tool). Real behaviour change, named rather than left implicit: with
+ * a synchronous listener, responses come back in the exact order their requests arrived; an
+ * async listener lets a slow request's response land after a faster, later request's response.
+ * A client can still match each response to its request by `id`, but a reader of raw stdio
+ * output can no longer assume line order is request order.
+ *
+ * Parsing and handling are two separate try/catches, not one: a `JSON.parse` failure is
+ * genuinely `-32700 Parse error`, but `handleRequest` failing is a different thing entirely —
+ * every branch inside it (including `handleZelleBeauftragen`, which its own doc comment says
+ * never rejects) already converts its own errors into a valid response, so this second catch is
+ * a last-resort net for a future bug, not an expected path. Labeling that net's failure
+ * `-32700` too, as one shared catch used to, would tell a client "malformed JSON" for a request
+ * that parsed fine and failed for an unrelated reason.
  */
 export function startStdioServer(db: Database.Database): void {
   const server = new GraphMcpServer(db)
 
   const rl = createInterface({ input: process.stdin, terminal: false })
 
-  rl.on('line', (line: string) => {
+  rl.on('line', async (line: string) => {
     if (!line.trim()) return
+
+    let request: JsonRpcRequest
     try {
-      const request = JSON.parse(line) as JsonRpcRequest
-      const response = server.handleRequest(request)
-      process.stdout.write(JSON.stringify(response) + '\n')
+      request = JSON.parse(line) as JsonRpcRequest
     } catch {
       const errorResponse: JsonRpcResponse = {
         jsonrpc: '2.0',
         id: null,
         error: { code: -32700, message: 'Parse error' }
+      }
+      process.stdout.write(JSON.stringify(errorResponse) + '\n')
+      return
+    }
+
+    try {
+      const response = await server.handleRequest(request)
+      process.stdout.write(JSON.stringify(response) + '\n')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      const errorResponse: JsonRpcResponse = {
+        jsonrpc: '2.0',
+        id: request.id ?? null,
+        error: { code: -32603, message }
       }
       process.stdout.write(JSON.stringify(errorResponse) + '\n')
     }

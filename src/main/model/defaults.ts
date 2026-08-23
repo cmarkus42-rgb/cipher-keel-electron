@@ -6,6 +6,15 @@
  * would be a guess wearing the clothes of a default.
  *
  * Capability rows are `vermutet` throughout: no canary job exists yet (M8 section 7 line 12).
+ *
+ * **2026-08-24: eight more `api` entries joined, all through OpenRouter.** That relaxes "one
+ * representative per API vendor family" on purpose, not by drift — all eight go through the
+ * one provider integration this file already has, not eight new ones, and Christian asked for
+ * a curated set of the strongest open coding models plus the Chinese flagships, checked against
+ * the real catalog rather than built from memory (every slug verified against
+ * `https://openrouter.ai/api/v1/models` on 2026-08-24 — see the block comment above that group
+ * for the shared assumptions and `docs/superpowers/specs/2026-08-23-befund-tier-platz-kennt-das-cli-nicht.md`
+ * for why none of them ever becomes a `cli-harness` entry).
  */
 
 import { normaliseEintrag, type ModellEintrag } from './entry'
@@ -126,5 +135,174 @@ export const DEFAULT_EINTRAEGE: ModellEintrag[] = [
     erklaertext: 'Ein OSS-Flaggschiff ueber einen fremden Hoster — erreichbar ueber OpenRouter mit eigenem Schluessel.',
     empfehlung: 'Wenn die eigene Maschine belegt ist — ein Anbieter haelt Niveau C am Leben.',
     faehigkeiten: { codec: 'openai-chat', werkzeugmodus: 'nativ', nutzbaresKontextfenster: 131072 },
+  },
+
+  // ---------------------------------------------------------------------------------------
+  // OpenRouter — kuratierte Auswahl, 2026-08-24. Acht Eintraege ueber denselben schon
+  // integrierten Anbieter wie 'openrouter-qwen3-coder' oben, kein neuer Adapter und keine neue
+  // Paarungsfalle: sie gehen an eigene-schleife- und ein-schuss-Plaetze (Laeufer-Werte, siehe
+  // model/eignung.ts), nie an einen CLI-Platz
+  // (docs/superpowers/specs/2026-08-23-befund-tier-platz-kennt-das-cli-nicht.md,
+  // Abschnitt "Was daran nicht wartet"). Jeder Slug wurde am 2026-08-24 gegen
+  // https://openrouter.ai/api/v1/models geprueft, nicht aus dem Gedaechtnis gebaut.
+  //
+  // Gemeinsame Annahmen, einmal hier statt acht Mal wiederholt:
+  // - codec: 'openai-chat' — OpenRouter spricht die OpenAI-kompatible Flaeche.
+  // - quelle: 'vermutet', gemessenAm: null, gemessenMit: null fuer alle acht. Keines wurde
+  //   gemessen — 'gemessen' ist das Wort des Kanarienauftrags (M8 Abschnitt 7 Zeile 12), und in
+  //   dieser Codebasis sind schon vier Behauptungen aufgeflogen, die eine Messung vortaeuschten.
+  // - werkzeugmodus: 'nativ' ist eine ANNAHME, keine Messung — keines der acht wurde mit
+  //   Werkzeugaufrufen ueber OpenRouter getestet. Stuende hier 'text', wiese
+  //   `pruefeStartbedingungen` (harness/lauf.ts) jeden Lauf ueber die eigene Schleife benannt ab
+  //   ("nicht gebaut") — die Annahme ist also folgenreich, nicht kosmetisch.
+  // - nutzbaresKontextfenster ist die HAELFTE von `top_provider.context_length`, NICHT von
+  //   `context_length` — die beiden Felder unterscheiden sich in der API-Antwort haeufig:
+  //   `context_length` ist das Maximum ueber alle Anbieter hinter dem Modell, `top_provider.
+  //   context_length` ist das Fenster, das ein Request beim tatsaechlich gewaehlten Anbieter
+  //   bekommt. Erste Fassung dieses Kommentars halbierte `context_length` und lag damit bei
+  //   `openrouter-qwen38-27b` beim knapp Doppelten des servierten Fensters (500.000 statt 131.072
+  //   — die Haelfte von `top_provider.context_length` 262.144) und bei `openrouter-minimax-m3`
+  //   ohne jeden Sicherheitsabstand (524.288 traf `top_provider.context_length` exakt statt es zu
+  //   halbieren). Dieselbe Vorsicht wie beim bestehenden OpenRouter-Eintrag oben (131072 von
+  //   deklarierten 262144, dort ist `context_length` und `top_provider.context_length` gleich)
+  //   und bei spark-qwen38-27b (dort aus einem gemessenen Grund, hier nicht gemessen, sondern
+  //   vorsorglich): das volle Fenster ist eine Herstellerangabe, kein Betriebswert. Zwei
+  //   Verbraucher rechnen mit der Zahl, die hier steht: `pruefeBudgets` (harness/budget.ts) — ein
+  //   zu hoher Wert liesse das Kontextbudget erst brechen, wenn der Server selbst schon kappt —
+  //   und `weiterOderFrisch` (harness/fortsetzbarkeit.ts), das mit derselben Zahl entscheidet, ob
+  //   ein Folgeauftrag noch in denselben Lauf darf oder einen neuen Lauf braucht.
+  // - Preise: siehe harness/preise.ts, VORGABE_PREISE — alle acht haben dort einen Eintrag,
+  //   sonst rechnete das Kostenbudget mit einer stillen Null.
+  // ---------------------------------------------------------------------------------------
+  {
+    id: 'openrouter-qwen3-coder-plus', name: 'Qwen3 Coder Plus (OpenRouter)', art: 'api',
+    erreichbarkeit: {
+      art: 'api', baseUrl: 'https://openrouter.ai/api/v1', model: 'qwen/qwen3-coder-plus', keyRef: 'openrouter',
+    },
+    oertlichkeit: 'fremdes-netz',
+    erklaertext: 'Alibabas groesseres Coding-Flaggschiff, 1.000.000 Token deklariertes Kontextfenster, ueber OpenRouter.',
+    empfehlung: 'Fuer grosse Coding-Auftraege, wenn spark-qwen38-27b nicht reicht oder belegt ist.',
+    faehigkeiten: {
+      codec: 'openai-chat', werkzeugmodus: 'nativ',
+      nutzbaresKontextfenster: 500000, // Haelfte von top_provider.context_length 1.000.000.
+      quelle: 'vermutet', gemessenAm: null, gemessenMit: null,
+    },
+  },
+  {
+    id: 'openrouter-kimi-k27-code', name: 'Kimi K2.7 Code (OpenRouter)', art: 'api',
+    erreichbarkeit: {
+      art: 'api', baseUrl: 'https://openrouter.ai/api/v1', model: 'moonshotai/kimi-k2.7-code', keyRef: 'openrouter',
+    },
+    oertlichkeit: 'fremdes-netz',
+    erklaertext:
+      'Moonshots Coding-Modell ueber OpenRouter — nicht ueber das lokal installierte Kimi-CLI ' +
+      '(ein eigener CLI-Harness dafuer ist bewusst nicht gebaut, siehe der Befund im '
+      + 'Blockkommentar oben).',
+    empfehlung: 'Zweite Wahl neben Qwen3 Coder Plus fuer Coding-Auftraege ueber einen Anbieter.',
+    faehigkeiten: {
+      codec: 'openai-chat', werkzeugmodus: 'nativ',
+      nutzbaresKontextfenster: 131072, // Haelfte von top_provider.context_length 262.144.
+      quelle: 'vermutet', gemessenAm: null, gemessenMit: null,
+    },
+  },
+  {
+    id: 'openrouter-codestral-2508', name: 'Codestral 2508 (OpenRouter)', art: 'api',
+    erreichbarkeit: {
+      art: 'api', baseUrl: 'https://openrouter.ai/api/v1', model: 'mistralai/codestral-2508', keyRef: 'openrouter',
+    },
+    oertlichkeit: 'fremdes-netz',
+    erklaertext: 'Mistrals Coding-Modell, europaeischer Anbieter hinter OpenRouter.',
+    empfehlung: 'Fuer Coding-Auftraege, wenn eine europaeische Herkunft des Anbieters gewuenscht ist.',
+    faehigkeiten: {
+      codec: 'openai-chat', werkzeugmodus: 'nativ',
+      nutzbaresKontextfenster: 128000, // Haelfte von top_provider.context_length 256.000.
+      quelle: 'vermutet', gemessenAm: null, gemessenMit: null,
+    },
+  },
+  {
+    id: 'openrouter-deepseek-v4-pro', name: 'DeepSeek V4 Pro (OpenRouter)', art: 'api',
+    erreichbarkeit: {
+      art: 'api', baseUrl: 'https://openrouter.ai/api/v1', model: 'deepseek/deepseek-v4-pro', keyRef: 'openrouter',
+    },
+    oertlichkeit: 'fremdes-netz',
+    erklaertext: 'DeepSeeks aktuelles Flaggschiff, ueber OpenRouter.',
+    empfehlung: 'China-Flaggschiff-Option fuer grosse Auftraege ueber einen Anbieter.',
+    faehigkeiten: {
+      codec: 'openai-chat', werkzeugmodus: 'nativ',
+      // Haelfte von top_provider.context_length 1.024.000 — NICHT von context_length
+      // 1.048.576, dem Maximum ueber alle Anbieter. Die beiden weichen bei diesem Modell
+      // voneinander ab (siehe der Sammelkommentar oben).
+      nutzbaresKontextfenster: 512000,
+      quelle: 'vermutet', gemessenAm: null, gemessenMit: null,
+    },
+  },
+  {
+    id: 'openrouter-glm-53', name: 'GLM 5.3 (OpenRouter)', art: 'api',
+    erreichbarkeit: {
+      art: 'api', baseUrl: 'https://openrouter.ai/api/v1', model: 'z-ai/glm-5.3', keyRef: 'openrouter',
+    },
+    oertlichkeit: 'fremdes-netz',
+    erklaertext: 'Z.ais (Zhipu) aktuelles Flaggschiff, ueber OpenRouter.',
+    empfehlung: 'Zweite China-Flaggschiff-Option neben DeepSeek V4 Pro.',
+    faehigkeiten: {
+      codec: 'openai-chat', werkzeugmodus: 'nativ',
+      nutzbaresKontextfenster: 524288, // Haelfte von top_provider.context_length 1.048.576.
+      quelle: 'vermutet', gemessenAm: null, gemessenMit: null,
+    },
+  },
+  {
+    id: 'openrouter-minimax-m3', name: 'MiniMax M3 (OpenRouter)', art: 'api',
+    erreichbarkeit: {
+      art: 'api', baseUrl: 'https://openrouter.ai/api/v1', model: 'minimax/minimax-m3', keyRef: 'openrouter',
+    },
+    oertlichkeit: 'fremdes-netz',
+    erklaertext: 'MiniMaxs aktuelles Flaggschiff, ueber OpenRouter — von den drei China-Flaggschiffen hier das guenstigste.',
+    empfehlung: 'Dritte China-Flaggschiff-Option, wenn Kosten staerker zaehlen als bei den beiden anderen.',
+    faehigkeiten: {
+      codec: 'openai-chat', werkzeugmodus: 'nativ',
+      // Haelfte von top_provider.context_length 524.288 — NICHT von context_length 1.048.576.
+      // Review-Fund: eine erste Fassung halbierte context_length und traf damit
+      // top_provider.context_length exakt, ohne jeden Sicherheitsabstand.
+      nutzbaresKontextfenster: 262144,
+      quelle: 'vermutet', gemessenAm: null, gemessenMit: null,
+    },
+  },
+  {
+    id: 'openrouter-qwen38-27b', name: 'Qwen3.8 27B (OpenRouter)', art: 'api',
+    erreichbarkeit: {
+      art: 'api', baseUrl: 'https://openrouter.ai/api/v1', model: 'qwen/qwen3.8-27b', keyRef: 'openrouter',
+    },
+    oertlichkeit: 'fremdes-netz',
+    erklaertext:
+      'Dasselbe Modell wie spark-qwen38-27b, hier ueber OpenRouter statt den eigenen Spark — '
+      + 'klein genug fuer Alltagsarbeit, aber ohne die Messungen, die der Spark-Eintrag traegt.',
+    empfehlung: 'Rueckfall fuer Niveau C, wenn der Spark belegt oder nicht erreichbar ist.',
+    faehigkeiten: {
+      codec: 'openai-chat', werkzeugmodus: 'nativ',
+      // Haelfte von top_provider.context_length 262.144 — NICHT von context_length 1.000.000,
+      // dem Maximum ueber alle Anbieter. Review-Fund: eine erste Fassung halbierte
+      // context_length und lag damit beim knapp Doppelten des tatsaechlich servierten
+      // Fensters (500.000 statt 131.072) — mit kontextAnteil 0.8 haette pruefeBudgets erst bei
+      // 400.000 Token gefeuert, waehrend der Anbieter selbst schon bei 262.144 kappt: ein
+      // Lauf haette so ins stille Abschneiden statt in den benannten Abschluss laufen koennen.
+      nutzbaresKontextfenster: 131072,
+      quelle: 'vermutet', gemessenAm: null, gemessenMit: null,
+    },
+  },
+  {
+    id: 'openrouter-gpt-oss-120b', name: 'GPT-OSS 120B (OpenRouter)', art: 'api',
+    erreichbarkeit: {
+      art: 'api', baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-oss-120b', keyRef: 'openrouter',
+    },
+    oertlichkeit: 'fremdes-netz',
+    erklaertext:
+      'Dasselbe offene Modell wie spark-gpt-oss-120b, hier ueber OpenRouter — sehr billig, ohne '
+      + 'den Spark zu belegen.',
+    empfehlung: 'Billigster Rueckfall, wenn weder der Mac noch der Spark ein passendes Modell frei haben.',
+    faehigkeiten: {
+      codec: 'openai-chat', werkzeugmodus: 'nativ',
+      nutzbaresKontextfenster: 65536, // Haelfte von top_provider.context_length 131.072.
+      quelle: 'vermutet', gemessenAm: null, gemessenMit: null,
+    },
   },
 ].map(normaliseEintrag)
