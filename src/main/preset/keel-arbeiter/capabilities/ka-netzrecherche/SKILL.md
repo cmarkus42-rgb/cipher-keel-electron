@@ -7,11 +7,14 @@ description: Recherche außerhalb der festen Dokumentations-Positivliste über d
 
 ## Wann das gilt
 
-`web_suchen` und `seite_lesen` stehen dir bereits direkt zur Verfügung, aber `seite_lesen`
-liefert dort nur Seiten von einer festen Positivliste — Dokumentationsangebote wie die von
-Node.js, MDN oder TypeScript. Reicht das nicht, weil die gesuchte Seite nicht auf dieser Liste
-steht — allgemeine Recherche, Blogs, Foren, GitHub, aktuelle Ereignisse — brauchst du
-`recherchieren`.
+`web_suchen` und `seite_lesen` stehen dir bereits direkt zur Verfügung — aber im Hauptlauf gilt
+für beide dieselbe feste Positivliste (Dokumentationsangebote wie die von Node.js, MDN oder
+TypeScript): `web_suchen` filtert seine Trefferliste schon vor der Antwort auf diese Liste
+heraus, `seite_lesen` verweigert den Abruf jeder URL außerhalb davon. Fällt eine Suche also
+auffällig mager oder leer aus, ist das nicht zwangsläufig ein Zeichen, dass es im Netz nichts
+gibt — es kann auch heißen, dass es außerhalb der Positivliste liegt. Reicht das nicht — die
+gesuchte Seite liegt außerhalb der Liste: allgemeine Recherche, Blogs, Foren, GitHub, aktuelle
+Ereignisse — brauchst du `recherchieren`.
 
 ## Vorgehen
 
