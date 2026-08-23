@@ -1,13 +1,23 @@
 /**
  * slots — the seven assignment slots, and the one place their runner and niveau are stated.
  *
- * A slot's Laeufer is a property of the slot, never a user choice: a tier drives a CLI
- * harness, a role dispatches a single job. The settings surface therefore offers no runner
- * picker, which is what keeps the eignung rules unrestated (see the guard test in
- * tests/model/eignung-einzige-quelle.test.ts).
+ * A slot's Laeufer is a property of the slot, never a user choice. The settings surface
+ * therefore offers no runner picker, which is what keeps the eignung rules unrestated (see
+ * the guard test in tests/model/eignung-einzige-quelle.test.ts).
  *
- * `Tier` and `Rolle` live here rather than in registry.ts so that registry.ts can import
- * this module without a cycle. registry.ts re-exports them, so no existing import breaks.
+ * Three arts, three different things a Laeufer is bound to. A tier drives a CLI harness for
+ * a whole session (`fremdes-cli`). A role is resolved from *inside* an already-running
+ * context — either a single job (`tagging`, `worker`, `ein-schuss`) or, for `rechercheur`, a
+ * bounded sub-loop with its own parent (`eigene-schleife`); "role" names where the
+ * assignment is looked up, not how much work it does, and `rolle:rechercheur`'s own comment
+ * below says so. A sitzung *is* the running context: a human starts it directly as a grid
+ * cell, with no parent lauf, read at cell start like a tier rather than resolved per call
+ * like a role — see `Sitzungsschluessel` below for why that combination does not fit under
+ * `rollen`.
+ *
+ * `Tier`, `Rolle` and `Sitzungsschluessel` live here rather than in registry.ts so that
+ * registry.ts can import this module without a cycle. registry.ts re-exports all three, so
+ * no existing import breaks.
  */
 
 import type { Laeufer } from './eignung'
@@ -16,9 +26,13 @@ import { CapabilityNiveau } from '../preset/niveau'
 export type Tier = 'light' | 'standard' | 'heavy'
 export type Rolle = 'tagging' | 'worker' | 'rechercheur'
 /**
- * Die dritte Art. Ein Tier faehrt ein CLI-Harness, eine Rolle verteilt einen einzelnen Job —
- * eine Sitzung ist keines von beidem, und sie unter `rollen` zu haengen machte den Satz im
- * Modulkopf falsch.
+ * Die dritte Art. Sie faehrt keinen CLI-Prozess wie ein Tier, und sie ist kein
+ * Registry-Eintrag, der aus einem bereits laufenden Auftrag heraus fuer einen Job oder einen
+ * Unterlauf aufgeloest wird wie eine Rolle — sie *ist* die laufende Sitzung: ein Mensch
+ * startet sie direkt als Gitterzelle, ohne Elternlauf. Deshalb `wirkung: 'naechste-session'`
+ * wie bei den Tiers (gelesen beim Zellenstart, nicht bei jeder Aufloesung), und trotzdem ein
+ * Registry-Eintrag als Ziel wie bei den Rollen (ein Endpunkt, kein CLI-Handle). Unter
+ * `rollen` zu haengen wuerde diese Mischung verstecken, nicht beschreiben.
  */
 export type Sitzungsschluessel = 'niveau-b'
 

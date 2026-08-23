@@ -67,27 +67,39 @@ type Zuordnung = CipherKeelConfig['modelle']['zuordnung']
  * Handler ungeprueft. tests/settings/zuordnung-schreibpfad.test.ts prueft genau diese
  * Konstruktion.
  *
- * Schreibt mit `{ ...bisher, <gruppe>: { ...bisher.<gruppe>, ... } }` statt die drei Gruppen
- * einzeln neu aufzuzaehlen. Der Unterschied ist kein Stil, sondern die eigentliche Behebung:
- * die vorige Fassung baute `{ tiers: {...}, rollen: {...} }` von Grund auf neu und nannte
- * `sitzungen` darin nicht — jede Zuweisung an irgendeinen anderen Platz haette die
- * Sitzungs-Zuordnungen dabei stillschweigend geloescht (deepMerge legt beim naechsten Laden
- * nur die Vorgabe `''` nach, was wie „nie zugewiesen" aussieht, nicht wie ein Verlust). Ein
- * Aufbau, der jede Gruppe unveraendert mitfuehrt und nur die eine anfasst, um die es geht,
- * kann eine kuenftige vierte Gruppe nicht auf dieselbe Art vergessen.
+ * Zwei Absicherungen, gegen zwei verschiedene Fehler:
+ *
+ * 1. Schreibt mit `{ ...bisher, <gruppe>: { ...bisher.<gruppe>, ... } }` statt die drei
+ *    Gruppen einzeln neu aufzuzaehlen. Die vorige Fassung baute `{ tiers: {...}, rollen: {...} }`
+ *    von Grund auf neu und nannte `sitzungen` darin nicht — jede Zuweisung an irgendeinen
+ *    anderen Platz haette die Sitzungs-Zuordnungen dabei stillschweigend geloescht (deepMerge
+ *    legt beim naechsten Laden nur die Vorgabe `''` nach, was wie „nie zugewiesen" aussieht,
+ *    nicht wie ein Verlust). Das sichert, dass keine Gruppe verloren geht.
+ * 2. Ein `switch` mit einem `never`-Arm statt einer `if`/`if`/`else`-Kette. Das sichert etwas
+ *    anderes: dass eine Zuweisung in der *richtigen* Gruppe ankommt. Eine `if`/`else`-Kette mit
+ *    `slot.schluessel as Sitzungsschluessel` im letzten Zweig wuerde eine kuenftige vierte Art
+ *    klaglos in `sitzungen` schreiben — kein Compilerfehler, kein Laufzeitfehler, falsche
+ *    Gruppe. Mit dem `switch` erzwingt eine neue vierte Art, dass ihr eigener Zweig geschrieben
+ *    wird, bevor der Code ueberhaupt kompiliert: `slot.art` waere im `default`-Fall nicht mehr
+ *    auf `never` zuweisbar.
  */
 export function zuordnungMitPlatz(
   bisher: Zuordnung, slot: Slot, eintragId: string,
 ): Zuordnung {
-  if (slot.art === 'tier') {
-    return { ...bisher, tiers: { ...bisher.tiers, [slot.schluessel as Tier]: eintragId } }
-  }
-  if (slot.art === 'rolle') {
-    return { ...bisher, rollen: { ...bisher.rollen, [slot.schluessel as Rolle]: eintragId } }
-  }
-  return {
-    ...bisher,
-    sitzungen: { ...bisher.sitzungen, [slot.schluessel as Sitzungsschluessel]: eintragId },
+  switch (slot.art) {
+    case 'tier':
+      return { ...bisher, tiers: { ...bisher.tiers, [slot.schluessel as Tier]: eintragId } }
+    case 'rolle':
+      return { ...bisher, rollen: { ...bisher.rollen, [slot.schluessel as Rolle]: eintragId } }
+    case 'sitzung':
+      return {
+        ...bisher,
+        sitzungen: { ...bisher.sitzungen, [slot.schluessel as Sitzungsschluessel]: eintragId },
+      }
+    default: {
+      const nie: never = slot.art
+      throw new Error(`Unbekannter Zuordnungsplatz der Art '${nie}'.`)
+    }
   }
 }
 

@@ -8,11 +8,11 @@
  * secret sources are injectable so tests never touch the real keychain.
  */
 
-import { configStore } from '../config/config-store'
+import { configStore, type CipherKeelConfig } from '../config/config-store'
 import { DEFAULT_EINTRAEGE } from './defaults'
 import { ladeEintraege } from './registry'
 import { sperrgrund, warnungen } from './eignung'
-import { SLOTS, type Rolle, type Slot, type Sitzungsschluessel } from './slots'
+import { SLOTS, type Tier, type Rolle, type Slot, type Sitzungsschluessel } from './slots'
 import type { ModellEintrag } from './entry'
 import { envVarName, readFromEnv, readFromKeychain } from '../worker/api-keys'
 import { splitShellArgs } from '../util/shell-quote'
@@ -92,46 +92,68 @@ function kurzfassung(roh: unknown): string {
 }
 
 // Jede Art bekommt ihren eigenen Zweig, ausdruecklich an `slot.art` gebunden — keiner faellt
-// ueber ein "sonst" in einen anderen. Vor der Sitzungs-Art endete der Rolle-Zweig ohne eigene
-// Bedingung: "kein Tier" hiess dort stillschweigend "also eine Rolle", was so lange stimmte, wie
-// es nur zwei Arten gab. Fuer `art: 'sitzung'` waere das falsch gewesen — der Zweig haette
+// ueber ein "sonst" in einen anderen. Ein `switch` statt einer `if`-Kette, mit einem
+// `never`-Arm im `default`: eine kuenftige vierte Art meldet sich hier am Compiler, nicht erst
+// als falscher Text zur Laufzeit. Vor der Sitzungs-Art endete der Rolle-Zweig ohne eigene
+// Bedingung: "kein Tier" hiess dort stillschweigend "also eine Rolle", was so lange stimmte,
+// wie es nur zwei Arten gab. Fuer `art: 'sitzung'` waere das falsch gewesen — der Zweig haette
 // `configStore.get('llm')['niveau-b']` gelesen, ein Feld, das es nicht gibt, und waere an
 // `e.baseUrl` auf `undefined` zerschellt statt einen Rueckfalltext zu liefern.
 function rueckfallText(slot: Slot): string {
-  if (slot.art === 'tier') {
-    const handle = configStore.get('agent').modelTiers[slot.schluessel as 'light' | 'standard' | 'heavy']
-    return `Keine Zuordnung — es gilt der Wert aus agent.modelTiers: '${handle}'.`
+  switch (slot.art) {
+    case 'tier': {
+      const handle = configStore.get('agent').modelTiers[slot.schluessel as Tier]
+      return `Keine Zuordnung — es gilt der Wert aus agent.modelTiers: '${handle}'.`
+    }
+    case 'sitzung':
+      return (
+        'Ohne Belegung startet keine Niveau-B-Zelle. Es gibt hier keinen Rueckfall: der ' +
+        'naechstliegende waere der Worker-Endpunkt, und der ist fuer einen einzelnen Job ' +
+        'bemessen, nicht fuer eine Sitzung.'
+      )
+    case 'rolle': {
+      // Der Rechercheur hat keinen `llm.*`-Endpunkt und soll keinen bekommen: sein Rueckfall
+      // ist das Modell, das gerade den Hauptlauf faehrt (rechercheur.ts). Ein Rueckfalltext,
+      // der stattdessen `llm.rechercheur` naehme, naennte einen Endpunkt, den es nicht gibt —
+      // und das Feld waere `undefined`, also stuende hier `undefined:undefined, Modell 'undefined'`.
+      if (slot.schluessel === 'rechercheur') {
+        return (
+          'Keine Zuordnung — der Unterlauf faehrt dann das Modell des Hauptlaufs. ' +
+          'Einen eigenen Endpunkt gibt es fuer diese Rolle nicht.'
+        )
+      }
+      const e = configStore.get('llm')[slot.schluessel as 'tagging' | 'worker']
+      const ziel = e.baseUrl ? e.baseUrl : `${e.host}:${e.port}`
+      return `Keine Zuordnung — es gilt der Wert aus llm.${slot.schluessel}: ${ziel}, Modell '${e.model}'.`
+    }
+    default: {
+      const nie: never = slot.art
+      throw new Error(`Unbekannte Slot-Art '${nie}'.`)
+    }
   }
-  if (slot.art === 'sitzung') {
-    return (
-      'Ohne Belegung startet keine Niveau-B-Zelle. Es gibt hier keinen Rueckfall: der ' +
-      'naechstliegende waere der Worker-Endpunkt, und der ist fuer einen einzelnen Job ' +
-      'bemessen, nicht fuer eine Sitzung.'
-    )
+}
+
+// Derselbe `switch`/`never`-Aufbau wie `rueckfallText`, aus demselben Grund: eine kuenftige
+// vierte Art soll hier am Compiler scheitern, nicht stillschweigend in die falsche Gruppe
+// lesen (siehe zuordnungMitPlatz in settings/handlers.ts fuer die Schreibseite derselben Regel).
+function gewaehlterWert(slot: Slot, zuordnung: CipherKeelConfig['modelle']['zuordnung']): string {
+  switch (slot.art) {
+    case 'tier':
+      return zuordnung.tiers[slot.schluessel as Tier]
+    case 'rolle':
+      return zuordnung.rollen[slot.schluessel as Rolle]
+    case 'sitzung':
+      return zuordnung.sitzungen[slot.schluessel as Sitzungsschluessel]
+    default: {
+      const nie: never = slot.art
+      throw new Error(`Unbekannte Slot-Art '${nie}'.`)
+    }
   }
-  // Ab hier gilt slot.art === 'rolle'.
-  // Der Rechercheur hat keinen `llm.*`-Endpunkt und soll keinen bekommen: sein Rueckfall ist das
-  // Modell, das gerade den Hauptlauf faehrt (rechercheur.ts). Ein Rueckfalltext, der stattdessen
-  // `llm.rechercheur` naehme, naennte einen Endpunkt, den es nicht gibt — und das Feld waere
-  // `undefined`, also stuende hier `undefined:undefined, Modell 'undefined'`.
-  if (slot.schluessel === 'rechercheur') {
-    return (
-      'Keine Zuordnung — der Unterlauf faehrt dann das Modell des Hauptlaufs. ' +
-      'Einen eigenen Endpunkt gibt es fuer diese Rolle nicht.'
-    )
-  }
-  const e = configStore.get('llm')[slot.schluessel as 'tagging' | 'worker']
-  const ziel = e.baseUrl ? e.baseUrl : `${e.host}:${e.port}`
-  return `Keine Zuordnung — es gilt der Wert aus llm.${slot.schluessel}: ${ziel}, Modell '${e.model}'.`
 }
 
 function slotAnsicht(slot: Slot, eintraege: ModellEintrag[]): SlotAnsicht {
   const zuordnung = configStore.get('modelle').zuordnung
-  const gewaehlt = slot.art === 'tier'
-    ? zuordnung.tiers[slot.schluessel as 'light' | 'standard' | 'heavy']
-    : slot.art === 'rolle'
-      ? zuordnung.rollen[slot.schluessel as Rolle]
-      : zuordnung.sitzungen[slot.schluessel as Sitzungsschluessel]
+  const gewaehlt = gewaehlterWert(slot, zuordnung)
 
   const optionen: SlotOptionAnsicht[] = eintraege.map(e => ({
     eintragId: e.id,
@@ -141,6 +163,15 @@ function slotAnsicht(slot: Slot, eintraege: ModellEintrag[]): SlotAnsicht {
 
   const eintrag = eintraege.find(e => e.id === gewaehlt)
 
+  // Dieselbe Quelle wie das Feld `rueckfallText` unten, statt eine zweite Stelle zu bauen, die
+  // dasselbe wissen muss: fuer die meisten Plaetze nennt sie einen Rueckfallwert, fuer
+  // `sitzung:niveau-b` sagt sie ausdruecklich, dass es keinen gibt. Vor dieser Aenderung stand
+  // hier hartcodiert "Es gilt der Rueckfall." — fuer einen Platz ohne Rueckfall eine falsche
+  // Auskunft, und die einzige, die der Nutzer in diesem Zustand ueberhaupt zu sehen bekommt
+  // (der Renderer zeigt `rueckfallText` selbst nur bei leerem Platz, nicht bei einer
+  // vorhandenen, aber unbenutzbaren Zuordnung).
+  const rueckfall = rueckfallText(slot)
+
   // An assignment is only worth warning about if it actually holds. Two ways it does not:
   // it names an id nothing defines, or it names an entry this slot's runner cannot drive.
   // Both mean the fallback runs, so warnings about the named entry would describe
@@ -148,11 +179,11 @@ function slotAnsicht(slot: Slot, eintraege: ModellEintrag[]): SlotAnsicht {
   let gewaehltHinweis: string | null = null
   if (gewaehlt && !eintrag) {
     gewaehltHinweis =
-      `Die Zuordnung nennt den Eintrag '${gewaehlt}', den es nicht gibt. Es gilt der Rueckfall.`
+      `Die Zuordnung nennt den Eintrag '${gewaehlt}', den es nicht gibt. ${rueckfall}`
   } else if (eintrag) {
     const grund = sperrgrund(slot.laeufer, eintrag.art)
     if (grund) {
-      gewaehltHinweis = `Diese Zuordnung ist nicht benutzbar. ${grund} Es gilt der Rueckfall.`
+      gewaehltHinweis = `Diese Zuordnung ist nicht benutzbar. ${grund} ${rueckfall}`
     }
   }
 
@@ -170,7 +201,7 @@ function slotAnsicht(slot: Slot, eintraege: ModellEintrag[]): SlotAnsicht {
     optionen,
     warnungen: warnListe,
     gewaehltHinweis,
-    rueckfallText: rueckfallText(slot),
+    rueckfallText: rueckfall,
     wirkung: slot.wirkung,
   }
 }
