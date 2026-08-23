@@ -420,9 +420,9 @@ export function registerIpcHandlers(services: AppServices): void {
     }
   })
 
-  // Ein Auftrag an eine Niveau-B-Gitterzelle — der erste Sender von SESSION_STATUS_CHANGED, das
-  // bislang deklariert war, aber weder Sender noch Hoerer hatte. Einen Hoerer gibt es weiterhin
-  // nicht (kommt in einer spaeteren Aufgabe).
+  // Ein Auftrag an eine Niveau-B-Gitterzelle — der Sender von SESSION_STATUS_CHANGED. Der Hoerer
+  // sitzt im Renderer (index.tsx, Task 10) und schreibt zustand/laufId/letzterEndzustand direkt
+  // aus dieser Nutzlast in den Gitterplatz, ohne etwas davon aus dem Ereignisstrom abzuleiten.
   ipcMain.handle(SESSION_AUFTRAG, async (_e, args: { name?: string; auftragstext?: string }) => {
     const name = typeof args?.name === 'string' ? args.name : ''
     const text = typeof args?.auftragstext === 'string' ? args.auftragstext.trim() : ''
@@ -495,7 +495,12 @@ export function registerIpcHandlers(services: AppServices): void {
       if (gestarteterLauf) {
         const zelle = schleifenZellen.hole(name)
         if (zelle && zelle.laufId === gestarteterLauf) {
-          schleifenZellen.setzeZustand(name, 'leerlaufend')
+          // M-2 (Review Task 10): explizit null statt des dritten Arguments wegzulassen — der
+          // Rundruf unten sagt endzustand: null, und ohne das dritte Argument liesse
+          // setzeZustand den ALTEN letzterEndzustand im Register stehen (siehe dessen eigenen
+          // Kommentar: "if (endzustand !== undefined)"). Register und Rundruf wichen sonst
+          // genau in diesem Fehlerpfad voneinander ab.
+          schleifenZellen.setzeZustand(name, 'leerlaufend', null)
           sendeStatus({ name, zustand: 'leerlaufend', endzustand: null })
         }
       }

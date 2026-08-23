@@ -89,6 +89,14 @@ export function HarnessCell({
       } else {
         setAuftragstext('')
       }
+    }).catch((err) => {
+      // I-1 (Review Task 10): onAuftrag ist heute ein async IPC-Aufruf, der theoretisch selbst
+      // werfen kann (Kanal nicht registriert, Fenster weg) statt nur { ok:false } zurueckzugeben.
+      // Ohne dieses .catch bliebe sendeGerade fuer immer true — "Beauftragen" waere dauerhaft
+      // tot, und im Fenster stuende nichts davon, derselbe Absendeschutz-Kollaps, gegen den
+      // LauncherCell mit seinem eigenen Fehlertext gebaut wurde.
+      setSendeGerade(false)
+      setFehler(err instanceof Error ? err.message : String(err))
     })
   }, [a.beauftragenMoeglich, sendeGerade, onAuftrag, auftragstext])
 
@@ -97,6 +105,12 @@ export function HarnessCell({
     setFehler(null)
     void onAbbrechen().then((meldung) => {
       if (meldung) setFehler(meldung)
+    }).catch((err) => {
+      // I-1: derselbe Absendeschutz-Grund wie bei handleBeauftragen — abbrechenMoeglich haengt
+      // nur an `zustand`, nicht an einem lokalen Lade-Flag, aber ein ungefangener Wurf hier
+      // liesse den Fehler stumm in einer unbehandelten Promise-Ablehnung verschwinden statt im
+      // Fenster zu stehen.
+      setFehler(err instanceof Error ? err.message : String(err))
     })
   }, [a.abbrechenMoeglich, onAbbrechen])
 

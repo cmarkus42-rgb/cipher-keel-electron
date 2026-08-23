@@ -26,7 +26,7 @@ import { SITZUNG_FREMDES_CLI } from '../../src/main/agent/agent-adapter'
 type SessionCreateHandler = (
   event: unknown,
   opts: { name?: string; entityId?: string; cwd?: string },
-) => Promise<{ id: string | null; name: string | null; error: string | null }>
+) => Promise<{ id: string | null; name: string | null; error: string | null; sitzungsart?: string }>
 
 describe('session:create — adapter selection', () => {
   let userDataDir: string
@@ -151,6 +151,14 @@ describe('session:create — adapter selection', () => {
     const promptFile = path.join(userDataDir, 'entity-prompts', 'niveau-b-session.md')
     const prompt = fs.readFileSync(promptFile, 'utf8')
     expect(prompt).not.toMatch(/^@/m)
+    // I-2 (Review Task 10): der Renderer (index.tsx) unterscheidet die Schleifen-Sitzungsart
+    // von einer tmux-Sitzung ueber `if (result.sitzungsart)` — richtig, weil der fremdes-cli-Pfad
+    // das Feld heute gar nicht setzt. Diese Zeile haelt genau diese Invariante fest: kommt sie
+    // je zu wackeln (eine dritte Sitzungsart, oder ein zweiter Pfad, der sitzungsart setzt),
+    // faellt der Renderer sonst still in den falschen Zweig und zeigt eine tmux-Sitzung als
+    // Harness-Zelle. Dieser Mock-Adapter ist explizit fremdes-cli (SITZUNG_FREMDES_CLI oben) —
+    // dieser Handler-Pfad reicht `sitzungsart` nicht in die Rueckgabe durch.
+    expect(result.sitzungsart).toBeUndefined()
   })
 
   it('keeps emitting @-references for a Niveau-A adapter', async () => {

@@ -353,6 +353,27 @@ describe('session:auftrag — der echte Handler-Rumpf', () => {
     ])
   })
 
+  // M-2 (Review Task 10): derselbe Catch wie I-1, aber mit einem VORHER schon gesetzten
+  // letzterEndzustand im Register — die einzige Lage, in der der alte Fehler sichtbar wird. Ein
+  // frisch angelegtes Register haette diesen Wert ohnehin auf null stehen, ein Test daran haette
+  // die Reparatur genausogut bestanden, wenn setzeZustand ganz ohne drittes Argument gerufen
+  // worden waere.
+  it('M-2: der Catch setzt letzterEndzustand explizit auf null, statt einen alten Wert stehen zu lassen', async () => {
+    starteAuftragImpl = async (opts) => {
+      opts.beiStart?.('lauf-vor-wurf-2')
+      throw new Error('Transportfehler nach beiStart')
+    }
+    const { create, auftrag } = await loadHandlers()
+    await create({}, { entityId: 'keel-arbeiter', name: 'z-m2', cwd: projectDir })
+    // Simuliert einen frueheren, erfolgreich beendeten Auftrag dieser Zelle — genau der Zustand,
+    // in dem der alte Fehler (setzeZustand ohne drittes Argument) den Wert stehen liesse.
+    capturedRegister!.setzeZustand('z-m2', 'leerlaufend', 'alter-endzustand')
+
+    await auftrag({}, { name: 'z-m2', auftragstext: 'noch ein Versuch' })
+
+    expect(capturedRegister!.hole('z-m2')!.letzterEndzustand).toBeNull()
+  })
+
   // I-2 (Review nach Task 9): derselbe Id-Vergleich wie beiEnde, nur vier Zeilen tiefer im
   // Catch nicht angewandt gewesen. Zerstoeren-und-Neuanlegen-im-Await-Fenster eines
   // scheiternden Starts wuerde sonst die NEUE, wirklich laufende Zelle auf 'leerlaufend' kippen

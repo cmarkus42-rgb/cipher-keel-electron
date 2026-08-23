@@ -19,6 +19,7 @@ import { shouldApplyStatusResult } from './service-status-fetch'
 import { errorMessage, type ServiceStatusMap } from '../shared/service-status'
 import { defaultPresetId } from '../shared/preset-catalog'
 import type { HarnessAntwort, HarnessEreignis, SessionStatusChanged } from '../shared/harness-types'
+import { deckle } from './harness-ereignis-deckel'
 
 interface SessionSlot {
   type: 'session' | 'launcher' | 'harness'
@@ -68,6 +69,16 @@ function App() {
   }, [slots])
   // CK-VOICE-009/010: Voice session with graceful degradation
   const voice = useVoiceSession(focusedSessionId)
+
+  // Alle Harness-Ereignisse aller Zellen, gedeckelt je laufId (deckle(), harness-ereignis-deckel.ts).
+  const [harnessEreignisse, setHarnessEreignisse] = useState<HarnessEreignis[]>([])
+  // Welche laufIds je Zellenname (== sessionId/sessionName fuer eine Harness-Zelle) je vorkamen —
+  // ein Ref, kein State: reine Buchfuehrung fuer handleCloseSession (M-5, Review Task 10), die
+  // Anzeige braucht sie nie. Ohne das koennte eine geschlossene Zelle ihre eigenen Ereignisse aus
+  // harnessEreignisse nicht herausfiltern, denn der Deckel dort wirkt nur je laufId, nicht ueber
+  // die Zahl der ueber die Fenster-Lebensdauer angelegten und wieder geschlossenen Zellen — das
+  // Array wuechse sonst unbegrenzt weiter.
+  const laufIdsJeZelle = useRef<Map<string, Set<string>>>(new Map())
 
   // F-6: returns an error message string on failure (null on success) instead of
   // only console.error-ing it, so LauncherCell can show the user what happened
@@ -148,6 +159,13 @@ function App() {
     const result = await api().invoke('session:destroy', sessionId) as { ok: boolean; error: string | null }
     if (result?.ok) {
       setSlots((prev) => prev.filter((s) => s.sessionId !== sessionId))
+      // M-5: eine geschlossene Zelle nimmt ihre eigenen Ereignisse mit. Fuer eine tmux-Sitzung
+      // (kein Eintrag in laufIdsJeZelle, nie eines war) ist das ein No-Op.
+      const laufIds = laufIdsJeZelle.current.get(sessionId)
+      if (laufIds && laufIds.size > 0) {
+        setHarnessEreignisse((prev) => prev.filter((e) => !laufIds.has(e.laufId)))
+        laufIdsJeZelle.current.delete(sessionId)
+      }
     } else {
       console.error('[renderer] session destroy failed:', result?.error)
       setSlots((prev) =>
@@ -164,6 +182,12 @@ function App() {
   useEffect(() => {
     const unsub = api().on(SESSION_STATUS_CHANGED, (_event, status) => {
       const s = status as SessionStatusChanged
+      if (s.zustand === 'laeuft') {
+        // Buchfuehrung fuer handleCloseSession (M-5) — siehe Kommentar bei laufIdsJeZelle oben.
+        const bisherige = laufIdsJeZelle.current.get(s.name) ?? new Set<string>()
+        bisherige.add(s.laufId)
+        laufIdsJeZelle.current.set(s.name, bisherige)
+      }
       setSlots((prev) => prev.map((slot) => {
         if (slot.type !== 'harness' || slot.sessionName !== s.name) return slot
         if (s.zustand === 'laeuft') {
@@ -176,25 +200,14 @@ function App() {
   }, [])
 
   // Sammelt Harness-Ereignisse aller Zellen fuer die HarnessCells (die selbst nach laufId
-  // filtern). Gedeckelt je laufId auf HARNESS_EREIGNIS_DECKEL: ein einzelner sehr langer Lauf
-  // soll den Renderer-Speicher nicht unbegrenzt fuellen. Wer ueber die Deckelung hinaus will,
-  // liest im Harness-Fenster (harness:lauf-lesen) nach — dort steht der volle Verlauf aus der DB.
-  const [harnessEreignisse, setHarnessEreignisse] = useState<HarnessEreignis[]>([])
+  // filtern). Gedeckelt je laufId auf HARNESS_EREIGNIS_DECKEL ueber deckle() — ein einzelner sehr
+  // langer Lauf soll den Renderer-Speicher nicht unbegrenzt fuellen. Wer ueber die Deckelung
+  // hinaus will, liest im Harness-Fenster (harness:lauf-lesen) nach — dort steht der volle
+  // Verlauf aus der DB.
   useEffect(() => {
     const unsub = api().on(HARNESS_EREIGNIS, (_event, e) => {
       const ereignis = e as HarnessEreignis
-      setHarnessEreignisse((prev) => {
-        const naechste = [...prev, ereignis]
-        const zuDiesemLauf = naechste.filter((x) => x.laufId === ereignis.laufId)
-        if (zuDiesemLauf.length <= HARNESS_EREIGNIS_DECKEL) return naechste
-        const ueberschuss = zuDiesemLauf.length - HARNESS_EREIGNIS_DECKEL
-        let uebersprungen = 0
-        return naechste.filter((x) => {
-          if (x.laufId !== ereignis.laufId) return true
-          if (uebersprungen < ueberschuss) { uebersprungen++; return false }
-          return true
-        })
-      })
+      setHarnessEreignisse((prev) => deckle(prev, ereignis, HARNESS_EREIGNIS_DECKEL))
     })
     return unsub
   }, [])

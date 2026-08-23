@@ -14,9 +14,11 @@ export const SESSION_DESTROY = 'session:destroy' as const
 export const SESSION_LIST = 'session:list' as const
 export const SESSION_FOCUS = 'session:focus' as const
 /**
- * Main -> Renderer: a Niveau-B Gitterzelle's own state changed. First sent by SESSION_AUFTRAG's
- * handler (ipc-handlers.ts); no listener yet (a later task). Nutzlast `SessionStatusChanged`
- * (harness-types.ts) — two shapes under this one channel, discriminated by `zustand`.
+ * Main -> Renderer: a Niveau-B Gitterzelle's own state changed. Sent by SESSION_AUFTRAG's
+ * handler (ipc-handlers.ts); heard by the renderer (index.tsx, Task 10), which writes
+ * zustand/laufId/letzterEndzustand straight from the payload — never derived from the harness
+ * event stream. Nutzlast `SessionStatusChanged` (harness-types.ts) — two shapes under this one
+ * channel, discriminated by `zustand`.
  */
 export const SESSION_STATUS_CHANGED = 'session:status-changed' as const
 export const SESSION_OUTPUT = 'session:output' as const
