@@ -360,9 +360,25 @@ dreimal bezahlt hat — eine Zahl, die für einen Verbraucher richtig war, gilt 
 Die Reserve garantiert, dass ein fortgesetzter Auftrag Platz hat, statt in Runde eins ins
 Abschlussverhalten zu fallen.
 
-Praktisch, **ohne dass irgendwo eine Modellgröße steht**: das 27B mit knappem Fenster fällt nach
-einem echten Lauf auf `frisch`; ein Modell mit großem Fenster und leichtem Auftrag führt fort. Der
-Schalter ist die Messung, nicht der Modellname.
+Praktisch, **ohne dass irgendwo eine Modellgröße steht**: wer Platz hat, führt fort; wer keinen
+hat, fängt frisch an. Der Schalter ist die Messung, nicht der Modellname.
+
+> **Korrektur vom 2026-08-23, in der Beweisfahrt gemessen.** Hier stand bis zuletzt der Satz
+> *„das 27B mit knappem Fenster fällt nach einem echten Lauf auf `frisch`"* — als Beispiel für den
+> Mechanismus und als Begründung dafür, dass der `weiter`-Zweig im Feld womöglich gar nicht
+> fahrbar sei.
+>
+> **Das war falsch, und zwar ungeprüft behauptet.** `spark-qwen38-27b` trägt
+> `nutzbaresKontextfenster: 65536` (`model/defaults.ts`), die Schwelle liegt damit bei
+> 65536 · 0,8 · 0,75 = **39 322 Token**. Gemessen wurden **1,7–1,8k je Zug**. Fünf aufeinander
+> folgende echte Aufträge in dieselbe Zelle liefen deshalb alle in **denselben** Lauf, jeder mit
+> einem echten `auftrag.folgend` — gegen die Protokolldatenbank geprüft, nicht gegen den
+> Fenstertext.
+>
+> Der Mechanismus ist damit **bestätigt**, nicht widerlegt: er hat gemessen entschieden, und die
+> Messung fiel anders aus als meine Annahme. Falsch war die Illustration, nicht die Regel — und
+> genau deshalb steht sie hier korrigiert statt gelöscht. Wer diesen Absatz künftig als Beispiel
+> zitiert, zitiert eine Zahl aus `defaults.ts`, die selbst noch `quelle: 'vermutet'` trägt.
 
 `FOLGE_RESERVE` ist eine anpassbare Fläche → Eintrag in `docs/anpassbare-flaechen.md`, auch wenn sie
 in der App nicht editierbar ist (CK-NFR-012, dasselbe Argument wie beim `num_ctx` im Modelfile).
