@@ -26,6 +26,11 @@ import cfWellePlanGranularisierer from './cyber-factory/capabilities/welle-plan-
 import cfWellePlanGuide from './cyber-factory/capabilities/welle-plan-guide/SKILL.md?raw'
 import cfWorkerStartupProtokoll from './cyber-factory/capabilities/worker-startup-protokoll/SKILL.md?raw'
 
+// keel-Arbeiter
+import kaGraphAbfrage from './keel-arbeiter/capabilities/ka-graph-abfrage/SKILL.md?raw'
+import kaNetzrecherche from './keel-arbeiter/capabilities/ka-netzrecherche/SKILL.md?raw'
+import kaProjektLesen from './keel-arbeiter/capabilities/ka-projekt-lesen/SKILL.md?raw'
+
 // Systems Engineer
 import seGateUrteilGuide from './systems-engineer/capabilities/gate-urteil-guide/SKILL.md?raw'
 import seGraphNavigationAdvanced from './systems-engineer/capabilities/graph-navigation-advanced/SKILL.md?raw'
@@ -68,6 +73,9 @@ export const CAPABILITY_SKILLS: Record<string, string> = {
   'welle-plan-granularisierer': cfWellePlanGranularisierer,
   'welle-plan-guide': cfWellePlanGuide,
   'worker-startup-protokoll': cfWorkerStartupProtokoll,
+  'ka-graph-abfrage': kaGraphAbfrage,
+  'ka-netzrecherche': kaNetzrecherche,
+  'ka-projekt-lesen': kaProjektLesen,
   'gate-urteil-guide': seGateUrteilGuide,
   'graph-navigation-advanced': seGraphNavigationAdvanced,
   'handoff-logik-guide': seHandoffLogikGuide,

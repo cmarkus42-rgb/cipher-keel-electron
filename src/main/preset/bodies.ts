@@ -7,12 +7,14 @@
 
 import architectBody from './architect/architect-body.md?raw'
 import cfBody from './cyber-factory/cf-body.md?raw'
+import kaBody from './keel-arbeiter/ka-body.md?raw'
 import seBody from './systems-engineer/se-body.md?raw'
 import taBody from './testing-assistant/ta-body.md?raw'
 import workshopBody from './workshop/workshop-body.md?raw'
 
 export const ARCHITECT_BODY: string = architectBody
 export const CF_BODY: string = cfBody
+export const KA_BODY: string = kaBody
 export const SE_BODY: string = seBody
 export const TA_BODY: string = taBody
 export const WORKSHOP_BODY: string = workshopBody

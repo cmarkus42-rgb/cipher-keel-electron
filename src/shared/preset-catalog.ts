@@ -6,6 +6,12 @@
  * line by one: Ideation, Refinement, Audit, Release Manager, Companion and
  * Debugger remain unbuilt.
  *
+ * keel-arbeiter is a sixth entry of a different kind, added with the keel-harness
+ * adapter (M8): a BeauftragteInstanz for keel's own agent loop, not one of the M5
+ * phase-role cut above, and its own model stays unset on every niveau — it is
+ * resolved from the `sitzung:niveau-b` assignment slot (model/slots.ts), not
+ * declared here.
+ *
  * CK-ENT-001
  */
 
@@ -40,6 +46,11 @@ export const PRESET_CATALOG: readonly PresetChoice[] = [
     id: 'testing-assistant',
     label: 'Testing Assistant',
     description: 'Testlauf, Qualitätsurteil und Findings-Dokumentation',
+  },
+  {
+    id: 'keel-arbeiter',
+    label: 'keel-Arbeiter (Niveau B)',
+    description: 'Ein Auftrag, keels eigene Schleife, lokales oder billiges Modell',
   },
   {
     id: 'workshop',
