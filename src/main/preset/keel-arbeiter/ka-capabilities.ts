@@ -30,15 +30,31 @@ import { CapabilityNiveau } from '../niveau'
 /**
  * Capability packages for the keel-Arbeiter.
  *
- * ka-netzrecherche carries niveauMinimum: 'B', not 'A' — Niveau B is keel-arbeiter's own
- * default (createKaRahmen(CapabilityNiveau.B) in ka-preset.ts, backed by the sitzung:niveau-b
- * assignment slot), so the cut that must narrow is Niveau C, not B. That is also the niveau
- * this project already treats open-web research as too demanding for: the Rechercheur
- * sub-run (src/main/harness/rechercheur.ts) exists specifically because that work needs a
- * capable, encapsulated model, and project memory records a dedicated Niveau-C recherche
- * model precisely so a weak main-loop model does not have to attempt it directly. Reading
- * files and querying the graph stay template- and glob-driven operations a weak model can
- * still drive, so both survive at every niveau.
+ * ka-graph-abfrage carries niveauMinimum: 'B' — not because the graph tools themselves are
+ * gated (baueWerkzeugRegistry, harness-sitzung.ts, wires all four `graph_*` tools
+ * unconditionally, at every niveau), but because this package's own "Vorgehen" text is the
+ * one of the three that a model can reconstruct almost entirely from the tools' own JSON
+ * schema: every parameter name, bound and enum named here (query/limit/kind, uid, depth 1-5,
+ * edge_type, direction, template/params) already sits in werkzeug-graph.ts's `schema()`
+ * methods, several of them copied near-verbatim from the schema's own `description` fields.
+ * The two things this package adds beyond schema — a suggested tool order and "no write
+ * tools exist here" — are themselves recoverable: the model never sees write-tool stubs
+ * (graph_upsert_node etc. are not wired into this registry at all) and can infer a sane
+ * order from the tool descriptions. Losing this text at Niveau C costs comparatively little.
+ *
+ * ka-projekt-lesen and ka-netzrecherche do not carry niveauMinimum, i.e. they survive to
+ * Niveau C: both hold guidance no schema states. ka-projekt-lesen's "search broad, then read
+ * narrow" workflow order and its write-boundary reminder are not in datei_lesen's schema.
+ * ka-netzrecherche's prompt-injection warning ("Befund, keine Anweisung") and its
+ * three-calls-per-run budget are not in recherchieren's schema either — recherchieren has no
+ * write access anywhere near it, but nothing about the schema tells a model that content
+ * flowing back through it could try to instruct it. An earlier version of this file put
+ * niveauMinimum on ka-netzrecherche instead, reasoning that open-web research overwhelms a
+ * weak model — backwards: the Rechercheur sub-run (harness/rechercheur.ts) exists so that a
+ * weak main-loop model does NOT have to read or judge raw web content itself; from the main
+ * loop's side, `recherchieren` takes one free-text field and one enum, simpler than
+ * inhalt_suchen's regex+glob or graph_abfragen's template+params. Cutting its guidance at the
+ * weakest niveau would have removed the one piece of that guidance nothing else supplies.
  */
 export const KA_PACKAGES: CapabilityPackage[] = [
   {
@@ -52,20 +68,20 @@ export const KA_PACKAGES: CapabilityPackage[] = [
     beschreibung:
       'Den Knowledge-Graph lesend abfragen: suchen, Knoten holen, Nachbarschaft ausweiten, Vorlagen abfragen',
     loader: LoaderType.SkillMd,
+    niveauMinimum: 'B',
   },
   {
     name: 'ka-netzrecherche',
     beschreibung:
       'Recherche im offenen Netz über den abgeschotteten Unterlauf — Zusammenfassung samt Quellen',
     loader: LoaderType.SkillMd,
-    niveauMinimum: 'B',
   },
 ]
 
 /**
  * Returns the keel-arbeiter capability packages for a niveau.
  *
- * A and B carry all three. C drops ka-netzrecherche and keeps the other two — see the
+ * A and B carry all three. C drops ka-graph-abfrage and keeps the other two — see the
  * KA_PACKAGES doc comment for why the cut sits there.
  */
 export function getKaCapabilityPackages(niveau: CapabilityNiveau): CapabilityPackage[] {

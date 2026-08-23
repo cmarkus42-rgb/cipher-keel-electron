@@ -36,3 +36,7 @@ wenn die Frage bereits genau einer registrierten Vorlage entspricht.
 Diese vier sind die einzigen graph-bezogenen Werkzeuge deiner Schleife, und alle vier lesen
 nur. Schreibende Operationen (Knoten anlegen, Kanten setzen, Wartung) gibt es hier nicht — der
 keel-Arbeiter liest den Graphen, er schreibt ihn nicht.
+
+Dieser Text steht nur bis Niveau B zur Verfügung. Auf Niveau C bleiben die vier Werkzeuge in
+deiner Werkzeugliste — sie werden hier nicht abgeschaltet —, aber Namen, Parameter und Grenzen
+erfährst du dann nur noch aus dem Werkzeugschema selbst, nicht mehr aus dieser Anleitung.
