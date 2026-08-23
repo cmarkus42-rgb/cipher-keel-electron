@@ -19,13 +19,14 @@
  */
 
 import { app } from 'electron'
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { HARNESS_EREIGNIS } from '../shared/ipc-channels'
 import type { HarnessAntwort, HarnessEreignis, LaufAnzeige } from '../shared/harness-types'
 import { broadcast } from './event-bus'
 import { resolveBetterSqliteBinding } from './graph/native-binding'
-import { eintragFuerRolle } from './model/registry'
+import { eintragFuerRolle, eintragNachId } from './model/registry'
 import { laeuferKannArt, sperrgrund } from './model/eignung'
 import { slotFuerId } from './model/slots'
 import { toModelEndpoint, type Faehigkeiten, type ModellEintrag } from './model/entry'
@@ -34,13 +35,13 @@ import { assemblePraefixTeile } from './harness-praefix-quelle'
 import type { PraefixText } from './harness/praefix'
 import { baueNetzKontext } from './harness-netz'
 import {
-  starteLauf, oeffneHarnessDb, lesen, laufIds, codecFuer,
+  starteLauf, oeffneHarnessDb, lesen, laufIds, codecFuer, weiterOderFrisch, setzeFolgeauftrag,
   WerkzeugRegistry, DATEI_WERKZEUGE, GRAPH_WERKZEUGE, NETZ_WERKZEUGE, rechercheurWerkzeug,
   leseFaehigkeiten, faehigkeitLesenWerkzeug,
 } from './harness'
 import type { ModelAntwort, Auftrag, LaufUmgebung } from './harness'
 import type { AppServices } from './window-manager'
-import type { EntitaetsTeile } from './agent/agent-adapter'
+import type { EntitaetsTeile, SchleifenStartOpts, SchleifenStartErgebnis } from './agent/agent-adapter'
 
 let db: ReturnType<typeof oeffneHarnessDb> | null = null
 /** Run ids marked for cancellation. Read at the loop's turn boundary, never mid-request (9.1). */
@@ -460,4 +461,91 @@ export async function starteHarnessLauf(args: {
     })
 
   await Promise.race([wennGestartet, laufPromise])
+}
+
+/**
+ * Ein Auftrag an eine Zelle. Hier — und nicht beim Aufrufer — faellt die Entscheidung zwischen
+ * Folgeauftrag und frischem Lauf: sie braucht das Protokoll des letzten Laufs, und das kennt nur
+ * dieses Modul.
+ *
+ * Vorgezogen aus Task 9 (`SESSION_AUFTRAG`), weil `KeelHarnessAdapter.starteAuftrag`
+ * (agent/adapters/keel-harness.ts) diese Funktion schon per `await import(...)` ruft — ein
+ * `await import()` wird typgeprueft, ein noch nicht existierendes Modul waere ein sofortiger
+ * `npm run typecheck`-Fehler. Der IPC-Kanal, der `beauftrageSchleife` tatsaechlich aufruft, ist
+ * noch nicht verdrahtet; diese Funktion ist vollstaendig, ihr Aufrufer kommt erst mit Task 9.
+ */
+export async function beauftrageSchleife(
+  opts: SchleifenStartOpts, services: AppServices,
+): Promise<SchleifenStartErgebnis> {
+  const eintrag = eintragNachId(opts.eintragId)
+  if (!eintrag) throw new Error(`Kein Registry-Eintrag '${opts.eintragId}'.`)
+  const fenster = eintrag.faehigkeiten?.nutzbaresKontextfenster ?? 0
+
+  if (opts.letzteLaufId) {
+    const ereignisse = lesen(harnessDb(), opts.letzteLaufId)
+    const entscheidung = weiterOderFrisch(
+      ereignisse, eintrag.id, STANDARD_BUDGETS, fenster, Date.now(),
+    )
+    if (entscheidung.weiter) {
+      const alt = auftragAusProtokoll(ereignisse)
+      if (alt) {
+        const laufId = opts.letzteLaufId
+
+        // `setzeFolgeauftrag` (harness/lauf.ts) oeffnet eine EIGENE `fahre()`-Schleife und setzt
+        // deshalb einen RUHENDEN Lauf voraus (siehe der Kommentar dort). Traefe ein Folgeauftrag
+        // mitten in einen laufenden Zug desselben Prozesses ein, schloesse die Projektion
+        // nebenlaeufig offene Werkzeugaufrufe zwangsweise als "Ausfuehrung unbekannt" ab — derselbe
+        // Fehler, den `pruefeLaufLaeuftNicht` schon fuer HARNESS_LAUF_FORTSETZEN verhindert
+        // (harness-handlers.ts). Der Plantext sah hier nur `laufendeLaeufe.add` vor; das haette die
+        // Bedingung nur gesetzt, nie geprueft.
+        const laeuftPruefung = pruefeLaufLaeuftNicht(laufId, laufendeLaeufe)
+        if (!laeuftPruefung.ok) throw new Error(laeuftPruefung.meldung)
+
+        laufendeLaeufe.add(laufId)
+        const u = await baueLaufUmgebung(
+          laufId, eintrag, alt.auftragstext, opts.wurzel, services, () => {}, opts.praefix,
+        )
+        // Vor dem Start, synchron: sonst kann `beiEnde` eines kurzen Laufs vor dem Eintrag ins
+        // Register liegen. Siehe SchleifenStartOpts.beiStart.
+        opts.beiStart?.(laufId)
+        setzeFolgeauftrag(laufId, alt, u, opts.auftragstext)
+          .catch((err) => {
+            console.error(
+              `[harness-sitzung] Folgeauftrag in '${laufId}' endete mit einem unbehandelten ` +
+              `Fehler:`, err instanceof Error ? err.message : String(err),
+            )
+          })
+          .finally(() => {
+            abbruchmarken.delete(laufId)
+            laufendeLaeufe.delete(laufId)
+            opts.beiEnde?.(laufId)
+          })
+        return { laufId, fortgesetzt: true }
+      }
+      // Kein rekonstruierbarer Auftrag heisst: das Protokoll traegt kein brauchbares
+      // run.started. Dann ein frischer Lauf — benannt im Log, nicht still.
+      console.warn(
+        `[harness-sitzung] Lauf '${opts.letzteLaufId}' liefert keinen rekonstruierbaren ` +
+        `Auftrag; der Folgeauftrag startet stattdessen frisch.`,
+      )
+    }
+  }
+
+  const laufId = randomUUID()
+  // Synchron, vor dem eigentlichen Schleifenstart — siehe der Kommentar an SchleifenStartOpts
+  // .beiStart (agent/agent-adapter.ts): `starteHarnessLauf` kehrt heim, sobald das erste
+  // `run.started` steht, der Rest laeuft im Hintergrund weiter. Wer die laufId erst aus dem
+  // Rueckgabewert eintruege, verloere gegen einen sehr kurzen Lauf.
+  opts.beiStart?.(laufId)
+  await starteHarnessLauf({
+    laufId, eintrag, auftragstext: opts.auftragstext, wurzel: opts.wurzel,
+    services, entitaet: opts.praefix, beiEnde: () => opts.beiEnde?.(laufId),
+  })
+  return { laufId, fortgesetzt: false }
+}
+
+/** Setzt die Abbruchmarke fuer einen Lauf. Siehe `abbruchmarken` oben: gelesen an der
+ *  Rundengrenze der Schleife, niemals mitten in einer laufenden Anfrage. */
+export function markiereAbbruch(laufId: string): void {
+  abbruchmarken.add(laufId)
 }
