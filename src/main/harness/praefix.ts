@@ -12,6 +12,7 @@
  */
 
 import type { WerkzeugStummel } from './codec'
+import type { Faehigkeit } from './faehigkeiten'
 
 export interface PraefixTeile {
   body: string
@@ -19,6 +20,12 @@ export interface PraefixTeile {
   persona: string
   globaleRegeln: string
   auftragstext: string
+  /**
+   * Die Faehigkeiten des Laufs. Nur Name und Beschreibung landen hier im Praefix; der Rumpf wird
+   * ueber `faehigkeit_lesen` bei Bedarf an die Historie gehaengt — dasselbe aufgeschobene Laden
+   * wie bei den Werkzeugschemata, aus demselben Grund.
+   */
+  faehigkeiten: Faehigkeit[]
 }
 
 /**
@@ -51,6 +58,16 @@ export function baueStabilenTeil(teile: PraefixTeile, werkzeuge: WerkzeugStummel
       .sort((a, b) => a.name.localeCompare(b.name))
       .map(w => `- \`${w.name}\` — ${w.beschreibung}`)
     abschnitte.push(`## Werkzeuge\n\n${zeilen.join('\n')}`)
+  }
+
+  if (teile.faehigkeiten.length > 0) {
+    // Sortiert aus demselben Grund wie die Werkzeugliste: in welcher Reihenfolge der Leser die
+    // Verzeichnisse durchlaufen hat, darf kein Byte des stabilen Teils bewegen. Ohne Faehigkeiten
+    // kommt der Abschnitt gar nicht — eine leere Ueberschrift waere ein Byte, das nichts sagt.
+    const zeilen = [...teile.faehigkeiten]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(f => `- \`${f.name}\` — ${f.beschreibung}`)
+    abschnitte.push(`## Faehigkeiten\n\n${zeilen.join('\n')}`)
   }
 
   return abschnitte.join('\n\n')

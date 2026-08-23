@@ -86,8 +86,41 @@ export interface CipherKeelConfig {
     eintraege: unknown[]
     zuordnung: {
       tiers: { light: string; standard: string; heavy: string }
-      rollen: { tagging: string; worker: string }
+      /**
+       * `rechercheur` ist der Unterlauf von `recherchieren` (harness/rechercheur.ts). Leer heisst
+       * hier — anders als bei `tagging` und `worker` — **nicht** „nimm den `llm.*`-Endpunkt",
+       * sondern „nimm das Modell des Hauptlaufs". Einen eigenen Endpunkt gibt es dafuer nicht.
+       */
+      rollen: { tagging: string; worker: string; rechercheur: string }
     }
+  }
+  /**
+   * Netzzugang der Harness-Werkzeuge. Leer ausgeliefert, und das ist die Vorgabe: ohne
+   * Suchanbieter melden `web_suchen` und `seite_lesen` benannt, dass Netzzugang nicht
+   * eingerichtet ist — sie geben keine leeren Treffer zurueck. Ein Agent, der leere Ergebnisse
+   * statt eines Fehlers bekommt, halluziniert die Antwort.
+   *
+   * Die Schluessel stehen **nicht** hier, sondern im Schluesselbund unter
+   * `cipher-keel-api-tavily` bzw. `cipher-keel-api-brave` (oder in `CIPHER_KEEL_API_TAVILY` /
+   * `CIPHER_KEEL_API_BRAVE`) — dieselbe Ablage wie fuer die Modell-Schluessel, siehe
+   * worker/api-keys.ts. Eine Konfigurationsdatei ist kein Ort fuer Geheimnisse.
+   */
+  netz: {
+    /** SearXNG-Endpunkt, z.B. `http://100.67.95.13:8080`. Leer = nicht eingerichtet. */
+    searxngEndpunkt: string
+    /**
+     * 'searxng' | 'tavily' | 'brave' | '' fuer automatisch. Automatisch waehlt in der Reihenfolge
+     * SearXNG, Tavily, Brave — nach den Auflagen, nicht nach der Qualitaet: Brave beschraenkt das
+     * Speichern von Ergebnissen ausdruecklich (siehe BraveAnbieter in harness/such-anbieter.ts),
+     * und eine solche Wahl soll man treffen, nicht zugeteilt bekommen.
+     */
+    bevorzugt: string
+    /**
+     * Zusaetzliche Hosts fuer den Whitelist-Weg im Hauptlauf, ueber die Vorgabeliste
+     * (`VORGABE_POSITIVLISTE` in harness/werkzeug-netz.ts) hinaus. Der offene Weg des
+     * Rechercheurs liest sie nicht — dort gilt keine Positivliste, dafuer keine Datei-Werkzeuge.
+     */
+    zusaetzlichePositivliste: string[]
   }
   projects: {
     list: ProjectRecord[]
@@ -139,8 +172,16 @@ const defaults: CipherKeelConfig = {
     eintraege: [],
     zuordnung: {
       tiers: { light: '', standard: '', heavy: '' },
-      rollen: { tagging: '', worker: '' },
+      // Kein Migrationszweig noetig: `deepMerge` legt einen fehlenden Schluessel aus den
+      // Vorgaben nach, und '' ist genau der Zustand „keine Zuordnung", den eine aeltere Datei
+      // meint.
+      rollen: { tagging: '', worker: '', rechercheur: '' },
     },
+  },
+  netz: {
+    searxngEndpunkt: '',
+    bevorzugt: '',
+    zusaetzlichePositivliste: [],
   },
   projects: {
     list: [],

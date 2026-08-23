@@ -7,7 +7,9 @@ import { setzeFort } from '../../src/main/harness/lauf'
 import { WerkzeugRegistry, type Werkzeug } from '../../src/main/harness/werkzeuge'
 import type { ModelAntwort } from '../../src/main/harness/form'
 import type { ModellEintrag } from '../../src/main/model/entry'
-import { auftragAusProtokoll, laufAbgeschlossen, pruefeLaufLaeuftNicht } from '../../src/main/harness-handlers'
+import {
+  auftragAusProtokoll, laufAbgeschlossen, pruefeKeinUnterlauf, pruefeLaufLaeuftNicht,
+} from '../../src/main/harness-handlers'
 
 // auftragAusProtokoll and laufAbgeschlossen back HARNESS_LAUF_FORTSETZEN (Fix-Runde 3): the
 // handler itself is untestable here (no test in this repo reaches ipcMain), but the two pure
@@ -114,6 +116,34 @@ describe('pruefeLaufLaeuftNicht', () => {
   })
 })
 
+// Die dritte Absage des Fortsetzen-Pfads, und die einzige, die eine Sicherheitsgrenze haelt:
+// `baueLaufUmgebung` gibt jedem fortgesetzten Lauf die Registry des Hauptlaufs (datei_lesen,
+// inhalt_suchen, die vier Graph-Werkzeuge) samt graphDb. Ein Unterlauf des Rechercheurs, dessen
+// Prozess mitten in `seite_lesen` starb, sieht in der Uebersicht aus wie jeder abgebrochene Lauf
+// — und ein Klick auf Fortsetzen stellte genau den Zustand her, gegen den rechercheur.ts seine
+// eigene laufId begruendet. Gegen ein echtes Unterlauf-Protokoll geprueft wird das in
+// rechercheur.test.ts; hier stehen die beiden Randfaelle.
+describe('pruefeKeinUnterlauf', () => {
+  it('lehnt einen Lauf ab, dessen run.started ein eltern traegt', () => {
+    const db = oeffneHarnessDb(':memory:')
+    anhaengen(db, 'u1', 'run.started', {
+      auftragstext: 'x', modellId: 'm', wurzel: '/tmp', budgets: BUDGETS,
+      eltern: { laufId: 'h1', aufrufId: 'r1' },
+    })
+    const e = pruefeKeinUnterlauf('u1', lesen(db, 'u1'))
+    expect(e.ok).toBe(false)
+    if (!e.ok) expect(e.meldung).toContain('u1')
+  })
+
+  it('laesst einen gewoehnlichen Lauf zu — auch einen aus der Zeit vor dem Feld', () => {
+    const db = oeffneHarnessDb(':memory:')
+    anhaengen(db, 'h1', 'run.started', {
+      auftragstext: 'x', modellId: 'm', wurzel: '/tmp', budgets: BUDGETS,
+    })
+    expect(pruefeKeinUnterlauf('h1', lesen(db, 'h1'))).toEqual({ ok: true })
+  })
+})
+
 describe('Wiederaufnahme ueber den rekonstruierten Auftrag (Beleg 8)', () => {
   it('fuehrt beim Fortsetzen kein Werkzeug erneut aus, dessen Intent schon offen im Protokoll stand', async () => {
     const w = mkdtempSync(join(tmpdir(), 'keel-fortsetzen-'))
@@ -124,7 +154,7 @@ describe('Wiederaufnahme ueber den rekonstruierten Auftrag (Beleg 8)', () => {
       schema: () => ({ type: 'object', properties: {} }),
       async ausfuehren() {
         aufrufe += 1
-        return { ok: true, inhalt: [{ art: 'text', text: 'ok' }] }
+        return { ok: true, quelle: 'lokal', inhalt: [{ art: 'text', text: 'ok' }] }
       },
     }
 
@@ -150,7 +180,7 @@ describe('Wiederaufnahme ueber den rekonstruierten Auftrag (Beleg 8)', () => {
     await setzeFort(laufId, auftrag!, {
       db,
       eintrag: EINTRAG,
-      praefixTeile: { body: 'BODY', capabilities: '', persona: '', globaleRegeln: '', auftragstext: 'a' },
+      praefixTeile: { body: 'BODY', capabilities: '', persona: '', globaleRegeln: '', auftragstext: 'a', faehigkeiten: [] },
       wache: { wurzel: w, heim: w, userDataPfad: join(w, 'ud') },
       graphDb: null,
       registry: new WerkzeugRegistry([zaehlwerkzeug]),

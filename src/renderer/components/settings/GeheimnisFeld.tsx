@@ -6,7 +6,7 @@
  * a key, because nothing here ever receives one.
  */
 import { useState } from 'react'
-import type { EintragAnsicht, Schreiber } from '../../../shared/settings-types'
+import type { GeheimnisStatus, Schreiber } from '../../../shared/settings-types'
 
 const STATUS_TEXT: Record<string, string> = {
   schluesselbund: 'hinterlegt',
@@ -22,31 +22,42 @@ const STATUS_FARBE: Record<string, string> = {
   unbekannt: '#888',
 }
 
+/**
+ * Nimmt Schluesselnamen und Stand einzeln statt einen ganzen Registry-Eintrag: dasselbe Feld
+ * traegt inzwischen auch die Suchanbieter-Schluessel im Netz-Reiter, und die haben keinen
+ * Eintrag. Eine zweite Kopie dieser Oberflaeche waere eine zweite Stelle, an der die Regel
+ * "der Schluessel wird nie zurueckgelesen" eingehalten werden muss — und die zweite ist die,
+ * die beim naechsten Umbau vergessen wird.
+ */
 export function GeheimnisFeld({
-  eintrag,
+  keyRef,
+  status,
+  hinweis,
   schreibe,
 }: {
-  eintrag: EintragAnsicht
+  keyRef: string | null
+  status: GeheimnisStatus | null
+  hinweis: string | null
   schreibe: Schreiber
 }) {
   const [wert, setWert] = useState('')
-  if (!eintrag.keyRef || !eintrag.geheimnisStatus) return null
+  if (!keyRef || !status) return null
 
   const speichern = async () => {
     const zuSchreiben = wert
     setWert('')
-    await schreibe('settings:geheimnis-setzen', eintrag.keyRef, zuSchreiben)
+    await schreibe('settings:geheimnis-setzen', keyRef, zuSchreiben)
   }
 
   return (
     <div style={styles.rahmen}>
       <div style={styles.kopf}>
-        <span style={styles.marke}>Schluessel „{eintrag.keyRef}"</span>
-        <span style={{ ...styles.status, color: STATUS_FARBE[eintrag.geheimnisStatus] }}>
-          {STATUS_TEXT[eintrag.geheimnisStatus]}
+        <span style={styles.marke}>Schluessel „{keyRef}"</span>
+        <span style={{ ...styles.status, color: STATUS_FARBE[status] }}>
+          {STATUS_TEXT[status]}
         </span>
       </div>
-      <div style={styles.hinweis}>{eintrag.geheimnisHinweis}</div>
+      <div style={styles.hinweis}>{hinweis ?? ''}</div>
       <div style={styles.zeile}>
         <input
           type="password"
@@ -58,9 +69,9 @@ export function GeheimnisFeld({
         <button onClick={speichern} disabled={!wert} style={styles.knopf}>
           Im Schluesselbund speichern
         </button>
-        {eintrag.geheimnisStatus === 'schluesselbund' && (
+        {status === 'schluesselbund' && (
           <button
-            onClick={() => schreibe('settings:geheimnis-loeschen', eintrag.keyRef)}
+            onClick={() => schreibe('settings:geheimnis-loeschen', keyRef)}
             style={styles.knopf}
           >
             Loeschen

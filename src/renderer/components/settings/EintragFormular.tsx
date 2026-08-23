@@ -18,7 +18,11 @@
  * builds `anthropic` and `openai-chat`, so this form still offers `ollama-native` and `text`
  * (existing entries use `ollama-native`, and hiding the option would show an unexplained blank
  * select for them) but warns under both, the same way it already did for the text
- * werkzeugmodus.
+ * werkzeugmodus. Zwei weitere Warnungen desselben Musters kamen in Runde 2 dazu, beide am
+ * sampler-Block: `samplerWarnung` (der gewaehlte Codec traegt die Werte nicht hinaus) und
+ * `samplerLuecken` (ein leergeraeumtes Zahlenfeld wird beim Speichern abgelehnt). Beides sind
+ * Faelle, in denen die Eingabe garantiert scheitert oder folgenlos bleibt -- kein zweiter
+ * Validator, sondern die Ansage vorher.
  */
 import { useState } from 'react'
 import type { EintragAnsicht, FaehigkeitenAnsicht, Schreiber } from '../../../shared/settings-types'
@@ -27,9 +31,35 @@ type Art = 'cli-harness' | 'local-http' | 'api'
 type Oertlichkeit = 'lokal' | 'eigenes-netz' | 'fremdes-netz'
 type Codec = FaehigkeitenAnsicht['codec']
 type Werkzeugmodus = FaehigkeitenAnsicht['werkzeugmodus']
+/** Empty string means "keine Stufe angeben" -- the field stays out of the payload entirely. */
+type Denkstufe = '' | 'none' | 'low' | 'medium' | 'high'
 
 /** Codecs no run can actually use yet -- see codecFuer in src/main/harness/codec.ts. */
 const UNGEBAUTE_CODECS = new Set<Codec>(['ollama-native', 'text'])
+
+/**
+ * Der einzige Codec, dessen `toWire` `faehigkeiten.sampler` ueberhaupt liest
+ * (src/main/harness/codec-openai-chat.ts). `anthropicCodec.toWire` fasst den Block nie an.
+ */
+const SAMPLER_CODEC: Codec = 'openai-chat'
+
+/**
+ * Die Denkstufen als Liste, nicht als handgeschriebene `<option>`-Zeilen im JSX.
+ *
+ * Damit ist „gar nicht erst anbieten" pruefbar: `tests/renderer/eintrag-formular.test.ts` legt
+ * diese Liste gegen `DENKSTUFEN` in src/main/model/entry.ts. Eine Stufe zu viel -- `xhigh` ist
+ * die teure, gemessen 106 s fuer eine kuerzere Antwort -- faellt dort auf, statt erst beim
+ * Speichern als Fehlermeldung zurueckzukommen.
+ */
+export const DENKSTUFEN_AUSWAHL: ReadonlyArray<{ wert: Exclude<Denkstufe, ''>; text: string }> = [
+  // Die Zeiten stammen aus einer Messung am 2026-08-21 gegen qwen3.8:27b auf dem DGX Spark,
+  // an einer Frage mit echtem Denkbedarf. Sie stehen hier, weil die Wahl sonst nach Geschmack
+  // aussieht: der Unterschied zwischen 'none' und 'high' ist Faktor sechs an Wartezeit.
+  { wert: 'none', text: 'none — gar nicht denken (~8 s, fuer mechanische Arbeit)' },
+  { wert: 'low', text: 'low — kurz denken (~24 s)' },
+  { wert: 'medium', text: 'medium — Vorgabe fuer Agentenlaeufe (~37 s, laengste Antwort)' },
+  { wert: 'high', text: 'high — lange denken (~51 s)' },
+]
 
 export interface Felder {
   id: string
@@ -55,6 +85,19 @@ export interface Felder {
   fWerkzeugObergrenze: string
   fNutzbaresKontextfenster: string
   fRundenbudget: string
+  /**
+   * Whether this entry carries a sampler block at all. A separate flag rather than four empty
+   * strings, because "no block" and "a block of defaults" are different things on the wire:
+   * without the block the codec sends nothing and Ollama's /v1 forces temperature and top_p to
+   * 1.0; with it, whatever stands here goes out. A form that always sent the block would give
+   * every existing entry samplers nobody chose, on the first save that touched anything else.
+   */
+  fSamplerAn: boolean
+  fTemperature: string
+  fTopP: string
+  fPresencePenalty: string
+  fMaxTokens: string
+  fReasoningEffort: Denkstufe
 }
 
 /**
@@ -71,6 +114,13 @@ export const LEER: Felder = {
   fParalleleAufrufe: false, fDenkbloecke: false, fBilder: false, fDokumente: false,
   fAufgeschobenesLaden: false,
   fWerkzeugObergrenze: '8', fNutzbaresKontextfenster: '8192', fRundenbudget: '12',
+  // The starting values are the Thinking-Satz an Ollama ships for this class of model, so a
+  // freshly ticked box does not silently change behaviour beyond pinning what was already meant
+  // to hold. maxTokens 8192 rather than 4096: a lower budget cuts off before `</think>` at high
+  // effort, and the client then sees no content at all, only finish_reason "length".
+  fSamplerAn: false,
+  fTemperature: '1.0', fTopP: '0.95', fPresencePenalty: '0.0', fMaxTokens: '8192',
+  fReasoningEffort: '',
 }
 
 /**
@@ -109,6 +159,16 @@ function ausVorlage(v: EintragAnsicht): Felder {
         fWerkzeugObergrenze: String(v.faehigkeiten.werkzeugObergrenze),
         fNutzbaresKontextfenster: String(v.faehigkeiten.nutzbaresKontextfenster),
         fRundenbudget: String(v.faehigkeiten.rundenbudget),
+        ...(v.faehigkeiten.sampler
+          ? {
+              fSamplerAn: true,
+              fTemperature: String(v.faehigkeiten.sampler.temperature),
+              fTopP: String(v.faehigkeiten.sampler.topP),
+              fPresencePenalty: String(v.faehigkeiten.sampler.presencePenalty),
+              fMaxTokens: String(v.faehigkeiten.sampler.maxTokens),
+              fReasoningEffort: v.faehigkeiten.sampler.reasoningEffort ?? '',
+            }
+          : {}),
       }
     : basis
   const e = v.erreichbarkeit
@@ -123,13 +183,76 @@ function ausVorlage(v: EintragAnsicht): Felder {
 }
 
 /**
+ * Ein geleertes Zahlenfeld ist keine Null.
+ *
+ * `Number('')` ergibt 0, nicht NaN (und `Number('   ')` ebenso). Wer die Temperatur markiert
+ * und loescht, schickte damit `temperature: 0` und `top_p: 0` hinaus -- plausibel aussehende
+ * Werte, die niemand gewaehlt hat, statt einer Luecke, die auffaellt. Deshalb hier NaN: der
+ * Sampler-Waechter in `normaliseEintrag` weist es benannt ab, und das Fenster bleibt mit einer
+ * Meldung offen, statt still gieriges Sampling zu speichern (Review-Runde 2, Fund 2).
+ *
+ * Nur fuer den sampler-Block. Die drei Ganzzahlfelder darueber haben denselben Rand, aber ihre
+ * eigene Wache in `normaliseEintrag` (`GANZZAHL_FELDER`), die eine 0 ohnehin schon abweist.
+ */
+function zahl(s: string): number {
+  return s.trim() === '' ? Number.NaN : Number(s)
+}
+
+/**
+ * Warum die Sampler-Felder bei diesem Codec folgenlos bleiben -- oder null, wenn sie es nicht
+ * sind.
+ *
+ * CK-NFR-012 verbietet die Attrappe: ein Regler, der etwas verspricht, das den Server nie
+ * erreicht. Genau das war der Abschnitt fuer einen Eintrag mit Codec `anthropic` -- angeboten
+ * wird er fuer jeden Nicht-cli-harness-Eintrag, gelesen wird `f.sampler` aber nur von
+ * `openAiChatCodec.toWire`. Kein `<select>`-Zweig weiter oben faengt das ab, weil `anthropic`
+ * ein gebauter Codec ist und keine Warnung traegt.
+ */
+export function samplerWarnung(f: Felder): string | null {
+  if (!f.fSamplerAn || f.fCodec === SAMPLER_CODEC) return null
+  return (
+    `Der Codec „${f.fCodec}" schickt keine Sampler mit — diese Werte werden gespeichert und ` +
+    'hier wieder angezeigt, erreichen den Server aber nicht; jeder Lauf faehrt mit der Vorgabe ' +
+    `des Anbieters. Nur „${SAMPLER_CODEC}" sendet sie.`
+  )
+}
+
+/** Beschriftung je Sampler-Feld, damit eine Warnung dasselbe Wort nennt wie die Marke darueber. */
+const SAMPLER_MARKEN: ReadonlyArray<[keyof Felder, string]> = [
+  ['fTemperature', 'Temperatur'],
+  ['fTopP', 'Top-P'],
+  ['fPresencePenalty', 'Wiederholungsbremse'],
+  ['fMaxTokens', 'Antwortlaenge'],
+]
+
+/**
+ * Welche Sampler-Felder leer sind -- oder null, wenn keines es ist.
+ *
+ * Ein leeres Feld ist ab Runde 2 eine Angabe, die beim Speichern garantiert scheitert (siehe
+ * `zahl`), und genau dafuer kennt dieses Formular die Ausnahme von seiner Regel: vorher sagen,
+ * was sicher abgelehnt wird. Vorher sagte das Fenster gar nichts -- bei `maxTokens` sprang
+ * immerhin die 2048-Warnung an, weil das leere Feld zur 0 wurde; bei Temperatur und Top-P fiel
+ * niemandem etwas auf, und `temperature: 0` sah aus wie eine Entscheidung.
+ */
+export function samplerLuecken(f: Felder): string | null {
+  if (!f.fSamplerAn) return null
+  const leer = SAMPLER_MARKEN.filter(([k]) => String(f[k]).trim() === '').map(([, marke]) => marke)
+  if (leer.length === 0) return null
+  return (
+    `Leer ist keine 0: ${leer.join(', ')} ${leer.length === 1 ? 'traegt' : 'tragen'} keinen Wert. ` +
+    'So wird nicht gespeichert — entweder eine Zahl eintragen oder das Kaestchen abwaehlen, ' +
+    'dann schickt keel gar keine Sampler mit.'
+  )
+}
+
+/**
  * The capability row this form sends, or none for cli-harness. No hooks, no DOM -- a plain
  * function so this specific behaviour (which fields are overwritten and which survive) is
  * unit-testable without a React render environment. See tests/renderer/eintrag-formular.test.ts.
  *
  * `bestehend` is the entry's capability row as it existed before this edit (undefined for a
- * new entry, for a cli-harness entry, or for an entry that never had one). Only the ten fields
- * the section actually shows come from `f`; `quelle`, `gemessenAm`, `gemessenMit` and
+ * new entry, for a cli-harness entry, or for an entry that never had one). Only the fields the
+ * section actually shows come from `f`; `quelle`, `gemessenAm`, `gemessenMit` and
  * `vertragsStrenge` come from `bestehend` unchanged -- a fresh row (no `bestehend`) still gets
  * `quelle: 'vermutet'` with no measurement fields and the rueckfall `vertragsStrenge` (by
  * omitting the key and letting normaliseEintrag's merge fill it in), but an existing
@@ -153,6 +276,20 @@ export function baueFaehigkeitenPayload(f: Felder, bestehend: FaehigkeitenAnsich
     gemessenAm: bestehend?.gemessenAm ?? null,
     gemessenMit: bestehend?.gemessenMit ?? null,
     ...(bestehend?.vertragsStrenge ? { vertragsStrenge: bestehend.vertragsStrenge } : {}),
+    // Key omitted entirely when the box is off -- not `sampler: undefined`. normaliseEintrag
+    // merges raw over the fallback, and an explicit undefined would still be a present key
+    // there. Omitting it is what keeps an untouched entry's wire body identical to before.
+    ...(f.fSamplerAn
+      ? {
+          sampler: {
+            temperature: zahl(f.fTemperature),
+            topP: zahl(f.fTopP),
+            presencePenalty: zahl(f.fPresencePenalty),
+            maxTokens: zahl(f.fMaxTokens),
+            ...(f.fReasoningEffort ? { reasoningEffort: f.fReasoningEffort } : {}),
+          },
+        }
+      : {}),
   }
 }
 
@@ -337,11 +474,75 @@ export function EintragFormular({
           <label style={styles.marke}>Rundenbudget (Schleifendurchlaeufe je Lauf)</label>
           <input type="number" min={1} value={f.fRundenbudget} onChange={setze('fRundenbudget')} style={styles.eingabe} />
 
+          <label style={styles.kontrollkaestchenZeile}>
+            <input type="checkbox" checked={f.fSamplerAn} onChange={setzeKontrollkaestchen('fSamplerAn')} />
+            Sampler selbst setzen
+          </label>
+          {!f.fSamplerAn && (
+            <div style={styles.hinweis}>
+              Ohne eigene Sampler schickt keel keine mit. Bei einem Ollama-Eintrag ueber den
+              Codec „openai-chat" heisst das aber <em>nicht</em>, dass die Werte des Servers
+              gelten: Ollamas /v1-Flaeche setzt Temperatur und Top-P dann zwangsweise auf 1.0,
+              auch wenn im Modelfile etwas anderes steht.
+            </div>
+          )}
+          {samplerWarnung(f) && <div style={styles.warnung}>{samplerWarnung(f)}</div>}
+          {samplerLuecken(f) && <div style={styles.warnung}>{samplerLuecken(f)}</div>}
+          {f.fSamplerAn && (
+            <>
+              <label style={styles.marke}>Temperatur</label>
+              <input type="number" step="0.05" min={0} value={f.fTemperature} onChange={setze('fTemperature')} style={styles.eingabe} />
+
+              <label style={styles.marke}>Top-P</label>
+              <input type="number" step="0.01" min={0} max={1} value={f.fTopP} onChange={setze('fTopP')} style={styles.eingabe} />
+
+              <label style={styles.marke}>Wiederholungsbremse (presence_penalty, 0 bis 2)</label>
+              <input type="number" step="0.1" min={0} max={2} value={f.fPresencePenalty} onChange={setze('fPresencePenalty')} style={styles.eingabe} />
+              <div style={styles.hinweis}>
+                Gegen Endlosschleifen. Der Preis steht in der Model Card: ein hoeherer Wert kann
+                Sprachmischung und etwas schwaechere Leistung bringen.
+              </div>
+
+              <label style={styles.marke}>Antwortlaenge (max_tokens)</label>
+              <input type="number" min={1} value={f.fMaxTokens} onChange={setze('fMaxTokens')} style={styles.eingabe} />
+              {/*
+                `zahl` statt `Number`: ein leeres Feld ergaebe sonst 0 und damit diese Warnung,
+                die dann das Falsche saegt -- nicht „zu klein", sondern „gar kein Wert". Dafuer
+                gibt es samplerLuecken oben im Block.
+              */}
+              {zahl(f.fMaxTokens) < 2048 && (
+                <div style={styles.warnung}>
+                  Unter 2048 schneidet ein Denkmodell ab, bevor es mit dem Denken fertig ist —
+                  die Antwort kommt dann ganz ohne Text an und sieht wie ein Netzproblem aus.
+                </div>
+              )}
+
+              <label style={styles.marke}>Denkstufe</label>
+              <select value={f.fReasoningEffort} onChange={setze('fReasoningEffort')} style={styles.eingabe}>
+                <option value="">keine Angabe — das Modell entscheidet selbst</option>
+                {DENKSTUFEN_AUSWAHL.map(s => (
+                  <option key={s.wert} value={s.wert}>{s.text}</option>
+                ))}
+              </select>
+              {/*
+                Deliberately only these three. Ollamas Renderer kennt je nach Serverversion mehr
+                Namen, aber `xhigh` faellt dort in den default-Zweig und kostet einen 400 mitten
+                im Lauf. Was das Formular nicht anbietet, kann auch niemand hineinschreiben --
+                normaliseEintrag weist es zusaetzlich ab, falls es von Hand in die Datei kommt.
+              */}
+              <div style={styles.hinweis}>
+                Drei Sampler fehlen hier mit Absicht: top_k, min_p und repeat_penalty erreichen
+                ueber die /v1-Flaeche keinen Ollama-Server — sie muessen im Modelfile auf dem
+                Server stehen. Ein Regler dafuer waere eine Attrappe.
+              </div>
+            </>
+          )}
+
           <div style={styles.hinweis}>
             {vorlage?.faehigkeiten?.quelle === 'gemessen'
               ? `Quelle: gemessen am ${vorlage.faehigkeiten.gemessenAm} mit ${vorlage.faehigkeiten.gemessenMit}. ` +
                 'Diese Angabe bleibt beim Speichern erhalten -- ein Mensch kann sie hier nicht setzen, nur die ' +
-                'zehn Felder oben aendern.'
+                'Felder oben aendern.'
               : 'Quelle: vermutet. Ein Mensch kann diese Zeile nur schaetzen, nicht messen — die ' +
                 'Messung uebernimmt ein spaeterer Kanarienauftrag.'}
           </div>

@@ -9,13 +9,32 @@
  * reverse direction loses information.
  */
 
+/**
+ * Woher der Inhalt eines Werkzeugergebnisses stammt. `netz` heisst: fremdbestimmt, von einer
+ * Gegenstelle, die niemand von uns kontrolliert. `lokal` heisst: aus dieser Maschine.
+ *
+ * Das steht im Ereignisschema und in der Nachrichtenform, seit es das erste Netz-Werkzeug gibt,
+ * und nicht spaeter: nachtraeglich hiesse, das Schema zu aendern und jedes persistierte Protokoll
+ * neu zu deuten — und die Deutung waere ein Raten darueber, was ein Werkzeugname vor Monaten
+ * bedeutet hat.
+ */
+export type WerkzeugQuelle = 'netz' | 'lokal'
+
 export type Block =
   | { art: 'text';              text: string }
   | { art: 'denken';            text: string; signatur?: string }
   | { art: 'bild';              medientyp: string; daten: string }
   | { art: 'dokument';          medientyp: string; name: string; daten: string }
   | { art: 'werkzeug-aufruf';   id: string; name: string; eingabe: Record<string, unknown> }
-  | { art: 'werkzeug-ergebnis'; aufrufId: string; inhalt: Block[]; fehler: boolean }
+  | {
+      art: 'werkzeug-ergebnis'; aufrufId: string; inhalt: Block[]; fehler: boolean
+      /**
+       * Optional, weil ein Protokoll aus der Zeit vor dieser Angabe sie nicht hat. `projektion.ts`
+       * erfindet dann nichts und laesst das Feld weg — ein geratenes `'lokal'` waere eine Auskunft
+       * ueber alte Laeufe, die niemand geprueft hat.
+       */
+      quelle?: WerkzeugQuelle
+    }
 
 export interface Nachricht {
   rolle: 'nutzer' | 'modell'

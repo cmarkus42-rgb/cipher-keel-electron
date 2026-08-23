@@ -63,6 +63,63 @@ describe('openAiChatCodec.toWire', () => {
     expect(inhaltstext).toContain('Innere Ueberlegung')
   })
 
+  // Ollamas /v1 setzt temperature und top_p zwangsweise auf 1.0, wenn der Client sie weglaesst
+  // (openai.go L663/L681). Deshalb traegt die Faehigkeitszeile sie optional — und deshalb ist der
+  // erste dieser beiden Tests der wichtigere: er haelt fest, dass ein Eintrag ohne sampler-Block
+  // exakt denselben Koerper erzeugt wie vor dieser Aenderung.
+  describe('sampler-Block', () => {
+    const MIT_SAMPLER: Faehigkeiten = {
+      ...KANN,
+      sampler: {
+        temperature: 1.0, topP: 0.95, presencePenalty: 0.0, maxTokens: 8192,
+        reasoningEffort: 'medium',
+      },
+    }
+    const EINE_NACHRICHT = [{ rolle: 'nutzer' as const, bloecke: [{ art: 'text' as const, text: 'a' }] }]
+
+    it('laesst den Koerper ohne sampler-Block unveraendert', () => {
+      const w = openAiChatCodec.toWire(EINE_NACHRICHT, STUMMEL, KANN)
+      expect(w).toEqual({
+        messages: [{ role: 'user', content: 'a' }],
+        stream: false,
+        tools: [{ type: 'function', function: { name: 'datei_lesen', description: 'Liest eine Datei.' } }],
+        parallel_tool_calls: true,
+      })
+    })
+
+    it('schreibt mit sampler-Block die Draht-Namen, nicht die keel-Namen', () => {
+      const w = openAiChatCodec.toWire(EINE_NACHRICHT, STUMMEL, MIT_SAMPLER) as Record<string, unknown>
+      expect(w.temperature).toBe(1.0)
+      expect(w.top_p).toBe(0.95)
+      expect(w.presence_penalty).toBe(0.0)
+      expect(w.max_tokens).toBe(8192)
+      expect(w.reasoning_effort).toBe('medium')
+      expect('topP' in w).toBe(false)
+      expect('maxTokens' in w).toBe(false)
+      expect('presencePenalty' in w).toBe(false)
+      expect('reasoningEffort' in w).toBe(false)
+    })
+
+    it('laesst reasoning_effort weg, wenn die Zeile keine Stufe nennt', () => {
+      const ohneStufe: Faehigkeiten = {
+        ...KANN,
+        sampler: { temperature: 0.7, topP: 0.8, presencePenalty: 1.5, maxTokens: 2048 },
+      }
+      const w = openAiChatCodec.toWire(EINE_NACHRICHT, STUMMEL, ohneStufe) as Record<string, unknown>
+      expect('reasoning_effort' in w).toBe(false)
+      expect(w.presence_penalty).toBe(1.5)
+    })
+
+    it('schreibt eine 0 als 0, nicht als weggelassenes Feld', () => {
+      // presencePenalty 0.0 ist der Vorgabewert des Thinking-Satzes und muss trotzdem auf den
+      // Draht: ein `if (wert)`-Test wuerde ihn wegwerfen und Ollamas eigenen Default gewinnen
+      // lassen — derselbe stille Fehlermodus wie beim weggelassenen top_p.
+      const w = openAiChatCodec.toWire(EINE_NACHRICHT, STUMMEL, MIT_SAMPLER) as Record<string, unknown>
+      expect('presence_penalty' in w).toBe(true)
+      expect(w.presence_penalty).toBe(0)
+    })
+  })
+
   it('wirft bei Blocktyp im default-Fall (z.B. verschachtelte Werkzeugergebnisse)', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const nestedBlock: any = { art: 'werkzeug-aufruf', id: 'c2', name: 'nested', eingabe: {} }

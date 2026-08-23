@@ -40,14 +40,18 @@ import {
 import type { HarnessAntwort, HarnessEreignis, LaufAnzeige, LaufStartWunsch } from '../shared/harness-types'
 import { broadcast } from './event-bus'
 import { resolveBetterSqliteBinding } from './graph/native-binding'
-import { eintragNachId } from './model/registry'
+import { eintragFuerRolle, eintragNachId } from './model/registry'
+import { laeuferKannArt, sperrgrund } from './model/eignung'
+import { slotFuerId } from './model/slots'
 import { toModelEndpoint, type Faehigkeiten, type ModellEintrag } from './model/entry'
 import { clientForEndpoint } from './worker/model-client'
 import { assemblePraefixTeile } from './harness-praefix-quelle'
 import type { PraefixText } from './harness/praefix'
+import { baueNetzKontext } from './harness-netz'
 import {
   starteLauf, setzeFort, oeffneHarnessDb, lesen, laufIds, codecFuer,
-  WerkzeugRegistry, DATEI_WERKZEUGE, GRAPH_WERKZEUGE,
+  WerkzeugRegistry, DATEI_WERKZEUGE, GRAPH_WERKZEUGE, NETZ_WERKZEUGE, rechercheurWerkzeug,
+  leseFaehigkeiten, faehigkeitLesenWerkzeug,
 } from './harness'
 import type { ModelAntwort, Auftrag, LaufUmgebung } from './harness'
 import type { AppServices } from './window-manager'
@@ -123,6 +127,25 @@ function harnessDb(): ReturnType<typeof oeffneHarnessDb> {
   return db
 }
 
+/**
+ * Die Werkzeugliste des Laufs, an genau einer Stelle. Exportiert, damit ein Test gegen **diese**
+ * Konstruktion pruefen kann statt gegen einen Nachbau — der Nachbau in
+ * tests/harness/werkzeugliste.test.ts war gruen, waehrend die halbe Liste gar nicht verdrahtet
+ * war (siehe tests/harness/verdrahtung.test.ts).
+ *
+ * Die Netz-Werkzeuge stehen **immer** darin, auch ohne konfigurierten Suchanbieter. Grund: die
+ * Stummelliste bildet den stabilen Praefix, und der darf sich zwischen Laeufen nicht bewegen —
+ * eine Liste, die je nach Konfiguration mal neun und mal zwoelf Namen hat, kostet den
+ * Zwischenspeicher des Anbieters bei jedem Wechsel. Ohne Anbieter antworten die Werkzeuge
+ * benannt, dass Netzzugang fuer diesen Lauf nicht eingerichtet ist.
+ */
+export function baueWerkzeugRegistry(): WerkzeugRegistry {
+  return new WerkzeugRegistry([
+    ...DATEI_WERKZEUGE, ...GRAPH_WERKZEUGE, faehigkeitLesenWerkzeug,
+    ...NETZ_WERKZEUGE, rechercheurWerkzeug,
+  ])
+}
+
 function fehler(err: unknown): HarnessAntwort<never> {
   return { ok: false, meldung: err instanceof Error ? err.message : String(err) }
 }
@@ -172,15 +195,75 @@ export function mitSystemPraefix(
  * run and would have thrown otherwise, so the non-null assertion here is safe and never the
  * first thing to fail.
  */
+/**
+ * Das Zeitbudget **eines Zuges** von keels eigener Schleife.
+ *
+ * Ohne diese Zeile erbte die Schleife `WORKER_TIMEOUT_MS` (120 s) — eine Zahl, die fuer den
+ * **Ein-Schuss-Worker** bemessen ist: eine kleine Anfrage, kurze Historie, kein Denkbudget. Der
+ * gleiche Fehlerkreis wie bei `aufgeschobenesLaden` und `klemmeMaxZeichen`: eine Zahl, die fuer
+ * einen Verbraucher richtig war, gilt fuer den zweiten nicht. Die Zeile daneben in
+ * `notes/note-tagging.ts` macht es seit je richtig und reicht ihre eigenen 60 s durch.
+ *
+ * **Gemessen am 2026-08-23**, 215 erfolgreiche Zuege gegen `spark-qwen38-27b` (Denkstufe
+ * `medium`) auf gesunder GPU:
+ *
+ *     Median  8,4 s · p90 55,4 s · p99 99,1 s · laengster durchgekommener Zug 108,5 s
+ *
+ * Die alte Grenze lag damit **innerhalb** der Arbeitsverteilung statt darueber — elf Sekunden
+ * ueber dem laengsten Zug, der noch ankam. Zwei Zuege desselben Messtags endeten `transportfehler`
+ * nach exakt 120,0 s; einer davon hatte 71.045 Zeichen Werkzeugausgabe im Verlauf, der andere
+ * 43 — grosser Kontext und langes Nachdenken laufen also beide gegen dieselbe Wand.
+ *
+ * **Warum 300 s und nicht mehr:** ein Zug, der laenger braucht als die Wanduhr des gruendlichen
+ * Rechercheur-Unterlaufs (`TIEFEN.gruendlich.wanduhrMs`, 300 s), koennte dort ohnehin nichts mehr
+ * beitragen. Und die Grenze muss endlich bleiben: die Budgets werden **zwischen** den Zuegen
+ * geprueft, ein haengender Socket wuerde also von keiner Wanduhr eingeholt.
+ *
+ * **Was hier bewusst nicht steht:** die Grenze aus der *verbleibenden* Wanduhr des Laufs
+ * abzuleiten. Das waere sauberer — dann waere der Transport nie das, was einen Lauf vor seinem
+ * Budget beendet —, kostet aber, dass `sende` den Laufzustand kennt. Solange 300 s dreimal ueber
+ * dem p99 liegt, kauft das nichts.
+ */
+export const SCHLEIFE_TIMEOUT_MS = 300_000
+
 function sendeUeberTransport(eintrag: ModellEintrag) {
   return async (koerper: unknown, praefix: PraefixText): Promise<ModelAntwort> => {
     const f = eintrag.faehigkeiten!
     const endpunkt = toModelEndpoint(eintrag.erreichbarkeit, f.codec)
     const roh = await clientForEndpoint(endpunkt).chat({
       koerper: mitSystemPraefix(koerper, praefix, f.codec), endpoint: endpunkt,
+      timeoutMs: SCHLEIFE_TIMEOUT_MS,
     })
     return codecFuer(f.codec).fromWire(roh)
   }
+}
+
+/**
+ * Modell und Transport des Rechercheur-Unterlaufs, aus dem Zuordnungsplatz `rolle:rechercheur` —
+ * oder `null`, und dann faehrt der Unterlauf das Modell des Hauptlaufs (harness/rechercheur.ts).
+ *
+ * Gelesen wird beim Bau der Umgebung, also je Lauf: die Rolle wirkt `sofort` (slots.ts), und der
+ * naechste Lauf ist frueh genug — mitten in einem laufenden das Modell zu wechseln wuerde dessen
+ * Praefix-Cache verwerfen.
+ *
+ * **Die Sperre steht hier noch einmal, obwohl das Settings-Fenster sie schon zieht.** Die Ansicht
+ * verspricht bei einer nicht fahrbaren Zuordnung ausdruecklich „Es gilt der Rueckfall"; ohne diese
+ * Zeile waere das gelogen — `starteLauf` wuerfe stattdessen mitten im Werkzeugaufruf des
+ * Hauptlaufs, und aus einer Recherche wuerde ein `tool.failed`. Und die Konfigurationsdatei ist
+ * von Hand editierbar, das Fenster also gar nicht der einzige Weg hinein.
+ */
+export function rechercheurModell(): LaufUmgebung['rechercheurModell'] {
+  const eintrag = eintragFuerRolle('rechercheur')
+  if (!eintrag) return null
+  const laeufer = slotFuerId('rolle:rechercheur')!.laeufer
+  if (!laeuferKannArt(laeufer, eintrag.art)) {
+    console.warn(
+      `[harness-handlers] Der Zuordnungsplatz 'rolle:rechercheur' zeigt auf '${eintrag.id}'. ` +
+      `${sperrgrund(laeufer, eintrag.art)} Der Unterlauf faehrt das Modell des Hauptlaufs.`,
+    )
+    return null
+  }
+  return { eintrag, sende: sendeUeberTransport(eintrag) }
 }
 
 /**
@@ -189,17 +272,32 @@ function sendeUeberTransport(eintrag: ModellEintrag) {
  * `strom` sees; the caller decides what "the run has visibly started" means for its own race
  * against the loop's full completion (see HARNESS_LAUF_STARTEN and HARNESS_LAUF_FORTSETZEN).
  */
-function baueLaufUmgebung(
+async function baueLaufUmgebung(
   laufId: string, eintrag: ModellEintrag, auftragstext: string, wurzel: string,
   services: AppServices, aufJedesEreignis: (ev: HarnessEreignis) => void,
-): LaufUmgebung {
+): Promise<LaufUmgebung> {
+  // Gelesen wird beim Bau der Umgebung, einmal je Lauf — nicht je Zug: der stabile Praefix muss
+  // ueber alle Zuege zeichengleich bleiben, und ein Leser, der pro Zug wieder auf die Platte geht,
+  // wuerde bei jeder Aenderung an .claude/ mitten im Lauf den Prompt-Cache des Anbieters verfehlen.
+  const befund = leseFaehigkeiten(wurzel)
+  // Uebersprungene Verzeichnisse werden genannt, nicht verschluckt. Sie gehen ins Hauptprozess-Log
+  // und (noch) nicht ins Ereignisprotokoll: `hinweise` gehoert run.started, und das schreibt
+  // starteLauf aus dem Auftrag heraus — dort ein Feld dafuer zu erfinden, waere Vorratsbau. Wer
+  // eine Faehigkeit vermisst, findet hier den Grund samt Pfad.
+  for (const u of befund.uebersprungen) {
+    console.warn(`[harness-handlers] Faehigkeit uebersprungen: ${u.pfad} — ${u.grund}`)
+  }
   return {
     db: harnessDb(),
     eintrag,
-    praefixTeile: assemblePraefixTeile(auftragstext),
+    praefixTeile: assemblePraefixTeile(auftragstext, befund.faehigkeiten),
     wache: { wurzel, heim: homedir(), userDataPfad: app.getPath('userData') },
     graphDb: services.graphDb,
-    registry: new WerkzeugRegistry([...DATEI_WERKZEUGE, ...GRAPH_WERKZEUGE]),
+    registry: baueWerkzeugRegistry(),
+    // Der Hauptlauf faehrt gegen die Positivliste ('whitelist'). Der Unterlauf des Rechercheurs
+    // setzt in rechercheur.ts auf 'offen' um und bekommt dafuer keine Datei- und Graph-Werkzeuge.
+    netz: await baueNetzKontext(),
+    rechercheurModell: rechercheurModell(),
     strom: (ev) => {
       broadcast(HARNESS_EREIGNIS, ev as HarnessEreignis)
       aufJedesEreignis(ev as HarnessEreignis)
@@ -258,6 +356,53 @@ export function laufAbgeschlossen(ereignisse: ReturnType<typeof lesen>): boolean
 }
 
 /**
+ * Traegt das `run.started` dieses Laufs ein `eltern`, ist er der Unterlauf eines anderen — heute
+ * der des Rechercheurs (harness/rechercheur.ts).
+ */
+export function istUnterlauf(ereignisse: ReturnType<typeof lesen>): boolean {
+  const gestartet = ereignisse.find((e) => e.art === 'run.started')
+  const eltern = gestartet?.nutzlast.eltern
+  return typeof eltern === 'object' && eltern !== null
+}
+
+/**
+ * Die dritte Absage des Fortsetzen-Pfads, und die einzige, die eine Sicherheitsgrenze haelt statt
+ * doppelter Arbeit vorzubeugen.
+ *
+ * `baueLaufUmgebung` gibt **jedem** Lauf, den dieser Prozess faehrt, die Registry des Hauptlaufs:
+ * `datei_lesen`, `inhalt_suchen`, die vier Graph-Werkzeuge, dazu `services.graphDb`. Fuer einen
+ * fortgesetzten Unterlauf ist das genau der Zustand, gegen den rechercheur.ts seine eigene laufId
+ * begruendet — nur von aussen wiederhergestellt. Der Weg dahin braucht keinen Angriff auf die
+ * IPC-Grenze: stirbt der Prozess mitten in einem Unterlauf, nachdem `seite_lesen` eine
+ * praeparierte Seite ins Protokoll geschrieben hat, dann hat dieser Lauf kein `run.finished`,
+ * steht in `laufUebersicht` mit `endzustand: null` und ist von einem gewoehnlich abgebrochenen
+ * Lauf nicht zu unterscheiden. Ein Klick auf Fortsetzen faehrt `setzeFort` ueber genau diese
+ * Historie — der Verlauf traegt den rohen Seitenrumpf, und daneben stuenden dann die
+ * Datei- und Graph-Werkzeuge.
+ *
+ * Deshalb wird ein Unterlauf **gar nicht** fortgesetzt, statt ihn mit einer nachgebauten
+ * Unterlauf-Umgebung fortzusetzen: die zweite Bauform waere eine zweite Stelle, an der die
+ * Kapselung richtig zusammengesetzt werden muss, und die zweite Stelle ist die, die beim naechsten
+ * Umbau vergessen wird. Ein Unterlauf ohne Elternlauf hat ohnehin niemanden mehr, dem er sein
+ * Ergebnis zurueckgeben koennte.
+ */
+export function pruefeKeinUnterlauf(
+  laufId: string, ereignisse: ReturnType<typeof lesen>,
+): { ok: true } | { ok: false; meldung: string } {
+  if (istUnterlauf(ereignisse)) {
+    return {
+      ok: false,
+      meldung:
+        `Der Lauf '${laufId}' ist der Unterlauf einer Recherche und wird nicht fortgesetzt. Er ` +
+        `hat fremden Netzinhalt im Verlauf und darf die Werkzeuge des Hauptlaufs nie daneben ` +
+        `sehen; und ohne seinen Elternlauf gibt es niemanden, der sein Ergebnis entgegennimmt. ` +
+        `Starte die Recherche im Hauptlauf neu.`,
+    }
+  }
+  return { ok: true }
+}
+
+/**
  * The provenance check itself, pulled out as a pure function so it is testable without
  * electron: it takes the requested paths and the set of dialog-attested ones as plain
  * arguments rather than reaching into module state. Deliberately takes no `wurzel` and applies
@@ -280,8 +425,11 @@ export function pruefeAnhaenge(
 }
 
 /** Every run's summary, oldest first — same order as `laufIds()`. There is no run table; this
- *  reads each run's own log, exactly as `laufIds()` itself derives the id list from it. */
-function laufUebersicht(datenbank: ReturnType<typeof oeffneHarnessDb>): LaufAnzeige[] {
+ *  reads each run's own log, exactly as `laufIds()` itself derives the id list from it.
+ *
+ *  Exportiert, damit ein Test die Zusammenfassung gegen ein echtes Protokoll pruefen kann — der
+ *  Handler selbst ist von hier aus nicht erreichbar (kein Test in diesem Repo erreicht ipcMain). */
+export function laufUebersicht(datenbank: ReturnType<typeof oeffneHarnessDb>): LaufAnzeige[] {
   return laufIds(datenbank).map((id) => {
     const ereignisse = lesen(datenbank, id)
     const gestartet = ereignisse.find((e) => e.art === 'run.started')
@@ -291,6 +439,12 @@ function laufUebersicht(datenbank: ReturnType<typeof oeffneHarnessDb>): LaufAnze
       modellId: typeof gestartet?.nutzlast.modellId === 'string' ? gestartet.nutzlast.modellId : '',
       gestartetTs: gestartet?.ts ?? '',
       endzustand: typeof beendet?.nutzlast.endzustand === 'string' ? beendet.nutzlast.endzustand : null,
+      // Unterlaeufe standen in dieser Liste als gewoehnliche Laeufe: `eltern` wurde ausserhalb von
+      // lauf.ts und rechercheur.ts nirgends gelesen, also war ein abgebrochener Unterlauf im
+      // Fenster von einem abgebrochenen Hauptlauf nicht zu unterscheiden — samt angebotenem
+      // Fortsetzen-Knopf. Die Absage trifft der Hauptprozess (pruefeKeinUnterlauf); dieses Feld
+      // sorgt dafuer, dass der Mensch sie nicht erst durch Klicken erfaehrt.
+      istUnterlauf: istUnterlauf(ereignisse),
     }
   })
 }
@@ -354,7 +508,7 @@ export function registerHarnessHandlers(services: AppServices): void {
         },
         // The first appended event is always run.started — see lauf.ts's starteLauf, which
         // writes it before entering the loop. Once it lands, startup has succeeded.
-        baueLaufUmgebung(laufId, eintrag, w.auftragstext, w.wurzel, services, () => {
+        await baueLaufUmgebung(laufId, eintrag, w.auftragstext, w.wurzel, services, () => {
           if (markiereGestartet) { markiereGestartet(); markiereGestartet = null }
         }),
         laufId,
@@ -444,6 +598,9 @@ export function registerHarnessHandlers(services: AppServices): void {
       // process — see the comment on `laufendeLaeufe` above.
       const laufLaeuftPruefung = pruefeLaufLaeuftNicht(laufId, laufendeLaeufe)
       if (!laufLaeuftPruefung.ok) return laufLaeuftPruefung
+      // Die Kapselung des Rechercheurs, hier nachgezogen: siehe pruefeKeinUnterlauf.
+      const keinUnterlauf = pruefeKeinUnterlauf(laufId, ereignisse)
+      if (!keinUnterlauf.ok) return keinUnterlauf
       const auftrag = auftragAusProtokoll(ereignisse)
       if (!auftrag) {
         return { ok: false, meldung: `Das Protokoll von '${laufId}' traegt keinen vollstaendigen Auftrag.` }
@@ -463,7 +620,7 @@ export function registerHarnessHandlers(services: AppServices): void {
       // for the run's entire remaining duration.
       const laufPromise = setzeFort(
         laufId, auftrag,
-        baueLaufUmgebung(laufId, eintrag, auftrag.auftragstext, auftrag.wurzel, services, () => {
+        await baueLaufUmgebung(laufId, eintrag, auftrag.auftragstext, auftrag.wurzel, services, () => {
           if (markiereGestartet) { markiereGestartet(); markiereGestartet = null }
         }),
       )

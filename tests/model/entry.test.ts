@@ -143,6 +143,114 @@ describe('normaliseEintrag', () => {
       expect(e.faehigkeiten?.rundenbudget).toBe(20)
     })
   })
+
+  describe('sampler.reasoningEffort', () => {
+    const SAMPLER = { temperature: 1.0, topP: 0.95, presencePenalty: 0.0, maxTokens: 8192 }
+
+    it("weist 'xhigh' benannt ab, statt es an den Renderer durchzureichen", () => {
+      expect(() => normaliseEintrag({
+        ...LOCAL,
+        faehigkeiten: {
+          codec: 'openai-chat', werkzeugmodus: 'nativ',
+          sampler: { ...SAMPLER, reasoningEffort: 'xhigh' },
+        },
+      })).toThrow(/sampler\.reasoningEffort 'xhigh'/)
+    })
+
+    it('nennt in der Meldung die drei zulaessigen Stufen', () => {
+      expect(() => normaliseEintrag({
+        ...LOCAL,
+        faehigkeiten: {
+          codec: 'openai-chat', werkzeugmodus: 'nativ',
+          sampler: { ...SAMPLER, reasoningEffort: 'max' },
+        },
+      })).toThrow(/low, medium, high/)
+    })
+
+    it('laesst low, medium und high durch', () => {
+      for (const stufe of ['low', 'medium', 'high'] as const) {
+        const e = normaliseEintrag({
+          ...LOCAL,
+          faehigkeiten: {
+            codec: 'openai-chat', werkzeugmodus: 'nativ',
+            sampler: { ...SAMPLER, reasoningEffort: stufe },
+          },
+        })
+        expect(e.faehigkeiten?.sampler?.reasoningEffort).toBe(stufe)
+      }
+    })
+
+    it('laesst einen sampler-Block ohne reasoningEffort durch', () => {
+      const e = normaliseEintrag({
+        ...LOCAL,
+        faehigkeiten: { codec: 'openai-chat', werkzeugmodus: 'nativ', sampler: SAMPLER },
+      })
+      expect(e.faehigkeiten?.sampler).toEqual(SAMPLER)
+    })
+
+    it('laesst eine Faehigkeitszeile ganz ohne sampler-Block durch', () => {
+      const e = normaliseEintrag({
+        ...LOCAL,
+        faehigkeiten: { codec: 'openai-chat', werkzeugmodus: 'nativ' },
+      })
+      expect(e.faehigkeiten?.sampler).toBeUndefined()
+    })
+  })
+
+  // Runde 2, Fund 2 und der halbe Waechter aus den Bedenken: bisher prueft der sampler-Block
+  // nur `reasoningEffort`. Die vier Zahlen gehen ungeprueft durch — `Number('')` im Formular
+  // ist 0 (nicht NaN), ein von Hand geschriebenes `sampler: {}` ist wahrheitswertig und
+  // schreibt vier `undefined`, die JSON.stringify wegwirft, und `temperature: "heiss"` geht
+  // als Zeichenkette hinaus. Alle drei enden im stillen 1.0-Ueberschreiben der /v1-Flaeche,
+  // gegen das dieser Block ueberhaupt gebaut wurde — nur mit einem Block, der aussieht, als
+  // waere er gesetzt.
+  describe('sampler-Zahlen', () => {
+    const VOLL = { temperature: 1.0, topP: 0.95, presencePenalty: 0.0, maxTokens: 8192 }
+    const mitSampler = (sampler: unknown) => () => normaliseEintrag({
+      ...LOCAL,
+      faehigkeiten: { codec: 'openai-chat', werkzeugmodus: 'nativ', sampler },
+    })
+
+    it('weist einen leeren sampler-Block ab, statt vier undefined hinausgehen zu lassen', () => {
+      expect(mitSampler({})).toThrow(/sampler\.temperature/)
+    })
+
+    for (const feld of ['temperature', 'topP', 'presencePenalty', 'maxTokens'] as const) {
+      it(`weist ein fehlendes ${feld} benannt ab`, () => {
+        const ohne = { ...VOLL }
+        delete (ohne as Record<string, unknown>)[feld]
+        expect(mitSampler(ohne)).toThrow(new RegExp(`sampler\\.${feld}`))
+      })
+
+      it(`weist NaN in ${feld} ab — so kommt ein leergeraeumtes Formularfeld an`, () => {
+        expect(mitSampler({ ...VOLL, [feld]: Number.NaN })).toThrow(new RegExp(`sampler\\.${feld}`))
+      })
+
+      it(`weist eine Zeichenkette in ${feld} ab`, () => {
+        expect(mitSampler({ ...VOLL, [feld]: '0.7' })).toThrow(new RegExp(`sampler\\.${feld}`))
+      })
+    }
+
+    it('weist maxTokens 0 ab — num_predict 0 liefert gar keine Antwort', () => {
+      expect(mitSampler({ ...VOLL, maxTokens: 0 })).toThrow(/sampler\.maxTokens/)
+    })
+
+    it('weist ein gebrochenes maxTokens ab', () => {
+      expect(mitSampler({ ...VOLL, maxTokens: 2048.5 })).toThrow(/sampler\.maxTokens/)
+    })
+
+    it('laesst temperature 0 durch — deterministisch ist eine Wahl, kein Versehen', () => {
+      const e = normaliseEintrag({
+        ...LOCAL,
+        faehigkeiten: {
+          codec: 'openai-chat', werkzeugmodus: 'nativ',
+          sampler: { ...VOLL, temperature: 0, presencePenalty: 0 },
+        },
+      })
+      expect(e.faehigkeiten?.sampler?.temperature).toBe(0)
+      expect(e.faehigkeiten?.sampler?.presencePenalty).toBe(0)
+    })
+  })
 })
 
 describe('toModelEndpoint', () => {

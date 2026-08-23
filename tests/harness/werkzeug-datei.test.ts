@@ -62,12 +62,12 @@ afterAll(() => rmSync(heim, { recursive: true, force: true }))
 describe('datei_lesen', () => {
   it('liest eine Datei in der Wurzel', async () => {
     const r = await werkzeug('datei_lesen').ausfuehren({ pfad: join(wurzel, 'a.ts') }, ktx)
-    expect(r).toEqual({ ok: true, inhalt: [{ art: 'text', text: 'zeile 1\nzeile 2\nzeile 3\n' }] })
+    expect(r).toEqual({ ok: true, quelle: 'lokal', inhalt: [{ art: 'text', text: 'zeile 1\nzeile 2\nzeile 3\n' }] })
   })
 
   it('liest einen Zeilenbereich, wenn einer genannt ist', async () => {
     const r = await werkzeug('datei_lesen').ausfuehren({ pfad: join(wurzel, 'a.ts'), vonZeile: 2, bisZeile: 2 }, ktx)
-    expect(r).toEqual({ ok: true, inhalt: [{ art: 'text', text: 'zeile 2' }] })
+    expect(r).toEqual({ ok: true, quelle: 'lokal', inhalt: [{ art: 'text', text: 'zeile 2' }] })
   })
 
   it('lehnt eine geschuetzte Datei ab, ohne den Lauf zu beenden', async () => {
@@ -109,7 +109,7 @@ describe('datei_lesen — Zeilenbereich-Validierung', () => {
 
   it('kuerzt einen Bereich, der ueber das Dateiende hinausgeht, statt ihn abzulehnen', async () => {
     const r = await werkzeug('datei_lesen').ausfuehren({ pfad: join(wurzel, 'a.ts'), vonZeile: 2, bisZeile: 999 }, ktx)
-    expect(r).toEqual({ ok: true, inhalt: [{ art: 'text', text: 'zeile 2\nzeile 3\n' }] })
+    expect(r).toEqual({ ok: true, quelle: 'lokal', inhalt: [{ art: 'text', text: 'zeile 2\nzeile 3\n' }] })
   })
 })
 

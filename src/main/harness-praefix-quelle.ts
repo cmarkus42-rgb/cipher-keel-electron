@@ -6,7 +6,7 @@
  * and persona. Keeping it a named function means that later change touches one file.
  */
 
-import type { PraefixTeile } from './harness'
+import type { Faehigkeit, PraefixTeile } from './harness'
 
 const BODY =
   'Du arbeitest in einem Projektverzeichnis und beantwortest die Frage, die im Auftrag steht. ' +
@@ -19,12 +19,21 @@ const REGELN = [
   'Was du nicht geprueft hast, sagst du nicht.',
 ].join('\n')
 
-export function assemblePraefixTeile(auftragstext: string): PraefixTeile {
+/**
+ * Die Faehigkeiten kommen als Argument herein, nicht aus einem Lesevorgang hier drin: der Leser
+ * meldet uebersprungene Verzeichnisse mit, und wer sie hier lesen liesse, muesste diese Meldung
+ * entweder wegwerfen oder eine zweite Rueckgabe erfinden. Gelesen und gemeldet wird deshalb dort,
+ * wo es auch jemanden gibt, der die Meldung loswerden kann (harness-handlers.ts).
+ */
+export function assemblePraefixTeile(
+  auftragstext: string, faehigkeiten: Faehigkeit[],
+): PraefixTeile {
   return {
     body: BODY,
     capabilities: '',
     persona: '',
     globaleRegeln: `## Regeln\n\n${REGELN}`,
     auftragstext,
+    faehigkeiten,
   }
 }

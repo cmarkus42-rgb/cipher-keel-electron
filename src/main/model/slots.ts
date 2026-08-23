@@ -14,7 +14,7 @@ import type { Laeufer } from './eignung'
 import { CapabilityNiveau } from '../preset/niveau'
 
 export type Tier = 'light' | 'standard' | 'heavy'
-export type Rolle = 'tagging' | 'worker'
+export type Rolle = 'tagging' | 'worker' | 'rechercheur'
 
 export type SlotId =
   | 'tier:light'
@@ -22,6 +22,7 @@ export type SlotId =
   | 'tier:heavy'
   | 'rolle:tagging'
   | 'rolle:worker'
+  | 'rolle:rechercheur'
 
 export interface Slot {
   id: SlotId
@@ -63,6 +64,31 @@ export const SLOTS: readonly Slot[] = [
     id: 'rolle:worker', beschriftung: 'Rolle „Niveau-C-Auftraege"',
     laeufer: 'ein-schuss', niveau: CapabilityNiveau.C,
     art: 'rolle', schluessel: 'worker', wirkung: 'sofort',
+  },
+  /**
+   * Der Rechercheur-Unterlauf (harness/rechercheur.ts). Bis zum 2026-08-22 erbte er das Modell
+   * des Hauptlaufs — die falsche Kopplung: der Unterlauf hat ein eigenes Aufgabenprofil (kurze
+   * Kette, viel fremder Text, drei Werkzeuge, am Ende eine Zusammenfassung), und solange er
+   * mitfaehrt, ist der Vergleich „welches Modell recherchiert am besten" gar nicht fahrbar.
+   *
+   * Zwei Felder, bei denen die naheliegende Wahl falsch waere:
+   *
+   * `laeufer: 'eigene-schleife'` — der Unterlauf *ist* eine Agentenschleife, mit eigenem
+   * Runden- und Zeitbudget. `ein-schuss` wie bei den anderen beiden Rollen wuerde die
+   * cli-harness-Sperre zwar genauso ziehen, aber die Zeile falsch beschreiben.
+   *
+   * `niveau: B`, nicht C. Auf C feuerte `unter-faehigkeit` („Das laeuft, nutzt den Laeufer aber
+   * nicht aus") bei jeder Zuordnung, und das waere hier schlicht unwahr. Auf B feuert
+   * stattdessen `nicht-gemessen`, solange die Faehigkeitszeile `vermutet` ist — was zutrifft.
+   *
+   * Rueckfall bei leerem Platz: das Modell des Hauptlaufs (rechercheur.ts). Deshalb hat diese
+   * Rolle **keinen** `llm.*`-Endpunkt wie `tagging` und `worker`; ansicht.ts sagt das im
+   * Rueckfalltext.
+   */
+  {
+    id: 'rolle:rechercheur', beschriftung: 'Rolle „Rechercheur" — der abgeschottete Unterlauf',
+    laeufer: 'eigene-schleife', niveau: CapabilityNiveau.B,
+    art: 'rolle', schluessel: 'rechercheur', wirkung: 'sofort',
   },
 ]
 

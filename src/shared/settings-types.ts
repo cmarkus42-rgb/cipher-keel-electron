@@ -8,7 +8,7 @@
  * paraphrase.
  */
 
-export type Wirkung = 'sofort' | 'naechste-session' | 'neustart'
+export type Wirkung = 'sofort' | 'naechster-lauf' | 'naechste-session' | 'neustart'
 
 export type GeheimnisStatus = 'schluesselbund' | 'umgebung' | 'fehlt' | 'unbekannt'
 
@@ -53,6 +53,19 @@ export interface FaehigkeitenAnsicht {
   gemessenAm: string | null
   gemessenMit: string | null
   quelle: 'gemessen' | 'vermutet' | 'herstellerangabe'
+  /**
+   * Optional, und das muss es bleiben: fehlt der Block, sendet der Codec keine Sampler und der
+   * Eintrag verhaelt sich wie vor seiner Einfuehrung. Keine Felder fuer `top_k`/`min_p`/
+   * `repeat_penalty` — Ollamas `/v1` verwirft sie stillschweigend, siehe `Sampler` in
+   * src/main/model/entry.ts.
+   */
+  sampler?: {
+    temperature: number
+    topP: number
+    presencePenalty: number
+    maxTokens: number
+    reasoningEffort?: 'none' | 'low' | 'medium' | 'high'
+  }
 }
 
 export interface EintragAnsicht {
@@ -152,6 +165,12 @@ export interface SettingsAnsicht {
   rueckfallEndpunkte: { tagging: EndpunktAnsicht; worker: EndpunktAnsicht }
   adapter: AdapterAnsicht[]
   sprachausgabe: { aktiv: boolean; stimme: string }
+  /**
+   * Der Netzzugang der Harness-Werkzeuge. Zwei Wege mit verschiedener Vertrauensstufe: das
+   * Nachschlagen im Hauptlauf gegen die Positivliste, und der gekapselte Rechercheur fuer alles
+   * ausserhalb. Der Suchanbieter bedient beide.
+   */
+  netz: NetzAnsicht
 }
 
 export type SettingsAntwort =
@@ -168,3 +187,20 @@ export type SettingsAntwort =
  * cannot tell from the banner alone.
  */
 export type Schreiber = (kanal: string, ...args: unknown[]) => Promise<boolean>
+
+
+/** Was das Settings-Fenster ueber den Netzzugang zeigt. */
+export interface NetzAnsicht {
+  /** '' heisst automatisch: Tavily zuerst, dann SearXNG, dann Brave. */
+  bevorzugt: string
+  searxngEndpunkt: string
+  /** Vom Nutzer ergaenzte Hosts, ein Host je Eintrag, ohne Schema und ohne Pfad. */
+  zusaetzlichePositivliste: string[]
+  /**
+   * Die mitgelieferte Liste, aus `harness/werkzeug-netz.ts`. Sie wird mitgeschickt statt im
+   * Fenster nachgebaut — ein Nachbau waere eine zweite Liste, die auseinanderlaufen kann.
+   */
+  vorgabePositivliste: string[]
+  tavily: { status: GeheimnisStatus; hinweis: string }
+  brave: { status: GeheimnisStatus; hinweis: string }
+}

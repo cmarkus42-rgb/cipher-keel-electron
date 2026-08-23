@@ -30,6 +30,11 @@ export interface LaufAnzeige {
   gestartetTs: string
   /** null while the run has not (yet) written a run.finished event. */
   endzustand: string | null
+  /**
+   * Wahr, wenn dieser Lauf der Unterlauf eines anderen ist (heute: der des Rechercheurs). Er wird
+   * nicht fortgesetzt — siehe `pruefeKeinUnterlauf` in harness-handlers.ts.
+   */
+  istUnterlauf: boolean
 }
 
 export type HarnessAntwort<T> =

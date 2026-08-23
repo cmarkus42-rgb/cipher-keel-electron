@@ -59,6 +59,65 @@ export const DEFAULT_EINTRAEGE: ModellEintrag[] = [
     faehigkeiten: { codec: 'ollama-native', werkzeugmodus: 'text', nutzbaresKontextfenster: 131072 },
   },
   {
+    id: 'spark-qwen38-27b', name: 'Qwen3.8 27B (DGX Spark)', art: 'local-http',
+    erreichbarkeit: { art: 'local-http', host: SPARK_HOST, port: 11434, model: 'keel-qwen38:27b' },
+    oertlichkeit: 'eigenes-netz',
+    erklaertext:
+      'Laeuft auf dem DGX Spark ueber Tailscale, 128 GB Unified Memory. Abgeleitetes Tag: '
+      + 'Kontext und die drei Sampler, die Ollamas /v1-Flaeche nicht durchreicht, stehen im '
+      + 'Modelfile auf dem Server.',
+    empfehlung:
+      'Voreinstellung fuer Niveau C, sobald es Werkzeuge braucht — das erste lokale Modell in '
+      + 'dieser Registry, das die eigene Schleife fahren kann.',
+    faehigkeiten: {
+      codec: 'openai-chat',
+      // Pflicht: pruefeStartbedingungen wirft bei 'text' *vor* codecFuer. Genau daran koennen die
+      // drei aelteren lokalen Eintraege die Schleife bis heute nicht fahren.
+      werkzeugmodus: 'nativ',
+      // Gemessen 2026-08-21: zwei tool_calls mit index 0 und 1, finish_reason 'tool_calls'.
+      paralleleAufrufe: true,
+      // Das Modell denkt (unabschaltbar ausser mit reasoningEffort 'none'), aber dieser Transport
+      // traegt keinen Denkblock zurueck in die Historie: keels fromWire liest `message.reasoning`
+      // heute nicht. Das Feld beschreibt den Transport, nicht das Modell.
+      denkbloecke: false,
+      // Ollamas /v1 zerlegt eine multimodale Nachricht in mehrere interne Nachrichten; der
+      // Bildpfad ist dort strukturell beschaedigt. Vision kann das Modell, dieser Weg nicht.
+      bilder: false,
+      // Pflicht, kein Ermessen: der Codec emittiert fuer ein Dokument {type:'file'}, und Ollamas
+      // /v1 kennt nur text, image_url und input_audio. Bei true stuerbe jeder Lauf mit Anhang mit
+      // einem HTTP 400 statt mit dem verstaendlichen CodecKannNicht.
+      dokumente: false,
+      aufgeschobenesLaden: true,
+      werkzeugObergrenze: 12,
+      // **Haengt am Modelfile.** Ollama teilt das deklarierte num_ctx auf parallele Plaetze auf:
+      // gemessen 2026-08-21 lieferte `num_ctx 65536` genau 32.770 nutzbare Token, und der Prompt
+      // wurde vorne *still* abgeschnitten. Das Modelfile steht deshalb auf 131072, damit hier
+      // 65536 stimmt. Laufen die beiden Zahlen auseinander, feuert keels Kontextbudget nie und
+      // der Server kappt lautlos — der teuerste stille Fehler dieser Welle.
+      nutzbaresKontextfenster: 65536,
+      vertragsStrenge: { schemaTiefe: 2, reparaturversuche: 1 },
+      rundenbudget: 12,
+      sampler: {
+        // Der Thinking-Satz der Model Card. Ollamas /v1 setzt temperature und top_p zwangsweise
+        // auf 1.0, wenn der Client sie weglaesst — Weglassen waere also keine Enthaltung.
+        temperature: 1.0,
+        topP: 0.95,
+        presencePenalty: 0,
+        // Nie unter 2048: bei hohem Denkaufwand schneidet ein kleineres Budget ab, *bevor* die
+        // Denkspur endet, und der Klient sieht dann gar keinen Inhalt, nur finish_reason 'length'.
+        maxTokens: 8192,
+        // Gemessen: medium liefert die laengste Antwort (1.290 Zeichen in 37 s), xhigh die
+        // kuerzeste in 106 s. Siehe DENKSTUFEN in model/entry.ts.
+        reasoningEffort: 'medium',
+      },
+      gemessenAm: null,
+      gemessenMit: null,
+      // Bleibt 'vermutet', bis es einen Kanarienauftrag gibt — auch die hier gemessenen Zahlen
+      // sind von Hand gemessen, nicht vom Kanarienauftrag. 'gemessen' ist dessen Wort.
+      quelle: 'vermutet',
+    },
+  },
+  {
     id: 'openrouter-qwen3-coder', name: 'Qwen3 Coder (OpenRouter)', art: 'api',
     erreichbarkeit: {
       art: 'api', baseUrl: 'https://openrouter.ai/api/v1', model: 'qwen/qwen3-coder', keyRef: 'openrouter',

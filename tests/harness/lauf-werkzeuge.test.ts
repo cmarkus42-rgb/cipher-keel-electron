@@ -6,6 +6,7 @@ import { oeffneHarnessDb, anhaengen, lesen } from '../../src/main/harness/protok
 import { starteLauf, setzeFort } from '../../src/main/harness/lauf'
 import { WerkzeugRegistry, META_WERKZEUG_NAME, type Werkzeug } from '../../src/main/harness/werkzeuge'
 import { DATEI_WERKZEUGE } from '../../src/main/harness/werkzeug-datei'
+import { projiziere } from '../../src/main/harness/projektion'
 import type { ModelAntwort } from '../../src/main/harness/form'
 import type { ModellEintrag } from '../../src/main/model/entry'
 
@@ -26,7 +27,7 @@ function umgebung(wurzel: string, antworten: ModelAntwort[], werkzeuge: Werkzeug
   return {
     db: oeffneHarnessDb(':memory:'),
     eintrag: EINTRAG,
-    praefixTeile: { body: 'BODY', capabilities: '', persona: '', globaleRegeln: '', auftragstext: 'a' },
+    praefixTeile: { body: 'BODY', capabilities: '', persona: '', globaleRegeln: '', auftragstext: 'a', faehigkeiten: [] },
     wache: { wurzel, heim: wurzel, userDataPfad: join(wurzel, 'ud') },
     graphDb: null,
     registry: new WerkzeugRegistry(werkzeuge),
@@ -156,7 +157,7 @@ describe('Werkzeugausfuehrung', () => {
         ablauf.push(`start:${name}`)
         await new Promise(resolve => setTimeout(resolve, ms))
         ablauf.push(`ende:${name}`)
-        return { ok: true, inhalt: [{ art: 'text', text: name }] }
+        return { ok: true, quelle: 'lokal', inhalt: [{ art: 'text', text: name }] }
       },
     })
     const langsam = verzoegert('langsam', 40)
@@ -231,6 +232,33 @@ describe('Werkzeugausfuehrung', () => {
     rmSync(w, { recursive: true, force: true })
   })
 
+  it('fuehrt werkzeug_schema nicht aus, wenn es gar nicht im Praefix steht', async () => {
+    // Der Abfang in `fuehreAus` lief allein ueber den Namen, an der Werkzeugliste vorbei.
+    // `werkzeug_schema` ist kein Registry-Eintrag, sondern entsteht in `stummel(aufgeschoben)` —
+    // ohne aufgeschobenes Laden gibt es das Meta-Werkzeug nicht, alle Schemata stehen ohnehin im
+    // Praefix. Trotzdem lieferte `fuehreAus` es aus, wenn das Modell den Namen bloss riet: die
+    // Liste im Praefix war dann keine Aussage mehr darueber, was ausgefuehrt wird.
+    // Gegenprobe (Bedingung wieder entfernt): 1 rot, `expected true to be false` — das Schema
+    // wurde ausgeliefert und `tool.schema_loaded` stand im Protokoll.
+    const w = mkdtempSync(join(tmpdir(), 'keel-lw-'))
+    const u = umgebung(w, [ruft(META_WERKZEUG_NAME, { name: 'datei_lesen' }), sagt('ok')])
+    u.eintrag = {
+      ...EINTRAG,
+      faehigkeiten: { ...EINTRAG.faehigkeiten!, aufgeschobenesLaden: false },
+    }
+    const id = await starteLauf(AUFTRAG(w), u)
+    const ev = lesen(u.db, id)
+
+    // Erst die Voraussetzung: das Meta-Werkzeug steht in diesem Lauf wirklich nicht im Praefix.
+    const werkzeuge = ev.find(e => e.art === 'run.started')?.nutzlast.werkzeuge as string[]
+    expect(werkzeuge).not.toContain(META_WERKZEUG_NAME)
+
+    expect(ev.some(e => e.art === 'tool.schema_loaded')).toBe(false)
+    const f = ev.find(e => e.art === 'tool.failed')
+    expect(String(f?.nutzlast.meldung)).toContain(`Es gibt kein Werkzeug '${META_WERKZEUG_NAME}'`)
+    rmSync(w, { recursive: true, force: true })
+  })
+
   it('maskiert einen Werkzeugaufruf im Abschlusszug, statt ihn stillschweigend zu verwerfen', async () => {
     // The closing turn is exactly one turn (M8, and the note from Task 11's review): the model
     // already had its turn to comply. A tool call that arrives anyway must be logged and refused,
@@ -300,6 +328,59 @@ describe('Wiederaufnahme', () => {
     // The projection put it into the history; the loop must not re-run the call.
     expect(lesen(u.db, id).filter(e => e.art === 'tool.intent')).toHaveLength(1)
     expect(prompt).toBeDefined()
+    rmSync(w, { recursive: true, force: true })
+  })
+})
+
+// --- Die Herkunft, vom Werkzeug bis in den Verlauf ---------------------------------------------
+
+/**
+ * Ein Werkzeug, dessen Inhalt fremdbestimmt ist — dieselbe Rueckgabeform wie `seite_lesen`, aber
+ * ohne Netz, Anbieter und Wache. Es geht hier um die Kette Werkzeug -> `tool.completed` ->
+ * `projiziere`, nicht um den Abruf.
+ */
+const NETZWERKZEUG: Werkzeug = {
+  name: 'fremd_lesen',
+  beschreibung: 'gibt fremdbestimmten Inhalt zurueck',
+  schema: () => ({ type: 'object', properties: {} }),
+  async ausfuehren() {
+    return { ok: true, quelle: 'netz', inhalt: [{ art: 'text', text: 'fremder Inhalt' }] }
+  },
+}
+
+describe('Herkunft eines Werkzeugergebnisses (§4.1 (3))', () => {
+  // Die Angabe funktionierte und hing an nichts: `quelle: r.quelle` aus dem `tool.completed` in
+  // lauf.ts zu entfernen liess 2565 Tests gruen, ebenso das Durchreichen in projektion.ts. Einen
+  // Konsumenten gibt es heute nicht — der Praefix markiert nichts damit, das Fenster liest es
+  // nicht, die Codecs tragen es bewusst nicht auf den Draht. Genau deshalb kann das Feld still
+  // verrotten, und genau deshalb steht hier ein Test ueber den ganzen Weg statt ueber den
+  // Rueckgabewert des Werkzeugs, den ohnehin der Compiler erzwingt.
+  it('schreibt netz ins Protokoll und traegt es bis in den projizierten Verlauf', async () => {
+    const w = mkdtempSync(join(tmpdir(), 'keel-lq-'))
+    const u = umgebung(w, [ruft('fremd_lesen', {}), sagt('fertig')], [NETZWERKZEUG])
+    const id = await starteLauf(AUFTRAG(w), u)
+    const ereignisse = lesen(u.db, id)
+
+    expect(ereignisse.find(e => e.art === 'tool.completed')?.nutzlast.quelle).toBe('netz')
+    const block = projiziere(ereignisse)
+      .flatMap(n => n.bloecke)
+      .find(b => b.art === 'werkzeug-ergebnis')
+    expect(block).toMatchObject({ art: 'werkzeug-ergebnis', quelle: 'netz' })
+    rmSync(w, { recursive: true, force: true })
+  })
+
+  it('unterscheidet ein lokales Werkzeug davon — sonst waere die Angabe wertlos', async () => {
+    const w = mkdtempSync(join(tmpdir(), 'keel-lq-'))
+    writeFileSync(join(w, 'a.ts'), 'inhalt aus dieser Maschine')
+    const u = umgebung(w, [ruft('datei_lesen', { pfad: join(w, 'a.ts') }), sagt('fertig')])
+    const id = await starteLauf(AUFTRAG(w), u)
+    const ereignisse = lesen(u.db, id)
+
+    expect(ereignisse.find(e => e.art === 'tool.completed')?.nutzlast.quelle).toBe('lokal')
+    const block = projiziere(ereignisse)
+      .flatMap(n => n.bloecke)
+      .find(b => b.art === 'werkzeug-ergebnis')
+    expect(block).toMatchObject({ art: 'werkzeug-ergebnis', quelle: 'lokal' })
     rmSync(w, { recursive: true, force: true })
   })
 })

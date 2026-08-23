@@ -194,7 +194,7 @@ improvising.
 
 ## Current state
 
-All 1905 tests pass across 150 test files (`npm test`, ~5s).
+All 2678 tests pass across 187 test files (`npm test`, ~5s).
 
 | Phase | Content | Status |
 |-------|---------|--------|
@@ -214,6 +214,14 @@ All 1905 tests pass across 150 test files (`npm test`, ~5s).
 | Entity start path | `session:create` assembles the entity prompt and launches the CLI with it — before this, it opened a bare shell | Done |
 | Level and adapter wiring | The level follows the adapter, model tiers resolve, capability packages are the single source per entity, level B emits an inventory instead of nothing, and a prompt preview shows all of it before anything starts | Done — the NanoClaw adapter this phase originally registered was removed 2026-08-17 with the rest of the subsystem; level B has no adapter again until keel's own harness lands |
 | Phaseninput layer | The fifth assembly layer: the preceding phase's output artefacts, resolved from the graph into the prompt | Done |
+| Model layer | A model registry with capability records, six tier/role slots (three tiers, plus tagging, worker and researcher), endpoint resolution and keychain-backed API keys, all editable in the settings window | Done |
+| Harness core | keel's own agent loop around a model: build the prompt, read the answer, run tools, check budgets, write everything to an event log. Read-only tools (file, directory, content search, knowledge graph), a stable/volatile prefix split for cache reuse, deferred schema loading | Done — 2026-08-18 |
+| Net access and researcher | Two network paths at different trust levels. `web_suchen`/`seite_lesen` run in the main loop but only against an allowlist of vendor documentation; `recherchieren` is an encapsulated sub-run for everything else, with its own registry that carries no file and no graph tool, returning text plus a source list. The difference is one field — the netwatch's mode. Search providers: SearXNG (self-hosted) and Tavily | Done — 2026-08-23, measured |
+
+The harness stretch was measured rather than assumed. Five rounds of real research runs
+against a local 27B, plus a separate 40-run measurement of whether the model reads a skill
+before using it, are recorded in `docs/superpowers/plans/` — including the rounds that were
+thrown away because the machine, not the code, was what they measured.
 
 Phases 3a through 5 each ended in a formal audit with a RELEASE verdict; findings are
 recorded in `docs/superpowers/specs/`. Phase 6 and Phase 7 completed without that same
@@ -237,9 +245,10 @@ than what is delivered would be worse than none (CK-NFR-012).
   [Install](#install)). Signing is a deliberate 0.1 decision, not an oversight —
   revisit it if the project finds real distribution
 - **A settings window now covers most of the config, but not all of it.** Opened from the
-  project window's header ("Einstellungen"), it has three tabs: model registry and the five
-  tier/role assignments with their fallback endpoints, CLI start parameters per adapter, and
-  speech output. `ui.*` never existed as an adjustable surface — the dark theme, layout and
+  project window's header ("Einstellungen"), it has four tabs: model registry and the six
+  tier/role assignments with their fallback endpoints, network access (search provider, both
+  API keys, SearXNG endpoint, allowlist), CLI start parameters per adapter, and speech
+  output. `ui.*` never existed as an adjustable surface — the dark theme, layout and
   grid are hardcoded — so there is nothing to add a UI for there. Which surfaces are
   adjustable, where each one lives, and which are visible or editable today is inventoried
   in [`docs/anpassbare-flaechen.md`](docs/anpassbare-flaechen.md) (CK-NFR-012)
@@ -257,18 +266,24 @@ than what is delivered would be worse than none (CK-NFR-012).
 - **Idle RAM budget and cold-start time unverified.** The <300 MB / <5s targets are
   architecturally supported (lazy init, WAL, no in-memory cache, deferred service start)
   but have not been measured against a production build
-- **keel's own Niveau-B harness, and Codex and Gemini adapters,** are a design target, not
-  implemented. `AdapterRegistry` holds one entry, `claude-code`, which launches sessions.
-  The `keel-harness` runtime is known to the preset schema but unbacked — no adapter
-  claims it, so a level-B session cannot start yet. (An earlier NanoClaw bridge and channel
-  adapter served this role until it was superseded on 2026-08-16 and removed 2026-08-17;
-  see [`docs/anpassbare-flaechen.md`](docs/anpassbare-flaechen.md) for why.)
-- **Level B is assembled but not runnable.** The prompt an entity would receive at level B
-  can be inspected today, and the level is wired to follow the adapter. What is missing is
-  everything that would execute it: a harness and its launch path, a grid cell for a
-  session, its lifecycle and output events, and a `provider:model` handle — no preset
-  declares one, so a level-B session would start without a model choice at all. Level C is
-  a 0.2 target and untouched
+- **The harness runs, but it is not yet a session.** keel's own loop exists and does real
+  work — it drives a model through tool calls, budgets and an event log, and the network
+  stretch above was measured through it against a local 27B. What is still missing is the
+  step that turns it into a *session*: `RUNTIMES_WITHOUT_ADAPTER` still contains
+  `keel-harness`, `AdapterRegistry` holds one live entry (`claude-code`), and no slot in
+  `model/slots.ts` offers the runtime. So the loop is reachable over IPC and from tests, but
+  no preset can start a level-B session in the grid, with its own cell, lifecycle and output
+  events. That gap is deliberate and named in `agent/registry.ts` — a slot before its
+  adapter would be a surface for a dummy. (An earlier NanoClaw bridge served this role until
+  it was superseded on 2026-08-16 and removed 2026-08-17; see
+  [`docs/anpassbare-flaechen.md`](docs/anpassbare-flaechen.md) for why.)
+- **Codex and Gemini adapters** remain a design target, untouched.
+- **What the network stretch still loses is content, not connectivity.** Pages behind an
+  HTTP 403 for clients without a browser identity (Reddit, Stack Exchange) stay unread on
+  purpose — the platforms decide how their data is released, and keel does not spoof a
+  user agent to get around that. Pages that Readability cannot extract because they render
+  in JavaScript (GitHub issues among them) are the open half of that problem.
+- **Level C** is a 0.2 target and untouched.
 
 ## Install
 
@@ -321,11 +336,16 @@ src/main/          — Electron main process
   voice/           — Whisper STT, Piper and macOS TTS, VAD routing
   kanban/          — Board store, one-directional Kanban → graph sync
   monitoring/      — Statusline monitor and hook
+  model/           — Model registry, capability records, tier/role slots, endpoint
+                     resolution, price table
+  worker/          — Transports: Ollama, OpenAI-compatible, Anthropic; keychain API keys
+  harness/         — keel's own agent loop: prompt assembly, codecs, budgets, event log,
+                     tools (file, graph, net), netwatch, page extraction, researcher
 src/renderer/      — React 19 UI: SessionGrid, ProjectView, Timeline, KanbanBoard,
-                     KickoffWizard, NotesCell
+                     KickoffWizard, NotesCell, settings tabs
 src/shared/        — Typed IPC channels and domain types
 src/preload.ts     — contextBridge API (window.cipherKeel)
-tests/             — 1541 Vitest tests
+tests/             — 2678 Vitest tests
 docs/superpowers/  — Implementation plans, design specs and audit reports per phase
 ```
 
