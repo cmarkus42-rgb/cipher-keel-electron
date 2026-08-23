@@ -9,7 +9,9 @@
 
 import type { AgentAdapter } from './agent-adapter'
 import { ClaudeCodeAdapter, type AgentConfigReader } from './adapters/claude-code'
+import { KeelHarnessAdapter } from './adapters/keel-harness'
 import { KNOWN_RUNTIMES } from '../preset/schema'
+import type { AppServices } from '../window-manager'
 
 /**
  * Known runtime values from PresetRahmen and their corresponding adapter IDs.
@@ -20,33 +22,31 @@ import { KNOWN_RUNTIMES } from '../preset/schema'
  */
 export const RUNTIME_TO_ADAPTER_ID: ReadonlyMap<string, string> = new Map([
   ['claude-cli-tmux', 'claude-code'],
+  ['keel-harness', 'keel-harness'],
 ])
 
 /**
- * Runtime values that KNOWN_RUNTIMES (src/main/preset/schema.ts) accepts as valid but
- * that have no entry in RUNTIME_TO_ADAPTER_ID yet. Declared explicitly so the gap between
- * "valid preset value" and "resolvable adapter" is an intentional, named fact rather than
- * an accident that getForRuntime would otherwise mask with a false "unknown runtime" error.
+ * Runtime values that KNOWN_RUNTIMES accepts as valid but that have no entry in
+ * RUNTIME_TO_ADAPTER_ID yet. Declared explicitly so the gap between "valid preset value" and
+ * "resolvable adapter" is an intentional, named fact rather than an accident.
  *
- * The own loop exists since the harness stretch of 2026-08-18, but no adapter starts a session
- * through it: that needs writing tools and a shell, which travel with the sandbox. Until then
- * 'keel-harness' is a known runtime without a live adapter, and no slot in model/slots.ts
- * offers it — a slot before its adapter would be a surface for a dummy. If the adapter lands
- * in a later stretch, this entry falls with it.
- *
- * When an adapter for one of these lands, add it to RUNTIME_TO_ADAPTER_ID and remove it
- * from here — the guard test in tests/agent/runtime-registry-completeness.test.ts fails
- * if a value is in both, or in neither, of RUNTIME_TO_ADAPTER_ID and this list.
+ * **Leer seit dem 2026-08-23**, als der keel-harness-Adapter landete. Die Liste bleibt stehen,
+ * und der Zweig in getForRuntime, der „gueltig, aber Adapter nicht gebaut" wirft, bleibt es
+ * auch: dort landet der naechste Wert (Codex, Gemini). Der Waechter in
+ * tests/agent/runtime-registry-completeness.test.ts traegt auch ueber eine leere Menge — seine
+ * lebende Pruefung ist „jede bekannte Laufzeit hat einen Adapter *oder* ist benannt".
  */
-export const RUNTIMES_WITHOUT_ADAPTER: ReadonlySet<string> = new Set(['keel-harness'])
+export const RUNTIMES_WITHOUT_ADAPTER: ReadonlySet<string> = new Set<string>([])
 
 export class AdapterRegistry {
   private adapters: Map<string, AgentAdapter> = new Map()
   private defaultId = 'claude-code'
 
-  constructor(configReader: AgentConfigReader) {
+  constructor(configReader: AgentConfigReader, services: AppServices | null = null) {
     const claude = new ClaudeCodeAdapter(configReader)
     this.adapters.set(claude.id, claude)
+    const keel = new KeelHarnessAdapter(services)
+    this.adapters.set(keel.id, keel)
   }
 
   register(adapter: AgentAdapter): void {

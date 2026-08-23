@@ -1,17 +1,33 @@
 import { describe, it, expect, vi } from 'vitest'
 import { AdapterRegistry } from '../../src/main/agent/registry'
 import { istSchleifenAdapter } from '../../src/main/agent/agent-adapter'
+import type { CipherKeelConfig } from '../../src/main/config/config-store'
 
-// isCommandOnPath drives every currently-registered adapter's isAvailable() (ClaudeCodeAdapter
-// calls it directly). Mocked so the third describe block below can assert both directions of
-// the nichtVerfuegbarGrund() contract without depending on whether `claude` happens to be on
-// this machine's PATH (M-3 fix-review finding) — a future adapter whose isAvailable() does not
-// go through isCommandOnPath would not be covered by this override and needs its own test.
+// isCommandOnPath drives ClaudeCodeAdapter's isAvailable(). Mocked so the third describe block
+// below can assert both directions of the nichtVerfuegbarGrund() contract without depending on
+// whether `claude` happens to be on this machine's PATH (M-3 fix-review finding).
 vi.mock('../../src/main/util/exec-util', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/main/util/exec-util')>()
   return { ...actual, isCommandOnPath: vi.fn(actual.isCommandOnPath) }
 })
 import { isCommandOnPath } from '../../src/main/util/exec-util'
+
+// KeelHarnessAdapter's isAvailable() (agent/adapters/keel-harness.ts, landed with the
+// keel-harness-Adapter, 2026-08-23) does not go through isCommandOnPath at all — it reads the
+// `sitzung:niveau-b`-Zuordnungsplatz. Mocked here the same way tests/agent/keel-harness-adapter
+// .test.ts does it, so the two describe blocks below still exercise BOTH registered adapters,
+// not just ClaudeCodeAdapter as before this adapter existed.
+vi.mock('../../src/main/config/config-store', () => ({
+  configStore: { get: vi.fn(() => zuordnung) },
+}))
+let zuordnung: CipherKeelConfig['modelle'] = {
+  zuordnung: {
+    tiers: { light: '', standard: '', heavy: '' },
+    rollen: { tagging: '', worker: '', rechercheur: '' },
+    sitzungen: { 'niveau-b': '' },
+  },
+  eintraege: [],
+}
 
 const leserOhneArgumente = { getStartArgs: () => [] as string[] }
 
@@ -56,6 +72,16 @@ describe('jeder registrierte Adapter erklaert seine Sitzungsart', () => {
 describe('jeder Adapter kann sagen, warum er nicht verfuegbar ist', () => {
   it('meldet null, wenn der Adapter verfuegbar ist', () => {
     vi.mocked(isCommandOnPath).mockReturnValue(true)
+    // Ein echter local-http-Eintrag am Platz, sonst meldet KeelHarnessAdapter — der andere
+    // Adapter in dieser Registry — unabhaengig von isCommandOnPath einen leeren Platz.
+    zuordnung = {
+      zuordnung: {
+        tiers: { light: '', standard: '', heavy: '' },
+        rollen: { tagging: '', worker: '', rechercheur: '' },
+        sitzungen: { 'niveau-b': 'spark-qwen38-27b' },
+      },
+      eintraege: [],
+    }
     const registry = new AdapterRegistry(leserOhneArgumente)
     for (const id of registry.listIds()) {
       const a = registry.get(id)!
@@ -71,6 +97,15 @@ describe('jeder Adapter kann sagen, warum er nicht verfuegbar ist', () => {
     // ueberhaupt ein Grund da ist. Ein Adapter, der `false` meldet und dazu schweigt, laesst
     // SESSION_CREATE wieder einen Text erfinden, den der Adapter besser weiss.
     vi.mocked(isCommandOnPath).mockReturnValue(false)
+    // Leerer Platz: KeelHarnessAdapter meldet dann ebenfalls unverfuegbar, mit eigenem Grund.
+    zuordnung = {
+      zuordnung: {
+        tiers: { light: '', standard: '', heavy: '' },
+        rollen: { tagging: '', worker: '', rechercheur: '' },
+        sitzungen: { 'niveau-b': '' },
+      },
+      eintraege: [],
+    }
     const registry = new AdapterRegistry(leserOhneArgumente)
     for (const id of registry.listIds()) {
       const a = registry.get(id)!

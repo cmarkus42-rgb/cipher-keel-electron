@@ -139,7 +139,7 @@ export function registerIpcHandlers(services: AppServices): void {
   const adapterRegistry = new AdapterRegistry({
     getStartArgs: (adapterId: string) =>
       splitShellArgs(configStore.get('agent').startArgs[adapterId] ?? ''),
-  })
+  }, services)
 
   // Project manager — wired to configStore for persistence (CK-INF-020)
   const projectManager = new ProjectManager(
