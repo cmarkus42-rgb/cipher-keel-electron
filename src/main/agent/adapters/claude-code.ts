@@ -16,7 +16,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import type {
-  AgentAdapter,
+  CliSitzungsAdapter,
   LaunchCommand,
   LaunchOpts,
   AdapterContext,
@@ -28,6 +28,7 @@ import type { AdapterFeature, AdapterCapabilities } from '../../../shared/types'
 import { CapabilityNiveau } from '../../preset/niveau'
 import { runCommand, isCommandOnPath } from '../../util/exec-util'
 import { formatShellCommand } from '../../util/shell-quote'
+import { describeMissingTool } from '../../util/missing-tool'
 
 /** Minimal interface for reading the agent config section. */
 export interface AgentConfigReader {
@@ -35,11 +36,12 @@ export interface AgentConfigReader {
   getStartArgs(adapterId: string): string[]
 }
 
-export class ClaudeCodeAdapter implements AgentAdapter {
+export class ClaudeCodeAdapter implements CliSitzungsAdapter {
   readonly id = 'claude-code'
   readonly displayName = 'Claude Code'
   readonly tier = 'tier-1' as const
   readonly niveau = CapabilityNiveau.A
+  readonly sitzungsart = 'tmux' as const
   readonly appGesteuerteParameter = [
     '--resume', '--fork-session', '--model', '--append-system-prompt-file',
   ] as const
@@ -209,6 +211,15 @@ export class ClaudeCodeAdapter implements AgentAdapter {
    */
   isAvailable(): boolean {
     return isCommandOnPath('claude')
+  }
+
+  /**
+   * Der Grund steht jetzt beim Adapter statt bei SESSION_CREATE. Bis hierher baute der
+   * Handler ihn mit `adapter.id === 'claude-code' ? describeMissingTool('claude') : …`
+   * zusammen — eine Sonderbehandlung an der Stelle mit den wenigsten Informationen darueber.
+   */
+  nichtVerfuegbarGrund(): string | null {
+    return this.isAvailable() ? null : describeMissingTool('claude')
   }
 
   /**

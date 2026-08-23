@@ -123,6 +123,7 @@ import { materialiseCapabilities } from './session/materialise-capabilities'
 import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-file'
 import { formatShellCommand, splitShellArgs } from './util/shell-quote'
 import { AdapterRegistry } from './agent/registry'
+import { istSchleifenAdapter } from './agent/agent-adapter'
 import { describeMissingTool } from './util/missing-tool'
 
 // Tracks the active grid window for focus-or-create logic (CK-UI-002)
@@ -260,6 +261,16 @@ export function registerIpcHandlers(services: AppServices): void {
         configStore.get('agent').modelTiers,
         () => cliErgebnis?.handle
       )
+
+      // Vorlaeufige Weiche: die eigene Schleife hat noch keine Verdrahtung bis hierher.
+      // Ersetzt Task 6 durch die echte Verzweigung ueber beide Sitzungsarten.
+      if (istSchleifenAdapter(adapter)) {
+        return {
+          id: null,
+          name: null,
+          error: 'Der Adapter für diese Laufzeit ist noch nicht verdrahtet.',
+        }
+      }
 
       const launch = adapter.buildLaunchCommand({
         projectPath: cwd,

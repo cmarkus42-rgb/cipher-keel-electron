@@ -30,8 +30,19 @@ describe('the suitability rules have exactly one home', () => {
    * Zeit unbeanstandet. Der Test prueft jetzt **alle drei** Namen und nimmt slots.ts benannt aus,
    * statt weiter nur einen davon zu treffen. Was er wirklich schuetzen soll, halten ohnehin die
    * beiden Tests darunter: eine zweite Tabelle und ein zweiter Nutzertext.
+   *
+   * agent-adapter.ts (seit dem Harness-Adapter-Plan, 2026-08-23) nennt `'eigene-schleife'`
+   * ebenfalls — dort als Wert des Diskriminanzfelds `Sitzungsart`, nicht als Laeufer-Tabelle.
+   * Es ist derselbe reale Sachverhalt (keels eigene Prozessschleife) von der Adapter-Seite aus
+   * benannt statt von der Modell-Zuordnungs-Seite, genau wie slots.ts ihn von der Slot-Seite
+   * aus nennt. Eine zweite Faehigkeits- oder Sperrgrund-Tabelle entstuende dort trotzdem nicht
+   * — das bleibt Sache des Tests direkt darunter.
    */
-  const laeuferHeimat = [...erlaubt, path.join(SRC, 'main/model/slots.ts')]
+  const laeuferHeimat = [
+    ...erlaubt,
+    path.join(SRC, 'main/model/slots.ts'),
+    path.join(SRC, 'main/agent/agent-adapter.ts'),
+  ]
 
   it('names the three Laeufer only in eignung.ts and the slot table', () => {
     const treffer = alleQuelldateien(SRC)

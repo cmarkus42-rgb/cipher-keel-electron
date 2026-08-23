@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { ClaudeCodeAdapter } from '../../src/main/agent/adapters/claude-code'
 import { AdapterRegistry } from '../../src/main/agent/registry'
+import { istSchleifenAdapter } from '../../src/main/agent/agent-adapter'
 
 describe('ClaudeCodeAdapter launch command (entity prompt)', () => {
   const opts = { projectPath: '/tmp/p', sessionName: 'keel-demo-architect-ab12' }
@@ -47,13 +48,19 @@ describe('AdapterRegistry config wiring', () => {
   it('hands its config reader to the claude-code adapter', () => {
     const registry = new AdapterRegistry({ getStartArgs: () => ['--dangerously-skip-permissions'] })
     const adapter = registry.getDefault()
+    // getDefault() always answers with the CLI adapter today — the default is
+    // 'claude-code', which is a CliSitzungsAdapter. Narrowed rather than cast so a
+    // future default of the loop kind fails this test instead of failing silently.
+    if (istSchleifenAdapter(adapter)) throw new Error('default adapter is not a CLI adapter')
     const cmd = adapter.buildLaunchCommand({ projectPath: '/tmp/p', sessionName: 'keel-x' })
     expect(cmd.args).toContain('--dangerously-skip-permissions')
   })
 
   it('does not add the flag when its reader says no', () => {
     const registry = new AdapterRegistry({ getStartArgs: () => [] })
-    const cmd = registry.getDefault().buildLaunchCommand({ projectPath: '/tmp/p', sessionName: 'keel-x' })
+    const adapter = registry.getDefault()
+    if (istSchleifenAdapter(adapter)) throw new Error('default adapter is not a CLI adapter')
+    const cmd = adapter.buildLaunchCommand({ projectPath: '/tmp/p', sessionName: 'keel-x' })
     expect(cmd.args).not.toContain('--dangerously-skip-permissions')
   })
 })

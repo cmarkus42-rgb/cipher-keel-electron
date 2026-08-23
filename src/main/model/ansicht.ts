@@ -17,6 +17,7 @@ import type { ModellEintrag } from './entry'
 import { envVarName, readFromEnv, readFromKeychain } from '../worker/api-keys'
 import { splitShellArgs } from '../util/shell-quote'
 import { AdapterRegistry } from '../agent/registry'
+import { istSchleifenAdapter } from '../agent/agent-adapter'
 import { VORGABE_POSITIVLISTE } from '../harness/werkzeug-netz'
 import type {
   AdapterAnsicht, EintragAnsicht, EndpunktAnsicht, GeheimnisStatus,
@@ -178,7 +179,12 @@ function adapterAnsichten(): AdapterAnsicht[] {
   return registry.listIds().map(id => {
     const adapter = registry.get(id)!
     const text = startArgs[id] ?? ''
-    const appGesteuert = [...(adapter.appGesteuerteParameter ?? [])]
+    // Die eigene Schleife kennt keine app-gesteuerten Kommandozeilen-Parameter — sie hat
+    // gar keine Kommandozeile. Fuer sie bleibt die Liste leer statt einen Zugriff auf ein
+    // Feld zu erzwingen, das fuer diese Sitzungsart gar nicht existiert.
+    const appGesteuert = istSchleifenAdapter(adapter)
+      ? []
+      : [...(adapter.appGesteuerteParameter ?? [])]
     // Not named `warnungen`: that name belongs to the eignung function this module is the
     // one caller of, and shadowing it here would make a reader check whether one is the
     // other. Neither is.

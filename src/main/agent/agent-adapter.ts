@@ -12,6 +12,16 @@
  * features.
  *
  * Ported from cipher-mux 0.9.x (CK-INF-004).
+ *
+ * As of the harness stretch (2026-08-23) `AgentAdapter` is no longer a single interface: it
+ * is a union of `CliSitzungsAdapter` (a tmux pane and a command line — Claude Code today) and
+ * `SchleifenSitzungsAdapter` (keel's own in-process loop, arriving in a later task). Both grew
+ * out of the same tmux-shaped interface, which is why every field that once lived on it now
+ * has to justify which side it belongs to: `buildLaunchCommand`/`executeCommand`/`streamOutput`
+ * describe a pane, `starteAuftrag`/`brichAb` describe a loop with no pane at all. Folding both
+ * into one interface again would let a caller invoke a pane-only method on a loop-only adapter
+ * and find out at runtime instead of at compile time — the split exists so that mistake cannot
+ * compile.
  */
 
 import type { AdapterFeature, AdapterCapabilities, ContextUsage } from '../../shared/types'
@@ -79,7 +89,11 @@ export interface OutputEvent {
   content: string
 }
 
-export interface AgentAdapter {
+/** Wie eine Sitzung dieses Adapters ueberhaupt existiert. Das Diskriminanzfeld der Union. */
+export type Sitzungsart = 'tmux' | 'eigene-schleife'
+
+/** Was jeder Adapter ehrlich beantworten kann — unabhaengig davon, wie seine Sitzung laeuft. */
+export interface AgentAdapterBasis {
   readonly id: string
   readonly displayName: string
   readonly tier: 'tier-1' | 'tier-2'
@@ -89,46 +103,17 @@ export interface AgentAdapter {
    *
    * Claude Code is the only harness with native SKILL.md lazy-loading, which is what
    * Niveau A assumes; every other adapter in the garden is B. The niveau is a property
-   * of the harness, not a user preference — a harness that cannot resolve @-references
-   * does not become able to by being asked nicely.
+   * of the harness, not a user preference.
    */
   readonly niveau: CapabilityNiveau
 
-  /**
-   * Parameters this adapter appends from its own logic. The settings surface warns when a
-   * user types one of them into the free-text start parameters, because it would then
-   * appear twice on the command line. Named here rather than in the surface so that the
-   * adapter which adds them is also the one that names them.
-   */
-  readonly appGesteuerteParameter?: readonly string[]
+  readonly sitzungsart: Sitzungsart
 
-  // --- lifecycle ---
-  /** Build a structured launch command. Never returns a raw shell string. */
-  buildLaunchCommand(opts: LaunchOpts): LaunchCommand
-  /** Optional post-launch setup (e.g. MCP server registration). */
-  postLaunchInjection?(ctx: AdapterContext): Promise<void>
-
-  // --- project awareness ---
-  /** Filenames/dirs this agent recognizes as project markers. */
   getProjectMarkers(): string[]
-  /** Read the agent's project instructions file (e.g. CLAUDE.md). */
   readProjectInstructions(projectPath: string): Promise<ProjectInstructions | null>
-
-  // --- runtime signals (capability-gated) ---
-  /** Check if the adapter supports a specific feature. */
   supports(feature: AdapterFeature): boolean
-  /** Get all capabilities as a record. */
   getCapabilities(): AdapterCapabilities
-  /** Read context usage for a session. Only call if supports('status-line'). */
-  getContextUsage?(sessionId: string): Promise<ContextUsage | null>
-  /** Inject status reporting hook into project. Only call if supports('status-line'). */
-  attachStatusHook?(projectPath: string): Promise<void>
 
-  // --- prompt delivery ---
-  /** Send a prompt into the agent's tmux pane. */
-  sendPrompt(tmuxTarget: string, prompt: string, opts?: SendOpts): Promise<void>
-
-  // --- ENT-026: runtime interface ---
   /**
    * Check whether this adapter's runtime is reachable.
    * Must return boolean synchronously without changing state or starting I/O.
@@ -137,23 +122,102 @@ export interface AgentAdapter {
   isAvailable(): boolean
 
   /**
-   * Send a command to the runtime and return the response as a string.
-   * Adapters that use a separate delivery mechanism (e.g. SessionManager)
-   * should throw a descriptive error here. CK-ENT-026
+   * German, non-null exactly when isAvailable() is false: why this adapter cannot run.
+   *
+   * It lives here because the adapter knows the reason and the caller does not.
+   * SESSION_CREATE used to build that text itself with
+   * `adapter.id === 'claude-code' ? describeMissingTool('claude') : <generic>` — a special
+   * case in the one place that had the least information about it.
    */
+  nichtVerfuegbarGrund(): string | null
+
+  buildWorkshopPromptFragment(lang: 'de' | 'en'): string
+  buildLauncherPromptFragment(lang: 'de' | 'en'): string
+  buildCyberFactoryPromptFragment(lang: 'de' | 'en'): string
+}
+
+/**
+ * A harness that runs as its own process in a tmux pane. Everything here is about a command
+ * line and a pane: an in-process loop has no honest answer to any of it.
+ *
+ * `executeCommand`/`streamOutput` (CK-ENT-026) sit here rather than on the base because both
+ * already throw in the only adapter that has them, pointing at SessionManager and the tmux
+ * output batcher respectively — they describe exactly the separation this union now carries.
+ */
+export interface CliSitzungsAdapter extends AgentAdapterBasis {
+  readonly sitzungsart: 'tmux'
+  readonly appGesteuerteParameter?: readonly string[]
+  buildLaunchCommand(opts: LaunchOpts): LaunchCommand
+  postLaunchInjection?(ctx: AdapterContext): Promise<void>
+  getContextUsage?(sessionId: string): Promise<ContextUsage | null>
+  attachStatusHook?(projectPath: string): Promise<void>
+  sendPrompt(tmuxTarget: string, prompt: string, opts?: SendOpts): Promise<void>
   executeCommand(command: string): Promise<string>
+  streamOutput(sessionId: string): AsyncIterable<OutputEvent>
+}
+
+/** Die Teile des stabilen Praefix, die aus der Preset-Schicht kommen (harness-praefix-quelle.ts). */
+export interface EntitaetsTeile {
+  body: string
+  persona: string
+  capabilities: string
+  globaleRegeln: string
+}
+
+export interface SchleifenStartOpts {
+  /** Projektwurzel — zugleich die Grenze der Pfadwache des Laufs. */
+  wurzel: string
+  sitzungsname: string
+  auftragstext: string
+  /** Der Registry-Eintrag aus dem Zuordnungsplatz `sitzung:niveau-b`. */
+  eintragId: string
+  praefix: EntitaetsTeile
+  /**
+   * Der zuletzt in dieser Zelle gefahrene Lauf, oder null bei der ersten Beauftragung.
+   * Ob daraus ein Folgeauftrag wird, entscheidet `weiterOderFrisch` (harness/fortsetzbarkeit.ts)
+   * — nicht der Aufrufer: die Entscheidung braucht das Protokoll, und das kennt nur die
+   * Lauf-Maschinerie.
+   */
+  letzteLaufId: string | null
 
   /**
-   * Yield output events from the runtime for the given session.
-   * Adapters that capture output via other means (e.g. tmux) should throw. CK-ENT-026
+   * Gerufen, sobald die laufId feststeht und **bevor** die Schleife anlaeuft — synchron, im
+   * selben Zug. Der Aufrufer traegt sie damit in sein Register ein.
+   *
+   * Es gibt sie, weil die naheliegende Reihenfolge ein Rennen ist: `starteAuftrag` kehrt heim,
+   * sobald das erste `run.started` geschrieben ist, und der Rest des Laufs faehrt im
+   * Hintergrund weiter. Wer die laufId erst aus dem Rueckgabewert ins Register schriebe,
+   * verloere gegen einen sehr kurzen Lauf — dessen `beiEnde` kippte die Zelle auf
+   * `leerlaufend`, bevor sie je auf `laeuft` stand, und das nachfolgende `setzeLauf` liesse sie
+   * fuer immer auf `laeuft` stehen.
    */
-  streamOutput(sessionId: string): AsyncIterable<OutputEvent>
+  beiStart?: (laufId: string) => void
 
-  // --- prompt fragments for workshop and launcher ---
-  /** Agent-specific instructions injected into the workshop template. */
-  buildWorkshopPromptFragment(lang: 'de' | 'en'): string
-  /** Agent-specific launcher suffix (e.g. '/launch' for Claude Code). */
-  buildLauncherPromptFragment(lang: 'de' | 'en'): string
-  /** Agent-specific instructions injected into the Cyber Factory template. */
-  buildCyberFactoryPromptFragment(lang: 'de' | 'en'): string
+  /**
+   * Gerufen, wenn der Lauf endet — Erfolg, Fehler oder Abbruch. Die laufId kommt mit, damit der
+   * Aufrufer pruefen kann, ob sie noch die aktuelle ist, statt eine fremde Zelle zu kippen.
+   *
+   * Der Aufrufer kippt damit den Zellenzustand: der Hauptprozess fuehrt ihn, nicht der Renderer.
+   */
+  beiEnde?: (laufId: string) => void
+}
+
+export interface SchleifenStartErgebnis {
+  laufId: string
+  /** Wahr, wenn der Auftrag in `letzteLaufId` weiterlief statt einen neuen Lauf zu oeffnen. */
+  fortgesetzt: boolean
+}
+
+/** keels eigene Schleife im Hauptprozess. Kein Pane, kein Kommandozeilenaufruf. */
+export interface SchleifenSitzungsAdapter extends AgentAdapterBasis {
+  readonly sitzungsart: 'eigene-schleife'
+  starteAuftrag(opts: SchleifenStartOpts): Promise<SchleifenStartErgebnis>
+  /** Setzt die Abbruchmarke. Der Lauf endet am naechsten Zugrand, nicht sofort. */
+  brichAb(laufId: string): void
+}
+
+export type AgentAdapter = CliSitzungsAdapter | SchleifenSitzungsAdapter
+
+export function istSchleifenAdapter(a: AgentAdapter): a is SchleifenSitzungsAdapter {
+  return a.sitzungsart === 'eigene-schleife'
 }
