@@ -17,77 +17,40 @@
  * One correction against the sketch this file was built from: `LaufUmgebung.sende` takes the
  * wire body *and* the praefix (`(koerper, praefix) => Promise<ModelAntwort>`) — neither codec's
  * `toWire()` writes a system prompt, so folding the praefix in is this transport glue's job, not
- * the loop's (see `mitSystemPraefix` below). And `HARNESS_LAUF_STARTEN` does not `await` the run
- * to completion: `starteLauf` only resolves once the whole multi-turn loop is done, and awaiting
- * it here would block the IPC round trip for the run's entire duration — the renderer's abort
- * button, gated on having a laufId, would only ever become clickable after there was nothing
- * left to abort. Instead the handler races the loop's own first write against the run promise
- * settling, so a synchronous startup failure (unknown codec, a cli-harness entry with no
- * capability row) still surfaces as a normal error response, while a successful start returns
- * immediately and the rest of the run continues in the background, reachable from here on only
- * through the broadcast stream and the abort mark.
+ * the loop's (see `mitSystemPraefix` in harness-sitzung.ts). And `HARNESS_LAUF_STARTEN` does not
+ * `await` the run to completion: `starteLauf` only resolves once the whole multi-turn loop is
+ * done, and awaiting it here would block the IPC round trip for the run's entire duration — the
+ * renderer's abort button, gated on having a laufId, would only ever become clickable after
+ * there was nothing left to abort. The race itself — the loop's own first write against the run
+ * promise settling — now lives in `starteHarnessLauf` (harness-sitzung.ts), so a synchronous
+ * startup failure (unknown codec, a cli-harness entry with no capability row) still surfaces as
+ * a normal error response, while a successful start returns immediately and the rest of the run
+ * continues in the background, reachable from here on only through the broadcast stream and the
+ * abort mark.
  */
 
-import { ipcMain, app, dialog, BrowserWindow } from 'electron'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { statSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import {
   HARNESS_LAUF_STARTEN, HARNESS_LAUF_LESEN, HARNESS_LAUF_ABBRECHEN, HARNESS_LAUF_FORTSETZEN,
-  HARNESS_ANHAENGE_WAEHLEN, HARNESS_EREIGNIS,
+  HARNESS_ANHAENGE_WAEHLEN,
 } from '../shared/ipc-channels'
 import type { HarnessAntwort, HarnessEreignis, LaufAnzeige, LaufStartWunsch } from '../shared/harness-types'
-import { broadcast } from './event-bus'
-import { resolveBetterSqliteBinding } from './graph/native-binding'
-import { eintragFuerRolle, eintragNachId } from './model/registry'
-import { laeuferKannArt, sperrgrund } from './model/eignung'
-import { slotFuerId } from './model/slots'
-import { toModelEndpoint, type Faehigkeiten, type ModellEintrag } from './model/entry'
-import { clientForEndpoint } from './worker/model-client'
-import { assemblePraefixTeile } from './harness-praefix-quelle'
-import type { PraefixText } from './harness/praefix'
-import { baueNetzKontext } from './harness-netz'
-import {
-  starteLauf, setzeFort, oeffneHarnessDb, lesen, laufIds, codecFuer,
-  WerkzeugRegistry, DATEI_WERKZEUGE, GRAPH_WERKZEUGE, NETZ_WERKZEUGE, rechercheurWerkzeug,
-  leseFaehigkeiten, faehigkeitLesenWerkzeug,
-} from './harness'
-import type { ModelAntwort, Auftrag, LaufUmgebung } from './harness'
+import { eintragNachId } from './model/registry'
+import { setzeFort, lesen } from './harness'
 import type { AppServices } from './window-manager'
+import {
+  abbruchmarken, laufendeLaeufe, harnessDb, fehler, baueLaufUmgebung, starteHarnessLauf,
+  pruefeLaufLaeuftNicht, laufUebersicht, auftragAusProtokoll, laufAbgeschlossen,
+  pruefeKeinUnterlauf,
+} from './harness-sitzung'
 
-let db: ReturnType<typeof oeffneHarnessDb> | null = null
-/** Run ids marked for cancellation. Read at the loop's turn boundary, never mid-request (9.1). */
-const abbruchmarken = new Set<string>()
-
-/**
- * Run ids for which a `fahre()` loop is currently executing in this process.
- *
- * `laufUebersicht` reports `endzustand: null` for a crashed run and a still-running one alike —
- * there is no run table, only the log, and a running run has written no `run.finished` yet, same
- * as a crashed one. Nothing before this distinguished "safe to resume" from "already resuming
- * itself right now": a click on "Fortsetzen" for the run that is this process's own current run
- * started a second `fahre()` loop over the same run id and the same database — every tool call
- * doubled, two interleaved conversations in one append-only protocol, and the model endpoint
- * billed twice. Set in both HARNESS_LAUF_STARTEN and HARNESS_LAUF_FORTSETZEN before the loop
- * starts, deleted in the same `finally` that already cleans up `abbruchmarken` once it ends —
- * same lifetime as the abort mark, checked in the main process, never trusted to the renderer
- * merely hiding the button (same rule as every other decision in this file).
- */
-const laufendeLaeufe = new Set<string>()
-
-/**
- * The check itself, pulled out as a pure function so it is testable without electron — same
- * pattern as `pruefeAnhaenge` above.
- */
-export function pruefeLaufLaeuftNicht(
-  laufId: string, laufende: ReadonlySet<string>,
-): { ok: true } | { ok: false; meldung: string } {
-  if (laufende.has(laufId)) {
-    return { ok: false, meldung: `Der Lauf '${laufId}' laeuft bereits — Fortsetzen ist erst moeglich, wenn er sich beendet hat.` }
-  }
-  return { ok: true }
-}
+export {
+  pruefeLaufLaeuftNicht, laufUebersicht, auftragAusProtokoll, laufAbgeschlossen,
+  istUnterlauf, pruefeKeinUnterlauf, baueWerkzeugRegistry, mitSystemPraefix,
+  rechercheurModell, SCHLEIFE_TIMEOUT_MS,
+} from './harness-sitzung'
 
 /**
  * Paths a human has actually picked, via a dialog *this* process opened. This is the boundary
@@ -114,294 +77,6 @@ export function pruefeLaufLaeuftNicht(
  */
 const dialogAusgewaehlt = new Set<string>()
 
-/** Placeholder until the harness window can set its own budgets — every run gets the same one. */
-const STANDARD_BUDGETS = { runden: 12, wanduhrMs: 900_000, kostenCent: 200, kontextAnteil: 0.8 }
-
-function harnessDb(): ReturnType<typeof oeffneHarnessDb> {
-  if (!db) {
-    db = oeffneHarnessDb(
-      join(app.getPath('userData'), 'harness.db'),
-      resolveBetterSqliteBinding(join(app.getAppPath(), 'node_modules', 'better-sqlite3')),
-    )
-  }
-  return db
-}
-
-/**
- * Die Werkzeugliste des Laufs, an genau einer Stelle. Exportiert, damit ein Test gegen **diese**
- * Konstruktion pruefen kann statt gegen einen Nachbau — der Nachbau in
- * tests/harness/werkzeugliste.test.ts war gruen, waehrend die halbe Liste gar nicht verdrahtet
- * war (siehe tests/harness/verdrahtung.test.ts).
- *
- * Die Netz-Werkzeuge stehen **immer** darin, auch ohne konfigurierten Suchanbieter. Grund: die
- * Stummelliste bildet den stabilen Praefix, und der darf sich zwischen Laeufen nicht bewegen —
- * eine Liste, die je nach Konfiguration mal neun und mal zwoelf Namen hat, kostet den
- * Zwischenspeicher des Anbieters bei jedem Wechsel. Ohne Anbieter antworten die Werkzeuge
- * benannt, dass Netzzugang fuer diesen Lauf nicht eingerichtet ist.
- */
-export function baueWerkzeugRegistry(): WerkzeugRegistry {
-  return new WerkzeugRegistry([
-    ...DATEI_WERKZEUGE, ...GRAPH_WERKZEUGE, faehigkeitLesenWerkzeug,
-    ...NETZ_WERKZEUGE, rechercheurWerkzeug,
-  ])
-}
-
-function fehler(err: unknown): HarnessAntwort<never> {
-  return { ok: false, meldung: err instanceof Error ? err.message : String(err) }
-}
-
-/**
- * Folds the praefix into the wire body. Neither codec's `toWire()` writes a system field — it only
- * knows the conversation and the tool stubs — so the transport is where the pieces the loop hands
- * over separately (`koerper`, `praefix`) become the one request a provider actually expects:
- * Anthropic as its own top-level field, OpenAI-compatible dialects as the first message.
- *
- * This is also where the cache breakpoint is set, and why the loop hands the praefix over in two
- * pieces. Anthropic caches nothing without an explicit `cache_control` marker; the first real run
- * reported `cache_read_input_tokens: 0` on every turn and paid the full opening each time,
- * although the stable part was byte-identical throughout. The marker goes on the stable block and
- * on nothing else — everything up to and including a marked block is cached, so a marker behind
- * the progress object would miss on every turn in which a tool ran. Tools are sent before the
- * system field, so the tool stubs sit inside the cached range as well.
- *
- * OpenAI-compatible dialects cache their prefix by themselves and are left exactly as they were:
- * an unknown field in that body risks an HTTP 400 across the whole dialect for no gain.
- */
-export function mitSystemPraefix(
-  koerper: unknown, praefix: PraefixText, codec: Faehigkeiten['codec'],
-): unknown {
-  const k = koerper as Record<string, unknown>
-  if (codec === 'anthropic') {
-    const bloecke: Array<Record<string, unknown>> = []
-    // Empty blocks are never written: Anthropic rejects a text block with an empty string, and a
-    // marker on an empty block would cache nothing while looking like it cached something.
-    if (praefix.stabil !== '') {
-      bloecke.push({ type: 'text', text: praefix.stabil, cache_control: { type: 'ephemeral' } })
-    }
-    if (praefix.fluechtig !== '') bloecke.push({ type: 'text', text: praefix.fluechtig })
-    return { ...k, system: bloecke }
-  }
-  const zusammen = [praefix.stabil, praefix.fluechtig].filter(t => t !== '').join('\n\n')
-  const nachrichten = Array.isArray(k.messages) ? k.messages : []
-  return { ...k, messages: [{ role: 'system', content: zusammen }, ...nachrichten] }
-}
-
-/**
- * The transport, wired to the codec. The loop hands over the wire body and gets blocks back —
- * it never learns which of the three clients answered.
- *
- * Built eagerly in the handler but only touches `eintrag.faehigkeiten` once actually called:
- * by the time the loop invokes `sende`, `starteLauf`'s own `pruefeStartbedingungen` has already
- * run and would have thrown otherwise, so the non-null assertion here is safe and never the
- * first thing to fail.
- */
-/**
- * Das Zeitbudget **eines Zuges** von keels eigener Schleife.
- *
- * Ohne diese Zeile erbte die Schleife `WORKER_TIMEOUT_MS` (120 s) — eine Zahl, die fuer den
- * **Ein-Schuss-Worker** bemessen ist: eine kleine Anfrage, kurze Historie, kein Denkbudget. Der
- * gleiche Fehlerkreis wie bei `aufgeschobenesLaden` und `klemmeMaxZeichen`: eine Zahl, die fuer
- * einen Verbraucher richtig war, gilt fuer den zweiten nicht. Die Zeile daneben in
- * `notes/note-tagging.ts` macht es seit je richtig und reicht ihre eigenen 60 s durch.
- *
- * **Gemessen am 2026-08-23**, 215 erfolgreiche Zuege gegen `spark-qwen38-27b` (Denkstufe
- * `medium`) auf gesunder GPU:
- *
- *     Median  8,4 s · p90 55,4 s · p99 99,1 s · laengster durchgekommener Zug 108,5 s
- *
- * Die alte Grenze lag damit **innerhalb** der Arbeitsverteilung statt darueber — elf Sekunden
- * ueber dem laengsten Zug, der noch ankam. Zwei Zuege desselben Messtags endeten `transportfehler`
- * nach exakt 120,0 s; einer davon hatte 71.045 Zeichen Werkzeugausgabe im Verlauf, der andere
- * 43 — grosser Kontext und langes Nachdenken laufen also beide gegen dieselbe Wand.
- *
- * **Warum 300 s und nicht mehr:** ein Zug, der laenger braucht als die Wanduhr des gruendlichen
- * Rechercheur-Unterlaufs (`TIEFEN.gruendlich.wanduhrMs`, 300 s), koennte dort ohnehin nichts mehr
- * beitragen. Und die Grenze muss endlich bleiben: die Budgets werden **zwischen** den Zuegen
- * geprueft, ein haengender Socket wuerde also von keiner Wanduhr eingeholt.
- *
- * **Was hier bewusst nicht steht:** die Grenze aus der *verbleibenden* Wanduhr des Laufs
- * abzuleiten. Das waere sauberer — dann waere der Transport nie das, was einen Lauf vor seinem
- * Budget beendet —, kostet aber, dass `sende` den Laufzustand kennt. Solange 300 s dreimal ueber
- * dem p99 liegt, kauft das nichts.
- */
-export const SCHLEIFE_TIMEOUT_MS = 300_000
-
-function sendeUeberTransport(eintrag: ModellEintrag) {
-  return async (koerper: unknown, praefix: PraefixText): Promise<ModelAntwort> => {
-    const f = eintrag.faehigkeiten!
-    const endpunkt = toModelEndpoint(eintrag.erreichbarkeit, f.codec)
-    const roh = await clientForEndpoint(endpunkt).chat({
-      koerper: mitSystemPraefix(koerper, praefix, f.codec), endpoint: endpunkt,
-      timeoutMs: SCHLEIFE_TIMEOUT_MS,
-    })
-    return codecFuer(f.codec).fromWire(roh)
-  }
-}
-
-/**
- * Modell und Transport des Rechercheur-Unterlaufs, aus dem Zuordnungsplatz `rolle:rechercheur` —
- * oder `null`, und dann faehrt der Unterlauf das Modell des Hauptlaufs (harness/rechercheur.ts).
- *
- * Gelesen wird beim Bau der Umgebung, also je Lauf: die Rolle wirkt `sofort` (slots.ts), und der
- * naechste Lauf ist frueh genug — mitten in einem laufenden das Modell zu wechseln wuerde dessen
- * Praefix-Cache verwerfen.
- *
- * **Die Sperre steht hier noch einmal, obwohl das Settings-Fenster sie schon zieht.** Die Ansicht
- * verspricht bei einer nicht fahrbaren Zuordnung ausdruecklich „Es gilt der Rueckfall"; ohne diese
- * Zeile waere das gelogen — `starteLauf` wuerfe stattdessen mitten im Werkzeugaufruf des
- * Hauptlaufs, und aus einer Recherche wuerde ein `tool.failed`. Und die Konfigurationsdatei ist
- * von Hand editierbar, das Fenster also gar nicht der einzige Weg hinein.
- */
-export function rechercheurModell(): LaufUmgebung['rechercheurModell'] {
-  const eintrag = eintragFuerRolle('rechercheur')
-  if (!eintrag) return null
-  const laeufer = slotFuerId('rolle:rechercheur')!.laeufer
-  if (!laeuferKannArt(laeufer, eintrag.art)) {
-    console.warn(
-      `[harness-handlers] Der Zuordnungsplatz 'rolle:rechercheur' zeigt auf '${eintrag.id}'. ` +
-      `${sperrgrund(laeufer, eintrag.art)} Der Unterlauf faehrt das Modell des Hauptlaufs.`,
-    )
-    return null
-  }
-  return { eintrag, sende: sendeUeberTransport(eintrag) }
-}
-
-/**
- * The one place a LaufUmgebung gets built — starting a run and resuming one use exactly this
- * construction, not two that could drift apart. `aufJedesEreignis` is called with every event
- * `strom` sees; the caller decides what "the run has visibly started" means for its own race
- * against the loop's full completion (see HARNESS_LAUF_STARTEN and HARNESS_LAUF_FORTSETZEN).
- */
-async function baueLaufUmgebung(
-  laufId: string, eintrag: ModellEintrag, auftragstext: string, wurzel: string,
-  services: AppServices, aufJedesEreignis: (ev: HarnessEreignis) => void,
-): Promise<LaufUmgebung> {
-  // Gelesen wird beim Bau der Umgebung, einmal je Lauf — nicht je Zug: der stabile Praefix muss
-  // ueber alle Zuege zeichengleich bleiben, und ein Leser, der pro Zug wieder auf die Platte geht,
-  // wuerde bei jeder Aenderung an .claude/ mitten im Lauf den Prompt-Cache des Anbieters verfehlen.
-  const befund = leseFaehigkeiten(wurzel)
-  // Uebersprungene Verzeichnisse werden genannt, nicht verschluckt. Sie gehen ins Hauptprozess-Log
-  // und (noch) nicht ins Ereignisprotokoll: `hinweise` gehoert run.started, und das schreibt
-  // starteLauf aus dem Auftrag heraus — dort ein Feld dafuer zu erfinden, waere Vorratsbau. Wer
-  // eine Faehigkeit vermisst, findet hier den Grund samt Pfad.
-  for (const u of befund.uebersprungen) {
-    console.warn(`[harness-handlers] Faehigkeit uebersprungen: ${u.pfad} — ${u.grund}`)
-  }
-  return {
-    db: harnessDb(),
-    eintrag,
-    praefixTeile: assemblePraefixTeile(auftragstext, befund.faehigkeiten),
-    wache: { wurzel, heim: homedir(), userDataPfad: app.getPath('userData') },
-    graphDb: services.graphDb,
-    registry: baueWerkzeugRegistry(),
-    // Der Hauptlauf faehrt gegen die Positivliste ('whitelist'). Der Unterlauf des Rechercheurs
-    // setzt in rechercheur.ts auf 'offen' um und bekommt dafuer keine Datei- und Graph-Werkzeuge.
-    netz: await baueNetzKontext(),
-    rechercheurModell: rechercheurModell(),
-    strom: (ev) => {
-      broadcast(HARNESS_EREIGNIS, ev as HarnessEreignis)
-      aufJedesEreignis(ev as HarnessEreignis)
-    },
-    uhr: () => Date.now(),
-    abgebrochen: () => abbruchmarken.has(laufId),
-    sende: sendeUeberTransport(eintrag),
-  }
-}
-
-/**
- * Reconstructs the Auftrag a run was originally given, from its own run.started event — the
- * honest source for a resumed run: the same order it started with, not a second one reassembled
- * from whatever the renderer happens to send today (see the comment lauf.ts's starteLauf now
- * carries next to `wurzel` in that event). `anhaenge` and `pflichtfelder` are deliberately left
- * out of the rebuilt Auftrag:
- *
- * - Attachments already live in run.started's own `anhangBloecke` field and reach the projected
- *   history through `projiziere()` on every turn, including the first one after a resume.
- *   `anhangBloecke()` — the function that actually reads a file from disk and base64-encodes it
- *   — is called exactly once, from `starteLauf`, and never from `setzeFort`/`fahre`. There is no
- *   code path on which a resumed run re-reads an attachment path, whether or not one is passed
- *   back in here — so leaving `anhaenge` unset costs nothing and avoids inviting a future change
- *   to wire a second read that was never needed.
- * - `pflichtfelder` is not carried in run.started today and HARNESS_LAUF_STARTEN never sets it
- *   on the initial Auftrag either (it is exercised only by direct callers of `starteLauf`, not
- *   by this IPC surface) — so there is nothing to lose here that a fresh start would have had.
- */
-export function auftragAusProtokoll(ereignisse: ReturnType<typeof lesen>): Auftrag | null {
-  const gestartet = ereignisse.find((e) => e.art === 'run.started')
-  if (!gestartet) return null
-  const n = gestartet.nutzlast
-  if (typeof n.auftragstext !== 'string' || n.auftragstext === '') return null
-  if (typeof n.modellId !== 'string' || n.modellId === '') return null
-  if (typeof n.wurzel !== 'string' || n.wurzel === '') return null
-  const b = n.budgets as Partial<Auftrag['budgets']> | undefined
-  if (
-    !b || typeof b.runden !== 'number' || typeof b.wanduhrMs !== 'number' ||
-    typeof b.kostenCent !== 'number' || typeof b.kontextAnteil !== 'number'
-  ) {
-    return null
-  }
-  return {
-    auftragstext: n.auftragstext,
-    modellId: n.modellId,
-    wurzel: n.wurzel,
-    budgets: {
-      runden: b.runden, wanduhrMs: b.wanduhrMs, kostenCent: b.kostenCent, kontextAnteil: b.kontextAnteil,
-    },
-  }
-}
-
-/** A run with no run.finished event is still resumable; one that has it is done. */
-export function laufAbgeschlossen(ereignisse: ReturnType<typeof lesen>): boolean {
-  return ereignisse.some((e) => e.art === 'run.finished')
-}
-
-/**
- * Traegt das `run.started` dieses Laufs ein `eltern`, ist er der Unterlauf eines anderen — heute
- * der des Rechercheurs (harness/rechercheur.ts).
- */
-export function istUnterlauf(ereignisse: ReturnType<typeof lesen>): boolean {
-  const gestartet = ereignisse.find((e) => e.art === 'run.started')
-  const eltern = gestartet?.nutzlast.eltern
-  return typeof eltern === 'object' && eltern !== null
-}
-
-/**
- * Die dritte Absage des Fortsetzen-Pfads, und die einzige, die eine Sicherheitsgrenze haelt statt
- * doppelter Arbeit vorzubeugen.
- *
- * `baueLaufUmgebung` gibt **jedem** Lauf, den dieser Prozess faehrt, die Registry des Hauptlaufs:
- * `datei_lesen`, `inhalt_suchen`, die vier Graph-Werkzeuge, dazu `services.graphDb`. Fuer einen
- * fortgesetzten Unterlauf ist das genau der Zustand, gegen den rechercheur.ts seine eigene laufId
- * begruendet — nur von aussen wiederhergestellt. Der Weg dahin braucht keinen Angriff auf die
- * IPC-Grenze: stirbt der Prozess mitten in einem Unterlauf, nachdem `seite_lesen` eine
- * praeparierte Seite ins Protokoll geschrieben hat, dann hat dieser Lauf kein `run.finished`,
- * steht in `laufUebersicht` mit `endzustand: null` und ist von einem gewoehnlich abgebrochenen
- * Lauf nicht zu unterscheiden. Ein Klick auf Fortsetzen faehrt `setzeFort` ueber genau diese
- * Historie — der Verlauf traegt den rohen Seitenrumpf, und daneben stuenden dann die
- * Datei- und Graph-Werkzeuge.
- *
- * Deshalb wird ein Unterlauf **gar nicht** fortgesetzt, statt ihn mit einer nachgebauten
- * Unterlauf-Umgebung fortzusetzen: die zweite Bauform waere eine zweite Stelle, an der die
- * Kapselung richtig zusammengesetzt werden muss, und die zweite Stelle ist die, die beim naechsten
- * Umbau vergessen wird. Ein Unterlauf ohne Elternlauf hat ohnehin niemanden mehr, dem er sein
- * Ergebnis zurueckgeben koennte.
- */
-export function pruefeKeinUnterlauf(
-  laufId: string, ereignisse: ReturnType<typeof lesen>,
-): { ok: true } | { ok: false; meldung: string } {
-  if (istUnterlauf(ereignisse)) {
-    return {
-      ok: false,
-      meldung:
-        `Der Lauf '${laufId}' ist der Unterlauf einer Recherche und wird nicht fortgesetzt. Er ` +
-        `hat fremden Netzinhalt im Verlauf und darf die Werkzeuge des Hauptlaufs nie daneben ` +
-        `sehen; und ohne seinen Elternlauf gibt es niemanden, der sein Ergebnis entgegennimmt. ` +
-        `Starte die Recherche im Hauptlauf neu.`,
-    }
-  }
-  return { ok: true }
-}
-
 /**
  * The provenance check itself, pulled out as a pure function so it is testable without
  * electron: it takes the requested paths and the set of dialog-attested ones as plain
@@ -422,31 +97,6 @@ export function pruefeAnhaenge(
     }
   }
   return { ok: true }
-}
-
-/** Every run's summary, oldest first — same order as `laufIds()`. There is no run table; this
- *  reads each run's own log, exactly as `laufIds()` itself derives the id list from it.
- *
- *  Exportiert, damit ein Test die Zusammenfassung gegen ein echtes Protokoll pruefen kann — der
- *  Handler selbst ist von hier aus nicht erreichbar (kein Test in diesem Repo erreicht ipcMain). */
-export function laufUebersicht(datenbank: ReturnType<typeof oeffneHarnessDb>): LaufAnzeige[] {
-  return laufIds(datenbank).map((id) => {
-    const ereignisse = lesen(datenbank, id)
-    const gestartet = ereignisse.find((e) => e.art === 'run.started')
-    const beendet = [...ereignisse].reverse().find((e) => e.art === 'run.finished')
-    return {
-      laufId: id,
-      modellId: typeof gestartet?.nutzlast.modellId === 'string' ? gestartet.nutzlast.modellId : '',
-      gestartetTs: gestartet?.ts ?? '',
-      endzustand: typeof beendet?.nutzlast.endzustand === 'string' ? beendet.nutzlast.endzustand : null,
-      // Unterlaeufe standen in dieser Liste als gewoehnliche Laeufe: `eltern` wurde ausserhalb von
-      // lauf.ts und rechercheur.ts nirgends gelesen, also war ein abgebrochener Unterlauf im
-      // Fenster von einem abgebrochenen Hauptlauf nicht zu unterscheiden — samt angebotenem
-      // Fortsetzen-Knopf. Die Absage trifft der Hauptprozess (pruefeKeinUnterlauf); dieses Feld
-      // sorgt dafuer, dass der Mensch sie nicht erst durch Klicken erfaehrt.
-      istUnterlauf: istUnterlauf(ereignisse),
-    }
-  })
 }
 
 export function registerHarnessHandlers(services: AppServices): void {
@@ -490,44 +140,10 @@ export function registerHarnessHandlers(services: AppServices): void {
       // cannot be cancelled during its first turn is a run that cannot be cancelled.
       const laufId = randomUUID()
 
-      let markiereGestartet: (() => void) | null = null
-      const wennGestartet = new Promise<void>((resolve) => { markiereGestartet = resolve })
-
-      // Marked running before the loop starts — see the comment on `laufendeLaeufe` above.
-      // A freshly minted id can never already be running, but the mark still has to land before
-      // starteLauf() so there is no window in which this run id looks resumable to a second call.
-      laufendeLaeufe.add(laufId)
-
-      const laufPromise = starteLauf(
-        {
-          auftragstext: w.auftragstext,
-          modellId: w.modellId,
-          wurzel: w.wurzel,
-          anhaenge: angeforderteAnhaenge.length > 0 ? angeforderteAnhaenge : undefined,
-          budgets: STANDARD_BUDGETS,
-        },
-        // The first appended event is always run.started — see lauf.ts's starteLauf, which
-        // writes it before entering the loop. Once it lands, startup has succeeded.
-        await baueLaufUmgebung(laufId, eintrag, w.auftragstext, w.wurzel, services, () => {
-          if (markiereGestartet) { markiereGestartet(); markiereGestartet = null }
-        }),
-        laufId,
-      )
-
-      // A bug in the loop past this point is reported through run.finished, not a rejection —
-      // see lauf.ts's own try/catch around the transport call. This is only a safety net so an
-      // exception nobody awaits does not become a silent unhandled rejection, plus cleanup of
-      // the abort mark and the running-mark so neither outlives the run it was keyed to.
-      laufPromise
-        .catch((err) => {
-          console.error(
-            `[harness-handlers] Lauf '${laufId}' endete mit einem unbehandelten Fehler:`,
-            err instanceof Error ? err.message : String(err),
-          )
-        })
-        .finally(() => { abbruchmarken.delete(laufId); laufendeLaeufe.delete(laufId) })
-
-      await Promise.race([wennGestartet, laufPromise])
+      await starteHarnessLauf({
+        laufId, eintrag, auftragstext: w.auftragstext, wurzel: w.wurzel, services,
+        anhaenge: angeforderteAnhaenge,
+      })
       return { ok: true, wert: laufId }
     } catch (err) {
       return fehler(err)
