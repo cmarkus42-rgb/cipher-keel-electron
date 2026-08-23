@@ -52,4 +52,23 @@ describe('auftrag.folgend in der Projektion', () => {
     ])
     expect(JSON.stringify(v[0].bloecke)).toContain('Erster')
   })
+
+  /**
+   * Der schaerfere Fall zur selben Regel: hier gibt es kein `model.answered` dazwischen, also ist
+   * die letzte Nachricht vor `auftrag.folgend` bereits `run.started` selbst — der Verschmelzungs-
+   * zweig greift auf der allerersten Nachricht. Der obige Test bliebe hier gruen, egal ob
+   * verschmolzen oder eine zweite Nachricht aufgemacht wird: `v[0]` enthaelt 'Erster' so oder so.
+   * Dieser Test unterscheidet das: nur eine Nachricht, `run.started`s eigener Block unveraendert an
+   * erster Stelle, und der Folgeauftrag als weiterer Block dahinter.
+   */
+  it('verschmilzt auch mit run.started selbst, wenn kein Modellzug dazwischen liegt', () => {
+    const v = projiziere([
+      ev('run.started', { auftragstext: 'Erster' }),
+      ev('auftrag.folgend', { auftragstext: 'Zweiter' }),
+    ])
+    expect(v).toHaveLength(1)
+    expect(v[0].rolle).toBe('nutzer')
+    expect(v[0].bloecke[0]).toEqual({ art: 'text', text: 'Erster' })
+    expect(JSON.stringify(v[0].bloecke)).toContain('Zweiter')
+  })
 })
