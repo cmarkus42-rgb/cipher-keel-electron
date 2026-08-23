@@ -126,8 +126,9 @@ import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-
 import { formatShellCommand, splitShellArgs } from './util/shell-quote'
 import { AdapterRegistry } from './agent/registry'
 import { istSchleifenAdapter, SITZUNG_EIGENE_SCHLEIFE, type EntitaetsTeile } from './agent/agent-adapter'
-import { neuesRegister, pruefeZelleFrei, type SchleifenZelle } from './session/schleifen-sitzungen'
+import { neuesRegister, type SchleifenZelle } from './session/schleifen-sitzungen'
 import { baueSchleifenSitzung } from './session/schleifen-start'
+import { beauftrageZelle } from './session/schleifen-auftrag'
 import { harnessDb } from './harness-sitzung'
 import { lesen } from './harness'
 import type { SessionStatusChanged } from '../shared/harness-types'
@@ -139,20 +140,25 @@ let activeSettingsWindow: BrowserWindow | null = null
 // Tracks the active harness window for focus-or-create logic
 let activeHarnessWindow: BrowserWindow | null = null
 
-// The grid cells of keel's own loop (SchleifenSitzungsAdapter). Module-level like
-// activeGridWindow above: the main process is the one and only source of cell state (see
-// schleifen-sitzungen.ts) — a per-call registry would let two SESSION_CREATE calls race
-// past each other without ever seeing the other's cell.
-const schleifenZellen = neuesRegister()
-/**
- * The prefix parts per cell, taken from the entity definition. Kept separate from the
- * register because they never reach the renderer: it sees events, never a provider, never
- * an endpoint, never a capability row (shared/harness-types.ts) — and a prompt body or
- * persona is exactly that kind of content.
- */
-const praefixJeZelle = new Map<string, EntitaetsTeile>()
-
 export function registerIpcHandlers(services: AppServices): void {
+  // The grid cells of keel's own loop (SchleifenSitzungsAdapter). Function-scoped rather than
+  // module-level (this function runs once, per its own doc comment above) — and published onto
+  // `services` right after construction so `initGraph` (service-lifecycle.ts), which runs later
+  // and builds GraphMcpServer, can hand the SAME instance to the `keel_zellen`/
+  // `keel_zelle_beauftragen`/`keel_zelle_ergebnis` tools. One Zusammenbau, two Verbraucher —
+  // see the doc comment on AppServices.schleifenZellen (window-manager.ts) for the ordering
+  // argument (registerIpcHandlers always runs before initializeServices in main.ts).
+  const schleifenZellen = neuesRegister()
+  services.schleifenZellen = schleifenZellen
+  /**
+   * The prefix parts per cell, taken from the entity definition. Kept separate from the
+   * register because they never reach the renderer: it sees events, never a provider, never
+   * an endpoint, never a capability row (shared/harness-types.ts) — and a prompt body or
+   * persona is exactly that kind of content.
+   */
+  const praefixJeZelle = new Map<string, EntitaetsTeile>()
+  services.praefixJeZelle = praefixJeZelle
+
   // The registry demands its config reader — see Task 6. This is the one place that has
   // both Electron and the ConfigStore loaded, which is why the reading happens here and
   // not inside the adapter.
@@ -160,6 +166,10 @@ export function registerIpcHandlers(services: AppServices): void {
     getStartArgs: (adapterId: string) =>
       splitShellArgs(configStore.get('agent').startArgs[adapterId] ?? ''),
   }, services)
+  // Same publication as schleifenZellen above, same reason: GraphMcpServer's
+  // keel_zelle_beauftragen needs the keel-harness adapter's starteAuftrag, and this is the
+  // only place that builds an AdapterRegistry today.
+  services.adapterRegistry = adapterRegistry
 
   // Project manager — wired to configStore for persistence (CK-INF-020)
   const projectManager = new ProjectManager(
@@ -423,90 +433,25 @@ export function registerIpcHandlers(services: AppServices): void {
   // Ein Auftrag an eine Niveau-B-Gitterzelle — der Sender von SESSION_STATUS_CHANGED. Der Hoerer
   // sitzt im Renderer (index.tsx, Task 10) und schreibt zustand/laufId/letzterEndzustand direkt
   // aus dieser Nutzlast in den Gitterplatz, ohne etwas davon aus dem Ereignisstrom abzuleiten.
+  //
+  // Der ganze Ablauf (die vier Absagen, das beiStart/beiEnde-Rennen) steht in
+  // session/schleifen-auftrag.ts, geteilt mit dem `keel_zelle_beauftragen`-MCP-Werkzeug
+  // (graph/mcp-server.ts) — genau eine Fassung dieser Logik, nicht zwei.
   ipcMain.handle(SESSION_AUFTRAG, async (_e, args: { name?: string; auftragstext?: string }) => {
     const name = typeof args?.name === 'string' ? args.name : ''
-    const text = typeof args?.auftragstext === 'string' ? args.auftragstext.trim() : ''
-    if (text === '') return { ok: false, meldung: 'Der Auftrag ist leer.' }
+    const text = typeof args?.auftragstext === 'string' ? args.auftragstext : ''
 
-    const frei = pruefeZelleFrei(name, schleifenZellen)
-    if (!frei.ok) return { ok: false, meldung: frei.meldung }
+    const registryEintrag = adapterRegistry.get('keel-harness')
+    const adapter = registryEintrag && istSchleifenAdapter(registryEintrag) ? registryEintrag : undefined
 
-    const adapter = adapterRegistry.get('keel-harness')
-    if (!adapter || !istSchleifenAdapter(adapter)) {
-      return { ok: false, meldung: 'Der keel-harness-Adapter ist nicht registriert.' }
-    }
-    const praefix = praefixJeZelle.get(name)
-    if (!praefix) {
-      return { ok: false, meldung: `Fuer die Zelle '${name}' liegen keine Praefixteile vor.` }
-    }
-
-    // Typgebunden statt einer rohen broadcast()-Nutzlast an jeder der drei Stellen unten: ein
-    // Tippfehler in einer der beiden Formen (SessionStatusChanged, harness-types.ts) faellt so
-    // dem Typcheck auf, statt erst zur Laufzeit beim Renderer, der den Kanal hoert
-    // (renderer/index.tsx:183).
-    const sendeStatus = (status: SessionStatusChanged) => broadcast(SESSION_STATUS_CHANGED, status)
-
-    // Von beiStart gesetzt, sobald die laufId feststeht — die einzige Stelle, an der der Catch
-    // unten weiss, welcher Lauf ueberhaupt zu dieser Zelle gehoert. Bleibt null, wenn der Start
-    // scheitert, bevor beiStart je gerufen wurde (z. B. ein unbekannter Registry-Eintrag) — dann
-    // hat dieser Aufruf die Zelle nie angefasst, und der Catch hat nichts zurueckzunehmen.
-    let gestarteterLauf: string | null = null
-
-    try {
-      const ergebnis = await adapter.starteAuftrag({
-        wurzel: frei.zelle.wurzel, sitzungsname: name, auftragstext: text,
-        eintragId: frei.zelle.eintragId, praefix, letzteLaufId: frei.zelle.laufId,
-
-        // Der Hauptprozess fuehrt den Zellenzustand — der Renderer leitet nichts aus dem
-        // Ereignisstrom ab.
-        //
-        // beiStart, nicht der Rueckgabewert: `starteAuftrag` kehrt heim, sobald das erste
-        // `run.started` steht, und der Rest faehrt im Hintergrund. Wer die laufId erst danach
-        // eintruege, verloere gegen einen sehr kurzen Lauf — dessen beiEnde kippte die Zelle,
-        // bevor sie je auf 'laeuft' stand, und das nachfolgende setzeLauf liesse sie fuer
-        // immer darauf stehen.
-        beiStart: (laufId) => {
-          gestarteterLauf = laufId
-          schleifenZellen.setzeLauf(name, laufId)
-          sendeStatus({ name, zustand: 'laeuft', laufId })
-        },
-
-        beiEnde: (beendeterLauf) => {
-          const zelle = schleifenZellen.hole(name)
-          // Gehoert der beendete Lauf noch zu dieser Zelle? Nach einem Zerstoeren und
-          // Neuanlegen unter demselben Namen laeuft sonst das finally des alten Laufs in die
-          // neue Zelle.
-          if (!zelle || zelle.laufId !== beendeterLauf) return
-          const letztes = [...lesen(harnessDb(), beendeterLauf)]
-            .reverse().find(e => e.art === 'run.finished')
-          const endzustand = typeof letztes?.nutzlast.endzustand === 'string'
-            ? letztes.nutzlast.endzustand : null
-          schleifenZellen.setzeZustand(name, 'leerlaufend', endzustand)
-          sendeStatus({ name, zustand: 'leerlaufend', endzustand })
-        },
-      })
-      return { ok: true, wert: ergebnis }
-    } catch (err) {
-      // beiStart kann VOR diesem Wurf gelaufen sein (im frischen Zweig steht es synchron vor
-      // starteHarnessLauf) — dann steht die Zelle bereits auf 'laeuft', ohne dass je ein
-      // beiEnde kaeme, denn `starteHarnessLauf` registriert sein `.finally()` erst NACH
-      // `baueLaufUmgebung`. Derselbe Id-Vergleich wie in beiEnde oben, aus demselben Grund: waehrend
-      // dieses Await-Fensters koennte die Zelle zerstoert und mit einem neuen, wirklich laufenden
-      // Auftrag neu belegt worden sein — der darf hier nicht zurueckgekippt werden.
-      if (gestarteterLauf) {
-        const zelle = schleifenZellen.hole(name)
-        if (zelle && zelle.laufId === gestarteterLauf) {
-          // M-2 (Review Task 10): explizit null statt des dritten Arguments wegzulassen — der
-          // Rundruf unten sagt endzustand: null, und ohne das dritte Argument liesse
-          // setzeZustand den ALTEN letzterEndzustand im Register stehen (siehe dessen eigenen
-          // Kommentar: "if (endzustand !== undefined)"). Register und Rundruf wichen sonst
-          // genau in diesem Fehlerpfad voneinander ab.
-          schleifenZellen.setzeZustand(name, 'leerlaufend', null)
-          sendeStatus({ name, zustand: 'leerlaufend', endzustand: null })
-        }
-      }
-      return { ok: false, meldung: err instanceof Error ? err.message : String(err) }
-    }
+    return beauftrageZelle({
+      name, auftragstext: text, register: schleifenZellen, praefixJeZelle, adapter,
+      harnessDb, lesen,
+      // Typgebunden statt einer rohen broadcast()-Nutzlast: ein Tippfehler in einer der beiden
+      // Formen (SessionStatusChanged, harness-types.ts) faellt so dem Typcheck auf, statt erst
+      // zur Laufzeit beim Renderer, der den Kanal hoert (renderer/index.tsx:183).
+      sendeStatus: (status: SessionStatusChanged) => broadcast(SESSION_STATUS_CHANGED, status),
+    })
   })
 
   // Read-only counterpart to session:create — assembles the same prompt, starts nothing

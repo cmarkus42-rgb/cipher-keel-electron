@@ -25,6 +25,9 @@ import { KanbanStore } from './kanban/kanban-store'
 import type { TmuxManager } from './tmux/tmux-manager'
 import type { StatusLineMonitor } from './monitoring/statusline-monitor'
 import type Database from 'better-sqlite3'
+import type { Zellenregister } from './session/schleifen-sitzungen'
+import type { EntitaetsTeile } from './agent/agent-adapter'
+import type { AdapterRegistry } from './agent/registry'
 
 // ---------------------------------------------------------------------------
 // Shared service container — mutated by service-lifecycle.ts
@@ -43,6 +46,23 @@ export interface AppServices {
   tagIndex: TagIndex | null
   noteWatcher: NoteWatcher | null
   kanbanStore: KanbanStore | null
+  /**
+   * The grid cells of keel's own loop and their prompt-prefix parts — built once inside
+   * `registerIpcHandlers` (ipc-handlers.ts), the one and only place today, and published here
+   * so `initGraph` (service-lifecycle.ts) can hand the SAME instances to `GraphMcpServer` for
+   * the `keel_zellen`/`keel_zelle_beauftragen`/`keel_zelle_ergebnis` tools. Null until
+   * `registerIpcHandlers` runs — which main.ts calls before `initializeServices`, so by the
+   * time `initGraph` reads these, they are already set.
+   */
+  schleifenZellen: Zellenregister | null
+  praefixJeZelle: Map<string, EntitaetsTeile> | null
+  /**
+   * Same story as `schleifenZellen` above: built once inside `registerIpcHandlers`
+   * (it needs `configStore`, which is not reliable before `app.whenReady()` — see
+   * config-store.ts — so it cannot move into the static `services` literal in main.ts) and
+   * published here for the same reason.
+   */
+  adapterRegistry: AdapterRegistry | null
 }
 
 // ---------------------------------------------------------------------------

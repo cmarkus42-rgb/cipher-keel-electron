@@ -48,6 +48,11 @@ const services: AppServices = {
   tagIndex: null,
   noteWatcher: null,
   kanbanStore: null,
+  // Set by registerIpcHandlers below — see the doc comment on these fields in
+  // window-manager.ts for why construction stays there instead of here.
+  schleifenZellen: null,
+  praefixJeZelle: null,
+  adapterRegistry: null,
 }
 
 // ---------------------------------------------------------------------------

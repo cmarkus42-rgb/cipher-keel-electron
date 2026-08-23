@@ -298,7 +298,14 @@ function initGraph(services: AppServices, ctx: ServiceInitContext): void {
     )
     services.graphDb = openGraphDb({ path: graphDbPath, nativeBinding })
     services.graphWriter = new GraphWriter(services.graphDb)
-    services.graphMcpServer = new GraphMcpServer(services.graphDb)
+    // schleifenZellen/praefixJeZelle/adapterRegistry come from `services` — registerIpcHandlers
+    // (ipc-handlers.ts) publishes them there, and it always runs before initializeServices
+    // (main.ts), so they are already set by the time this line runs. See the doc comment on
+    // AppServices for the ordering argument, and the header comment on GraphMcpServer for why
+    // none of this makes the keel_zellen tools reachable yet.
+    services.graphMcpServer = new GraphMcpServer(
+      services.graphDb, services.schleifenZellen, services.praefixJeZelle, services.adapterRegistry,
+    )
     services.kanbanStore = new KanbanStore(services.graphDb)
     setStatus('graph', 'ready', null)
     setStatus('kanban', 'ready', null)

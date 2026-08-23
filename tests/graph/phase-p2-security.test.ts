@@ -292,8 +292,8 @@ describe('P2-SEC-2: MCP runtime validation', () => {
     })
     afterEach(() => { db.close() })
 
-    it('graph_search rejects numeric query', () => {
-      const res = server.handleRequest(makeReq('tools/call', {
+    it('graph_search rejects numeric query', async () => {
+      const res = await server.handleRequest(makeReq('tools/call', {
         name: 'graph_search',
         arguments: { query: 42 }
       }))
@@ -302,8 +302,8 @@ describe('P2-SEC-2: MCP runtime validation', () => {
       expect(result.content[0].text).toContain('query')
     })
 
-    it('graph_get_node rejects missing uid', () => {
-      const res = server.handleRequest(makeReq('tools/call', {
+    it('graph_get_node rejects missing uid', async () => {
+      const res = await server.handleRequest(makeReq('tools/call', {
         name: 'graph_get_node',
         arguments: {}
       }))
@@ -312,8 +312,8 @@ describe('P2-SEC-2: MCP runtime validation', () => {
       expect(result.content[0].text).toContain('uid')
     })
 
-    it('graph_expand rejects array uid', () => {
-      const res = server.handleRequest(makeReq('tools/call', {
+    it('graph_expand rejects array uid', async () => {
+      const res = await server.handleRequest(makeReq('tools/call', {
         name: 'graph_expand',
         arguments: { uid: ['not', 'a', 'string'] }
       }))
@@ -321,8 +321,8 @@ describe('P2-SEC-2: MCP runtime validation', () => {
       expect(result.isError).toBe(true)
     })
 
-    it('graph_upsert_node rejects missing kind', () => {
-      const res = server.handleRequest(makeReq('tools/call', {
+    it('graph_upsert_node rejects missing kind', async () => {
+      const res = await server.handleRequest(makeReq('tools/call', {
         name: 'graph_upsert_node',
         arguments: { title: 'No kind' }
       }))
@@ -331,8 +331,8 @@ describe('P2-SEC-2: MCP runtime validation', () => {
       expect(result.content[0].text).toContain('kind')
     })
 
-    it('graph_link rejects numeric src', () => {
-      const res = server.handleRequest(makeReq('tools/call', {
+    it('graph_link rejects numeric src', async () => {
+      const res = await server.handleRequest(makeReq('tools/call', {
         name: 'graph_link',
         arguments: { src: 123, dst: 'ABC' }
       }))
@@ -341,8 +341,8 @@ describe('P2-SEC-2: MCP runtime validation', () => {
       expect(result.content[0].text).toContain('src')
     })
 
-    it('graph_maintain rejects missing operation', () => {
-      const res = server.handleRequest(makeReq('tools/call', {
+    it('graph_maintain rejects missing operation', async () => {
+      const res = await server.handleRequest(makeReq('tools/call', {
         name: 'graph_maintain',
         arguments: {}
       }))
@@ -351,8 +351,8 @@ describe('P2-SEC-2: MCP runtime validation', () => {
       expect(result.content[0].text).toContain('operation')
     })
 
-    it('graph_query rejects boolean template', () => {
-      const res = server.handleRequest(makeReq('tools/call', {
+    it('graph_query rejects boolean template', async () => {
+      const res = await server.handleRequest(makeReq('tools/call', {
         name: 'graph_query',
         arguments: { template: true }
       }))
