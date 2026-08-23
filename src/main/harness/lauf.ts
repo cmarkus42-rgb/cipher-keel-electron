@@ -245,13 +245,20 @@ export async function setzeFort(laufId: string, auftrag: Auftrag, u: LaufUmgebun
 export async function setzeFolgeauftrag(
   laufId: string, auftrag: Auftrag, u: LaufUmgebung, text: string,
 ): Promise<void> {
+  // Erst pruefen, ob der Eintrag den Lauf ueberhaupt tragen kann -- und zwar vor jedem Urteil
+  // ueber den Inhalt des Auftrags. Ein inkompatibler Eintrag gehoert ins Protokoll
+  // (`abfangUnvereinbar` schreibt `run.finished`), nicht in einen rohen `Error`, der an dieser
+  // Funktion vorbei aus dem Aufrufer faellt. In der falschen Reihenfolge waere ein leerer
+  // Folgeauftragstext auf einen inzwischen inkompatibel gewordenen Eintrag genau die Fehlerklasse,
+  // die `abfangUnvereinbar` verhindern soll: kein `run.finished`, der Lauf steht fuer immer auf
+  // "laeuft" (siehe fixierender Test dazu).
+  if (abfangUnvereinbar(u, laufId)) return
   if (text.trim() === '') {
     // Benannt und hier, statt eines leeren `text`-Blocks, der erst beim Anbieter auffaellt:
     // Anthropic lehnt leere text-Bloecke ab, und dieser wuerde an eine sonst gueltige
     // Nutzer-Nachricht angeschweisst (projektion.ts, case 'auftrag.folgend').
     throw new Error(`setzeFolgeauftrag('${laufId}'): der Folgeauftragstext ist leer.`)
   }
-  if (abfangUnvereinbar(u, laufId)) return
   schreibe(u, laufId, 'auftrag.folgend', { auftragstext: text })
   await fahre(laufId, auftrag, u)
 }

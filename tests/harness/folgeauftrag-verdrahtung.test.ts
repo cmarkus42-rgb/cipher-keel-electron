@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { oeffneHarnessDb, lesen } from '../../src/main/harness/protokoll'
+import { oeffneHarnessDb, anhaengen, lesen } from '../../src/main/harness/protokoll'
 import { starteLauf, setzeFolgeauftrag, type Auftrag, type LaufUmgebung } from '../../src/main/harness/lauf'
 import { projiziere } from '../../src/main/harness/projektion'
 import { WerkzeugRegistry } from '../../src/main/harness/werkzeuge'
@@ -27,6 +27,15 @@ const EINTRAG: ModellEintrag = {
     nutzbaresKontextfenster: 100_000, vertragsStrenge: { schemaTiefe: 2, reparaturversuche: 1 },
     rundenbudget: 12, gemessenAm: null, gemessenMit: null, quelle: 'vermutet',
   },
+}
+
+// Derselbe Eintrag, nachtraeglich auf einen Werkzeugmodus umgestellt, den diese Ausbaustufe nicht
+// faehrt (siehe pruefeStartbedingungen in lauf.ts). Steht fuer den in abfangUnvereinbars eigenem
+// Kommentar beschriebenen Ausloeser: jemand aendert die Faehigkeitszeile eines Eintrags, waehrend
+// ein Lauf auf diesem Eintrag noch offen ist.
+const INKOMPATIBEL_EINTRAG: ModellEintrag = {
+  ...EINTRAG,
+  faehigkeiten: { ...EINTRAG.faehigkeiten!, werkzeugmodus: 'text' },
 }
 
 const BUDGETS = { runden: 6, wanduhrMs: 60_000, kostenCent: 100, kontextAnteil: 0.9 }
@@ -99,5 +108,38 @@ describe('setzeFolgeauftrag: der stabile Praefix bleibt zeichengleich', () => {
     await expect(setzeFolgeauftrag(laufId, auftrag, u, '   ')).rejects.toThrow(/leer/)
     // Kein auftrag.folgend-Ereignis geschrieben -- die Ablehnung war vor dem Schreiben.
     expect(lesen(db, laufId).some(e => e.art === 'auftrag.folgend')).toBe(false)
+  })
+
+  /**
+   * Die Reihenfolge der beiden Abfaenge selbst. Ein leerer Folgeauftragstext auf einen
+   * inzwischen inkompatibel gewordenen Eintrag muss ins Protokoll geschrieben werden
+   * (`run.finished` / `auftrag-unvereinbar`), nicht als roher `Error` an `abfangUnvereinbar`
+   * vorbei aus der Funktion fallen -- sonst bleibt der Lauf, wie `abfangUnvereinbar`s eigener
+   * Kommentar beschreibt, fuer immer auf "laeuft" stehen.
+   */
+  it('schreibt bei leerem Folgeauftrag auf einen inkompatiblen Eintrag run.finished, statt einen rohen Error zu werfen', async () => {
+    const db = oeffneHarnessDb(':memory:')
+    const laufId = 'lauf-verdrahtung-inkompatibel'
+    // run.started direkt ins Protokoll geschrieben statt ueber starteLauf: starteLauf prueft
+    // pruefeStartbedingungen schon vor dem allerersten Zug und wuerde mit diesem Eintrag gar
+    // nicht erst starten. Der Fall hier ist gerade der, in dem der Eintrag *nach* run.started
+    // inkompatibel wird -- deshalb steht run.started schon im Protokoll, bevor die Umgebung mit
+    // dem inkompatiblen Eintrag `setzeFolgeauftrag` erreicht.
+    anhaengen(db, laufId, 'run.started', {
+      auftragstext: 'Erster Auftrag', modellId: 'test-modell', wurzel: '/tmp',
+      budgets: BUDGETS, codec: 'openai-chat', werkzeuge: [], hinweise: [],
+    })
+    const u: LaufUmgebung = { ...baueUmgebung(db, []), eintrag: INKOMPATIBEL_EINTRAG }
+    const auftrag: Auftrag = {
+      auftragstext: 'Erster Auftrag', modellId: 'test-modell', wurzel: '/tmp', budgets: BUDGETS,
+    }
+
+    await expect(setzeFolgeauftrag(laufId, auftrag, u, '')).resolves.toBeUndefined()
+
+    const ereignisse = lesen(db, laufId)
+    expect(ereignisse.some(e => e.art === 'auftrag.folgend')).toBe(false)
+    const letztes = ereignisse.at(-1)
+    expect(letztes?.art).toBe('run.finished')
+    expect(letztes?.nutzlast).toMatchObject({ endzustand: 'abgebrochen', grund: 'auftrag-unvereinbar' })
   })
 })
