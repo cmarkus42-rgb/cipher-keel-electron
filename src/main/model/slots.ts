@@ -121,7 +121,12 @@ export const SLOTS: readonly Slot[] = [
    * **Kein Rueckfall bei leerem Platz** — anders als `rolle:rechercheur`, wo das Modell des
    * Hauptlaufs einspringt. Der naechstliegende Rueckfall waere hier `llm.worker`, und das ist
    * ein Ein-Schuss-Endpunkt fuer einen einzelnen Job, keine Sitzung. ansicht.ts sagt das im
-   * Rueckfalltext, und der Start scheitert benannt (session/schleifen-start.ts).
+   * Rueckfalltext. Der Start scheitert benannt — der Text dafuer hat ein Zuhause,
+   * `model/sitzungsplatz-text.ts`, und zwei Leser: `KeelHarnessAdapter.isAvailable()`
+   * (agent/adapters/keel-harness.ts), das der Nutzer tatsaechlich zu sehen bekommt, weil
+   * `session:create` diese Pruefung vor jeder Verzweigung nach Sitzungsart durchfuehrt, und
+   * `baueSchleifenSitzung` (session/schleifen-start.ts) als in Produktion unerreichte zweite
+   * Sicherung.
    */
   {
     id: 'sitzung:niveau-b',

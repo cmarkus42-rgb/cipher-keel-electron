@@ -23,7 +23,10 @@ describe('KeelHarnessAdapter', () => {
     const a = new KeelHarnessAdapter()
     expect(a.sitzungsart).toBe('eigene-schleife')
     expect(a.isAvailable()).toBe(false)
-    expect(a.nichtVerfuegbarGrund()).toContain('Sitzung „Niveau B"')
+    // Text lives in model/sitzungsplatz-text.ts since the Task 6 review (I-2) — corrected
+    // nested quoting (M-6): single quotes inside the German double quotes, not the same
+    // glyph doubled.
+    expect(a.nichtVerfuegbarGrund()).toContain("Sitzung 'Niveau B'")
     expect(a.nichtVerfuegbarGrund()).toContain('Einstellungen')
   })
 

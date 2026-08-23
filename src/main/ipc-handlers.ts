@@ -124,7 +124,7 @@ import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-
 import { formatShellCommand, splitShellArgs } from './util/shell-quote'
 import { AdapterRegistry } from './agent/registry'
 import { istSchleifenAdapter, SITZUNG_EIGENE_SCHLEIFE, type EntitaetsTeile } from './agent/agent-adapter'
-import { neuesRegister } from './session/schleifen-sitzungen'
+import { neuesRegister, type SchleifenZelle } from './session/schleifen-sitzungen'
 import { baueSchleifenSitzung } from './session/schleifen-start'
 
 // Tracks the active grid window for focus-or-create logic (CK-UI-002)
@@ -255,20 +255,32 @@ export function registerIpcHandlers(services: AppServices): void {
       // What genuinely drops on the loop path: `writeEntityPromptFile` (the body enters
       // via `assemblePraefixTeile`, not a file plus a command-line flag) and the whole
       // pane, `buildLaunchCommand` included.
+      //
+      // Order matters here, and it is the same "gate before any file is written" rule as
+      // isAvailable() above, one step later: baueSchleifenSitzung runs FIRST, purely, and
+      // returns before materialiseCapabilities ever touches disk if the sitzung:niveau-b
+      // slot is empty. Only once that gate is past does the (single) materialiseCapabilities
+      // call below run — shared by both Sitzungsarten rather than written out twice, so the
+      // two copies cannot drift the way two hand-written copies of the same call would.
+      let schleifenTeile: { zelle: SchleifenZelle; praefix: EntitaetsTeile } | null = null
       if (istSchleifenAdapter(adapter)) {
-        const materialised = materialiseCapabilities(def.rahmen.capabilityAnbindung, cwd)
-        if (materialised.unknown.length > 0) {
-          console.warn(
-            `[ipc] entity '${entityId}': no SKILL.md asset for ${materialised.unknown.join(', ')}`
-          )
-        }
-
         const gebaut = baueSchleifenSitzung({
           name, cwd, entityId, def, eintrag: eintragFuerSitzung('niveau-b'),
         })
         if (!gebaut.ok) return { id: null, name: null, error: gebaut.meldung }
-        schleifenZellen.setze(gebaut.zelle)
-        praefixJeZelle.set(name, gebaut.praefix)
+        schleifenTeile = { zelle: gebaut.zelle, praefix: gebaut.praefix }
+      }
+
+      const materialised = materialiseCapabilities(def.rahmen.capabilityAnbindung, cwd)
+      if (materialised.unknown.length > 0) {
+        console.warn(
+          `[ipc] entity '${entityId}': no SKILL.md asset for ${materialised.unknown.join(', ')}`
+        )
+      }
+
+      if (schleifenTeile) {
+        schleifenZellen.setze(schleifenTeile.zelle)
+        praefixJeZelle.set(name, schleifenTeile.praefix)
 
         if (ctx && services.graphWriter) {
           try {
@@ -283,11 +295,14 @@ export function registerIpcHandlers(services: AppServices): void {
         return { id: name, name, error: null, sitzungsart: SITZUNG_EIGENE_SCHLEIFE, hinweis: null }
       }
 
-      const materialised = materialiseCapabilities(def.rahmen.capabilityAnbindung, cwd)
-      if (materialised.unknown.length > 0) {
-        console.warn(
-          `[ipc] entity '${entityId}': no SKILL.md asset for ${materialised.unknown.join(', ')}`
-        )
+      // istSchleifenAdapter(adapter) already returned above for every loop adapter that
+      // reaches this line (see schleifenTeile) — this re-states that for the type checker,
+      // which cannot follow the narrowing through the intervening materialiseCapabilities
+      // call and the `schleifenTeile` check. Also a real safety net, not just a cast: if
+      // that invariant ever breaks, this throws instead of handing a loop adapter to
+      // buildLaunchCommand, a method it does not implement.
+      if (istSchleifenAdapter(adapter)) {
+        throw new Error('[ipc] unreachable: Schleifen-Adapter erreichte den Fremdes-CLI-Pfad')
       }
 
       const prompt = assembleEntityClaudeMd({
@@ -360,7 +375,21 @@ export function registerIpcHandlers(services: AppServices): void {
         // cell standing until the run ends and pretending it is still there.
         if (zelle.laufId && zelle.zustand === 'laeuft') {
           const adapter = adapterRegistry.get('keel-harness')
-          if (adapter && istSchleifenAdapter(adapter)) adapter.brichAb(zelle.laufId)
+          if (adapter && istSchleifenAdapter(adapter)) {
+            adapter.brichAb(zelle.laufId)
+          } else {
+            // Nothing silently swallowed, even for a branch believed unreachable today
+            // (registerIpcHandlers always registers 'keel-harness'): KeelHarnessAdapter's
+            // own brichAb() logs a failed abort from inside itself (its dynamic-import
+            // .catch) — this is the sibling case, the lookup failing before brichAb is ever
+            // called, and without this branch that failure would vanish along with the
+            // cell being removed two lines below.
+            console.error(
+              `[ipc] Zelle '${name}' hatte einen laufenden Auftrag (${zelle.laufId}), aber ` +
+              `der keel-harness-Adapter war nicht auffindbar oder keine Schleife — Abbruch ` +
+              `nicht gesetzt.`
+            )
+          }
         }
         schleifenZellen.entferne(name)
         praefixJeZelle.delete(name)

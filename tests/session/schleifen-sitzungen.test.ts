@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { neuesRegister, pruefeZelleFrei } from '../../src/main/session/schleifen-sitzungen'
+import {
+  neuesRegister, pruefeZelleFrei, type SchleifenZelle,
+} from '../../src/main/session/schleifen-sitzungen'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const zelle = (over: Partial<any> = {}) => ({
+// Partial<SchleifenZelle>, not Partial<any> (M-5, Task 6 review): a typo in an override
+// object (e.g. `zustadn`) is now a compile error instead of a silently ignored extra key.
+const zelle = (over: Partial<SchleifenZelle> = {}): SchleifenZelle => ({
   name: 'z1', wurzel: '/p', entityId: 'keel-arbeiter', eintragId: 'm1',
-  zustand: 'leerlaufend' as const, laufId: null, letzterEndzustand: null, ...over,
+  zustand: 'leerlaufend', laufId: null, letzterEndzustand: null, ...over,
 })
 
 describe('das Zellenregister', () => {

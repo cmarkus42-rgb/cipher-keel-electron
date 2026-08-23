@@ -1,14 +1,25 @@
 import { describe, it, expect } from 'vitest'
 import { baueSchleifenSitzung } from '../../src/main/session/schleifen-start'
 import { CapabilityNiveau } from '../../src/main/preset/niveau'
+import { RollenTyp, type PresetRahmen } from '../../src/main/preset/schema'
+import type { EntityDefinition } from '../../src/main/preset/registry'
+import type { ModellEintrag } from '../../src/main/model/entry'
 
-const def = {
-  id: 'keel-arbeiter', body: 'BODY', persona: null,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  rahmen: { capabilityNiveau: CapabilityNiveau.B } as any,
+// Full literals, not `as any` (M-5, Task 6 review): a typo in either object is now a
+// compile error instead of silently passing through.
+const rahmen: PresetRahmen = {
+  id: 'keel-arbeiter', name: 'keel-Arbeiter', rollenTyp: RollenTyp.PhasenEntitaet,
+  phasenBindung: [], capabilityAnbindung: ['ka-testpaket'],
+  graphAnbindung: { lesen: false, schreiben: false },
+  personaVorgabe: '', runtime: 'keel-harness', model: '',
+  capabilityNiveau: CapabilityNiveau.B, harnessBindung: '',
 }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const eintrag = { id: 'm1', art: 'local-http' } as any
+const def: EntityDefinition = { id: 'keel-arbeiter', body: 'BODY', persona: null, rahmen }
+const eintrag: ModellEintrag = {
+  id: 'm1', name: 'Testmodell', art: 'local-http',
+  erreichbarkeit: { art: 'local-http', host: 'localhost', port: 11434, model: 'test' },
+  oertlichkeit: 'lokal', erklaertext: '', empfehlung: '',
+}
 
 describe('baueSchleifenSitzung', () => {
   it('scheitert benannt ohne Registry-Eintrag', () => {

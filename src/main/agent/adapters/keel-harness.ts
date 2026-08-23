@@ -25,6 +25,7 @@ import { CapabilityNiveau } from '../../preset/niveau'
 import { eintragFuerSitzung } from '../../model/registry'
 import { slotFuerId, type SlotId } from '../../model/slots'
 import { laeuferKannArt, sperrgrund } from '../../model/eignung'
+import { platzNiveauBLeerText } from '../../model/sitzungsplatz-text'
 import type { AppServices } from '../../window-manager'
 
 const PLATZ: SlotId = 'sitzung:niveau-b'
@@ -64,10 +65,7 @@ export class KeelHarnessAdapter implements SchleifenSitzungsAdapter {
   private grundOderNull(): string | null {
     const eintrag = eintragFuerSitzung('niveau-b')
     if (!eintrag) {
-      return (
-        'Der Platz „Sitzung „Niveau B"" ist nicht belegt — ohne Modell startet keine ' +
-        'Niveau-B-Zelle. Einstellungen → Modelle.'
-      )
+      return platzNiveauBLeerText()
     }
     const laeufer = slotFuerId(PLATZ)!.laeufer
     if (!laeuferKannArt(laeufer, eintrag.art)) {

@@ -11,6 +11,7 @@ import type { SchleifenZelle } from './schleifen-sitzungen'
 import type { ModellEintrag } from '../model/entry'
 import type { EntityDefinition } from '../preset/registry'
 import { getGlobalRules } from '../preset/global-rules'
+import { platzNiveauBLeerText } from '../model/sitzungsplatz-text'
 
 export function baueSchleifenSitzung(args: {
   name: string
@@ -25,12 +26,15 @@ export function baueSchleifenSitzung(args: {
   if (!args.eintrag) {
     // No fallback, and that is the decision: the obvious one would be llm.worker, and that is
     // a one-shot endpoint for a single job, not a session.
-    return {
-      ok: false,
-      meldung:
-        'Der Platz „Sitzung „Niveau B"" ist nicht belegt — ohne Modell startet keine ' +
-        'Niveau-B-Zelle. Einstellungen → Modelle.',
-    }
+    //
+    // Last-resort safeguard, not the gate a user actually meets: ipc-handlers.ts calls
+    // `adapter.isAvailable()` before ever reaching this function, and KeelHarnessAdapter's
+    // own check (agent/adapters/keel-harness.ts) already refuses an empty slot there, with
+    // the same text below. This branch only fires if that ordering is ever broken — a caller
+    // that skips the availability gate, or a future second Sitzungsart-B adapter that forgets
+    // its own check. It stays because "cannot happen today" is not the same guarantee as
+    // "cannot happen".
+    return { ok: false, meldung: platzNiveauBLeerText() }
   }
   return {
     ok: true,
