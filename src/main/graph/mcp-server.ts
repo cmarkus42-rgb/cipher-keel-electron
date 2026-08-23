@@ -15,8 +15,9 @@
  *   graph_maintain     — Maintenance operations (CK-GRAPH-024)
  *
  * 3 more tools (2026-08-23), the connection upward the harness-adapter design (§10) named but
- * deliberately did not build: a strong session (Systems Engineer, Architect, Cyber Factory)
- * beauftragt a Niveau-B-Gitterzelle the same way it already reaches the graph:
+ * deliberately did not build: once a transport exists (see the note below), a strong session
+ * (Systems Engineer, Architect, Cyber Factory) would beauftragt a Niveau-B-Gitterzelle the same
+ * way it would reach the graph — neither is reachable today, see below:
  *   keel_zellen             — list Niveau-B cells and their state
  *   keel_zelle_beauftragen  — give a cell an order; returns the laufId immediately, does not
  *                             wait for the run to finish (a run takes minutes; a blocking MCP
@@ -63,6 +64,15 @@ import type { AdapterRegistry } from '../agent/registry'
 import { harnessDb as harnessDbEcht } from '../harness-sitzung'
 import { lesen as lesenEcht } from '../harness'
 import type { Ereignis } from '../harness/ereignisse'
+// Same rename-on-import reasoning as harnessDb/lesen above, and the same production default:
+// SESSION_STATUS_CHANGED is a broadcast to every window, not a reply to whoever called
+// starteAuftrag — the grid window's cell (renderer/index.tsx) has no second way to learn the
+// state changed (schleifen-sitzungen.ts: "der Renderer leitet nichts ab"), so an MCP-triggered
+// order that skipped this would leave that cell showing leerlaufend while the main process
+// tracks laeuft, permanently, since the renderer only initialises the cell at session:create.
+import { broadcast as broadcastEcht } from '../event-bus'
+import { SESSION_STATUS_CHANGED } from '../../shared/ipc-channels'
+import type { SessionStatusChanged } from '../../shared/harness-types'
 
 // ---------------------------------------------------------------------------
 // Runtime validation (P2-SEC: replaces double-casts)
@@ -341,6 +351,10 @@ export class GraphMcpServer {
   // of keel_zelle_ergebnis never has to load electron just to reach this constructor.
   private harnessDb: () => Database.Database
   private lesen: (db: Database.Database, laufId: string) => Ereignis[]
+  // Same story as harnessDb/lesen: defaulted to the real broadcast() so service-lifecycle.ts
+  // needs no change here, injectable so a test can capture calls instead of touching the real
+  // event bus.
+  private sendeStatus: (status: SessionStatusChanged) => void
 
   constructor(
     db: Database.Database,
@@ -349,6 +363,8 @@ export class GraphMcpServer {
     adapterRegistry: AdapterRegistry | null = null,
     harnessDb: () => Database.Database = harnessDbEcht,
     lesen: (db: Database.Database, laufId: string) => Ereignis[] = lesenEcht,
+    sendeStatus: (status: SessionStatusChanged) => void =
+      (status) => broadcastEcht(SESSION_STATUS_CHANGED, status),
   ) {
     this.db = db
     this.writer = new GraphWriter(db)
@@ -357,6 +373,7 @@ export class GraphMcpServer {
     this.adapterRegistry = adapterRegistry
     this.harnessDb = harnessDb
     this.lesen = lesen
+    this.sendeStatus = sendeStatus
   }
 
   /**
@@ -514,9 +531,14 @@ export class GraphMcpServer {
         praefixJeZelle: this.praefixJeZelle,
         adapter,
         harnessDb: this.harnessDb, lesen: this.lesen,
-        // No sendeStatus: an MCP caller has no window listening on SESSION_STATUS_CHANGED — it
-        // polls keel_zelle_ergebnis itself. The register mutation (setzeLauf/setzeZustand)
-        // still runs either way, since beauftrageZelle drives it independently of the callback.
+        // SESSION_STATUS_CHANGED is a broadcast() to every window, not a reply to whoever called
+        // starteAuftrag — so this is not optional the way it looked at first: the grid window's
+        // cell (renderer/index.tsx) has no other way to learn the state changed
+        // (schleifen-sitzungen.ts: "der Renderer leitet nichts ab"), and it only initialises a
+        // cell at session:create. Skipping this would leave that cell showing leerlaufend
+        // forever while the main process tracks laeuft — the exact two-source drift this file
+        // argues against.
+        sendeStatus: this.sendeStatus,
       })
       if (!ergebnis.ok) {
         return this.toolError(id, ergebnis.meldung)
@@ -588,6 +610,14 @@ export interface JsonRpcResponse {
  * async listener lets a slow request's response land after a faster, later request's response.
  * A client can still match each response to its request by `id`, but a reader of raw stdio
  * output can no longer assume line order is request order.
+ *
+ * Parsing and handling are two separate try/catches, not one: a `JSON.parse` failure is
+ * genuinely `-32700 Parse error`, but `handleRequest` failing is a different thing entirely —
+ * every branch inside it (including `handleZelleBeauftragen`, which its own doc comment says
+ * never rejects) already converts its own errors into a valid response, so this second catch is
+ * a last-resort net for a future bug, not an expected path. Labeling that net's failure
+ * `-32700` too, as one shared catch used to, would tell a client "malformed JSON" for a request
+ * that parsed fine and failed for an unrelated reason.
  */
 export function startStdioServer(db: Database.Database): void {
   const server = new GraphMcpServer(db)
@@ -596,15 +626,29 @@ export function startStdioServer(db: Database.Database): void {
 
   rl.on('line', async (line: string) => {
     if (!line.trim()) return
+
+    let request: JsonRpcRequest
     try {
-      const request = JSON.parse(line) as JsonRpcRequest
-      const response = await server.handleRequest(request)
-      process.stdout.write(JSON.stringify(response) + '\n')
+      request = JSON.parse(line) as JsonRpcRequest
     } catch {
       const errorResponse: JsonRpcResponse = {
         jsonrpc: '2.0',
         id: null,
         error: { code: -32700, message: 'Parse error' }
+      }
+      process.stdout.write(JSON.stringify(errorResponse) + '\n')
+      return
+    }
+
+    try {
+      const response = await server.handleRequest(request)
+      process.stdout.write(JSON.stringify(response) + '\n')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      const errorResponse: JsonRpcResponse = {
+        jsonrpc: '2.0',
+        id: request.id ?? null,
+        error: { code: -32603, message }
       }
       process.stdout.write(JSON.stringify(errorResponse) + '\n')
     }

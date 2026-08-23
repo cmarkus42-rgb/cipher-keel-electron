@@ -256,14 +256,16 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
       return `### Worker-Session-Startup (Claude Code)
 
 Starte Worker mit: \`${this.startBefehl()}\`
-MCP-Tools stehen automatisch zur Verfuegung wenn die Session via cipher-keel erstellt wurde.
+MCP-Tools stehen heute nicht zur Verfuegung — der Transport dafuer ist noch nicht gebaut
+(siehe docs/anpassbare-flaechen.md, Abschnitt "Was fehlt").
 Instruktionen DIREKT via tmux send-keys in den Pane schicken.
 `
     }
     return `### Worker Session Startup (Claude Code)
 
 Start workers with: \`${this.startBefehl()}\`
-MCP tools are automatically available when sessions are created via cipher-keel.
+MCP tools are not available today — the transport for them is not built yet
+(see docs/anpassbare-flaechen.md, "Was fehlt" section).
 Send instructions DIRECTLY via tmux send-keys into the pane.
 `
   }
@@ -277,7 +279,8 @@ Send instructions DIRECTLY via tmux send-keys into the pane.
       return `### Worker-Session-Startup (Claude Code)
 
 Starte Worker mit: \`${this.startBefehl()}\`
-MCP-Tools stehen automatisch zur Verfuegung wenn die Session via cipher-keel erstellt wurde.
+MCP-Tools stehen heute nicht zur Verfuegung — der Transport dafuer ist noch nicht gebaut
+(siehe docs/anpassbare-flaechen.md, Abschnitt "Was fehlt").
 Instruktionen DIREKT via tmux send-keys in den Pane schicken.
 Session-Prefix fuer Cyber-Factory-Worker: \`ckeel-cf-\`
 `
@@ -285,7 +288,8 @@ Session-Prefix fuer Cyber-Factory-Worker: \`ckeel-cf-\`
     return `### Worker Session Startup (Claude Code)
 
 Start workers with: \`${this.startBefehl()}\`
-MCP tools are automatically available when sessions are created via cipher-keel.
+MCP tools are not available today — the transport for them is not built yet
+(see docs/anpassbare-flaechen.md, "Was fehlt" section).
 Send instructions DIRECTLY via tmux send-keys into the pane.
 Session prefix for Cyber Factory workers: \`ckeel-cf-\`
 `

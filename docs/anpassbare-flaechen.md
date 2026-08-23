@@ -496,3 +496,11 @@ Einrichtung (siehe „Was fehlt" unten) — kein eigener Bau-Strang mehr.
   Die drei neuen Werkzeuge selbst (samt der mit `SESSION_AUFTRAG` geteilten Auftragslogik in
   `session/schleifen-auftrag.ts`) sind fertig und geprüft; sie werden erreichbar, sobald der
   Transport steht, nicht vorher.
+
+  **Auth ist nicht die einzige offene Frage, wenn der Transport kommt — Scoping ist eine
+  zweite.** `keel_zelle_beauftragen` kann heute jede Zelle beim Namen ansprechen, nicht nur
+  eine, die zur aufrufenden Sitzung gehört; `keel_zelle_ergebnis` liefert den Ergebnisblock
+  **jedes** Laufs in der Harness-Datenbank zu einer beliebigen `laufId`, nicht nur eines
+  selbst gestarteten. Heute folgenlos, weil nichts das Werkzeug ruft — sobald ein Transport
+  eine Sitzung an diese Werkzeuge heranlässt, muss geklärt sein, ob und wie eine Sitzung auf
+  fremde Zellen und fremde Läufe beschränkt wird, nicht nur, ob sie sich authentifizieren kann.

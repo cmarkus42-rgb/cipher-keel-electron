@@ -14,7 +14,7 @@
  * that function with the right register/praefix/adapter, not a second copy of those scenarios.
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { openGraphDb } from '../../src/main/graph/db'
 import { GraphMcpServer } from '../../src/main/graph/mcp-server'
 import type { JsonRpcRequest } from '../../src/main/graph/mcp-server'
@@ -26,6 +26,8 @@ import type {
 import type { AdapterRegistry } from '../../src/main/agent/registry'
 import type Database from 'better-sqlite3'
 import type { Ereignis } from '../../src/main/harness/ereignisse'
+import { registerWindow, resetEventBus, type BroadcastTarget } from '../../src/main/event-bus'
+import { SESSION_STATUS_CHANGED } from '../../src/shared/ipc-channels'
 
 function makeReq(method: string, params?: unknown, id: number = 1): JsonRpcRequest {
   return { jsonrpc: '2.0', id, method, params }
@@ -73,6 +75,51 @@ describe('keel_zellen', () => {
 })
 
 describe('keel_zelle_beauftragen — ueber den echten GraphMcpServer', () => {
+  afterEach(() => resetEventBus())
+
+  // I-2 (Review): der Rundruf war zunaechst ausgelassen, mit einer falschen Begruendung
+  // ("MCP-Aufrufer hat kein Fenster") — SESSION_STATUS_CHANGED ist ein broadcast() an ALLE
+  // Fenster, keine Antwort an den Aufrufer, und das Gitterfenster hoert darauf
+  // (renderer/index.tsx). Dieser Test ruft KEINE eigene sendeStatus-Ueberschreibung — er prueft
+  // den echten Default-Pfad (siehe GraphMcpServer-Konstruktor), denselben, den
+  // service-lifecycle.ts explizit mit derselben broadcast()-Funktion belegt.
+  it(
+    'beiStart erreicht ein registriertes Fenster ueber SESSION_STATUS_CHANGED, nicht nur den Rueckgabewert',
+    async () => {
+      const sent: Array<[string, unknown]> = []
+      const fakeWindow: BroadcastTarget = {
+        webContents: { send: (channel, ...args) => sent.push([channel, args[0]]) },
+        isDestroyed: () => false,
+        once: () => {},
+      }
+      registerWindow(fakeWindow)
+
+      const db = openGraphDb({ path: ':memory:' })
+      const register = neuesRegister()
+      register.setze({
+        name: 'z-rundruf', wurzel: '/p', entityId: 'keel-arbeiter', eintragId: 'm1',
+        zustand: 'leerlaufend', laufId: null, letzterEndzustand: null,
+      })
+      const adapter = fakeAdapter(async (opts) => {
+        opts.beiStart?.('lauf-rundruf')
+        return { laufId: 'lauf-rundruf', fortgesetzt: false }
+      })
+      const server = new GraphMcpServer(
+        db, register, new Map([['z-rundruf', PRAEFIX]]), fakeAdapterRegistry(adapter),
+      )
+
+      await server.handleRequest(makeReq('tools/call', {
+        name: 'keel_zelle_beauftragen',
+        arguments: { name: 'z-rundruf', auftragstext: 'los' },
+      }))
+
+      expect(sent).toContainEqual([
+        SESSION_STATUS_CHANGED, { name: 'z-rundruf', zustand: 'laeuft', laufId: 'lauf-rundruf' },
+      ])
+      db.close()
+    },
+  )
+
   it('beauftragt eine leerlaufende Zelle: laufId kommt sofort zurueck, das Register kippt auf laeuft', async () => {
     const db = openGraphDb({ path: ':memory:' })
     const register = neuesRegister()

@@ -167,8 +167,11 @@ export function registerIpcHandlers(services: AppServices): void {
       splitShellArgs(configStore.get('agent').startArgs[adapterId] ?? ''),
   }, services)
   // Same publication as schleifenZellen above, same reason: GraphMcpServer's
-  // keel_zelle_beauftragen needs the keel-harness adapter's starteAuftrag, and this is the
-  // only place that builds an AdapterRegistry today.
+  // keel_zelle_beauftragen needs the keel-harness adapter's starteAuftrag. Two other places
+  // also build an AdapterRegistry (settings/handlers.ts, model/ansicht.ts) — but both pass no
+  // `services`, so their keel-harness adapter can list itself and nothing more. This is the
+  // only long-lived registry whose keel-harness adapter actually carries the real services and
+  // can run starteAuftrag, which is what keel_zelle_beauftragen needs.
   services.adapterRegistry = adapterRegistry
 
   // Project manager — wired to configStore for persistence (CK-INF-020)

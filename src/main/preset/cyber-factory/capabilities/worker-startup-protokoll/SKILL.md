@@ -32,9 +32,10 @@ keinen Schritt und tausche die Reihenfolge nicht.
 dabei selbst die Startparameter mit, die für diesen Adapter hinterlegt sind (Settings-Fenster,
 Reiter „CLI-Start") — die Session baut die Kommandozeile also nicht selbst zusammen. Die Vorgabe
 schliesst die Berechtigungsrückfrage vor jedem Werkzeugaufruf aus, weil sonst niemand im
-tmux-Pane antworten könnte, den die App selbst treibt. MCP-Tools stehen automatisch zur
-Verfügung, wenn die Session über cipher-keel erstellt wurde — kein separates Tool-Setup nötig.
-Instruktionen gehen direkt per tmux `send-keys` in den Pane,
+tmux-Pane antworten könnte, den die App selbst treibt. MCP-Tools (die graph_*-Werkzeuge und die
+Niveau-B-Zellenwerkzeuge) stehen heute **nicht** zur Verfügung — der Transport dafür ist noch
+nicht gebaut (siehe `docs/anpassbare-flaechen.md`, Abschnitt „Was fehlt"). Instruktionen gehen
+direkt per tmux `send-keys` in den Pane,
 nicht über einen anderen Kanal. Cyber-Factory-Worker-Sessions tragen das Session-Präfix
 `ckeel-cf-`, damit sie im Session-Overview eindeutig als CF-Worker erkennbar sind.
 

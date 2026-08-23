@@ -24,6 +24,7 @@ import {
   VOICE_PIN_STATUS,
   VOICE_ACTIVE_SESSION,
   SERVICES_STATUS_CHANGED,
+  SESSION_STATUS_CHANGED,
 } from '../shared/ipc-channels'
 import {
   SUBSYSTEM_IDS,
@@ -32,6 +33,7 @@ import {
   type ServiceState,
   type SubsystemStatus,
 } from '../shared/service-status'
+import type { SessionStatusChanged } from '../shared/harness-types'
 import { broadcast } from './event-bus'
 import { isCommandOnPath } from './util/exec-util'
 import { describeToolFailure, describeMissingTool } from './util/missing-tool'
@@ -39,6 +41,8 @@ import { openGraphDb } from './graph/db'
 import { resolveBetterSqliteBinding } from './graph/native-binding'
 import { GraphMcpServer } from './graph/mcp-server'
 import { GraphWriter } from './graph/writer'
+import { harnessDb } from './harness-sitzung'
+import { lesen } from './harness'
 import { VoiceManager } from './voice/voice-manager'
 import { NoteManager } from './notes/note-manager'
 import { NoteTagging } from './notes/note-tagging'
@@ -303,8 +307,20 @@ function initGraph(services: AppServices, ctx: ServiceInitContext): void {
     // (main.ts), so they are already set by the time this line runs. See the doc comment on
     // AppServices for the ordering argument, and the header comment on GraphMcpServer for why
     // none of this makes the keel_zellen tools reachable yet.
+    //
+    // harnessDb/lesen/sendeStatus are passed explicitly here, same as ipc-handlers.ts's
+    // SESSION_AUFTRAG handler does for beauftrageZelle (see there) — not left to GraphMcpServer's
+    // own defaults, so this call site names the real dependencies exactly as ipc-handlers.ts
+    // does rather than relying on the class to supply them silently. sendeStatus is not
+    // optional dressing: SESSION_STATUS_CHANGED is a broadcast() to every window, and the grid
+    // window's cell (renderer/index.tsx) has no other way to learn its state changed
+    // (schleifen-sitzungen.ts: "der Renderer leitet nichts ab") — an MCP-triggered order that
+    // skipped this would leave that cell showing leerlaufend forever while the main process
+    // tracks laeuft.
     services.graphMcpServer = new GraphMcpServer(
       services.graphDb, services.schleifenZellen, services.praefixJeZelle, services.adapterRegistry,
+      harnessDb, lesen,
+      (status: SessionStatusChanged) => broadcast(SESSION_STATUS_CHANGED, status),
     )
     services.kanbanStore = new KanbanStore(services.graphDb)
     setStatus('graph', 'ready', null)
