@@ -24,6 +24,8 @@ import {
   SESSION_LIST,
   SESSION_CREATE,
   SESSION_DESTROY,
+  SESSION_AUFTRAG,
+  SESSION_STATUS_CHANGED,
   PRESET_PREVIEW_PROMPT,
   TERMINAL_DATA_OUTBOUND,
   TERMINAL_RESIZE,
@@ -124,8 +126,10 @@ import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-
 import { formatShellCommand, splitShellArgs } from './util/shell-quote'
 import { AdapterRegistry } from './agent/registry'
 import { istSchleifenAdapter, SITZUNG_EIGENE_SCHLEIFE, type EntitaetsTeile } from './agent/agent-adapter'
-import { neuesRegister, type SchleifenZelle } from './session/schleifen-sitzungen'
+import { neuesRegister, pruefeZelleFrei, type SchleifenZelle } from './session/schleifen-sitzungen'
 import { baueSchleifenSitzung } from './session/schleifen-start'
+import { harnessDb } from './harness-sitzung'
+import { lesen } from './harness'
 
 // Tracks the active grid window for focus-or-create logic (CK-UI-002)
 let activeGridWindow: BrowserWindow | null = null
@@ -402,6 +406,66 @@ export function registerIpcHandlers(services: AppServices): void {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       return { ok: false, error: msg }
+    }
+  })
+
+  // Ein Auftrag an eine Niveau-B-Gitterzelle — der erste Verbraucher von SESSION_STATUS_CHANGED,
+  // das bislang deklariert war, aber weder Sender noch Hoerer hatte.
+  ipcMain.handle(SESSION_AUFTRAG, async (_e, args: { name?: string; auftragstext?: string }) => {
+    const name = typeof args?.name === 'string' ? args.name : ''
+    const text = typeof args?.auftragstext === 'string' ? args.auftragstext.trim() : ''
+    if (text === '') return { ok: false, meldung: 'Der Auftrag ist leer.' }
+
+    const frei = pruefeZelleFrei(name, schleifenZellen)
+    if (!frei.ok) return { ok: false, meldung: frei.meldung }
+
+    const adapter = adapterRegistry.get('keel-harness')
+    if (!adapter || !istSchleifenAdapter(adapter)) {
+      return { ok: false, meldung: 'Der keel-harness-Adapter ist nicht registriert.' }
+    }
+    const praefix = praefixJeZelle.get(name)
+    if (!praefix) {
+      return { ok: false, meldung: `Fuer die Zelle '${name}' liegen keine Praefixteile vor.` }
+    }
+
+    try {
+      const ergebnis = await adapter.starteAuftrag({
+        wurzel: frei.zelle.wurzel, sitzungsname: name, auftragstext: text,
+        eintragId: frei.zelle.eintragId, praefix, letzteLaufId: frei.zelle.laufId,
+
+        // Der Hauptprozess fuehrt den Zellenzustand — der Renderer leitet nichts aus dem
+        // Ereignisstrom ab.
+        //
+        // beiStart, nicht der Rueckgabewert: `starteAuftrag` kehrt heim, sobald das erste
+        // `run.started` steht, und der Rest faehrt im Hintergrund. Wer die laufId erst danach
+        // eintruege, verloere gegen einen sehr kurzen Lauf — dessen beiEnde kippte die Zelle,
+        // bevor sie je auf 'laeuft' stand, und das nachfolgende setzeLauf liesse sie fuer
+        // immer darauf stehen.
+        beiStart: (laufId) => {
+          schleifenZellen.setzeLauf(name, laufId)
+          broadcast(SESSION_STATUS_CHANGED, { name, zustand: 'laeuft', laufId })
+        },
+
+        beiEnde: (beendeterLauf) => {
+          const zelle = schleifenZellen.hole(name)
+          // Gehoert der beendete Lauf noch zu dieser Zelle? Nach einem Zerstoeren und
+          // Neuanlegen unter demselben Namen laeuft sonst das finally des alten Laufs in die
+          // neue Zelle.
+          if (!zelle || zelle.laufId !== beendeterLauf) return
+          const letztes = [...lesen(harnessDb(), beendeterLauf)]
+            .reverse().find(e => e.art === 'run.finished')
+          const endzustand = typeof letztes?.nutzlast.endzustand === 'string'
+            ? letztes.nutzlast.endzustand : null
+          schleifenZellen.setzeZustand(name, 'leerlaufend', endzustand)
+          broadcast(SESSION_STATUS_CHANGED, { name, zustand: 'leerlaufend', endzustand })
+        },
+      })
+      return { ok: true, wert: ergebnis }
+    } catch (err) {
+      // Der Start ist gescheitert, also laeuft nichts — der Zustand darf nicht auf 'laeuft'
+      // stehen bleiben.
+      schleifenZellen.setzeZustand(name, 'leerlaufend')
+      return { ok: false, meldung: err instanceof Error ? err.message : String(err) }
     }
   })
 
