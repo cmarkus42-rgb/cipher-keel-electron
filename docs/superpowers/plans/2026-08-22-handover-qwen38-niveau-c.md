@@ -435,9 +435,22 @@ Runden mit fünf Behebungen, der hängende Abruf (5d) und der GPU-Zugriff des Sp
    dort ein Passwort — die Übergabe lag richtig, es bleibt beim Warten auf `snapd`. Der Einzeiler
    steht in 5e; der Mechanismus-Nachweis ist unabhängig davon erbracht, siehe unten.
 
-3. **`WORKER_TIMEOUT_MS = 120_000`** (`src/main/worker/ollama-client.ts`) ist für den
-   Ein-Schuss-Worker bemessen, nicht für keels Schleife gegen ein 27B. Auf der gesunden Maschine
-   fiel die Grenze nie auf, auf der CPU riss sie jeden Zug. Bewusst nicht geändert — siehe 5e.
+3. ~~**`WORKER_TIMEOUT_MS = 120_000`**~~ **Behoben am 2026-08-23, und die Grenze fiel sehr wohl
+   auf.** Zwei Läufe der M6-Messung endeten `transportfehler` nach **exakt 120,0 s** — auf gesunder
+   GPU. Einer hatte 71.045 Zeichen Werkzeugausgabe im Verlauf, der andere 43: großer Kontext und
+   langes Nachdenken laufen gegen dieselbe Wand. Über 215 erfolgreiche Züge: Median 8,4 s,
+   p99 99,1 s, **längster durchgekommener Zug 108,5 s**. Die Grenze lag also *innerhalb* der
+   Arbeitsverteilung, elf Sekunden über deren Rand.
+
+   keels Schleife hat jetzt ihr eigenes Budget (`SCHLEIFE_TIMEOUT_MS = 300_000` in
+   `harness-handlers.ts`) statt des Budgets für den Ein-Schuss-Worker — dieselbe Trennung, die
+   `notes/note-tagging.ts` seit je macht. Ein Wächter fährt das echte `sende` und wurde beim
+   Entfernen der Zeile rot gesehen. **Nicht im Feld provoziert:** der wiederholte Lauf blieb bei
+   75 s und hätte auch die alte Grenze überlebt.
+
+   *Die vorige Fassung ließ die Zahl bewusst stehen, weil sie „auf einer viermal zu langsamen
+   Maschine nicht zu bestimmen" war. Das war richtig — mit gesunder Maschine und 215 Zügen ist sie
+   zu bestimmen.*
 
 4. **Die nächsten Verluste des Rechercheurs sind Inhalt, nicht Netz — und damit die größte
    verbliebene Position.** In Runde 5 gingen **11 von 32** Abrufen so verloren: 7 HTTP 403 (Reddit,
@@ -488,11 +501,19 @@ Runden mit fünf Behebungen, der hängende Abruf (5d) und der GPU-Zugriff des Sp
    nachgeführt. Belegt durch die laufende App: `netz.ausgehend → http://100.78.7.108:8888/search…`
    in einer echten Recherche.
 
-   **Damit ist M6 fahrbar — aber als Zweier-, nicht als Dreiervergleich.** Brave bleibt draußen,
-   und zwar aus demselben Grund, aus dem Punkt 4 entschieden wurde: die Speicherklausel §3(b)(i)
-   der bezahlten Vertragsfassung ist ungelesen, und keel schreibt Ergebnisse in Graph und Vault.
-   Einen Anbieter zu fahren, dessen Bedingungen für genau diesen Zweck niemand geprüft hat, ist
-   dasselbe Muster wie eine Sperre zu umgehen — nur in die andere Richtung.
+   **M6 ist gefahren, als Zweier- und nicht als Dreiervergleich.** Brave bleibt draußen, aus
+   demselben Grund, aus dem Punkt 4 entschieden wurde: die Speicherklausel §3(b)(i) der bezahlten
+   Vertragsfassung ist ungelesen, und keel schreibt Ergebnisse in Graph und Vault. Einen Anbieter
+   zu fahren, dessen Bedingungen für genau diesen Zweck niemand geprüft hat, ist dasselbe Muster
+   wie eine Sperre zu umgehen — nur in die andere Richtung.
+
+   **Das Ergebnis ist ein Gleichstand:** `ziel-erreicht` 8 von 10 (SearXNG) gegen 9 von 10
+   (Tavily), je 1 Lauf ohne Quelle, 15 gegen 17 gelesene Seiten. Ein Lauf Unterschied bei n = 10
+   ist Streuung. Damit ist der Nebenbefund aus M12 bestätigt — **der Suchanbieter ist nicht der
+   Engpass**, die verbleibenden Verluste liegen beim Inhalt und treffen beide. Die Vorgabe bleibt
+   Tavily, nicht weil es gewonnen hätte, sondern weil ein Gleichstand kein Grund ist, eine
+   funktionierende Vorgabe zu drehen; die Wahl ist ab jetzt eine Betriebs- und keine Messfrage.
+   Protokoll: `docs/superpowers/plans/2026-08-23-m6-suchanbieter.md`.
 
 7. **Integration** nach `main` über `superpowers:finishing-a-development-branch`.
 

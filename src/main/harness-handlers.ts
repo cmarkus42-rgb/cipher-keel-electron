@@ -195,12 +195,44 @@ export function mitSystemPraefix(
  * run and would have thrown otherwise, so the non-null assertion here is safe and never the
  * first thing to fail.
  */
+/**
+ * Das Zeitbudget **eines Zuges** von keels eigener Schleife.
+ *
+ * Ohne diese Zeile erbte die Schleife `WORKER_TIMEOUT_MS` (120 s) — eine Zahl, die fuer den
+ * **Ein-Schuss-Worker** bemessen ist: eine kleine Anfrage, kurze Historie, kein Denkbudget. Der
+ * gleiche Fehlerkreis wie bei `aufgeschobenesLaden` und `klemmeMaxZeichen`: eine Zahl, die fuer
+ * einen Verbraucher richtig war, gilt fuer den zweiten nicht. Die Zeile daneben in
+ * `notes/note-tagging.ts` macht es seit je richtig und reicht ihre eigenen 60 s durch.
+ *
+ * **Gemessen am 2026-08-23**, 215 erfolgreiche Zuege gegen `spark-qwen38-27b` (Denkstufe
+ * `medium`) auf gesunder GPU:
+ *
+ *     Median  8,4 s · p90 55,4 s · p99 99,1 s · laengster durchgekommener Zug 108,5 s
+ *
+ * Die alte Grenze lag damit **innerhalb** der Arbeitsverteilung statt darueber — elf Sekunden
+ * ueber dem laengsten Zug, der noch ankam. Zwei Zuege desselben Messtags endeten `transportfehler`
+ * nach exakt 120,0 s; einer davon hatte 71.045 Zeichen Werkzeugausgabe im Verlauf, der andere
+ * 43 — grosser Kontext und langes Nachdenken laufen also beide gegen dieselbe Wand.
+ *
+ * **Warum 300 s und nicht mehr:** ein Zug, der laenger braucht als die Wanduhr des gruendlichen
+ * Rechercheur-Unterlaufs (`TIEFEN.gruendlich.wanduhrMs`, 300 s), koennte dort ohnehin nichts mehr
+ * beitragen. Und die Grenze muss endlich bleiben: die Budgets werden **zwischen** den Zuegen
+ * geprueft, ein haengender Socket wuerde also von keiner Wanduhr eingeholt.
+ *
+ * **Was hier bewusst nicht steht:** die Grenze aus der *verbleibenden* Wanduhr des Laufs
+ * abzuleiten. Das waere sauberer — dann waere der Transport nie das, was einen Lauf vor seinem
+ * Budget beendet —, kostet aber, dass `sende` den Laufzustand kennt. Solange 300 s dreimal ueber
+ * dem p99 liegt, kauft das nichts.
+ */
+export const SCHLEIFE_TIMEOUT_MS = 300_000
+
 function sendeUeberTransport(eintrag: ModellEintrag) {
   return async (koerper: unknown, praefix: PraefixText): Promise<ModelAntwort> => {
     const f = eintrag.faehigkeiten!
     const endpunkt = toModelEndpoint(eintrag.erreichbarkeit, f.codec)
     const roh = await clientForEndpoint(endpunkt).chat({
       koerper: mitSystemPraefix(koerper, praefix, f.codec), endpoint: endpunkt,
+      timeoutMs: SCHLEIFE_TIMEOUT_MS,
     })
     return codecFuer(f.codec).fromWire(roh)
   }

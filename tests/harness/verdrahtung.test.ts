@@ -172,6 +172,50 @@ describe('Verdrahtung: gebaute Werkzeuge sind vom Lauf aus erreichbar', () => {
     })
   })
 
+  /**
+   * Der Transport der Schleife darf **nicht** das Zeitbudget des Ein-Schuss-Workers erben.
+   *
+   * Gemessen am 2026-08-23 ueber 215 erfolgreiche Zuege gegen ein 27B auf gesunder GPU: Median
+   * 8,4 s, p99 99,1 s, laengster durchgekommener Zug 108,5 s — bei einer geerbten Grenze von
+   * 120 s. Sie lag damit *innerhalb* der Arbeitsverteilung, und zwei Zuege desselben Tages
+   * endeten `transportfehler` nach exakt 120,0 s (einer mit 71.045 Zeichen Werkzeugausgabe im
+   * Verlauf, einer mit 43 — grosser Kontext und langes Nachdenken laufen gegen dieselbe Wand).
+   *
+   * Geprueft wird am **echten** `sende` aus `rechercheurModell()`, nicht an einem nachgebauten:
+   * die Zahl nuetzt nur etwas, wenn sie im Aufruf ankommt. Gegenprobe ausgefuehrt und rot
+   * gesehen — `timeoutMs` aus dem `chat`-Aufruf entfernt: 1 rot.
+   */
+  it('gibt der eigenen Schleife ein eigenes Zeitbudget je Zug, nicht das des Workers', async () => {
+    await mitZuordnung('mac-qwen3-30b', async () => {
+      const gesehen: Array<Record<string, unknown>> = []
+      const HALT = new Error('abgefangen')
+      vi.doMock('../../src/main/worker/model-client', async (echt) => ({
+        ...(await echt<typeof import('../../src/main/worker/model-client')>()),
+        // Nach dem Mitschreiben wird geworfen: eine gueltige Antwort zu erfinden hiesse, den
+        // Codec mitzupflegen, und geprueft wird hier der Aufruf, nicht die Rueckgabe.
+        clientForEndpoint: () => ({
+          chat: async (req: Record<string, unknown>) => { gesehen.push(req); throw HALT },
+          generate: async () => { throw HALT },
+        }),
+      }))
+      try {
+        const { rechercheurModell, SCHLEIFE_TIMEOUT_MS } =
+          await import('../../src/main/harness-handlers')
+        const { WORKER_TIMEOUT_MS } = await import('../../src/main/worker/ollama-client')
+        const m = rechercheurModell()
+        await expect(m!.sende({}, { stabil: '', fluechtig: '' })).rejects.toThrow(HALT)
+
+        expect(gesehen).toHaveLength(1)
+        expect(gesehen[0].timeoutMs).toBe(SCHLEIFE_TIMEOUT_MS)
+        // Der Kern: groesser als das geerbte Budget, und mit Luft ueber dem gemessenen p99.
+        expect(SCHLEIFE_TIMEOUT_MS).toBeGreaterThan(WORKER_TIMEOUT_MS)
+        expect(SCHLEIFE_TIMEOUT_MS).toBeGreaterThanOrEqual(3 * 100_000)
+      } finally {
+        vi.doUnmock('../../src/main/worker/model-client')
+      }
+    })
+  })
+
   it('haelt GitHub bewusst von der Positivliste fern', async () => {
     const { VORGABE_POSITIVLISTE } = await import('../../src/main/harness/werkzeug-netz')
     // Der Nachtrag vom 2026-08-21: GitHub und Aehnliches laeuft ueber den gekapselten
