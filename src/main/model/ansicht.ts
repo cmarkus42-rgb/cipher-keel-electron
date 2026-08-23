@@ -179,9 +179,9 @@ function adapterAnsichten(): AdapterAnsicht[] {
   return registry.listIds().map(id => {
     const adapter = registry.get(id)!
     const text = startArgs[id] ?? ''
-    // Die eigene Schleife kennt keine app-gesteuerten Kommandozeilen-Parameter — sie hat
-    // gar keine Kommandozeile. Fuer sie bleibt die Liste leer statt einen Zugriff auf ein
-    // Feld zu erzwingen, das fuer diese Sitzungsart gar nicht existiert.
+    // The own loop has no app-driven command-line parameters — it has no command line at
+    // all. The list stays empty for it rather than forcing access to a field that does not
+    // exist for this Sitzungsart.
     const appGesteuert = istSchleifenAdapter(adapter)
       ? []
       : [...(adapter.appGesteuerteParameter ?? [])]

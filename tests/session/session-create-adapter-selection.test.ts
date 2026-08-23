@@ -87,6 +87,10 @@ describe('session:create — adapter selection', () => {
             displayName: 'Claude Code',
             niveau,
             isAvailable: () => available,
+            // The real gate now reads this instead of building its own text (I-1 fix
+            // round) — a mock without it would throw TypeError the moment isAvailable()
+            // is false, before ever reaching the assertions this test cares about.
+            nichtVerfuegbarGrund: () => (available ? null : 'CLI-Adapter nicht verfuegbar (Testattrappe)'),
             buildLaunchCommand: (opts: { model?: string }) => {
               if (!available) {
                 throw new Error('buildLaunchCommand must not run for an unavailable adapter')

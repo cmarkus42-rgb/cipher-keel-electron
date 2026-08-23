@@ -91,31 +91,32 @@ export interface OutputEvent {
 }
 
 /**
- * Wie eine Sitzung dieses Adapters existiert — und zugleich der Laeufer aus eignung.ts,
- * eingeengt auf die beiden Werte, die eine *ganze Sitzung* tragen. 'ein-schuss' verteilt
- * einen einzelnen Job und ist kein Sitzungstyp.
+ * How a session of this adapter exists — and at the same time the Laeufer from eignung.ts,
+ * narrowed to the two values that carry a *whole session*. 'ein-schuss' dispatches a single
+ * job and is not a session type.
  *
- * Abgeleitet statt neu benannt: eine zweite Wortliste ('tmux' neben 'fremdes-cli') waere
- * dieselbe Unterscheidung unter zwei Namen, und nichts haette erzwungen, dass der
- * Zuordnungsplatz `sitzung:niveau-b` (model/slots.ts) und der Adapter, der ihn bedient,
- * denselben Wert meinen. Ueber `Extract` tun sie es per Typ: faellt drueben ein Name, faellt
- * hier der Compiler.
+ * Derived rather than renamed: a second word list ('tmux' next to 'fremdes-cli', which is
+ * what this field used to be before it was aligned with Laeufer) would be the same
+ * distinction under two names, and nothing would have forced the `sitzung:niveau-b`
+ * assignment slot (model/slots.ts) and the adapter serving it to mean the same value.
+ * Via `Extract` they do so by type: if a name changes over there, the compiler catches it
+ * here.
  */
 export type Sitzungsart = Extract<Laeufer, 'fremdes-cli' | 'eigene-schleife'>
 
 /**
- * Die beiden Sitzungsarten als Werte, damit ein konkreter Adapter sie **zuweisen** kann, ohne
- * den Laeufer-Literal selbst zu schreiben.
+ * The two Sitzungsarten as values, so a concrete adapter can **assign** one without writing
+ * the Laeufer literal itself.
  *
- * Ohne sie musste jeder Adapter in die Ausnahmeliste von
- * tests/model/eignung-einzige-quelle.test.ts — und eine Liste, die mit jeder neuen Datei ihrer
- * Sorte waechst, bewacht bald nichts mehr. So bleibt die Liste bei drei Eintraegen
- * (eignung.ts, slots.ts, diese Datei), egal wie viele Adapter noch kommen.
+ * Without them every adapter would have to join the exemption list in
+ * tests/model/eignung-einzige-quelle.test.ts — and a list that grows with every new file of
+ * its kind stops guarding anything before long. This way the list stays at three entries
+ * (eignung.ts, slots.ts, this file) no matter how many adapters still arrive.
  */
 export const SITZUNG_FREMDES_CLI = 'fremdes-cli' as const
 export const SITZUNG_EIGENE_SCHLEIFE = 'eigene-schleife' as const
 
-/** Was jeder Adapter ehrlich beantworten kann — unabhaengig davon, wie seine Sitzung laeuft. */
+/** What every adapter can answer honestly, regardless of how its session runs. */
 export interface AgentAdapterBasis {
   readonly id: string
   readonly displayName: string
@@ -126,15 +127,23 @@ export interface AgentAdapterBasis {
    *
    * Claude Code is the only harness with native SKILL.md lazy-loading, which is what
    * Niveau A assumes; every other adapter in the garden is B. The niveau is a property
-   * of the harness, not a user preference.
+   * of the harness, not a user preference — a harness that cannot resolve @-references
+   * does not become able to by being asked nicely.
    */
   readonly niveau: CapabilityNiveau
 
   readonly sitzungsart: Sitzungsart
 
+  // --- project awareness ---
+  /** Filenames/dirs this agent recognizes as project markers. */
   getProjectMarkers(): string[]
+  /** Read the agent's project instructions file (e.g. CLAUDE.md). */
   readProjectInstructions(projectPath: string): Promise<ProjectInstructions | null>
+
+  // --- runtime signals (capability-gated) ---
+  /** Check if the adapter supports a specific feature. */
   supports(feature: AdapterFeature): boolean
+  /** Get all capabilities as a record. */
   getCapabilities(): AdapterCapabilities
 
   /**
@@ -154,8 +163,12 @@ export interface AgentAdapterBasis {
    */
   nichtVerfuegbarGrund(): string | null
 
+  // --- prompt fragments for workshop and launcher ---
+  /** Agent-specific instructions injected into the workshop template. */
   buildWorkshopPromptFragment(lang: 'de' | 'en'): string
+  /** Agent-specific launcher suffix (e.g. '/launch' for Claude Code). */
   buildLauncherPromptFragment(lang: 'de' | 'en'): string
+  /** Agent-specific instructions injected into the Cyber Factory template. */
   buildCyberFactoryPromptFragment(lang: 'de' | 'en'): string
 }
 
@@ -169,17 +182,44 @@ export interface AgentAdapterBasis {
  */
 export interface CliSitzungsAdapter extends AgentAdapterBasis {
   readonly sitzungsart: typeof SITZUNG_FREMDES_CLI
+
+  /**
+   * Parameters this adapter appends from its own logic. The settings surface warns when a
+   * user types one of them into the free-text start parameters, because it would then
+   * appear twice on the command line. Named here rather than in the surface so that the
+   * adapter which adds them is also the one that names them.
+   */
   readonly appGesteuerteParameter?: readonly string[]
+
+  // --- lifecycle ---
+  /** Build a structured launch command. Never returns a raw shell string. */
   buildLaunchCommand(opts: LaunchOpts): LaunchCommand
+  /** Optional post-launch setup (e.g. MCP server registration). */
   postLaunchInjection?(ctx: AdapterContext): Promise<void>
+  /** Read context usage for a session. Only call if supports('status-line'). */
   getContextUsage?(sessionId: string): Promise<ContextUsage | null>
+  /** Inject status reporting hook into project. Only call if supports('status-line'). */
   attachStatusHook?(projectPath: string): Promise<void>
+
+  // --- prompt delivery ---
+  /** Send a prompt into the agent's tmux pane. */
   sendPrompt(tmuxTarget: string, prompt: string, opts?: SendOpts): Promise<void>
+
+  /**
+   * Send a command to the runtime and return the response as a string.
+   * Adapters that use a separate delivery mechanism (e.g. SessionManager)
+   * should throw a descriptive error here. CK-ENT-026
+   */
   executeCommand(command: string): Promise<string>
+
+  /**
+   * Yield output events from the runtime for the given session.
+   * Adapters that capture output via other means (e.g. tmux) should throw. CK-ENT-026
+   */
   streamOutput(sessionId: string): AsyncIterable<OutputEvent>
 }
 
-/** Die Teile des stabilen Praefix, die aus der Preset-Schicht kommen (harness-praefix-quelle.ts). */
+/** The parts of the stable prefix that come from the preset layer (harness-praefix-quelle.ts). */
 export interface EntitaetsTeile {
   body: string
   persona: string
@@ -188,54 +228,53 @@ export interface EntitaetsTeile {
 }
 
 export interface SchleifenStartOpts {
-  /** Projektwurzel — zugleich die Grenze der Pfadwache des Laufs. */
+  /** Project root — also the boundary of the run's path guard. */
   wurzel: string
   sitzungsname: string
   auftragstext: string
-  /** Der Registry-Eintrag aus dem Zuordnungsplatz `sitzung:niveau-b`. */
+  /** The registry entry from the `sitzung:niveau-b` assignment slot. */
   eintragId: string
   praefix: EntitaetsTeile
   /**
-   * Der zuletzt in dieser Zelle gefahrene Lauf, oder null bei der ersten Beauftragung.
-   * Ob daraus ein Folgeauftrag wird, entscheidet `weiterOderFrisch` (harness/fortsetzbarkeit.ts)
-   * — nicht der Aufrufer: die Entscheidung braucht das Protokoll, und das kennt nur die
-   * Lauf-Maschinerie.
+   * The most recent run in this cell, or null on the first assignment. Whether this
+   * becomes a follow-up job is decided by `weiterOderFrisch` (harness/fortsetzbarkeit.ts)
+   * — not the caller: that decision needs the run log, which only the run machinery knows.
    */
   letzteLaufId: string | null
 
   /**
-   * Gerufen, sobald die laufId feststeht und **bevor** die Schleife anlaeuft — synchron, im
-   * selben Zug. Der Aufrufer traegt sie damit in sein Register ein.
+   * Called as soon as the laufId is known and **before** the loop actually starts —
+   * synchronously, in the same tick. This is how the caller records it in its own registry.
    *
-   * Es gibt sie, weil die naheliegende Reihenfolge ein Rennen ist: `starteAuftrag` kehrt heim,
-   * sobald das erste `run.started` geschrieben ist, und der Rest des Laufs faehrt im
-   * Hintergrund weiter. Wer die laufId erst aus dem Rueckgabewert ins Register schriebe,
-   * verloere gegen einen sehr kurzen Lauf — dessen `beiEnde` kippte die Zelle auf
-   * `leerlaufend`, bevor sie je auf `laeuft` stand, und das nachfolgende `setzeLauf` liesse sie
-   * fuer immer auf `laeuft` stehen.
+   * It exists because the obvious ordering is a race: `starteAuftrag` returns home as soon
+   * as the first `run.started` is written, and the rest of the run continues in the
+   * background. Whoever only wrote the laufId into their registry from the return value
+   * would lose against a very short run — its `beiEnde` would flip the cell to
+   * `leerlaufend` before it had ever been `laeuft`, and the subsequent `setzeLauf` would
+   * leave it stuck on `laeuft` forever.
    */
   beiStart?: (laufId: string) => void
 
   /**
-   * Gerufen, wenn der Lauf endet — Erfolg, Fehler oder Abbruch. Die laufId kommt mit, damit der
-   * Aufrufer pruefen kann, ob sie noch die aktuelle ist, statt eine fremde Zelle zu kippen.
+   * Called when the run ends — success, failure, or abort. The laufId comes along so the
+   * caller can check whether it is still the current one, instead of flipping a stale cell.
    *
-   * Der Aufrufer kippt damit den Zellenzustand: der Hauptprozess fuehrt ihn, nicht der Renderer.
+   * This is how the caller flips the cell state: the main process drives it, not the renderer.
    */
   beiEnde?: (laufId: string) => void
 }
 
 export interface SchleifenStartErgebnis {
   laufId: string
-  /** Wahr, wenn der Auftrag in `letzteLaufId` weiterlief statt einen neuen Lauf zu oeffnen. */
+  /** True if the job continued in `letzteLaufId` instead of opening a new run. */
   fortgesetzt: boolean
 }
 
-/** keels eigene Schleife im Hauptprozess. Kein Pane, kein Kommandozeilenaufruf. */
+/** keel's own loop in the main process. No pane, no command-line invocation. */
 export interface SchleifenSitzungsAdapter extends AgentAdapterBasis {
   readonly sitzungsart: typeof SITZUNG_EIGENE_SCHLEIFE
   starteAuftrag(opts: SchleifenStartOpts): Promise<SchleifenStartErgebnis>
-  /** Setzt die Abbruchmarke. Der Lauf endet am naechsten Zugrand, nicht sofort. */
+  /** Sets the abort flag. The run ends at the next turn boundary, not immediately. */
   brichAb(laufId: string): void
 }
 

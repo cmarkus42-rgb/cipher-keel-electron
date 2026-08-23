@@ -38,19 +38,19 @@ describe('looksLikeMissingCommand', () => {
 describe('describeMissingTool', () => {
   it('gives an install instruction for tmux', () => {
     expect(describeMissingTool('tmux')).toBe(
-      'tmux not found. Install it with: brew install tmux',
+      'tmux nicht gefunden. Installation mit: brew install tmux',
     )
   })
 
   it('gives an install instruction for the Claude Code CLI', () => {
     expect(describeMissingTool('claude')).toBe(
-      'Claude Code CLI not found. Install it from: https://claude.com/claude-code',
+      'Claude Code CLI nicht gefunden. Installation unter: https://claude.com/claude-code',
     )
   })
 
   it('falls back to a generic instruction for anything else', () => {
     expect(describeMissingTool('gemini')).toBe(
-      'gemini not found on PATH. Install it and make sure it is reachable.',
+      'gemini nicht auf dem PATH gefunden. Installieren und erreichbar machen.',
     )
   })
 })
@@ -59,7 +59,7 @@ describe('describeToolFailure', () => {
   it('replaces a missing-command error with the install instruction', () => {
     const err = Object.assign(new Error('spawn tmux ENOENT'), { code: 'ENOENT' })
     expect(describeToolFailure('tmux', err)).toBe(
-      'tmux not found. Install it with: brew install tmux',
+      'tmux nicht gefunden. Installation mit: brew install tmux',
     )
   })
 

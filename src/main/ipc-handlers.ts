@@ -124,7 +124,6 @@ import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-
 import { formatShellCommand, splitShellArgs } from './util/shell-quote'
 import { AdapterRegistry } from './agent/registry'
 import { istSchleifenAdapter } from './agent/agent-adapter'
-import { describeMissingTool } from './util/missing-tool'
 
 // Tracks the active grid window for focus-or-create logic (CK-UI-002)
 let activeGridWindow: BrowserWindow | null = null
@@ -214,9 +213,11 @@ export function registerIpcHandlers(services: AppServices): void {
         return {
           id: null,
           name: null,
-          error: adapter.id === 'claude-code'
-            ? describeMissingTool('claude')
-            : `Adapter '${adapter.displayName}' is not available — session not started`,
+          // The adapter knows why it is unavailable; the fallback only fires if an
+          // adapter reports unavailable and stays silent about why, which would be a
+          // contract violation on its side, not a case this handler should invent text for.
+          error: adapter.nichtVerfuegbarGrund() ??
+            `Adapter '${adapter.displayName}' ist nicht verfuegbar — Sitzung nicht gestartet`,
         }
       }
 
@@ -225,6 +226,18 @@ export function registerIpcHandlers(services: AppServices): void {
       const def = getEntityDefinition(entityId, adapter.niveau)
       if (!def) {
         return { id: null, name: null, error: `Unknown entity '${entityId}'` }
+      }
+
+      // Provisional branch: the own loop has no wiring past this point yet. Sits before
+      // materialiseCapabilities/writeEntityPromptFile on purpose — "gate before any file
+      // is written" (see above) applies here too. A later task replaces this with the
+      // real fork over both Sitzungsarten.
+      if (istSchleifenAdapter(adapter)) {
+        return {
+          id: null,
+          name: null,
+          error: 'Der Adapter für diese Laufzeit ist noch nicht verdrahtet.',
+        }
       }
 
       const materialised = materialiseCapabilities(def.rahmen.capabilityAnbindung, cwd)
@@ -261,16 +274,6 @@ export function registerIpcHandlers(services: AppServices): void {
         configStore.get('agent').modelTiers,
         () => cliErgebnis?.handle
       )
-
-      // Vorlaeufige Weiche: die eigene Schleife hat noch keine Verdrahtung bis hierher.
-      // Ersetzt Task 6 durch die echte Verzweigung ueber beide Sitzungsarten.
-      if (istSchleifenAdapter(adapter)) {
-        return {
-          id: null,
-          name: null,
-          error: 'Der Adapter für diese Laufzeit ist noch nicht verdrahtet.',
-        }
-      }
 
       const launch = adapter.buildLaunchCommand({
         projectPath: cwd,

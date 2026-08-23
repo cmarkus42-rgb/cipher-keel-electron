@@ -31,15 +31,15 @@ describe('the suitability rules have exactly one home', () => {
    * statt weiter nur einen davon zu treffen. Was er wirklich schuetzen soll, halten ohnehin die
    * beiden Tests darunter: eine zweite Tabelle und ein zweiter Nutzertext.
    *
-   * agent-adapter.ts (seit dem Harness-Adapter-Plan, 2026-08-23) nennt beide Werte ebenfalls,
-   * weil `Sitzungsart` dort per `Extract<Laeufer, ...>` aus dieser Liste abgeleitet ist. Es ist
-   * die Adapter-seitige Heimat des Vokabulars und nennt die Werte genau zweimal, als die
-   * Konstanten `SITZUNG_FREMDES_CLI`/`SITZUNG_EIGENE_SCHLEIFE` — jeder konkrete Adapter
-   * (claude-code.ts und was noch kommt) zieht seinen Wert von dort statt ihn selbst zu
-   * schreiben, und bleibt deshalb ausserhalb dieser Liste. Eine Ausnahmeliste, die mit jedem
-   * neuen Adapter waechst, waere keine Ausnahmeliste mehr, sondern eine Wache, die aufgehoert
-   * hat zu wachen — deshalb bleibt es bei drei Eintraegen, unabhaengig davon, wie viele
-   * Adapter-Dateien noch dazukommen.
+   * agent-adapter.ts (seit dem Harness-Adapter-Plan, 2026-08-23) nennt die Werte ebenfalls —
+   * die Wache liest rohen Dateitext, Kommentare eingeschlossen, und die Datei ist die
+   * Adapter-seitige Heimat des Vokabulars: sie nennt die Werte in der Typableitung
+   * (`Extract<Laeufer, ...>`), in den Konstanten `SITZUNG_FREMDES_CLI`/
+   * `SITZUNG_EIGENE_SCHLEIFE` und in Prosa, die genau das erklaert. Jeder konkrete Adapter
+   * (claude-code.ts und was noch kommt) zieht seinen Wert von den Konstanten statt ihn
+   * selbst zu schreiben und bleibt deshalb ausserhalb dieser Liste — eine Ausnahmeliste, die
+   * mit jedem neuen Adapter waechst, waere keine Ausnahmeliste mehr, sondern eine Wache, die
+   * aufgehoert hat zu wachen.
    */
   const laeuferHeimat = [
     ...erlaubt,
@@ -47,11 +47,11 @@ describe('the suitability rules have exactly one home', () => {
     path.join(SRC, 'main/agent/agent-adapter.ts'),
   ]
 
-  it('names the three Laeufer only in eignung.ts and the slot table', () => {
+  it('names the three Laeufer only in eignung.ts, the slot table and the adapter vocabulary home', () => {
     const treffer = alleQuelldateien(SRC)
       .filter(f => !laeuferHeimat.includes(f))
       .filter(f => /['"](?:eigene-schleife|fremdes-cli|ein-schuss)['"]/.test(fs.readFileSync(f, 'utf8')))
-    expect(treffer, `Laeufer ausserhalb von eignung.ts/slots.ts: ${treffer.join(', ')}`).toEqual([])
+    expect(treffer, `Laeufer ausserhalb von eignung.ts/slots.ts/agent-adapter.ts: ${treffer.join(', ')}`).toEqual([])
   })
 
   it('states the runner capability level only in eignung.ts', () => {

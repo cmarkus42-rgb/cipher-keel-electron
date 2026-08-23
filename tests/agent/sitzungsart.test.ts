@@ -1,6 +1,17 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { AdapterRegistry } from '../../src/main/agent/registry'
 import { istSchleifenAdapter } from '../../src/main/agent/agent-adapter'
+
+// isCommandOnPath drives every currently-registered adapter's isAvailable() (ClaudeCodeAdapter
+// calls it directly). Mocked so the third describe block below can assert both directions of
+// the nichtVerfuegbarGrund() contract without depending on whether `claude` happens to be on
+// this machine's PATH (M-3 fix-review finding) — a future adapter whose isAvailable() does not
+// go through isCommandOnPath would not be covered by this override and needs its own test.
+vi.mock('../../src/main/util/exec-util', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/main/util/exec-util')>()
+  return { ...actual, isCommandOnPath: vi.fn(actual.isCommandOnPath) }
+})
+import { isCommandOnPath } from '../../src/main/util/exec-util'
 
 const leserOhneArgumente = { getStartArgs: () => [] as string[] }
 
@@ -22,24 +33,50 @@ describe('jeder registrierte Adapter erklaert seine Sitzungsart', () => {
     expect(ohneArt.map(a => a.id)).toEqual([])
   })
 
-  it('der Typwaechter trennt genau entlang der Sitzungsart', () => {
+  it('der Typwaechter trennt anhand einer echten Faehigkeit, nicht nur seines eigenen Vergleichs', () => {
+    // istSchleifenAdapter ist selbst als `sitzungsart === 'eigene-schleife'` implementiert —
+    // ihn gegen genau diesen Ausdruck zu pruefen, behauptet nichts (M-2 fix-review finding).
+    // Stattdessen: die beiden Sitzungsarten haben disjunkte Methodenmengen (CliSitzungsAdapter
+    // hat buildLaunchCommand und keine starteAuftrag/brichAb, SchleifenSitzungsAdapter
+    // umgekehrt) — der Typwaechter muss mit dieser echten Formunterscheidung uebereinstimmen.
     const registry = new AdapterRegistry(leserOhneArgumente)
     for (const id of registry.listIds()) {
       const a = registry.get(id)!
-      expect(istSchleifenAdapter(a)).toBe(a.sitzungsart === 'eigene-schleife')
+      if (istSchleifenAdapter(a)) {
+        expect(typeof a.starteAuftrag).toBe('function')
+        expect('buildLaunchCommand' in a).toBe(false)
+      } else {
+        expect(typeof a.buildLaunchCommand).toBe('function')
+        expect('starteAuftrag' in a).toBe(false)
+      }
+    }
+  })
+})
+
+describe('jeder Adapter kann sagen, warum er nicht verfuegbar ist', () => {
+  it('meldet null, wenn der Adapter verfuegbar ist', () => {
+    vi.mocked(isCommandOnPath).mockReturnValue(true)
+    const registry = new AdapterRegistry(leserOhneArgumente)
+    for (const id of registry.listIds()) {
+      const a = registry.get(id)!
+      expect(a.isAvailable()).toBe(true)
+      expect(a.nichtVerfuegbarGrund()).toBeNull()
     }
   })
 
-  it('jeder Adapter kann sagen, warum er nicht verfuegbar ist', () => {
+  it('meldet einen nicht-leeren Grund, wenn der Adapter nicht verfuegbar ist', () => {
+    // Nicht geprueft: dass der Grund deutsch ist. Die Hausregel verlangt das (was einen
+    // Nutzer erreicht, ist deutsch), aber ein Lauf ueber jeden registrierten Adapter kennt
+    // dessen Texte nicht im Voraus und kann Sprache nicht generisch pruefen — nur, dass
+    // ueberhaupt ein Grund da ist. Ein Adapter, der `false` meldet und dazu schweigt, laesst
+    // SESSION_CREATE wieder einen Text erfinden, den der Adapter besser weiss.
+    vi.mocked(isCommandOnPath).mockReturnValue(false)
     const registry = new AdapterRegistry(leserOhneArgumente)
     for (const id of registry.listIds()) {
       const a = registry.get(id)!
-      // Verfuegbar -> null. Nicht verfuegbar -> ein nicht-leerer deutscher Grund.
-      // Ein Adapter, der `false` meldet und dazu schweigt, laesst SESSION_CREATE
-      // wieder einen Text erfinden, den der Adapter besser weiss.
+      expect(a.isAvailable()).toBe(false)
       const grund = a.nichtVerfuegbarGrund()
-      if (a.isAvailable()) expect(grund).toBeNull()
-      else expect(typeof grund === 'string' && grund.length > 0).toBe(true)
+      expect(typeof grund === 'string' && grund.length > 0).toBe(true)
     }
   })
 })

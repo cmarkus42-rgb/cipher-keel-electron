@@ -215,9 +215,10 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
   }
 
   /**
-   * Der Grund steht jetzt beim Adapter statt bei SESSION_CREATE. Bis hierher baute der
-   * Handler ihn mit `adapter.id === 'claude-code' ? describeMissingTool('claude') : …`
-   * zusammen — eine Sonderbehandlung an der Stelle mit den wenigsten Informationen darueber.
+   * The reason now lives on the adapter instead of SESSION_CREATE. Until this fix round
+   * the handler assembled it itself with
+   * `adapter.id === 'claude-code' ? describeMissingTool('claude') : …` — a special case
+   * in the one place that had the least information about it.
    */
   nichtVerfuegbarGrund(): string | null {
     return this.isAvailable() ? null : describeMissingTool('claude')

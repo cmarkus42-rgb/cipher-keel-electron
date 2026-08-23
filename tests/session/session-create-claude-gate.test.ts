@@ -18,6 +18,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describeMissingTool } from '../../src/main/util/missing-tool'
 
 type SessionCreateHandler = (
   event: unknown,
@@ -63,14 +64,17 @@ describe('session:create — claude availability gate (F1)', () => {
       AdapterRegistry: class {
         register() {}
         // The adapter is now selected by the Rahmen's runtime (M2 section 11.4), not by
-        // getDefault(). The id matters: the unavailability message is only the
-        // claude-specific install hint for the claude-code adapter.
+        // getDefault(). The gate reads nichtVerfuegbarGrund() straight from the adapter
+        // now (I-1 fix round) — this mock answers the same way ClaudeCodeAdapter does,
+        // via the real describeMissingTool, so the assertion below checks production
+        // text rather than a string invented for the test.
         getForRuntime() {
           return {
             id: 'claude-code',
             displayName: 'Claude Code',
             niveau: 'A',
             isAvailable: () => false,
+            nichtVerfuegbarGrund: () => describeMissingTool('claude'),
             buildLaunchCommand: () => {
               throw new Error('buildLaunchCommand must not run when claude is unavailable')
             },
@@ -95,7 +99,7 @@ describe('session:create — claude availability gate (F1)', () => {
 
     expect(result.id).toBeNull()
     expect(result.name).toBeNull()
-    expect(result.error).toMatch(/claude code cli not found/i)
+    expect(result.error).toMatch(/claude code cli nicht gefunden/i)
 
     // The launch never reached tmux...
     expect(fakeTmux.createSession).not.toHaveBeenCalled()
