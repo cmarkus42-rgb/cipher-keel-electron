@@ -63,12 +63,13 @@ describe('weiterOderFrisch', () => {
  * *Struktur* (alle vier Budgets werden gestaucht, nicht nur der Kontext) und bleibt unabhaengig
  * vom Zahlenwert richtig — deshalb bleiben diese Tests stehen.
  *
- * Die Tests hier nageln zusaetzlich den *Wert* fest: die Zahlen 9, 8, 675_000 und 674_999 stehen
- * wortwoertlich da, nicht als Rechnung ueber FOLGE_RESERVE. Sie brechen deshalb absichtlich, wenn
- * jemand FOLGE_RESERVE aendert — das ist ihr Zweck: der Wert ist eine Entscheidung, keine
- * Stellschraube, und wer ihn aendert, soll es an einem roten Test merken und den Eintrag in
- * docs/anpassbare-flaechen.md mitziehen. Beide Testsorten braucht es: die oberen halten die
- * Verdrahtung, diese hier halten den Wert.
+ * Die Tests hier nageln zusaetzlich den *Wert* fest: die Zahlen 9, 8, 675_000, 674_999, 19_200,
+ * 19_199, 150 und 149 stehen wortwoertlich da, nicht als Rechnung ueber FOLGE_RESERVE. Sie
+ * brechen deshalb absichtlich, wenn jemand FOLGE_RESERVE aendert — das ist ihr Zweck: der Wert
+ * ist eine Entscheidung, keine Stellschraube, und wer ihn aendert, soll es an einem roten Test
+ * merken und den Eintrag in docs/anpassbare-flaechen.md mitziehen. Beide Testsorten braucht es:
+ * die oberen halten die Verdrahtung (alle vier Budgets werden gestaucht), diese hier halten den
+ * Wert — und zwar fuer alle vier: Runden, Wanduhr, Kontext und Kosten.
  */
 describe('weiterOderFrisch — der Wert der Reserve, nicht nur ihre Verdrahtung', () => {
   it('faengt bei genau neun verbrauchten Runden frisch an (12 * 0.75 = 9, wortwoertlich)', () => {
@@ -95,6 +96,52 @@ describe('weiterOderFrisch — der Wert der Reserve, nicht nur ihre Verdrahtung'
   it('fuehrt bei 674.999 ms Wanduhr noch fort (eine Millisekunde unter der Schwelle)', () => {
     const e = [ev('run.started', {}), antwort(10)]
     const r = weiterOderFrisch(e, 'm1', BUDGETS, FENSTER, START + 674_999)
+    expect(r.weiter).toBe(true)
+  })
+
+  /**
+   * Rechnerisch liegt die Schwelle bei 32.000 * 0.8 * 0.75 = 19.200 — aber `knapp.kontextAnteil`
+   * wird als eigener Gleitkommawert gebildet (`0.8 * 0.75`), und dessen Produkt mit dem Fenster
+   * rundet in IEEE754 auf 19200.000000000004, nicht exakt auf 19200 (nachgemessen: `node -e
+   * "console.log(32000 * (0.8 * 0.75))"`). Exakt 19.200 Token loesen die Schwelle deshalb noch
+   * NICHT aus; 19.201 ist der kleinste ganzzahlige Wert, der sie sicher ueberschreitet.
+   */
+  it('faengt bei 19.201 eingehenden Token frisch an (Schwelle rechnerisch 19.200, real 19200.000000000004)', () => {
+    const e = [ev('run.started', {}), antwort(19_201)]
+    const r = weiterOderFrisch(e, 'm1', BUDGETS, FENSTER, START + 10_000)
+    expect(r.weiter).toBe(false)
+    expect(r.grund).toContain('Kontext')
+  })
+
+  it('fuehrt bei 19.199 eingehenden Token noch fort (ein Token unter der Schwelle)', () => {
+    const e = [ev('run.started', {}), antwort(19_199)]
+    const r = weiterOderFrisch(e, 'm1', BUDGETS, FENSTER, START + 10_000)
+    expect(r.weiter).toBe(true)
+  })
+
+  /**
+   * 'm1' steht nicht in VORGABE_PREISE — kostenCent() liefert dafuer 0, ein model.answered
+   * traegt hier also nie Kosten ins Protokoll. unterlauf.verbraucht umgeht die Preistabelle
+   * ganz: verbrauchAusEreignissen addiert dessen kostenCent direkt (siehe verbrauch.ts). Das
+   * macht diesen Test zugleich robuster als einer ueber model.answered waere — er haengt an
+   * keiner Tabelle, die sich mit der Zeit aendert.
+   */
+  it('faengt bei genau 150 Cent Unterlaufkosten frisch an (200 * 0.75, wortwoertlich)', () => {
+    const e: Ereignis[] = [
+      ev('run.started', {}),
+      ev('unterlauf.verbraucht', { unterLaufId: 'u1', kostenCent: 150, runden: 1 }),
+    ]
+    const r = weiterOderFrisch(e, 'm1', BUDGETS, FENSTER, START + 1_000)
+    expect(r.weiter).toBe(false)
+    expect(r.grund).toContain('Kostenbudget')
+  })
+
+  it('fuehrt bei 149 Cent Unterlaufkosten noch fort (ein Cent unter der Schwelle)', () => {
+    const e: Ereignis[] = [
+      ev('run.started', {}),
+      ev('unterlauf.verbraucht', { unterLaufId: 'u1', kostenCent: 149, runden: 1 }),
+    ]
+    const r = weiterOderFrisch(e, 'm1', BUDGETS, FENSTER, START + 1_000)
     expect(r.weiter).toBe(true)
   })
 })
