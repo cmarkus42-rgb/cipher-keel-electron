@@ -5,10 +5,15 @@
  * Zusammenbau, den sich Harness-Fenster und Gitterzelle teilen. Dieser Adapter ist die Identitaet
  * der Laufzeit, ihr Niveau, ihre Verfuegbarkeit — und ein Startbefehl, der weiterreicht.
  *
- * Der Import von harness-sitzung.ts geschieht **lazy**, genau wie ClaudeCodeAdapter seinen
- * Statusline-Hook holt: ansicht.ts baut fuer das Einstellungsfenster eine eigene AdapterRegistry,
- * und die Tests dazu laufen ohne electron-Mock (vitest.config.ts kennt keine Setup-Datei). Ein
- * eifriger Import zoege `electron` in jeden davon.
+ * Der Import von harness-sitzung.ts geschieht **lazy** — nicht um `electron` fernzuhalten: das
+ * kommt ueber model/registry -> config/config-store ohnehin eifrig herein (und config-store
+ * faengt ein fehlendes `app.getPath` bereits selbst in einem try/catch ab, siehe dort). Der
+ * tragende Grund ist harness-sitzung.ts selbst: `harnessDb()` ruft `app.getPath('userData')`
+ * und loest das better-sqlite3-Binding auf, beides ungeschuetzt, und das Modul zieht ueber
+ * harness/index.ts die gesamte Lauf-Maschinerie nach (Werkzeuge, Codecs, Transport). Wer diesen
+ * Adapter nur zum Aufzaehlen baut (model/ansicht.ts, settings/handlers.ts), soll dafuer nicht
+ * die ganze Harness-Kette anstossen — genau wie ClaudeCodeAdapter seinen Statusline-Hook lazy
+ * holt.
  */
 
 import type {
@@ -18,11 +23,11 @@ import { SITZUNG_EIGENE_SCHLEIFE } from '../agent-adapter'
 import type { AdapterFeature, AdapterCapabilities } from '../../../shared/types'
 import { CapabilityNiveau } from '../../preset/niveau'
 import { eintragFuerSitzung } from '../../model/registry'
-import { slotFuerId } from '../../model/slots'
+import { slotFuerId, type SlotId } from '../../model/slots'
 import { laeuferKannArt, sperrgrund } from '../../model/eignung'
 import type { AppServices } from '../../window-manager'
 
-const PLATZ = 'sitzung:niveau-b'
+const PLATZ: SlotId = 'sitzung:niveau-b'
 
 export class KeelHarnessAdapter implements SchleifenSitzungsAdapter {
   readonly id = 'keel-harness'
@@ -86,7 +91,16 @@ export class KeelHarnessAdapter implements SchleifenSitzungsAdapter {
   brichAb(laufId: string): void {
     // Synchron, damit ein Abbruch nicht selbst auf einen dynamischen Import wartet: der Aufrufer
     // (SESSION_DESTROY) entfernt die Zelle unmittelbar danach.
-    void import('../../harness-sitzung').then(m => m.markiereAbbruch(laufId))
+    void import('../../harness-sitzung')
+      .then(m => m.markiereAbbruch(laufId))
+      .catch((err) => {
+        // Nichts still verschlucken: scheitert der dynamische Import, verschwaende der
+        // Abbruchwunsch sonst als unbehandelte Ablehnung, und der Lauf liefe unbemerkt weiter.
+        console.error(
+          `[KeelHarnessAdapter] Abbruch fuer Lauf '${laufId}' konnte nicht gesetzt werden:`,
+          err instanceof Error ? err.message : String(err),
+        )
+      })
   }
 
   getProjectMarkers(): string[] {

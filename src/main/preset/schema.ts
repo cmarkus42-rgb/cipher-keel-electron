@@ -71,17 +71,19 @@ const VALID_NIVEAUS = new Set<string>(Object.values(CapabilityNiveau))
 
 /**
  * Known non-empty runtime values a PresetRahmen may declare. Empty string is also valid
- * (maps to default adapter). Validity here is a schema-level fact, not a promise that an
- * adapter exists yet for the value — AdapterRegistry (src/main/agent/registry.ts) is
- * where "known" and "has a live adapter" are told apart, since `keel-harness` is known
- * but not yet built.
+ * (maps to default adapter). Validity here is a schema-level fact, kept separate from "has
+ * a live adapter" on principle even though both values below are backed today —
+ * AdapterRegistry (src/main/agent/registry.ts) is where that second question is answered,
+ * via RUNTIME_TO_ADAPTER_ID / RUNTIMES_WITHOUT_ADAPTER, so the next runtime landing here
+ * ahead of its adapter (Codex, Gemini) has somewhere to say so without this set lying.
  * CK-ENT-010, CK-ENT-028, ENT-025
  */
 export const KNOWN_RUNTIMES: ReadonlySet<string> = new Set<string>([
   'claude-cli-tmux',
   // The own agent loop (M8). Third value, added when NanoClaw was superseded on
-  // 2026-08-16 — `nanoclaw-channel-route` was removed in the same change. Not yet backed
-  // by an adapter — see RUNTIMES_WITHOUT_ADAPTER in agent/registry.ts.
+  // 2026-08-16 — `nanoclaw-channel-route` was removed in the same change. Backed by
+  // KeelHarnessAdapter since 2026-08-23 (agent/adapters/keel-harness.ts) — see
+  // RUNTIME_TO_ADAPTER_ID in agent/registry.ts.
   'keel-harness',
 ])
 

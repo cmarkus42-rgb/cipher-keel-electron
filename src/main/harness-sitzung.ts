@@ -501,10 +501,25 @@ export async function beauftrageSchleife(
         const laeuftPruefung = pruefeLaufLaeuftNicht(laufId, laufendeLaeufe)
         if (!laeuftPruefung.ok) throw new Error(laeuftPruefung.meldung)
 
+        // Vor `await baueLaufUmgebung`, nicht danach: die Marke muss VOR dem Await-Fenster
+        // stehen, sonst saehe ein nebenlaeufiger zweiter Aufruf denselben `laufId` waehrend des
+        // Baus noch als "ruht" an und liefe an `pruefeLaufLaeuftNicht` oben vorbei. Wirft
+        // `baueLaufUmgebung` (unbekannter Codec, unlesbares Faehigkeitsverzeichnis,
+        // `baueNetzKontext`), muss die Marke aber wieder herunter — sonst genau der Fehler, den
+        // `starteHarnessLauf` oben schon einmal gemacht und behoben hat (siehe dessen Kommentar
+        // bei `laufendeLaeufe.add`, "stayed 'running' forever"): kein `.finally` ist zu diesem
+        // Zeitpunkt registriert, das die Marke je wieder loeschen wuerde, und dieser Lauf waere
+        // fuer Folgeauftrag *und* Fortsetzen bis zum Prozessneustart gesperrt.
         laufendeLaeufe.add(laufId)
-        const u = await baueLaufUmgebung(
-          laufId, eintrag, alt.auftragstext, opts.wurzel, services, () => {}, opts.praefix,
-        )
+        let u: LaufUmgebung
+        try {
+          u = await baueLaufUmgebung(
+            laufId, eintrag, alt.auftragstext, opts.wurzel, services, () => {}, opts.praefix,
+          )
+        } catch (err) {
+          laufendeLaeufe.delete(laufId)
+          throw err
+        }
         // Vor dem Start, synchron: sonst kann `beiEnde` eines kurzen Laufs vor dem Eintrag ins
         // Register liegen. Siehe SchleifenStartOpts.beiStart.
         opts.beiStart?.(laufId)
@@ -527,6 +542,15 @@ export async function beauftrageSchleife(
       console.warn(
         `[harness-sitzung] Lauf '${opts.letzteLaufId}' liefert keinen rekonstruierbaren ` +
         `Auftrag; der Folgeauftrag startet stattdessen frisch.`,
+      )
+    } else {
+      // Derselbe Massstab wie beim Log direkt darueber: ein verworfener Grund waere hier
+      // besonders teuer, weil `fenster` oben bei fehlender Faehigkeitszeile auf 0 faellt — ein
+      // Eintrag ohne Messung bekaeme dann NIE einen Folgeauftrag, und ohne dieses Log erfuehre
+      // niemand, warum.
+      console.warn(
+        `[harness-sitzung] Lauf '${opts.letzteLaufId}' bekommt keinen Folgeauftrag: ` +
+        entscheidung.grund,
       )
     }
   }
