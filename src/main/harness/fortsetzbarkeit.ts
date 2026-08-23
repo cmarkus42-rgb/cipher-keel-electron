@@ -8,9 +8,27 @@
  * Geprueft werden **alle vier** Budgets, nicht nur der Kontext: ein fortgesetzter Lauf erbt
  * Runden, Zeit und Kosten, weil verbrauchAusEreignissen kumulativ zaehlt.
  *
- * Damit steht nirgends eine Modellgroesse. Das 27B mit knappem Fenster faellt nach einem echten
- * Lauf auf `frisch`; ein Modell mit grossem Fenster und leichtem Auftrag fuehrt fort. Der
- * Schalter ist die Messung, nicht der Modellname.
+ * Damit steht nirgends eine Modellgroesse: wer Platz hat, fuehrt fort; wer keinen hat, faengt
+ * frisch an. Der Schalter ist die Messung, nicht der Modellname.
+ *
+ * **Korrektur vom 2026-08-23, in der Beweisfahrt zu Task 11 gemessen.** Hier stand bis zuletzt
+ * der Satz *"Das 27B mit knappem Fenster faellt nach einem echten Lauf auf `frisch`"* — als
+ * Beispiel fuer den Mechanismus und als Grund, den `weiter`-Zweig im Feld fuer mit diesem Modell
+ * ueberhaupt nicht fahrbar zu halten.
+ *
+ * **Das war ungeprueft behauptet, und es war falsch.** `spark-qwen38-27b` traegt
+ * `nutzbaresKontextfenster: 65536` (`model/defaults.ts`, `quelle: 'vermutet'`); die Schwelle
+ * liegt bei 65536 * 0,8 * 0,75 = 39.322 Token. Gemessen wurden 1.700-1.900 Token je Zug. Fuenf
+ * aufeinanderfolgende echte Auftraege in dieselbe Zelle liefen deshalb alle in denselben Lauf —
+ * vier davon als echter Folgeauftrag (der erste Auftrag hatte den Lauf erst eroeffnet) —, jeweils
+ * gegen `harness.db` geprueft, nicht gegen den Fenstertext.
+ *
+ * Der Mechanismus ist damit **bestaetigt, nicht widerlegt**: er hat gemessen entschieden, und die
+ * Messung fiel anders aus als die Annahme. Falsch war die Illustration, nicht die Regel — und
+ * genau deshalb steht sie hier korrigiert statt geloescht. (Am naechsten waere ein sechster oder
+ * siebter Auftrag ohnehin nicht am Kontext gekippt: Runden lagen bei 5 von 9 knappen, Wanduhrzeit
+ * bei rund 61 Prozent der knappen 675 Sekunden, Kontext bei unter 5 Prozent der knappen 39.322
+ * Token. Siehe `docs/superpowers/plans/2026-08-23-keel-harness-adapter-protokoll.md`.)
  */
 
 import type { Ereignis } from './ereignisse'

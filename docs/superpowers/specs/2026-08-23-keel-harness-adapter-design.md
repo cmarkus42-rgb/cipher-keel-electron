@@ -370,10 +370,10 @@ hat, fängt frisch an. Der Schalter ist die Messung, nicht der Modellname.
 >
 > **Das war falsch, und zwar ungeprüft behauptet.** `spark-qwen38-27b` trägt
 > `nutzbaresKontextfenster: 65536` (`model/defaults.ts`), die Schwelle liegt damit bei
-> 65536 · 0,8 · 0,75 = **39 322 Token**. Gemessen wurden **1,7–1,8k je Zug**. Fünf aufeinander
-> folgende echte Aufträge in dieselbe Zelle liefen deshalb alle in **denselben** Lauf, jeder mit
-> einem echten `auftrag.folgend` — gegen die Protokolldatenbank geprüft, nicht gegen den
-> Fenstertext.
+> 65536 · 0,8 · 0,75 = **39 322 Token**. Gemessen wurden **1,7–1,9k je Zug**. Fünf aufeinander
+> folgende echte Aufträge in dieselbe Zelle liefen deshalb alle in **denselben** Lauf — der erste
+> hat ihn eröffnet, die **vier** übrigen kamen als echter `auftrag.folgend` hinzu — gegen die
+> Protokolldatenbank geprüft, nicht gegen den Fenstertext.
 >
 > Der Mechanismus ist damit **bestätigt**, nicht widerlegt: er hat gemessen entschieden, und die
 > Messung fiel anders aus als meine Annahme. Falsch war die Illustration, nicht die Regel — und

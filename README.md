@@ -59,7 +59,9 @@ planned around NanoClaw as a third-party peer runtime, connected through a chann
 over a Unix domain socket; NanoClaw was superseded on 2026-08-16 in favour of a harness
 keel builds itself, for the reason recorded in
 [`docs/anpassbare-flaechen.md`](docs/anpassbare-flaechen.md). The runtime value
-`keel-harness` is known to the preset schema; no adapter serves it yet.
+`keel-harness` now has an adapter (2026-08-23) — it backs exactly one preset,
+`keel-Arbeiter (Niveau B)`, as a grid cell around keel's own loop. OpenCode, Codex and
+Gemini remain unbuilt as adapters.
 
 The two legs run *next to* each other, not inside each other. Cross-runtime orchestration
 — one leg spawning a sub-session on the other — is explicitly deferred to a later version.
@@ -80,11 +82,10 @@ as a full realisation of a role. Level B is the recommended minimum for a role t
 carry its own weight.
 
 **The level follows the harness, not the user.** Each adapter declares the level it can
-serve — `claude-code` serves A. No adapter serves B yet: the `keel-harness` runtime is
-known to the preset schema but unbacked (`RUNTIMES_WITHOUT_ADAPTER` in
-`src/main/agent/registry.ts`). A session inherits the level of the adapter that will
-actually run it; there is no free choice, because the level describes a capability of the
-harness rather than a preference.
+serve — `claude-code` serves A, `keel-harness` serves B (`RUNTIMES_WITHOUT_ADAPTER` in
+`src/main/agent/registry.ts` is empty as of 2026-08-23). A session inherits the level of
+the adapter that will actually run it; there is no free choice, because the level
+describes a capability of the harness rather than a preference.
 
 What the level changes, concretely, is how the capability layer reaches the agent. At A the
 prompt carries `@`-references and the harness resolves them on demand; **measured on
@@ -94,8 +95,11 @@ the same capabilities arrive as an inventory of name, description and path, beca
 non-Claude harness would not resolve an `@`-line and would lose the whole layer without a
 single error message.
 
-Level B is assembled and inspectable today (see the prompt preview below), but nothing runs
-it yet — there is no adapter for `keel-harness` at all, let alone a launch path.
+Level B is assembled and inspectable today (see the prompt preview below), and since
+2026-08-23 one preset actually runs on it end to end — `keel-Arbeiter (Niveau B)`, the
+`keel-harness` adapter's grid cell (see [Current state](#current-state) and
+[What a Niveau-B cell can and cannot do](#what-is-not-there-yet)). No other level-B
+harness (OpenCode, Codex, Gemini) exists yet.
 
 ### 3. Level service — the granularity obligation
 
@@ -194,7 +198,7 @@ improvising.
 
 ## Current state
 
-All 2678 tests pass across 187 test files (`npm test`, ~5s).
+All 2759 tests pass across 203 test files (`npm test`, ~7s).
 
 | Phase | Content | Status |
 |-------|---------|--------|
@@ -233,7 +237,7 @@ formal audit step; their work is tracked in `docs/superpowers/plans/` instead.
 Every preset in the launcher carries an eye button next to it. It assembles that entity's
 full prompt — body, capabilities, persona, global rules, phase input — and shows it without
 starting a session, writing a file or touching the project directory, with a switch for all
-three levels including the ones no adapter serves yet.
+three levels including C, which no adapter serves yet.
 
 The preview is built by the same code path `session:create` uses, and that is checked rather
 than assumed: in the running app the preview text and the file handed to the CLI were
@@ -276,15 +280,23 @@ than what is delivered would be worse than none (CK-NFR-012).
   the `sitzung:niveau-b` slot named *at cell creation* — reassigning the slot afterwards
   changes what the *next* cell gets, not this one, confirmed by opening a cell, changing
   the slot, and reading the open cell's own header unchanged. Real orders against the DGX
-  Spark landed a second order into the *same* run (`auftrag.folgend`, one `laufId`) five
-  times in a row, because the budget check that decides this (`weiterOderFrisch`) found
-  headroom left each time — a model-specific "this one always falls back to fresh" rule
-  does not exist; it would start a fresh `laufId` once that same check finds no headroom,
-  which the field session never forced (budgets stayed comfortably under threshold
-  throughout; the fresh-on-exhaustion side is unit-tested, not field-forced here — see the
-  protocol). Starting a cell against an empty slot, and sending a second order into a cell
-  that already has one running, both refuse with a named reason in the window itself
-  (the launcher tile, or the cell's own error line) instead of a console message.
+  Spark landed a second order into the *same* run (`auftrag.folgend`, one `laufId`) four
+  times running — five real orders total, the first of which opened the run rather than
+  continuing one — because the budget check that decides this (`weiterOderFrisch`) found
+  headroom left each time: runden and wall-clock time both around 55-60% of their
+  narrowed threshold by the fifth order, context under 5%, so a sixth or seventh order
+  would plausibly have tripped the wall clock, not the context window. A model-specific
+  "this one always falls back to fresh" rule does not exist; the same check starts a
+  fresh `laufId` once it finds no headroom, which this field session never forced far
+  enough to trigger (the fresh-on-exhaustion side is unit-tested, not field-forced here —
+  see the protocol for the exact numbers). Starting a cell against an empty slot refuses
+  with a named reason in the launcher tile itself. A second order into a cell that
+  already has one running is blocked one step earlier than that: the cell disables its
+  own order field and button as soon as it goes `laeuft`, so an ordinary user never
+  reaches a rejection message here at all — the backend guard behind it
+  (`session:auftrag` returning a named refusal) is real and was exercised directly, not
+  through a click, since the UI's own protection stands in the way of reaching it by
+  clicking.
 
   What it does **not** do, on purpose, in 0.1: **no beauftragen von oben** — only a human
   typing into that cell's own field can give it an order; no other role or phase step can
