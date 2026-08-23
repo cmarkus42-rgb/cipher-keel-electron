@@ -155,6 +155,22 @@ export function projiziere(ereignisse: Ereignis[]): Nachricht[] {
           `Faehigkeit ${String(e.nutzlast.name)}:\n${String(e.nutzlast.text)}` })
         break
       }
+      case 'auftrag.folgend': {
+        // Erst ausspuelen: offene Intents schliessen und die Werkzeugergebnisse als
+        // Nutzer-Nachricht schreiben. Danach steht der Auftrag *hinter* ihnen, nie davor —
+        // dieselbe Adjazenzregel, der `nachgeladenes` folgt.
+        ergebnisseAusspuelen(true)
+        const block: Block = { art: 'text', text: String(e.nutzlast.auftragstext ?? '') }
+        const letzte = verlauf[verlauf.length - 1]
+        if (letzte && letzte.rolle === 'nutzer') {
+          // Zwei Nutzer-Nachrichten hintereinander lehnt Anthropic ab. Ein Lauf, der mitten im
+          // Zug abbrach, endet genau so — deshalb wird angehaengt statt aufgemacht.
+          letzte.bloecke.push(block)
+        } else {
+          verlauf.push({ rolle: 'nutzer', bloecke: [block] })
+        }
+        break
+      }
       default:
         break
     }

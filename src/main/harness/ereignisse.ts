@@ -49,6 +49,17 @@ export const EREIGNIS_ARTEN = [
    * damit unsichtbar, und `pruefeBudgets` schlug nie an, egal wie viele Unterlaeufe liefen.
    */
   'unterlauf.verbraucht',
+  /**
+   * Nutzlast `{auftragstext}`. Ein zweiter Auftrag in denselben Lauf, wenn dessen Budgets und
+   * Kontext ihn noch tragen (harness/fortsetzbarkeit.ts).
+   *
+   * Eigenes Ereignis und **kein** umgeschriebener Praefix: der Auftragstext steht im stabilen
+   * Teil (praefix.ts, `## Auftrag`), und der muss ueber alle Zuege zeichengleich bleiben, sonst
+   * verfehlt der Anbieter-Zwischenspeicher bei jedem Folgeauftrag. Ausserdem behauptete
+   * `run.started` dann etwas, das der Lauf nicht tut — ein falscher Grund im Protokoll ist
+   * schlimmer als eine fehlende Funktion.
+   */
+  'auftrag.folgend',
   'run.finished',
 ] as const
 

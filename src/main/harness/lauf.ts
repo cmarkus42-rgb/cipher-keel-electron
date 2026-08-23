@@ -203,6 +203,34 @@ export async function setzeFort(laufId: string, auftrag: Auftrag, u: LaufUmgebun
   await fahre(laufId, auftrag, u)
 }
 
+/**
+ * Ein zweiter Auftrag in denselben Lauf. **Neben** setzeFort und nicht darin: setzeFort heisst
+ * „derselbe Auftrag nach einem Abriss", und ihm eine zweite Bedeutung zu geben, waere eine
+ * Funktion, die zwei Dinge heisst.
+ *
+ * `auftrag` ist der **urspruengliche** aus auftragAusProtokoll — Budgets und modellId kommen
+ * von dort, nicht aus einem zweiten Zusammenbau. `u.praefixTeile.auftragstext` bleibt ebenfalls
+ * der erste: der stabile Teil muss zeichengleich bleiben, und der Folgeauftrag steht im Verlauf.
+ *
+ * Ein Lauf, der schon ein run.finished traegt, bekommt am Ende ein zweites. laufUebersicht liest
+ * ohnehin das letzte, also traegt die Uebersicht das ohne Aenderung.
+ */
+export async function setzeFolgeauftrag(
+  laufId: string, auftrag: Auftrag, u: LaufUmgebung, text: string,
+): Promise<void> {
+  try {
+    pruefeStartbedingungen(u.eintrag)
+  } catch (err) {
+    beende(u, laufId, lesen(u.db, laufId), {
+      code: 'auftrag-unvereinbar', endzustand: 'abgebrochen',
+      anweisung: err instanceof Error ? err.message : String(err),
+    }, '')
+    return
+  }
+  schreibe(u, laufId, 'auftrag.folgend', { auftragstext: text })
+  await fahre(laufId, auftrag, u)
+}
+
 async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise<void> {
   const f = u.eintrag.faehigkeiten!
   const codec = codecFuer(f.codec)
