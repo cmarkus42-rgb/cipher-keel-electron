@@ -283,9 +283,10 @@ than what is delivered would be worse than none (CK-NFR-012).
   Spark landed a second order into the *same* run (`auftrag.folgend`, one `laufId`) four
   times running — five real orders total, the first of which opened the run rather than
   continuing one — because the budget check that decides this (`weiterOderFrisch`) found
-  headroom left each time: runden and wall-clock time both around 55-60% of their
-  narrowed threshold by the fifth order, context under 5%, so a sixth or seventh order
-  would plausibly have tripped the wall clock, not the context window. A model-specific
+  headroom left each time: by the fifth order, runden stood at 56% of its narrowed
+  threshold and wall-clock time at 61% of its own — the higher of the two — while
+  context stayed under 5%, so a sixth or seventh order would plausibly have tripped the
+  wall clock, not the context window. A model-specific
   "this one always falls back to fresh" rule does not exist; the same check starts a
   fresh `laufId` once it finds no headroom, which this field session never forced far
   enough to trigger (the fresh-on-exhaustion side is unit-tested, not field-forced here —
@@ -377,7 +378,7 @@ src/renderer/      — React 19 UI: SessionGrid, ProjectView, Timeline, KanbanBo
                      KickoffWizard, NotesCell, settings tabs
 src/shared/        — Typed IPC channels and domain types
 src/preload.ts     — contextBridge API (window.cipherKeel)
-tests/             — 2678 Vitest tests
+tests/             — 2759 Vitest tests
 docs/superpowers/  — Implementation plans, design specs and audit reports per phase
 ```
 
