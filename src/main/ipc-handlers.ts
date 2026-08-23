@@ -130,6 +130,7 @@ import { neuesRegister, pruefeZelleFrei, type SchleifenZelle } from './session/s
 import { baueSchleifenSitzung } from './session/schleifen-start'
 import { harnessDb } from './harness-sitzung'
 import { lesen } from './harness'
+import type { SessionStatusChanged } from '../shared/harness-types'
 
 // Tracks the active grid window for focus-or-create logic (CK-UI-002)
 let activeGridWindow: BrowserWindow | null = null
@@ -409,8 +410,9 @@ export function registerIpcHandlers(services: AppServices): void {
     }
   })
 
-  // Ein Auftrag an eine Niveau-B-Gitterzelle — der erste Verbraucher von SESSION_STATUS_CHANGED,
-  // das bislang deklariert war, aber weder Sender noch Hoerer hatte.
+  // Ein Auftrag an eine Niveau-B-Gitterzelle — der erste Sender von SESSION_STATUS_CHANGED, das
+  // bislang deklariert war, aber weder Sender noch Hoerer hatte. Einen Hoerer gibt es weiterhin
+  // nicht (kommt in einer spaeteren Aufgabe).
   ipcMain.handle(SESSION_AUFTRAG, async (_e, args: { name?: string; auftragstext?: string }) => {
     const name = typeof args?.name === 'string' ? args.name : ''
     const text = typeof args?.auftragstext === 'string' ? args.auftragstext.trim() : ''
@@ -428,6 +430,17 @@ export function registerIpcHandlers(services: AppServices): void {
       return { ok: false, meldung: `Fuer die Zelle '${name}' liegen keine Praefixteile vor.` }
     }
 
+    // Typgebunden statt einer rohen broadcast()-Nutzlast an jeder der drei Stellen unten: ein
+    // Tippfehler in einer der beiden Formen (SessionStatusChanged, harness-types.ts) faellt so
+    // dem Typcheck auf, statt erst dem Renderer, der den Kanal noch nicht hoert.
+    const sendeStatus = (status: SessionStatusChanged) => broadcast(SESSION_STATUS_CHANGED, status)
+
+    // Von beiStart gesetzt, sobald die laufId feststeht — die einzige Stelle, an der der Catch
+    // unten weiss, welcher Lauf ueberhaupt zu dieser Zelle gehoert. Bleibt null, wenn der Start
+    // scheitert, bevor beiStart je gerufen wurde (z. B. ein unbekannter Registry-Eintrag) — dann
+    // hat dieser Aufruf die Zelle nie angefasst, und der Catch hat nichts zurueckzunehmen.
+    let gestarteterLauf: string | null = null
+
     try {
       const ergebnis = await adapter.starteAuftrag({
         wurzel: frei.zelle.wurzel, sitzungsname: name, auftragstext: text,
@@ -442,8 +455,9 @@ export function registerIpcHandlers(services: AppServices): void {
         // bevor sie je auf 'laeuft' stand, und das nachfolgende setzeLauf liesse sie fuer
         // immer darauf stehen.
         beiStart: (laufId) => {
+          gestarteterLauf = laufId
           schleifenZellen.setzeLauf(name, laufId)
-          broadcast(SESSION_STATUS_CHANGED, { name, zustand: 'laeuft', laufId })
+          sendeStatus({ name, zustand: 'laeuft', laufId })
         },
 
         beiEnde: (beendeterLauf) => {
@@ -457,14 +471,24 @@ export function registerIpcHandlers(services: AppServices): void {
           const endzustand = typeof letztes?.nutzlast.endzustand === 'string'
             ? letztes.nutzlast.endzustand : null
           schleifenZellen.setzeZustand(name, 'leerlaufend', endzustand)
-          broadcast(SESSION_STATUS_CHANGED, { name, zustand: 'leerlaufend', endzustand })
+          sendeStatus({ name, zustand: 'leerlaufend', endzustand })
         },
       })
       return { ok: true, wert: ergebnis }
     } catch (err) {
-      // Der Start ist gescheitert, also laeuft nichts — der Zustand darf nicht auf 'laeuft'
-      // stehen bleiben.
-      schleifenZellen.setzeZustand(name, 'leerlaufend')
+      // beiStart kann VOR diesem Wurf gelaufen sein (im frischen Zweig steht es synchron vor
+      // starteHarnessLauf) — dann steht die Zelle bereits auf 'laeuft', ohne dass je ein
+      // beiEnde kaeme, denn `starteHarnessLauf` registriert sein `.finally()` erst NACH
+      // `baueLaufUmgebung`. Derselbe Id-Vergleich wie in beiEnde oben, aus demselben Grund: waehrend
+      // dieses Await-Fensters koennte die Zelle zerstoert und mit einem neuen, wirklich laufenden
+      // Auftrag neu belegt worden sein — der darf hier nicht zurueckgekippt werden.
+      if (gestarteterLauf) {
+        const zelle = schleifenZellen.hole(name)
+        if (zelle && zelle.laufId === gestarteterLauf) {
+          schleifenZellen.setzeZustand(name, 'leerlaufend')
+          sendeStatus({ name, zustand: 'leerlaufend', endzustand: null })
+        }
+      }
       return { ok: false, meldung: err instanceof Error ? err.message : String(err) }
     }
   })

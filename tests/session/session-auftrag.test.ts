@@ -2,15 +2,27 @@
  * session-auftrag.test.ts — Task 9: SESSION_AUFTRAG, der Kanal, der einer Niveau-B-Gitterzelle
  * zum ersten Mal einen Auftrag geben kann.
  *
- * Kein Test in diesem Repo erreicht ipcMain direkt. Drei Ebenen hier:
+ * Kein Test in diesem Repo erreicht ipcMain direkt. Zwei Ebenen hier:
  *
  * 1. Die reine Kette, die der Handler fahren MUSS (pruefeZelleFrei/Zellenregister) — Pflichttests
- *    aus dem Brief.
- * 2. Das Rennen in Worten, gegen das reine Register nachgestellt — ebenfalls Pflicht.
- * 3. Der echte Handler-Rumpf, ueber registerIpcHandlers mit `electron` und `./agent/registry`
+ *    aus dem Brief (Step 2).
+ * 2. Der echte Handler-Rumpf, ueber registerIpcHandlers mit `electron` und `./agent/registry`
  *    gemockt und dem echten Zellenregister per `vi.importActual` durchgereicht — dasselbe Muster
  *    wie tests/session/session-create-schleife.test.ts. Nur so ist bewiesen, dass der Handler
- *    beiStart/beiEnde tatsaechlich verdrahtet, nicht nur, dass die Bausteine fuer sich stimmen.
+ *    beiStart/beiEnde tatsaechlich verdrahtet, nicht nur, dass die Bausteine fuer sich stimmen —
+ *    das gilt insbesondere fuer das Rennen selbst ("das Rennen: ein Lauf, der VOR der Rueckkehr
+ *    ..." unten).
+ *
+ * M-1 (Review nach Task 9): der Brief gab neben den beiden pruefeZelleFrei-Tests oben noch zwei
+ * weitere "reine" Tests vor, die im Kommentar `beauftrageSchleife`/"im Handler" nannten, aber nur
+ * `Zellenregister.setzeLauf`/`setzeZustand` direkt aufriefen — ein falscher Grund im Kommentar,
+ * denn sie pruefen weder den Handler noch `beauftrageSchleife`, nur das Register selbst (das
+ * schon durch die beiden echten pruefeZelleFrei-Tests gedeckt ist). Sie blieben bei einer echten
+ * Falsifikation von `beauftrageSchleife` gruen. Entfernt zugunsten ihrer echten Zwillinge: "das
+ * Rennen: ein Lauf, der VOR der Rueckkehr ..." und "das Ende eines fremden Laufs kippt die Zelle
+ * nicht — ueber den echten Handler" weiter unten treiben denselben Sachverhalt durch den echten
+ * Handler, und tests/harness/beauftrage-schleife-reihenfolge.test.ts (I-3) treibt ihn durch das
+ * echte `beauftrageSchleife` selbst.
  */
 
 import * as fs from 'fs'
@@ -46,34 +58,6 @@ describe('die Kette hinter session:auftrag', () => {
     const p = pruefeZelleFrei('z1', r)
     expect(p.ok).toBe(true)
     if (p.ok) expect(p.zelle.laufId).toBe('l1')
-  })
-
-  // Das Rennen in Worten: beiStart traegt die laufId ein, beiEnde kippt zurueck. Faellt
-  // beiEnde vor beiStart, steht die Zelle danach fuer immer auf 'laeuft'. Deshalb ruft
-  // beauftrageSchleife beiStart SYNCHRON vor dem Schleifenstart.
-  it('ein Lauf, der vor der Rueckkehr endet, laesst die Zelle nicht auf laeuft stehen', () => {
-    const r = neuesRegister()
-    r.setze({
-      name: 'z1', wurzel: '/p', entityId: 'keel-arbeiter', eintragId: 'm1',
-      zustand: 'leerlaufend', laufId: null, letzterEndzustand: null,
-    })
-    // Reihenfolge wie im Handler: erst setzeLauf (beiStart), dann setzeZustand (beiEnde).
-    r.setzeLauf('z1', 'l1')
-    r.setzeZustand('z1', 'leerlaufend', 'ziel-erreicht')
-    expect(r.hole('z1')!.zustand).toBe('leerlaufend')
-    expect(pruefeZelleFrei('z1', r).ok).toBe(true)
-  })
-
-  it('das Ende eines fremden Laufs kippt die Zelle nicht', () => {
-    const r = neuesRegister()
-    r.setze({
-      name: 'z1', wurzel: '/p', entityId: 'keel-arbeiter', eintragId: 'm1',
-      zustand: 'laeuft', laufId: 'l2', letzterEndzustand: null,
-    })
-    // Der Id-Vergleich im Handler: nur der eigene Lauf kippt die Zelle.
-    const zelle = r.hole('z1')!
-    expect(zelle.laufId === 'l1').toBe(false)   // 'l1' ist der beendete, 'l2' der laufende
-    expect(zelle.zustand).toBe('laeuft')
   })
 })
 
@@ -342,5 +326,59 @@ describe('session:auftrag — der echte Handler-Rumpf', () => {
     expect(result.ok).toBe(false)
     expect(result.meldung).toBe('Transportfehler')
     expect(capturedRegister!.hole('z-fehler')!.zustand).toBe('leerlaufend')
+  })
+
+  // I-1 (Review nach Task 9): im frischen Zweig steht beiStart synchron VOR starteHarnessLauf
+  // (harness-sitzung.ts:563) — wirft dessen baueLaufUmgebung (unbekannter Codec, unlesbares
+  // Faehigkeitsverzeichnis, baueNetzKontext), kommt nie ein beiEnde, weil starteHarnessLauf sein
+  // .finally() erst NACH baueLaufUmgebung registriert. Ohne einen Rundruf im Catch weiss der
+  // Renderer nichts von der Rueckstellung, obwohl das Register schon 'leerlaufend' zeigt.
+  it('I-1: beiStart lief, danach ein Wurf — die Zelle kippt zurueck UND sendet SESSION_STATUS_CHANGED', async () => {
+    starteAuftragImpl = async (opts) => {
+      opts.beiStart?.('lauf-vor-wurf')
+      throw new Error('Transportfehler nach beiStart')
+    }
+    const { create, auftrag } = await loadHandlers()
+    await create({}, { entityId: 'keel-arbeiter', name: 'z-i1', cwd: projectDir })
+
+    const result = await auftrag({}, { name: 'z-i1', auftragstext: 'mach das' })
+
+    expect(result.ok).toBe(false)
+    expect(result.meldung).toBe('Transportfehler nach beiStart')
+    expect(capturedRegister!.hole('z-i1')!.zustand).toBe('leerlaufend')
+    // Der Rundruf, den der reine Registerzustand allein nicht ersetzt: ohne ihn erfaehrt ein
+    // Renderer, der auf SESSION_STATUS_CHANGED hoert, nie, dass die Zelle wieder frei ist.
+    expect(broadcastCalls).toContainEqual([
+      'session:status-changed', { name: 'z-i1', zustand: 'leerlaufend', endzustand: null },
+    ])
+  })
+
+  // I-2 (Review nach Task 9): derselbe Id-Vergleich wie beiEnde, nur vier Zeilen tiefer im
+  // Catch nicht angewandt gewesen. Zerstoeren-und-Neuanlegen-im-Await-Fenster eines
+  // scheiternden Starts wuerde sonst die NEUE, wirklich laufende Zelle auf 'leerlaufend' kippen
+  // — und pruefeZelleFrei liesse danach einen zweiten Auftrag in einen noch laufenden Lauf.
+  it('I-2: eine waehrend des Wurf-Fensters neu belegte Zelle bleibt vom alten Fehler unangetastet', async () => {
+    starteAuftragImpl = async (opts) => {
+      opts.beiStart?.('lauf-alt')
+      // Steht fuer: waehrend genau dieses Await-Fensters wurde die Zelle zerstoert und unter
+      // demselben Namen neu angelegt, mit einem neuen, wirklich laufenden Auftrag — derselbe
+      // Kunstgriff wie im Test "das Ende eines fremden Laufs kippt die Zelle nicht" oben.
+      capturedRegister!.setzeLauf('z-i2', 'lauf-neu')
+      throw new Error('Transportfehler, kommt zu spaet')
+    }
+    const { create, auftrag } = await loadHandlers()
+    await create({}, { entityId: 'keel-arbeiter', name: 'z-i2', cwd: projectDir })
+
+    const result = await auftrag({}, { name: 'z-i2', auftragstext: 'mach das' })
+
+    expect(result.ok).toBe(false)
+    // Die Zelle bleibt bei ihrem neuen, wirklich laufenden Auftrag stehen.
+    expect(capturedRegister!.hole('z-i2')!.zustand).toBe('laeuft')
+    expect(capturedRegister!.hole('z-i2')!.laufId).toBe('lauf-neu')
+    // Kein Rundruf fuer den fremden, veralteten Fehler — er wuerde einen Renderer, der auf dem
+    // neuen Lauf sitzt, faelschlich auf 'leerlaufend' zeigen lassen.
+    expect(broadcastCalls).not.toContainEqual([
+      'session:status-changed', { name: 'z-i2', zustand: 'leerlaufend', endzustand: null },
+    ])
   })
 })

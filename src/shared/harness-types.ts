@@ -40,3 +40,18 @@ export interface LaufAnzeige {
 export type HarnessAntwort<T> =
   | { ok: true; wert: T }
   | { ok: false; meldung: string }
+
+/**
+ * Payload of SESSION_STATUS_CHANGED (Main -> Renderer, ipc-channels.ts). Sent by SESSION_AUFTRAG's
+ * handler whenever a Niveau-B grid cell's own state actually changes — not derived by the
+ * renderer from the harness event stream, same "one source" rule as `SchleifenZelle`
+ * (src/main/session/schleifen-sitzungen.ts) itself.
+ *
+ * Two shapes under one channel, discriminated by `zustand`: a cell that just started running
+ * carries the laufId that started; a cell that just went idle again carries the run's own end
+ * state, read from its `run.finished` — `null` if the run crashed or never wrote one (a failed
+ * start counts as the latter).
+ */
+export type SessionStatusChanged =
+  | { name: string; zustand: 'laeuft'; laufId: string }
+  | { name: string; zustand: 'leerlaufend'; endzustand: string | null }

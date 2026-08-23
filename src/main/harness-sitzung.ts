@@ -71,7 +71,10 @@ export function pruefeLaufLaeuftNicht(
   laufId: string, laufende: ReadonlySet<string>,
 ): { ok: true } | { ok: false; meldung: string } {
   if (laufende.has(laufId)) {
-    return { ok: false, meldung: `Der Lauf '${laufId}' laeuft bereits — Fortsetzen ist erst moeglich, wenn er sich beendet hat.` }
+    // Neutral formuliert: zwei Aufrufer teilen sich diesen Text (HARNESS_LAUF_FORTSETZEN, wo
+    // jemand "Fortsetzen" geklickt hat, und beauftrageSchleifes Folgeauftrags-Zweig, wo jemand
+    // einen Auftrag gegeben hat — die Zelle hat keinen eigenen Fortsetzen-Knopf).
+    return { ok: false, meldung: `Der Lauf '${laufId}' laeuft bereits — warte, bis er sich beendet hat.` }
   }
   return { ok: true }
 }
