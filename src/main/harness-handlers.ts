@@ -211,7 +211,7 @@ export function registerHarnessHandlers(services: AppServices): void {
       // The gap laufAbgeschlossen() alone leaves open: `endzustand: null` in the run overview
       // means "no run.finished yet", which is equally true for a crashed run and a run that is
       // this very process's own loop, still executing right now. Checked here, in the main
-      // process — see the comment on `laufendeLaeufe` above.
+      // process — see the comment on `laufendeLaeufe` in harness-sitzung.ts.
       const laufLaeuftPruefung = pruefeLaufLaeuftNicht(laufId, laufendeLaeufe)
       if (!laufLaeuftPruefung.ok) return laufLaeuftPruefung
       // Die Kapselung des Rechercheurs, hier nachgezogen: siehe pruefeKeinUnterlauf.

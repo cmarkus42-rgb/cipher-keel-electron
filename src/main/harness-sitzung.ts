@@ -414,9 +414,22 @@ export async function starteHarnessLauf(args: {
   let markiereGestartet: (() => void) | null = null
   const wennGestartet = new Promise<void>((resolve) => { markiereGestartet = resolve })
 
-  // Marked running before the loop starts — see the comment on `laufendeLaeufe` above.
-  // A freshly minted id can never already be running, but the mark still has to land before
-  // starteLauf() so there is no window in which this run id looks resumable to a second call.
+  // The first appended event is always run.started — see lauf.ts's starteLauf, which
+  // writes it before entering the loop. Once it lands, startup has succeeded.
+  const umgebung = await baueLaufUmgebung(laufId, eintrag, auftragstext, wurzel, services, () => {
+    if (markiereGestartet) { markiereGestartet(); markiereGestartet = null }
+  }, args.entitaet)
+
+  // Marked running only once the environment is built, not before — see the comment on
+  // `laufendeLaeufe` above. A freshly minted id can never already be running, but the mark
+  // still has to land before starteLauf() so there is no window in which this run id looks
+  // resumable to a second call. It used to land *before* `baueLaufUmgebung`: a throw from
+  // there (unknown codec, an unreadable capabilities directory) then left the mark set with
+  // no `.finally` yet registered to clear it — this laufId stayed "running" forever, and
+  // Fortsetzen for it was refused for good. Building the environment first does not reopen the
+  // resumable-looking window the mark exists to close: nothing here writes to the run's log or
+  // starts the loop before the mark lands, only `baueLaufUmgebung` runs first, and it writes
+  // nothing either.
   laufendeLaeufe.add(laufId)
 
   const laufPromise = starteLauf(
@@ -425,11 +438,7 @@ export async function starteHarnessLauf(args: {
       anhaenge: args.anhaenge && args.anhaenge.length > 0 ? args.anhaenge : undefined,
       budgets: STANDARD_BUDGETS,
     },
-    // The first appended event is always run.started — see lauf.ts's starteLauf, which
-    // writes it before entering the loop. Once it lands, startup has succeeded.
-    await baueLaufUmgebung(laufId, eintrag, auftragstext, wurzel, services, () => {
-      if (markiereGestartet) { markiereGestartet(); markiereGestartet = null }
-    }, args.entitaet),
+    umgebung,
     laufId,
   )
 

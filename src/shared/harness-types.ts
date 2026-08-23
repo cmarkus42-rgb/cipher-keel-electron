@@ -32,7 +32,7 @@ export interface LaufAnzeige {
   endzustand: string | null
   /**
    * Wahr, wenn dieser Lauf der Unterlauf eines anderen ist (heute: der des Rechercheurs). Er wird
-   * nicht fortgesetzt — siehe `pruefeKeinUnterlauf` in harness-handlers.ts.
+   * nicht fortgesetzt — siehe `pruefeKeinUnterlauf` in harness-sitzung.ts.
    */
   istUnterlauf: boolean
 }

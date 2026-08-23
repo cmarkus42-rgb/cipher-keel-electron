@@ -142,7 +142,7 @@ const FAEHIGKEITEN_RUECKFALL: Faehigkeiten = {
   // Eintrag mit aufgeschobenem Laden bei *jedem* Lauf einen Hinweis in `run.started` — eine
   // Warnung, die bei der Vorgabekonfiguration immer anschlaegt, nutzt sich ab, bis niemand mehr
   // hinsieht. Die Zahl haengt an tests/harness/werkzeugliste.test.ts, und der prueft gegen die
-  // echte Konstruktion in harness-handlers.ts, nicht gegen einen Nachbau.
+  // echte Konstruktion in harness-sitzung.ts, nicht gegen einen Nachbau.
   werkzeugObergrenze: 12,
   nutzbaresKontextfenster: 8192,
   vertragsStrenge: { schemaTiefe: 1, reparaturversuche: 1 },
