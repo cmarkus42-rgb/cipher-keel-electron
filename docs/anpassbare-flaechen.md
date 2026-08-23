@@ -457,8 +457,9 @@ keine Fremdinstallation, die einer Claude-Code-Session grundsätzlich verboten w
 Konflikt mit CK-NFR-013 entfällt damit strukturell statt durch einen Kompromiss. Das ist der
 Grund, warum es dieses Harness gibt, nicht nur eine Umbenennung des Trägers. Der NanoClaw-
 Bestand selbst ist am 2026-08-17 aus dem Repo entfernt worden (Rückbau, siehe
-`docs/superpowers/specs/2026-08-17-nanoclaw-rueckbau-design.md`); die Einrichtung des neuen
-Harness ist eigener, noch offener Bau-Strang (siehe „Was fehlt" unten).
+`docs/superpowers/specs/2026-08-17-nanoclaw-rueckbau-design.md`); das neue Harness ist seit
+2026-08-23 gebaut, mit der Modellzuweisung im Zuordnungsplatz `sitzung:niveau-b` als seiner
+Einrichtung (siehe „Was fehlt" unten) — kein eigener Bau-Strang mehr.
 
 ## Was fehlt
 
