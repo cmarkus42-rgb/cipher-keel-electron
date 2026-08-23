@@ -117,7 +117,7 @@ export function NetzReiter({
         <input
           key={netz.searxngEndpunkt}
           defaultValue={netz.searxngEndpunkt}
-          placeholder="z. B. http://100.67.95.13:8080 — leer heisst nicht eingerichtet"
+          placeholder="z. B. http://100.78.7.108:8888 — leer heisst nicht eingerichtet"
           onBlur={e => schreibe('settings:einfachfeld-setzen', 'netz:searxngEndpunkt', e.target.value)}
           style={styles.eingabe}
         />

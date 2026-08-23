@@ -445,11 +445,16 @@ Runden mit fünf Behebungen, der hängende Abruf (5d) und der GPU-Zugriff des Sp
    JS-gerenderten Seiten, darunter GitHub-Issues). Beides ist benannt und kostet je einen
    Seitenplatz; vor M12 war es hinter dem Netzfilter unsichtbar.
 
-   **Die 403-Hälfte ist keine technische Frage, sondern eine Entscheidung des Nutzers.** Der
-   naheliegende Handgriff — eine Browser-Kennung senden — umgeht eine Sperre, die diese Seiten
-   ausdrücklich gesetzt haben. Das ist nicht dasselbe wie ein Fehler, den man behebt, und es
-   gehört nicht im Vorbeigehen entschieden. Die Readability-Hälfte hat diese Frage nicht: dort
-   scheitert die Extraktion an JavaScript, nicht an einer Sperre.
+   **Die 403-Hälfte ist entschieden, und zwar gegen den Handgriff.** Der Nutzer am 2026-08-23:
+   *„wir sollten es den plattformen schon bestimmen lassen wie sie ihre daten freigeben."* Also
+   **keine Browser-Kennung**, keine Umgehung der Sperre von Reddit und Stack Exchange. Die 403er
+   bleiben stehen und werden benannt — sie kosten je einen Seitenplatz, und das ist der Preis
+   dafür, die Entscheidung dieser Seiten zu achten. Diese Zeile ist ab jetzt kein offener Punkt
+   mehr, sondern eine Festlegung; wer sie umdreht, tut es gegen eine ausdrückliche Ansage.
+
+   Die **Readability-Hälfte** hat diese Frage nicht: dort scheitert die Extraktion an JavaScript,
+   nicht an einer Sperre. Sie bleibt offen und ist der einzige Teil dieses Punktes, an dem noch
+   etwas zu holen ist.
 
    **Ein eigener `user-agent` ist am 2026-08-22 schon einmal probiert und verworfen worden** —
    Zeitfehler 5→4, gelesene Seiten 2→1, HTTP-Ablehnungen 1→3, also schlechter in jeder Zeile. Das
@@ -476,13 +481,18 @@ Runden mit fünf Behebungen, der hängende Abruf (5d) und der GPU-Zugriff des Sp
    geraten. *Nebenbefund aus M12: die Trefferqualität von Tavily war in keinem der Läufe das
    Problem — die Trefferlisten waren durchweg einschlägig.*
 
-   **Zwei Dinge blockieren M6 heute, beide außerhalb des Codes.** Erstens ist
-   `netz.searxngEndpunkt` in der Konfiguration leer — es gibt keine erreichbare SearXNG-Instanz,
-   der Dreiervergleich ist also ohne einen Aufbauschritt nicht fahrbar. Zweitens steht die
-   Brave-Auflage weiter offen: die Speicherklausel §3(b)(i) der bezahlten Vertragsfassung ist
-   ungelesen (Abschnitt 5). Ein Zweiervergleich Tavily gegen Brave wäre sofort fahrbar — aber er
-   verschiebt Anfragen zu einem Anbieter, dessen Bedingungen für diesen Zweck niemand geprüft hat,
-   und das ist eine Entscheidung des Nutzers, keine Messentscheidung.
+   **SearXNG läuft seit dem 2026-08-23** — Docker auf dem Spark, `http://100.78.7.108:8888`,
+   `--restart unless-stopped`. Nicht auf MS-01, obwohl der Quelltext das an zwei Stellen sagte:
+   dort hat der Benutzer `cipher` keinen Docker-Zugriff (Gruppen nur `cipher builtin_users`,
+   Socket verweigert, `sudo` mit Passwort). Die Adresse im Code war eine Absicht, kein Ort; sie ist
+   nachgeführt. Belegt durch die laufende App: `netz.ausgehend → http://100.78.7.108:8888/search…`
+   in einer echten Recherche.
+
+   **Damit ist M6 fahrbar — aber als Zweier-, nicht als Dreiervergleich.** Brave bleibt draußen,
+   und zwar aus demselben Grund, aus dem Punkt 4 entschieden wurde: die Speicherklausel §3(b)(i)
+   der bezahlten Vertragsfassung ist ungelesen, und keel schreibt Ergebnisse in Graph und Vault.
+   Einen Anbieter zu fahren, dessen Bedingungen für genau diesen Zweck niemand geprüft hat, ist
+   dasselbe Muster wie eine Sperre zu umgehen — nur in die andere Richtung.
 
 7. **Integration** nach `main` über `superpowers:finishing-a-development-branch`.
 

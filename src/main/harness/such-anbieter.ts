@@ -2,8 +2,8 @@
  * such-anbieter — der erste Baustein der Zufuhr. Noch kein Werkzeug, nur die Schnittstelle
  * und zwei Implementierungen darunter.
  *
- * Entschieden wird die **Schnittstelle**, nicht der Anbieter (Entwurf §3.2). SearXNG auf MS-01
- * kostet nichts, braucht keinen Schluessel und sucht von einer Wohnanschluss-IP; Tavily hat
+ * Entschieden wird die **Schnittstelle**, nicht der Anbieter (Entwurf §3.2). SearXNG im eigenen
+ * Netz kostet nichts, braucht keinen Schluessel und sucht von einer Wohnanschluss-IP; Tavily hat
  * 1.000 Credits/Monat dauerhaft frei und ist ausdruecklich fuer Agenten gebaut. Welcher von
  * beiden am Ende die Vorgabe ist, entscheidet eine Woche Messung (M6) und nicht diese Datei.
  *
@@ -33,7 +33,7 @@
  * einmal hier und war nicht baubar: `netzwache.Abrufer` nimmt einen `Abrufauftrag` und gibt
  * `{ text, endUrl }` statt einer `Response`, `holeSicher` verdrahtet `method: 'GET'` (Tavily
  * braucht POST), und `pruefeUrl` laesst nur https durch und sperrt 100.64.0.0/10 — der
- * SearXNG-Endpunkt auf MS-01 ist `http://100.67.95.13:8080`, also http im Tailnet und damit
+ * SearXNG-Endpunkt ist `http://100.78.7.108:8888`, also http im Tailnet und damit
  * doppelt abgelehnt. Wer den Satz ernst naehme, machte die netzwache passend, also http und das
  * Tailnet auf: genau das Loch, gegen das a63723a und 58b7ef5 angetreten sind (unauthentifizierter
  * Ollama auf 100.78.7.108:11434).
@@ -713,7 +713,7 @@ export class BraveAnbieter implements SuchAnbieter {
 // ---------------------------------------------------------------------------------------------
 
 export interface SuchKonfiguration {
-  /** Basis-URL der SearXNG-Instanz, z. B. `http://100.67.95.13:8080`. */
+  /** Basis-URL der SearXNG-Instanz, z. B. `http://100.78.7.108:8888`. */
   searxngEndpunkt?: string | null
   tavilySchluessel?: string | null
   /**
@@ -742,8 +742,17 @@ function gesetzt(wert: string | null | undefined): string | null {
  * Ueberschrift von §3.2 und folgt seinem Text: die Gegenposition dort ist belegt (ein
  * dokumentierter SearXNG-Test lieferte Google 0 Ergebnisse, Brave „too many requests",
  * Startpage CAPTCHA — nur DuckDuckGo lief), die Annahme „Wohnanschluss-IP hilft" ist es nicht.
- * Bis eine Woche echter keel-Fragen auf MS-01 gemessen ist (M6), ist die Vorgabe das, was heute
- * funktioniert. Diese eine Zeile dreht sich um, wenn die Messung da ist.
+ *
+ * **Nachtrag 2026-08-23, seit es eine eigene Instanz gibt** (`http://100.78.7.108:8888`, Docker
+ * auf dem Spark): der alte Test haelt zur Haelfte. Brave („too many requests") und Startpage
+ * („CAPTCHA") bleiben stumm — **dieselben zwei Engines, unabhaengig nachgemessen**. Sein Schluss
+ * haelt aber nicht: eine echte Frage lieferte 29 Treffer, und `site:` ueber die Positivliste
+ * lieferte 10, alle auf erlaubten Hosts. „Nur DuckDuckGo lief" ist damit kein Dauerzustand,
+ * sondern war der Zustand einer Instanz an einem Tag.
+ *
+ * Die Vorgabe bleibt trotzdem Tavily, bis M6 an echten keel-Fragen gemessen ist — dass die
+ * Trefferliste gefuellt ist, sagt noch nichts darueber, ob der Rechercheur damit weiter kommt.
+ * Diese eine Zeile dreht sich um, wenn die Messung da ist.
  */
 export function waehleAnbieter(konfig: SuchKonfiguration): AnbieterWahl {
   const endpunkt = gesetzt(konfig.searxngEndpunkt)
