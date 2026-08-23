@@ -21,6 +21,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { SITZUNG_FREMDES_CLI } from '../../src/main/agent/agent-adapter'
 
 type SessionCreateHandler = (
   event: unknown,
@@ -86,6 +87,13 @@ describe('session:create — adapter selection', () => {
             id: 'claude-code',
             displayName: 'Claude Code',
             niveau,
+            // Explicit, not left absent: SESSION_CREATE now forks on `sitzungsart`
+            // (istSchleifenAdapter), and an attrappe without it would fall into the
+            // fremdes-cli branch only by accident (undefined !== 'eigene-schleife'), not
+            // because the test asserted anything about which branch it exercises. Naming
+            // it real value makes "this mock is a fremdes-cli session" an assertion this
+            // test actually holds, not an implicit side effect of the fork's shape.
+            sitzungsart: SITZUNG_FREMDES_CLI,
             isAvailable: () => available,
             // The real gate now reads this instead of building its own text (I-1 fix
             // round) — a mock without it would throw TypeError the moment isAvailable()

@@ -19,6 +19,7 @@ import * as path from 'path'
 import * as os from 'os'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { describeMissingTool } from '../../src/main/util/missing-tool'
+import { SITZUNG_FREMDES_CLI } from '../../src/main/agent/agent-adapter'
 
 type SessionCreateHandler = (
   event: unknown,
@@ -73,6 +74,11 @@ describe('session:create — claude availability gate (F1)', () => {
             id: 'claude-code',
             displayName: 'Claude Code',
             niveau: 'A',
+            // Explicit for the same reason as session-create-adapter-selection.test.ts:
+            // SESSION_CREATE now forks on `sitzungsart` before ever reaching isAvailable()
+            // — an attrappe without it would still take the fremdes-cli branch, but only
+            // because undefined !== 'eigene-schleife', not because this test said so.
+            sitzungsart: SITZUNG_FREMDES_CLI,
             isAvailable: () => false,
             nichtVerfuegbarGrund: () => describeMissingTool('claude'),
             buildLaunchCommand: () => {

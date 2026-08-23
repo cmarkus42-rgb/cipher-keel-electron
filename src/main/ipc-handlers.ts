@@ -112,7 +112,7 @@ import { registerWindow, broadcast } from './event-bus'
 import { normalizeToP1Format } from './p1/normalizer'
 import { getEntityDefinition, getEntityRahmen } from './preset/registry'
 import { resolveModel, tierAus } from './session/model-resolver'
-import { cliHandleFuerTier } from './model/registry'
+import { cliHandleFuerTier, eintragFuerSitzung } from './model/registry'
 import { getGlobalRules } from './preset/global-rules'
 import { getCapabilityPackages } from './preset/capabilities'
 import { CapabilityNiveau } from './preset/niveau'
@@ -123,7 +123,9 @@ import { materialiseCapabilities } from './session/materialise-capabilities'
 import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-file'
 import { formatShellCommand, splitShellArgs } from './util/shell-quote'
 import { AdapterRegistry } from './agent/registry'
-import { istSchleifenAdapter } from './agent/agent-adapter'
+import { istSchleifenAdapter, SITZUNG_EIGENE_SCHLEIFE, type EntitaetsTeile } from './agent/agent-adapter'
+import { neuesRegister } from './session/schleifen-sitzungen'
+import { baueSchleifenSitzung } from './session/schleifen-start'
 
 // Tracks the active grid window for focus-or-create logic (CK-UI-002)
 let activeGridWindow: BrowserWindow | null = null
@@ -131,6 +133,19 @@ let activeGridWindow: BrowserWindow | null = null
 let activeSettingsWindow: BrowserWindow | null = null
 // Tracks the active harness window for focus-or-create logic
 let activeHarnessWindow: BrowserWindow | null = null
+
+// The grid cells of keel's own loop (SchleifenSitzungsAdapter). Module-level like
+// activeGridWindow above: the main process is the one and only source of cell state (see
+// schleifen-sitzungen.ts) — a per-call registry would let two SESSION_CREATE calls race
+// past each other without ever seeing the other's cell.
+const schleifenZellen = neuesRegister()
+/**
+ * The prefix parts per cell, taken from the entity definition. Kept separate from the
+ * register because they never reach the renderer: it sees events, never a provider, never
+ * an endpoint, never a capability row (shared/harness-types.ts) — and a prompt body or
+ * persona is exactly that kind of content.
+ */
+const praefixJeZelle = new Map<string, EntitaetsTeile>()
 
 export function registerIpcHandlers(services: AppServices): void {
   // The registry demands its config reader — see Task 6. This is the one place that has
@@ -228,16 +243,44 @@ export function registerIpcHandlers(services: AppServices): void {
         return { id: null, name: null, error: `Unknown entity '${entityId}'` }
       }
 
-      // Provisional branch: the own loop has no wiring past this point yet. Sits before
-      // materialiseCapabilities/writeEntityPromptFile on purpose — "gate before any file
-      // is written" (see above) applies here too. A later task replaces this with the
-      // real fork over both Sitzungsarten.
+      // From here the two Sitzungsarten fork — but less far than an earlier draft of this
+      // plan claimed. materialiseCapabilities runs on BOTH paths: it writes to
+      // `<project>/.claude/capabilities/`, and that is exactly what `leseFaehigkeiten`
+      // (WURZELN = ['skills', 'capabilities'] in harness/faehigkeiten.ts), keel's own
+      // loop's capability reader, reads from. The consumer that draft thought did not
+      // exist is the loop itself: its capabilities reach the model through the harness's
+      // own lazy loading — a name/description stub in the stable prefix, the body on
+      // demand via `faehigkeit_lesen` — instead of the full text in a cached prefix.
+      //
+      // What genuinely drops on the loop path: `writeEntityPromptFile` (the body enters
+      // via `assemblePraefixTeile`, not a file plus a command-line flag) and the whole
+      // pane, `buildLaunchCommand` included.
       if (istSchleifenAdapter(adapter)) {
-        return {
-          id: null,
-          name: null,
-          error: 'Der Adapter für diese Laufzeit ist noch nicht verdrahtet.',
+        const materialised = materialiseCapabilities(def.rahmen.capabilityAnbindung, cwd)
+        if (materialised.unknown.length > 0) {
+          console.warn(
+            `[ipc] entity '${entityId}': no SKILL.md asset for ${materialised.unknown.join(', ')}`
+          )
         }
+
+        const gebaut = baueSchleifenSitzung({
+          name, cwd, entityId, def, eintrag: eintragFuerSitzung('niveau-b'),
+        })
+        if (!gebaut.ok) return { id: null, name: null, error: gebaut.meldung }
+        schleifenZellen.setze(gebaut.zelle)
+        praefixJeZelle.set(name, gebaut.praefix)
+
+        if (ctx && services.graphWriter) {
+          try {
+            writeSessionNode(services.graphWriter, { ...ctx, name })
+          } catch (err) {
+            console.warn('[ipc] session node write failed:', err)
+          }
+        }
+        // Deliberately the imported constant here, not its own string value written out —
+        // laeuferHeimat (tests/model/eignung-einzige-quelle.test.ts) only allows that
+        // Laeufer literal in eignung.ts, slots.ts and agent-adapter.ts.
+        return { id: name, name, error: null, sitzungsart: SITZUNG_EIGENE_SCHLEIFE, hinweis: null }
       }
 
       const materialised = materialiseCapabilities(def.rahmen.capabilityAnbindung, cwd)
@@ -309,6 +352,20 @@ export function registerIpcHandlers(services: AppServices): void {
 
   ipcMain.handle(SESSION_DESTROY, async (_event, name: string) => {
     try {
+      const zelle = schleifenZellen.hole(name)
+      if (zelle) {
+        // If one is running, it ends at the next turn boundary — like every abort — and
+        // writes its own run.finished to the log. The cell is already gone by then; the
+        // log stays readable in the harness window. That is more honest than leaving the
+        // cell standing until the run ends and pretending it is still there.
+        if (zelle.laufId && zelle.zustand === 'laeuft') {
+          const adapter = adapterRegistry.get('keel-harness')
+          if (adapter && istSchleifenAdapter(adapter)) adapter.brichAb(zelle.laufId)
+        }
+        schleifenZellen.entferne(name)
+        praefixJeZelle.delete(name)
+        return { ok: true, error: null }
+      }
       services.tmux.unwatchSession(name)
       await services.tmux.killSession(name)
       removeEntityPromptFile(app.getPath('userData'), name)
