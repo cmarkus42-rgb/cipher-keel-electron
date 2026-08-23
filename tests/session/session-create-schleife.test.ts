@@ -27,7 +27,10 @@ import type { Zellenregister } from '../../src/main/session/schleifen-sitzungen'
 type SessionCreateHandler = (
   event: unknown,
   opts: { name?: string; entityId?: string; cwd?: string },
-) => Promise<{ id: string | null; name: string | null; error: string | null; sitzungsart?: string }>
+) => Promise<{
+  id: string | null; name: string | null; error: string | null
+  sitzungsart?: string; eintragId?: string
+}>
 
 type SessionDestroyHandler = (
   event: unknown,
@@ -166,6 +169,12 @@ describe('session:create / session:destroy — die Schleifen-Sitzungsart (I-1)',
     expect(result.error).toBeNull()
     expect(result.id).toBe('schleife-session')
     expect(result.sitzungsart).toBe(SITZUNG_EIGENE_SCHLEIFE)
+    // Task 10 (Renderer-Zelle): der Zellenkopf zeigt, was diese Zelle tatsaechlich faehrt — das
+    // ist der Registry-Eintrag hinter dem 'sitzung:niveau-b'-Platz zum Anlagezeitpunkt, nicht
+    // eine spaeter aus dem Ereignisstrom nachgetragene Zahl. Ohne diese Zeile koennte
+    // schleifenTeile.zelle.eintragId aus der Rueckgabe verschwinden, und kein Test hier bemerkte
+    // es, denn SessionCreateHandler's Typ deklariert das Feld nur optional.
+    expect(result.eintragId).toBe('spark-qwen38-27b')
 
     // .claude/capabilities/ IS written — Task 6's own correction (Punkt 2 of the brief): this
     // is how the loop's capabilities reach the model, via faehigkeit_lesen, not a cached prompt.

@@ -297,7 +297,17 @@ export function registerIpcHandlers(services: AppServices): void {
         // Deliberately the imported constant here, not its own string value written out —
         // laeuferHeimat (tests/model/eignung-einzige-quelle.test.ts) only allows that
         // Laeufer literal in eignung.ts, slots.ts and agent-adapter.ts.
-        return { id: name, name, error: null, sitzungsart: SITZUNG_EIGENE_SCHLEIFE, hinweis: null }
+        //
+        // eintragId ist der Registry-Eintrag, den baueSchleifenSitzung aus dem
+        // 'sitzung:niveau-b'-Zuordnungsplatz aufgeloest und in die Zelle geschrieben hat (siehe
+        // SchleifenZelle in schleifen-sitzungen.ts) — nicht der Platz selbst. Der Renderer zeigt
+        // damit im Zellenkopf, was diese Zelle tatsaechlich faehrt, auch wenn der Platz spaeter
+        // umbelegt wird: 'naechste-session' (model/slots.ts) heisst, die naechste NEUE Zelle
+        // bekommt die Aenderung, diese hier nicht mehr.
+        return {
+          id: name, name, error: null, sitzungsart: SITZUNG_EIGENE_SCHLEIFE,
+          eintragId: schleifenTeile.zelle.eintragId, hinweis: null,
+        }
       }
 
       // istSchleifenAdapter(adapter) already returned above for every loop adapter that

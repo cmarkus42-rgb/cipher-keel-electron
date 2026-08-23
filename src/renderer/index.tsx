@@ -18,19 +18,41 @@ import { useVoiceSession } from './hooks/useVoiceSession'
 import { shouldApplyStatusResult } from './service-status-fetch'
 import { errorMessage, type ServiceStatusMap } from '../shared/service-status'
 import { defaultPresetId } from '../shared/preset-catalog'
+import type { HarnessAntwort, HarnessEreignis, SessionStatusChanged } from '../shared/harness-types'
 
 interface SessionSlot {
-  type: 'session' | 'launcher'
+  type: 'session' | 'launcher' | 'harness'
   sessionId?: string
   sessionName?: string
   status?: 'active' | 'closing' | 'stopped'
   contextUsage?: number
+  /**
+   * Nur fuer type 'harness'. Gefuehrt vom Hauptprozess ueber SESSION_STATUS_CHANGED, nie hier
+   * abgeleitet — siehe den Modulkopf von HarnessCell.tsx: eine Zelle, die aus dem Ereignisstrom
+   * selbst auf 'leerlaufend' schloesse, waere die zweite Stelle, die dieselbe Sache weiss.
+   */
+  zustand?: 'leerlaufend' | 'laeuft'
+  laufId?: string | null
+  letzterEndzustand?: string | null
+  /** SchleifenZelle.eintragId, festgehalten bei Anlage der Zelle — nicht der aktuelle Platzinhalt. */
+  eintragId?: string
 }
 
 // IPC channel constants (inlined to avoid circular imports in renderer)
 const SERVICES_STATUS = 'services:status'
 const SERVICES_STATUS_CHANGED = 'services:status-changed'
 const APP_READY = 'app:ready'
+const SESSION_AUFTRAG = 'session:auftrag'
+const SESSION_STATUS_CHANGED = 'session:status-changed'
+const HARNESS_EREIGNIS = 'harness:ereignis'
+const HARNESS_LAUF_ABBRECHEN = 'harness:lauf-abbrechen'
+/**
+ * Deckel je Lauf, nicht insgesamt: ein einzelner sehr langer Lauf soll den Renderer-Speicher
+ * nicht unbegrenzt fuellen. Das ist eine Deckelung, keine Vollstaendigkeit — was darueber
+ * hinausgeht, faellt aus dieser Ansicht, bleibt aber in der Harness-DB nachlesbar
+ * (harness:lauf-lesen im Harness-Fenster).
+ */
+const HARNESS_EREIGNIS_DECKEL = 500
 
 const api = () => window.cipherKeel
 
@@ -59,10 +81,36 @@ function App() {
        *  fell back to agent.modelTiers — surfaced here for now as a console warning
        *  rather than a UI banner, which is beyond this fix's scope. */
       hinweis?: string | null
+      /**
+       * Nur gesetzt, wenn der Lancierpfad eine Niveau-B-Schleifenzelle statt einer tmux-Sitzung
+       * ergab (ipc-handlers.ts, Konstante SITZUNG_EIGENE_SCHLEIFE in agent-adapter.ts). Der
+       * Renderer vergleicht nur auf "gesetzt", ohne den Wert selbst zu benennen: die Werte
+       * dieses Vokabulars haben genau eine Heimat (tests/model/eignung-einzige-quelle.test.ts),
+       * und src/renderer gehoert nicht dazu.
+       */
+      sitzungsart?: string | null
+      /**
+       * Nur gesetzt, wenn sitzungsart oben gesetzt ist — SchleifenZelle.eintragId, der
+       * Registry-Eintrag, mit dem diese Zelle angelegt wurde. Kommt vom Hauptprozess, weil der
+       * ihn bereits aus dem Niveau-B-Zuordnungsplatz aufgeloest hat; ein zweites Nachschlagen
+       * hier waere dieselbe Tatsache auf einem zweiten Weg.
+       */
+      eintragId?: string | null
     }
     if (result?.id && result.name) {
       if (result.hinweis) {
         console.warn('[renderer] session create used a fallback model:', result.hinweis)
+      }
+      if (result.sitzungsart) {
+        setSlots((prev) => [
+          ...prev,
+          {
+            type: 'harness', sessionId: result.name!, sessionName: result.name!,
+            zustand: 'leerlaufend', laufId: null, letzterEndzustand: null,
+            eintragId: result.eintragId ?? '',
+          },
+        ])
+        return null
       }
       setSlots((prev) => [
         ...prev,
@@ -73,6 +121,24 @@ function App() {
     const message = errorMessage(result?.error ?? 'Session konnte nicht gestartet werden')
     console.error('[renderer] session create failed:', result?.error)
     return message
+  }, [])
+
+  // Ein Auftrag an eine Niveau-B-Zelle. Gibt wie handleStartSession eine Fehlermeldung statt
+  // null zurueck (F-6-Konvention) — eine gescheiterte Beauftragung muss der Mensch im Fenster
+  // sehen, nicht nur in der Konsole.
+  const handleAuftrag = useCallback(async (sessionName: string, auftragstext: string): Promise<string | null> => {
+    const antwort = await api().invoke(SESSION_AUFTRAG, { name: sessionName, auftragstext }) as
+      HarnessAntwort<{ laufId: string; fortgesetzt: boolean }>
+    if (antwort.ok) return null
+    console.error('[renderer] session:auftrag failed:', antwort.meldung)
+    return antwort.meldung
+  }, [])
+
+  const handleAbbrechenLauf = useCallback(async (laufId: string): Promise<string | null> => {
+    const antwort = await api().invoke(HARNESS_LAUF_ABBRECHEN, laufId) as HarnessAntwort<true>
+    if (antwort.ok) return null
+    console.error('[renderer] harness:lauf-abbrechen failed:', antwort.meldung)
+    return antwort.meldung
   }, [])
 
   const handleCloseSession = useCallback(async (sessionId: string) => {
@@ -88,6 +154,49 @@ function App() {
         prev.map((s) => (s.sessionId === sessionId ? { ...s, status: 'active' as const } : s))
       )
     }
+  }, [])
+
+  // Der Zellenzustand einer Niveau-B-Zelle kommt ausschliesslich hierueber — nie aus
+  // HARNESS_EREIGNIS abgeleitet (Modulkopf HarnessCell.tsx). laufId bleibt beim Uebergang nach
+  // 'leerlaufend' stehen (SchleifenZelle tut dasselbe, schleifen-sitzungen.ts): der Kopf soll
+  // den Verlauf des zuletzt gelaufenen Auftrags noch zeigen koennen, nicht auf "Noch kein Lauf"
+  // zurueckspringen, sobald er fertig ist.
+  useEffect(() => {
+    const unsub = api().on(SESSION_STATUS_CHANGED, (_event, status) => {
+      const s = status as SessionStatusChanged
+      setSlots((prev) => prev.map((slot) => {
+        if (slot.type !== 'harness' || slot.sessionName !== s.name) return slot
+        if (s.zustand === 'laeuft') {
+          return { ...slot, zustand: 'laeuft', laufId: s.laufId }
+        }
+        return { ...slot, zustand: 'leerlaufend', letzterEndzustand: s.endzustand }
+      }))
+    })
+    return unsub
+  }, [])
+
+  // Sammelt Harness-Ereignisse aller Zellen fuer die HarnessCells (die selbst nach laufId
+  // filtern). Gedeckelt je laufId auf HARNESS_EREIGNIS_DECKEL: ein einzelner sehr langer Lauf
+  // soll den Renderer-Speicher nicht unbegrenzt fuellen. Wer ueber die Deckelung hinaus will,
+  // liest im Harness-Fenster (harness:lauf-lesen) nach — dort steht der volle Verlauf aus der DB.
+  const [harnessEreignisse, setHarnessEreignisse] = useState<HarnessEreignis[]>([])
+  useEffect(() => {
+    const unsub = api().on(HARNESS_EREIGNIS, (_event, e) => {
+      const ereignis = e as HarnessEreignis
+      setHarnessEreignisse((prev) => {
+        const naechste = [...prev, ereignis]
+        const zuDiesemLauf = naechste.filter((x) => x.laufId === ereignis.laufId)
+        if (zuDiesemLauf.length <= HARNESS_EREIGNIS_DECKEL) return naechste
+        const ueberschuss = zuDiesemLauf.length - HARNESS_EREIGNIS_DECKEL
+        let uebersprungen = 0
+        return naechste.filter((x) => {
+          if (x.laufId !== ereignis.laufId) return true
+          if (uebersprungen < ueberschuss) { uebersprungen++; return false }
+          return true
+        })
+      })
+    })
+    return unsub
   }, [])
 
   // Listen for context usage updates from StatusLineMonitor. Extra args on a
@@ -177,6 +286,9 @@ function App() {
           voiceDot={voice.voiceDotState}
           onStartSession={handleStartSession}
           onCloseSession={handleCloseSession}
+          harnessEreignisse={harnessEreignisse}
+          onAuftrag={handleAuftrag}
+          onAbbrechen={handleAbbrechenLauf}
         />
       </div>
       <StatusBar sessionCount={sessionCount} activeProject="" serviceStatus={serviceStatus} />
