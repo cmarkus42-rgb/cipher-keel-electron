@@ -54,3 +54,47 @@ describe('weiterOderFrisch', () => {
     expect(weiterOderFrisch([], 'm1', BUDGETS, FENSTER, START).weiter).toBe(false)
   })
 })
+
+/**
+ * Die Tests oben rechnen ihre Schwelle aus der importierten FOLGE_RESERVE selbst aus
+ * (`BUDGETS.runden * (1 - FOLGE_RESERVE)`). Damit wandert die Schwelle mit der Konstanten mit,
+ * und ein solcher Test kann `0.25` nicht von `0` unterscheiden — er behauptet nur „es wird
+ * ueberhaupt eine Reserve angewandt", nicht „die Reserve betraegt ein Viertel". Das haelt die
+ * *Struktur* (alle vier Budgets werden gestaucht, nicht nur der Kontext) und bleibt unabhaengig
+ * vom Zahlenwert richtig — deshalb bleiben diese Tests stehen.
+ *
+ * Die Tests hier nageln zusaetzlich den *Wert* fest: die Zahlen 9, 8, 675_000 und 674_999 stehen
+ * wortwoertlich da, nicht als Rechnung ueber FOLGE_RESERVE. Sie brechen deshalb absichtlich, wenn
+ * jemand FOLGE_RESERVE aendert — das ist ihr Zweck: der Wert ist eine Entscheidung, keine
+ * Stellschraube, und wer ihn aendert, soll es an einem roten Test merken und den Eintrag in
+ * docs/anpassbare-flaechen.md mitziehen. Beide Testsorten braucht es: die oberen halten die
+ * Verdrahtung, diese hier halten den Wert.
+ */
+describe('weiterOderFrisch — der Wert der Reserve, nicht nur ihre Verdrahtung', () => {
+  it('faengt bei genau neun verbrauchten Runden frisch an (12 * 0.75 = 9, wortwoertlich)', () => {
+    const e: Ereignis[] = [ev('run.started', {})]
+    for (let i = 0; i < 9; i++) e.push(antwort(10))
+    const r = weiterOderFrisch(e, 'm1', BUDGETS, FENSTER, START + 1_000)
+    expect(r.weiter).toBe(false)
+    expect(r.grund).toContain('Rundenbudget')
+  })
+
+  it('fuehrt bei acht verbrauchten Runden noch fort (eine Runde unter der Schwelle)', () => {
+    const e: Ereignis[] = [ev('run.started', {})]
+    for (let i = 0; i < 8; i++) e.push(antwort(10))
+    const r = weiterOderFrisch(e, 'm1', BUDGETS, FENSTER, START + 1_000)
+    expect(r.weiter).toBe(true)
+  })
+
+  it('faengt bei genau 675.000 ms Wanduhr frisch an (900.000 * 0.75, wortwoertlich)', () => {
+    const e = [ev('run.started', {}), antwort(10)]
+    const r = weiterOderFrisch(e, 'm1', BUDGETS, FENSTER, START + 675_000)
+    expect(r.weiter).toBe(false)
+  })
+
+  it('fuehrt bei 674.999 ms Wanduhr noch fort (eine Millisekunde unter der Schwelle)', () => {
+    const e = [ev('run.started', {}), antwort(10)]
+    const r = weiterOderFrisch(e, 'm1', BUDGETS, FENSTER, START + 674_999)
+    expect(r.weiter).toBe(true)
+  })
+})
