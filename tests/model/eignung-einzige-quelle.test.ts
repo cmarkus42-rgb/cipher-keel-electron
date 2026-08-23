@@ -31,17 +31,19 @@ describe('the suitability rules have exactly one home', () => {
    * statt weiter nur einen davon zu treffen. Was er wirklich schuetzen soll, halten ohnehin die
    * beiden Tests darunter: eine zweite Tabelle und ein zweiter Nutzertext.
    *
-   * agent-adapter.ts (seit dem Harness-Adapter-Plan, 2026-08-23) nennt `'eigene-schleife'`
-   * ebenfalls — dort als Wert des Diskriminanzfelds `Sitzungsart`, nicht als Laeufer-Tabelle.
-   * Es ist derselbe reale Sachverhalt (keels eigene Prozessschleife) von der Adapter-Seite aus
-   * benannt statt von der Modell-Zuordnungs-Seite, genau wie slots.ts ihn von der Slot-Seite
-   * aus nennt. Eine zweite Faehigkeits- oder Sperrgrund-Tabelle entstuende dort trotzdem nicht
-   * — das bleibt Sache des Tests direkt darunter.
+   * agent-adapter.ts (seit dem Harness-Adapter-Plan, 2026-08-23) nennt beide Werte ebenfalls,
+   * weil `Sitzungsart` dort per `Extract<Laeufer, ...>` aus dieser Liste abgeleitet ist, nicht
+   * weil es eine eigene Wortliste fuehrt. Kein zweiter Nenner, sondern derselbe.
+   *
+   * claude-code.ts nennt aus demselben Grund genau einen der beiden Werte: ein konkreter
+   * Adapter muss sein `sitzungsart`-Feld auf einen Literalwert festlegen, so wie ein Slot
+   * seinen Laeufer festlegt — auch das ist keine zweite Tabelle, sondern eine Zuweisung.
    */
   const laeuferHeimat = [
     ...erlaubt,
     path.join(SRC, 'main/model/slots.ts'),
     path.join(SRC, 'main/agent/agent-adapter.ts'),
+    path.join(SRC, 'main/agent/adapters/claude-code.ts'),
   ]
 
   it('names the three Laeufer only in eignung.ts and the slot table', () => {

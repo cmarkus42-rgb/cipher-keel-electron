@@ -18,7 +18,7 @@ describe('jeder registrierte Adapter erklaert seine Sitzungsart', () => {
     // pruefen, obwohl der Vergleich selbst genau das tut, was der Test verlangt.
     const ohneArt = registry.listIds()
       .map(id => registry.get(id)!)
-      .filter((a): boolean => a.sitzungsart !== 'tmux' && a.sitzungsart !== 'eigene-schleife')
+      .filter((a): boolean => a.sitzungsart !== 'fremdes-cli' && a.sitzungsart !== 'eigene-schleife')
     expect(ohneArt.map(a => a.id)).toEqual([])
   })
 

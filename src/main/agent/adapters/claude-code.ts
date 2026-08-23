@@ -41,7 +41,7 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
   readonly displayName = 'Claude Code'
   readonly tier = 'tier-1' as const
   readonly niveau = CapabilityNiveau.A
-  readonly sitzungsart = 'tmux' as const
+  readonly sitzungsart = 'fremdes-cli' as const
   readonly appGesteuerteParameter = [
     '--resume', '--fork-session', '--model', '--append-system-prompt-file',
   ] as const

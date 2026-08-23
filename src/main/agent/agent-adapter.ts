@@ -26,6 +26,7 @@
 
 import type { AdapterFeature, AdapterCapabilities, ContextUsage } from '../../shared/types'
 import type { CapabilityNiveau } from '../preset/niveau'
+import type { Laeufer } from '../model/eignung'
 
 export type { AdapterFeature, AdapterCapabilities }
 
@@ -89,8 +90,18 @@ export interface OutputEvent {
   content: string
 }
 
-/** Wie eine Sitzung dieses Adapters ueberhaupt existiert. Das Diskriminanzfeld der Union. */
-export type Sitzungsart = 'tmux' | 'eigene-schleife'
+/**
+ * Wie eine Sitzung dieses Adapters existiert — und zugleich der Laeufer aus eignung.ts,
+ * eingeengt auf die beiden Werte, die eine *ganze Sitzung* tragen. 'ein-schuss' verteilt
+ * einen einzelnen Job und ist kein Sitzungstyp.
+ *
+ * Abgeleitet statt neu benannt: eine zweite Wortliste ('tmux' neben 'fremdes-cli') waere
+ * dieselbe Unterscheidung unter zwei Namen, und nichts haette erzwungen, dass der
+ * Zuordnungsplatz `sitzung:niveau-b` (model/slots.ts) und der Adapter, der ihn bedient,
+ * denselben Wert meinen. Ueber `Extract` tun sie es per Typ: faellt drueben ein Name, faellt
+ * hier der Compiler.
+ */
+export type Sitzungsart = Extract<Laeufer, 'fremdes-cli' | 'eigene-schleife'>
 
 /** Was jeder Adapter ehrlich beantworten kann — unabhaengig davon, wie seine Sitzung laeuft. */
 export interface AgentAdapterBasis {
@@ -145,7 +156,7 @@ export interface AgentAdapterBasis {
  * output batcher respectively — they describe exactly the separation this union now carries.
  */
 export interface CliSitzungsAdapter extends AgentAdapterBasis {
-  readonly sitzungsart: 'tmux'
+  readonly sitzungsart: 'fremdes-cli'
   readonly appGesteuerteParameter?: readonly string[]
   buildLaunchCommand(opts: LaunchOpts): LaunchCommand
   postLaunchInjection?(ctx: AdapterContext): Promise<void>
