@@ -1134,6 +1134,9 @@ describe('datei_schreiben', () => {
 
   it('nennt seine Quelle als lokal', async () => {
     const r = await schreiben.ausfuehren({ pfad: 'a.ts', inhalt: 'x' }, ktx)
+    // Unbedingt, nicht bloss hinter `if (r.ok)`: sonst besteht der Test auch dann, wenn das
+    // Schreiben scheiterte — und ein Test, der im Fehlerfall nichts zusichert, prueft nichts.
+    expect(r.ok).toBe(true)
     if (r.ok) expect(r.quelle).toBe('lokal')
   })
 })
@@ -1424,9 +1427,15 @@ describe.skipIf(process.platform !== 'darwin')('shell_ausfuehren — echter Lauf
   })
 
   it('bekommt ohne Paketbefehl kein Netz', async () => {
+    // `|| true` ist hier nicht Bequemlichkeit, sondern die Bedingung dafuer, dass der Test
+    // ueberhaupt etwas prueft: ohne Socket endet `curl` mit einem Fehlercode, `shell_ausfuehren`
+    // liefert dann `ok: false` — und eine Zusicherung hinter `if (r.ok)` liefe genau im
+    // geprueften Fall ins Leere. Mit `|| true` endet die Shell mit 0, das Ergebnis ist `ok`, und
+    // die Ausgabe traegt die 000, auf die es ankommt.
     const r = await shell.ausfuehren(
-      { kommando: 'curl -s -m 8 -o /dev/null -w "%{http_code}" https://example.com' }, ktx,
+      { kommando: 'curl -s -m 8 -o /dev/null -w "%{http_code}" https://example.com || true' }, ktx,
     )
+    expect(r.ok).toBe(true)
     if (r.ok) expect(r.inhalt[0].text).toContain('000')
   }, 20_000)
 
