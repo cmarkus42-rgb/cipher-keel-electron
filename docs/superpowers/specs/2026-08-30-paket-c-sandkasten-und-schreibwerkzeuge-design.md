@@ -439,6 +439,17 @@ Ergebnis gehört in den Bericht — nicht „war mal rot", sondern „beisst".
 4. **Kein CIDR-Filter.** Seatbelt kann `100.64/10` nicht; die Vorgabe `zu` ist die Antwort darauf.
 5. **Die TOCTOU-Lücke im Frisch-Zweig** (aus der Vorgängerübergabe, reiner Lesebefund) wird von
    diesem Paket **nicht** angefasst. `O_NOFOLLOW` in §6 betrifft die Schreibwerkzeuge, nicht sie.
+6. **`O_NOFOLLOW` ist unbelegt, und §6 hat das zunächst anders behauptet.** Der Review von Task 5
+   hat den Kontrollfluss verfolgt: `pruefePfad` gibt den **aufgelösten** Pfad zurück, `openSync`
+   sieht im Normalbetrieb also nie einen Symlink. Das Flag greift ausschliesslich, wenn die letzte
+   Pfadkomponente *zwischen* Auflösung und Öffnen getauscht wird — und dieser Fall ist ohne Mocks
+   nicht synchron herstellbar, also von keinem Test belegt. Der grüne Symlink-Test belegt die
+   Pfadwache, nicht das Flag. Es bleibt als Tiefenverteidigung gegen ein echtes Rennen; die Zusage
+   ist zurückgenommen.
+7. **Dasselbe Rennen um ein Zwischenverzeichnis ist gar nicht gedeckt.** `mkdirSync(…, recursive)`
+   läuft vor dem bewachten Öffnen und hat kein Gegenstück zu `O_NOFOLLOW`. Ein zur Prüfzeit
+   vorhandener Symlink im Pfad fällt bei der Pfadwache; einer, der erst danach entsteht, fällt
+   nirgends. Benannt, nicht geschlossen.
 
 ---
 
