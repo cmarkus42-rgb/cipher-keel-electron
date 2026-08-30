@@ -150,9 +150,27 @@ describe('profilText — die Verbote der Pfadwache, gespiegelt', () => {
 })
 
 describe('STANDARD_ZWISCHENSPEICHER', () => {
-  it('ist heim-relativ und nennt npm und pub-cache', () => {
-    expect(STANDARD_ZWISCHENSPEICHER).toContain('.npm')
-    expect(STANDARD_ZWISCHENSPEICHER).toContain('.pub-cache')
+  // Woertlich und vollstaendig, nicht "enthaelt zwei bekannte Eintraege": der Modulkopf sagt
+  // ueber diese Liste, sie sei die weichste Stelle des ganzen Sandkastens und wachse "nie
+  // stillschweigend". Mit `toContain` war das eine Absichtserklaerung — ein siebter Eintrag,
+  // auch `.ssh`, waere gruen durchgegangen. Erst `toEqual` macht den Satz pruefbar. Wer hier
+  // etwas hinzufuegt, aendert diese Zeile mit und begruendet es im Kopf von sandkasten.ts und in
+  // docs/anpassbare-flaechen.md.
+  it('traegt genau diese Eintraege', () => {
+    expect(STANDARD_ZWISCHENSPEICHER).toEqual([
+      '.npm', '.pub-cache', '.dart', '.flutter', '.cargo/registry',
+      '.gradle/caches', '.gradle/wrapper',
+    ])
+  })
+  it('ist heim-relativ', () => {
     for (const e of STANDARD_ZWISCHENSPEICHER) expect(e.startsWith('/')).toBe(false)
+  })
+  // `.gradle` allein war der eine Eintrag, der der Art nach nicht in diese Liste gehoerte:
+  // `~/.gradle/init.d/*.gradle` wird bei jedem spaeteren Gradle-Aufruf ausgefuehrt, unsandboxed,
+  // in der Sitzung des Menschen. Diese Zusicherung haelt die Verengung fest — sie faellt, sobald
+  // jemand den Oberordner zurueckholt.
+  it('gibt kein Verzeichnis frei, unter dem Gradle Startskripte ausfuehrt', () => {
+    expect(STANDARD_ZWISCHENSPEICHER).not.toContain('.gradle')
+    for (const e of STANDARD_ZWISCHENSPEICHER) expect(e).not.toBe('.gradle/init.d')
   })
 })

@@ -35,7 +35,17 @@ export type NetzModus = 'zu' | 'offen'
  * in exactly one place, visible, and never grows silently.
  */
 export const STANDARD_ZWISCHENSPEICHER = [
-  '.npm', '.pub-cache', '.dart', '.flutter', '.cargo/registry', '.gradle',
+  // `.cargo/registry` und nicht `.cargo`: unter `.cargo/bin` liegen Binaries, die der Mensch
+  // spaeter selbst aufruft, und `.cargo/config.toml` kann einen eigenen Linker vorgeben.
+  '.npm', '.pub-cache', '.dart', '.flutter', '.cargo/registry',
+  // `.gradle/caches` und `.gradle/wrapper` und nicht `.gradle`: unter `~/.gradle/init.d/` fuehrt
+  // Gradle **jede** `*.gradle` bei jedem spaeteren Aufruf aus, in der Sitzung des Menschen und
+  // ohne Sandkasten. Ein Lauf, der dort eine Datei ablegt, hat damit Codeausfuehrung auf dem
+  // Rechner *nach* seinem Ende — die Einschraenkung ist also nicht Sparsamkeit, sondern derselbe
+  // Schnitt, der bei `.cargo` schon gemacht wurde und hier vergessen worden war. `~/.gradle`
+  // war der einzige Eintrag der Liste, der eine Ausfuehrungsflaeche und keinen Zwischenspeicher
+  // benannte.
+  '.gradle/caches', '.gradle/wrapper',
 ]
 
 /** For `(subpath "...")` and `(literal "...")`: an SBPL string literal. */
