@@ -91,6 +91,20 @@ const ALLE_ARTEN = [
   slot('sitzung:niveau-b', { art: 'sitzung' }),
 ]
 
+/**
+ * Was ein Mensch auf der Seite liest — Elementinhalte, keine Attribute.
+ *
+ * Der Unterschied ist nicht kosmetisch. Der Sperrgrund steht zusaetzlich im `title` der
+ * gesperrten Option, und `toContain` gegen das rohe Markup traf diesen Tooltip: der Waechter
+ * der vertagten Frage blieb gruen, als der sichtbare Sperrgrund-Block ersatzlos entfernt wurde.
+ * Genau diese Verschiebung schliesst der Kommentar in ModelleReiter.tsx aus — „the answer to
+ * ‚why can I not pick that' belongs on screen, not in a tooltip" —, und ein Waechter, der sie
+ * durchlaesst, beruhigt, statt zu wachen.
+ */
+function sichtbarerText(html: string): string {
+  return html.replace(/<[^>]*>/g, '\n')
+}
+
 /** Die Ueberschriften der Zuordnungsgruppen, in der Reihenfolge, in der sie im Fenster stehen. */
 function gruppenUeberschriften(html: string): string[] {
   const namen = ['Harness', 'Tiers', 'Sitzung', 'Rollen']
@@ -264,12 +278,25 @@ describe('Modelle-Reiter — was ausdruecklich auf der Seite bleibt (vertagte Fr
   })
 
   it('zeigt Sperrgrund, Warnung, Hinweis und uebersprungene Eintraege unaufgefordert', () => {
+    const gelesen = sichtbarerText(renderToStaticMarkup(
+      <ModelleReiter ansicht={eingeschraenkt} schreibe={stumm} />,
+    ))
+    expect(gelesen).toContain('SPERRGRUND-AUF-DER-SEITE')
+    expect(gelesen).toContain('WARNUNG-AUF-DER-SEITE')
+    expect(gelesen).toContain('HINWEIS-AUF-DER-SEITE')
+    expect(gelesen).toContain('UEBERSPRUNGEN-AUF-DER-SEITE')
+  })
+
+  /*
+   * Die Zusicherung darueber ist nur so viel wert, wie `sichtbarerText` den Tooltip wirklich
+   * heraushaelt. Dieser Test prueft das Pruefwerkzeug: derselbe Satz steht im `title` der
+   * gesperrten Option, und dort darf er nicht mitzaehlen.
+   */
+  it('zaehlt den Tooltip nicht als sichtbaren Text', () => {
     const html = renderToStaticMarkup(
       <ModelleReiter ansicht={eingeschraenkt} schreibe={stumm} />,
     )
-    expect(html).toContain('SPERRGRUND-AUF-DER-SEITE')
-    expect(html).toContain('WARNUNG-AUF-DER-SEITE')
-    expect(html).toContain('HINWEIS-AUF-DER-SEITE')
-    expect(html).toContain('UEBERSPRUNGEN-AUF-DER-SEITE')
+    expect(html).toContain('title="SPERRGRUND-AUF-DER-SEITE"')
+    expect(sichtbarerText(html)).not.toContain('title=')
   })
 })

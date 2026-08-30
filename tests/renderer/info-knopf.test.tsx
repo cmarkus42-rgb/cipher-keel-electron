@@ -53,6 +53,52 @@ describe('Info-Knopf — welcher offen ist', () => {
   })
 })
 
+/*
+ * Die drei Tests darueber pruefen den Zustand. Der ist nur die halbe Zusage: welcher Knopf
+ * offen *ist*, sagt noch nicht, welche Popups gerendert *werden*. Ein Bau, der statt
+ * `aktuell === id` nur `aktuell !== null` fragt, laesst den Zustand unberuehrt und klappt
+ * trotzdem alle Popups auf, sobald irgendeines offen ist — und er kam durch alle 2944 Tests.
+ * Deshalb dieselbe Zusage noch einmal am gerenderten Ergebnis.
+ */
+describe('Info-Knopf — hoechstens einer offen, bis ins Markup', () => {
+  const zwei = (
+    <>
+      <InfoKnopf id="a" beschriftung="Erster" text="TEXT-A" />
+      <InfoKnopf id="b" beschriftung="Zweiter" text="TEXT-B" />
+    </>
+  )
+
+  /** Wie viele Popups wirklich im Markup stehen — Popups tragen `id`, Knoepfe `aria-controls`. */
+  function popups(html: string): number {
+    return [...html.matchAll(/id="info-popup-/g)].length
+  }
+
+  it('rendert kein Popup, solange keiner offen ist', () => {
+    const html = renderToStaticMarkup(zwei)
+    expect(popups(html)).toBe(0)
+    expect(html).not.toContain('TEXT-A')
+    expect(html).not.toContain('TEXT-B')
+  })
+
+  it('rendert genau ein Popup, wenn einer offen ist — nicht beide', () => {
+    infoUmschalten('a')
+    const html = renderToStaticMarkup(zwei)
+    expect(popups(html)).toBe(1)
+    expect([...html.matchAll(/aria-expanded="true"/g)]).toHaveLength(1)
+    expect(html).toContain('TEXT-A')
+    expect(html).not.toContain('TEXT-B')
+  })
+
+  it('reicht das offene Popup weiter, wenn der zweite Knopf gedrueckt wird', () => {
+    infoUmschalten('a')
+    infoUmschalten('b')
+    const html = renderToStaticMarkup(zwei)
+    expect(popups(html)).toBe(1)
+    expect(html).toContain('TEXT-B')
+    expect(html).not.toContain('TEXT-A')
+  })
+})
+
 describe('Info-Knopf — die beiden Schliesswege', () => {
   it('schliesst beim Klick daneben', () => {
     const ziel = new EventTarget()
@@ -102,14 +148,24 @@ describe('Info-Knopf — was im Fenster steht', () => {
     expect(renderToStaticMarkup(knopf)).toContain('Der erklärende Satz.')
   })
 
-  it('traegt keinen eigenen Text ausser der Beschriftung, die er bekommen hat', () => {
-    // Der Kopfkommentar von settings-window.tsx: „No rule lives here." Die Komponente darf
-    // den Text nicht kennen, den sie zeigt — sie bekommt ihn.
-    const quelle = readFileSync(
-      join(__dirname, '../../src/renderer/components/settings/InfoKnopf.tsx'), 'utf8',
-    )
-    const rumpf = quelle.slice(quelle.indexOf('*/') + 2)
-    expect(rumpf).not.toMatch(/Der erklärende Satz|Rueckfall|Sperrgrund/)
+  it('zeigt genau den Text, den sie bekommen hat — und keinen eigenen dazu', () => {
+    /*
+     * Der Kopfkommentar von settings-window.tsx: „No rule lives here." Die Komponente darf den
+     * Text nicht kennen, den sie zeigt — sie bekommt ihn.
+     *
+     * Vorher stand hier eine Textwache auf drei ausgesuchte Woerter im Quelltext. Die war zu
+     * billig: ein hartkodierter *anderer* Satz waere durchgekommen, und genau der ist der Fall,
+     * den es zu verhindern gilt. Gleichheit statt Stichprobe — jeder eigene Zusatz, gleich
+     * welcher, bricht sie.
+     */
+    for (const satz of ['Der erklärende Satz.', 'Ein voellig anderer Satz, Wort fuer Wort.']) {
+      infoUmschalten('a')
+      const gelesen = renderToStaticMarkup(
+        <InfoKnopf id="a" beschriftung="Harness" text={satz} />,
+      ).replace(/<[^>]*>/g, '').replace('ⓘ', '').trim()
+      expect(gelesen).toBe(satz)
+      infoSchliessen()
+    }
   })
 
   it('ist mit der Tastatur erreichbar und sagt der Vorlesehilfe an, wozu er gehoert', () => {
@@ -138,7 +194,24 @@ describe('Info-Knopf — die Verdrahtung, die kein Test in Node erreicht', () =>
     expect(quelle).toContain('installiereInfoSchliesser(document)')
   })
 
-  it('faengt Zeigerereignisse im Knopf und im Popup ab, sonst schloesse der eigene Klick sofort', () => {
-    expect(quelle).toContain('stopPropagation()')
+  it('faengt Zeigerereignisse an der Huelle ab, die Knopf und Popup umschliesst', () => {
+    /*
+     * Vorher: `toContain('stopPropagation()')` — erfuellt von jedem beliebigen
+     * `stopPropagation` irgendwo in der Datei, ohne Aussage darueber, *wo* es steht. Das ist
+     * hier die ganze Frage: sitzt der Riegel an der Huelle, gilt er fuer Knopf und Popup
+     * zugleich; sitzt er am Knopf allein, schliesst der Klick ins offene Popup es wieder.
+     *
+     * Bleibt eine Quelltextwache, weil Reacts synthetische Ereignisse ohne DOM nicht laufen —
+     * das Verhalten selbst ist am laufenden Programm nachgefahren (Bericht §5, §7.7).
+     */
+    const jsx = quelle.slice(quelle.indexOf('return ('))
+    const huelleAuf = jsx.indexOf('<span')
+    // Bis zum Zeilenende, nicht bis zum ersten `>`: das erste `>` gehoert zum Pfeil in
+    // `e => e.stopPropagation()`. Der oeffnende Tag steht auf einer Zeile.
+    const huelle = jsx.slice(huelleAuf, jsx.indexOf('\n', huelleAuf))
+    expect(huelle).toContain('onPointerDown={e => e.stopPropagation()}')
+    // Und die Huelle ist wirklich die aeussere: Knopf und Popup stehen darin.
+    expect(jsx.indexOf('<button')).toBeGreaterThan(huelleAuf)
+    expect(jsx.indexOf('id={popupId}')).toBeGreaterThan(huelleAuf)
   })
 })

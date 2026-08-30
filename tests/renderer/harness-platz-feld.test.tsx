@@ -46,6 +46,17 @@ const PLATZ: HarnessPlatzAnsicht = {
   wirkung: 'naechste-session',
 }
 
+/**
+ * Was ein Mensch auf der Seite liest — Elementinhalte, keine Attribute.
+ *
+ * Der Sperrgrund steht zusaetzlich im `title` der gesperrten Option. Gegen das rohe Markup
+ * geprueft, blieb der Waechter darunter gruen, als der sichtbare Sperrgrund-Block entfernt
+ * wurde — er haette die vertagte Frage halb beantworten lassen, ohne es zu merken.
+ */
+function sichtbarerText(html: string): string {
+  return html.replace(/<[^>]*>/g, '\n')
+}
+
 const stumm: Schreiber = async () => true
 
 beforeEach(() => {
@@ -94,7 +105,15 @@ describe('Harness-Platz — was auf der Seite steht', () => {
    */
   it('laesst den Sperrgrund unaufgefordert auf der Seite stehen', () => {
     const html = renderToStaticMarkup(<HarnessPlatzFeld platz={PLATZ} schreibe={stumm} />)
-    expect(html).toContain('Das Werkzeug kimi fehlt im Pfad.')
+    expect(sichtbarerText(html)).toContain('Das Werkzeug kimi fehlt im Pfad.')
+  })
+
+  it('zaehlt den Tooltip der gesperrten Option nicht als sichtbaren Text', () => {
+    // Prueft das Pruefwerkzeug: derselbe Satz steht im `title` der Option, und dort darf er
+    // die Zusicherung darueber nicht erfuellen.
+    const html = renderToStaticMarkup(<HarnessPlatzFeld platz={PLATZ} schreibe={stumm} />)
+    expect(html).toContain('title="Das Werkzeug kimi fehlt im Pfad."')
+    expect(sichtbarerText(html)).not.toContain('title=')
   })
 
   it('laesst den Hinweis zur klemmenden Wahl unaufgefordert auf der Seite stehen', () => {
@@ -104,7 +123,7 @@ describe('Harness-Platz — was auf der Seite steht', () => {
       gewaehltHinweis: 'Dieser Harness ist auf diesem Rechner nicht startbar.',
     }
     const html = renderToStaticMarkup(<HarnessPlatzFeld platz={klemmt} schreibe={stumm} />)
-    expect(html).toContain('Dieser Harness ist auf diesem Rechner nicht startbar.')
+    expect(sichtbarerText(html)).toContain('Dieser Harness ist auf diesem Rechner nicht startbar.')
   })
 })
 
