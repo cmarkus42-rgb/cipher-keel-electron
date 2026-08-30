@@ -75,10 +75,30 @@ eigentliche nächste Sache, und die Teststrecke ist ihr Beweis. Was daran zu ent
 - **Die Grenze.** `pfadwache` hält heute Lesezugriffe an der Projektwurzel. Für Schreiben und
   Ausführen ist eine Wurzelgrenze zu wenig: ein `rm -rf` innerhalb der Wurzel ist erlaubt und
   falsch. Sandkasten heißt hier: eigener Baum, Wegwerf-Kopie, oder Container.
+
+  > **Nachgesehen am 2026-08-30: die Pfadwache sagt selbst, wie sie sich dazu verhält.** Ihr
+  > Kopfkommentar, wörtlich: *„It is not an execution boundary and does not replace one. It
+  > holds as long as no tool starts a process. **When the shell arrives the sandbox arrives with
+  > it**, and this stays alongside: it checks tool arguments, the sandbox checks the process."*
+  > Die Schichtung ist damit vorgezeichnet und nicht zu erfinden: die Wache bleibt, wo sie ist,
+  > und prüft **Argumente**; der Sandkasten kommt **daneben** und prüft den **Prozess**. Sie zu
+  > erweitern wäre der falsche Schnitt — ihr eigener Text nennt den Grund: gegen eine Shell ist
+  > eine Zeichenkettenprüfung Theater, weil `$(…)` und ein umgeschriebenes npm-Skript daran
+  > vorbeilaufen.
+
 - **Der Ausführpfad.** Ein `shell_ausfuehren` ist die Fläche, die alles andere überflüssig macht —
   und die gefährlichste Einzelentscheidung des ganzen Projekts. `faehigkeiten.ts` warnt schon
   heute davor, dass ein Modell sich einen solchen Namen in den Präfix schmuggeln kann.
-- **Intent vor Effekt.** `intent-vor-effekt.ts` existiert bereits und ist genau dafür gedacht.
+- **Intent vor Effekt.** *Diese Zeile stand hier zu großzügig und ist am 2026-08-30 korrigiert
+  worden.* `intent-vor-effekt.ts` ist **kein Tor, sondern ein Prüfer**: `effekteOhneIntent` ist
+  eine reine Funktion über dem Ereignisprotokoll **ohne Produktionsaufrufer** — nachgesehen, sie
+  wird nur aus `tests/harness/waechter-kern.test.ts` gerufen, und zwei weitere Dateien nennen sie
+  bloß als nachgeahmte Bauform. Die Invariante selbst entsteht in `lauf.ts`, weil dort der
+  `tool.intent` vor der Ausführung geschrieben wird; die Funktion bewacht das im Test.
+
+  Für ein Schreib- oder Ausführwerkzeug reicht das nicht. Dort muss aus dem Protokolleintrag
+  eine **Entscheidungsstelle** werden, die auch nein sagen kann — Ankündigung, Entscheidung,
+  Wirkung. Das ist zu bauen, nicht vorhanden.
 
 **Erst danach ist die Teststrecke fahrbar.** Vorher misst sie eine Ebene.
 
