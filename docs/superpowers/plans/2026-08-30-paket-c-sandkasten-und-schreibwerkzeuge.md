@@ -798,7 +798,9 @@ git commit -m "feat(protokoll): tool.entschieden als eigene Ereignisart, im Pane
 - Produces:
   - `const WIRKENDE_WERKZEUGE: ReadonlySet<string>` — `datei_schreiben`, `datei_loeschen`, `shell_ausfuehren`
   - `function istWirkend(name: string): boolean`
-  - `type Urteil = { erlaubt: true; grund: string } | { erlaubt: false; grund: string }`
+  - `type Urteil = { erlaubt: boolean; grund: string }` — **ein** Objekt, keine Union: der Grund
+    steht in beiden Fällen, weil auch ein Ja begründet ins Protokoll gehört. Wer nur Ablehnungen
+    begründet, macht aus einem geprüften Ja ein ungeprüftes.
   - `function entscheide(name: string, eingabe: Record<string, unknown>, wache: WacheKontext): Urteil`
   - `function effekteOhneEntscheidung(ereignisse: Ereignis[]): Ereignis[]`
 
