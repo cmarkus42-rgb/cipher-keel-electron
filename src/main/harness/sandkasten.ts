@@ -166,6 +166,7 @@ export function profilText(ktx: SandkastenKontext, netz: NetzModus): string {
 }
 
 import { spawn } from 'node:child_process'
+import { StringDecoder } from 'node:string_decoder'
 import { getEnhancedPath } from '../util/exec-util'
 
 /** Wall-clock ceiling for one command. Adjustable surface (CK-NFR-012). */
@@ -185,6 +186,66 @@ export const MAX_ZEITGRENZE_MS = 15 * 60_000
  * guessed `--silent`.
  */
 export const MAX_AUSGABE_BYTES = 64 * 1024
+
+/**
+ * Der Ausgabesammler: er verbindet die Stuecke, die aus den beiden Pipes kommen, und haelt den
+ * Deckel. Als eigene Einheit exportiert, damit ein Test ihm ein Stueck geben kann, das mitten in
+ * einer UTF-8-Folge endet — ueber `starte` ist der Schnittpunkt eines Chunks nicht herstellbar,
+ * er gehoert dem Kernel.
+ *
+ * Zwei Fehler sassen hier, und beide trafen deutschen Text:
+ *
+ * 1. Jedes Stueck wurde einzeln mit `stueck.toString('utf-8')` dekodiert. Ein Umlaut, dessen zwei
+ *    Bytes auf zwei Chunks fallen, wurde damit zu zwei Ersatzzeichen (U+FFFD) — und das trifft
+ *    ausgerechnet die Bauausgabe der Projekte, an denen keel billige Modelle messen soll. Ein
+ *    Modell, das Mojibake liest, misst nicht mehr seine Faehigkeit, sondern unsere Kodierung.
+ *    Jetzt haelt ein `StringDecoder` die angefangene Folge ueber die Chunkgrenze.
+ * 2. Der Deckel verglich `MAX_AUSGABE_BYTES` mit `ausgabe.length`, also mit UTF-16-Einheiten. Bei
+ *    deutschem Text liefert das bis zum Doppelten der Bytes aus, die die Konstante nennt, und bei
+ *    Emoji dasselbe in der anderen Richtung. Gezaehlt wird jetzt mit `Buffer.byteLength`.
+ *
+ * Ein Rest bleibt gewollt: die letzte angefangene Folge am Prozessende wird verworfen statt zu
+ * einem U+FFFD gemacht (`decoder.end()` wird nie gerufen). Ein fehlendes Zeichen ist ehrlicher
+ * als ein erfundenes.
+ */
+export interface AusgabeSammler {
+  nimm(stueck: Buffer): void
+  text(): string
+  abgeschnitten(): boolean
+}
+
+/**
+ * Schneidet auf hoechstens `maxBytes` Bytes, ohne eine Zeichenfolge zu zerreissen. Zurueckgesetzt
+ * wird auf die naechste UTF-8-Grenze: ein Folgebyte traegt das Bitmuster `10xxxxxx`, und solange
+ * das erste *weggeschnittene* Byte eines ist, steht der Schnitt mitten in einem Zeichen. Weil ein
+ * Zeichen ausserhalb der BMP in UTF-8 **eine** Folge ist, kann so auch kein halbes Surrogatpaar
+ * entstehen — der Schnitt liegt immer auf einer Zeichengrenze, nie zwischen den beiden Haelften.
+ */
+export function schneideAufBytes(text: string, maxBytes: number): string {
+  const puffer = Buffer.from(text, 'utf-8')
+  if (puffer.length <= maxBytes) return text
+  let ende = maxBytes
+  while (ende > 0 && (puffer[ende] & 0xc0) === 0x80) ende--
+  return puffer.subarray(0, ende).toString('utf-8')
+}
+
+export function baueSammler(maxBytes: number = MAX_AUSGABE_BYTES): AusgabeSammler {
+  const dekoder = new StringDecoder('utf8')
+  let text = ''
+  let gekappt = false
+  return {
+    nimm(stueck: Buffer): void {
+      if (gekappt) return
+      text += dekoder.write(stueck)
+      if (Buffer.byteLength(text, 'utf-8') > maxBytes) {
+        text = schneideAufBytes(text, maxBytes)
+        gekappt = true
+      }
+    },
+    text: () => text,
+    abgeschnitten: () => gekappt,
+  }
+}
 
 export interface SandkastenLauf {
   /** stdout and stderr, interleaved in arrival order, capped at MAX_AUSGABE_BYTES. */
@@ -265,20 +326,15 @@ export function starte(
       },
     )
 
-    let ausgabe = ''
-    let abgeschnitten = false
     let zeitueberschreitung = false
 
-    const sammle = (stueck: Buffer): void => {
-      if (abgeschnitten) return
-      ausgabe += stueck.toString('utf-8')
-      if (ausgabe.length > MAX_AUSGABE_BYTES) {
-        ausgabe = ausgabe.slice(0, MAX_AUSGABE_BYTES)
-        abgeschnitten = true
-      }
-    }
-    kind.stdout.on('data', sammle)
-    kind.stderr.on('data', sammle)
+    // Ein Sammler fuer beide Pipes, damit die Reihenfolge des Eintreffens erhalten bleibt. Dass
+    // er den Dekoderzustand teilt, ist dabei kein Problem: stdout und stderr sind jeweils in sich
+    // vollstaendig, und eine Folge, die ueber die Grenze zwischen den beiden Stroemen liefe, gibt
+    // es nicht.
+    const sammler = baueSammler(MAX_AUSGABE_BYTES)
+    kind.stdout.on('data', (stueck: Buffer) => sammler.nimm(stueck))
+    kind.stderr.on('data', (stueck: Buffer) => sammler.nimm(stueck))
 
     const wecker = setTimeout(() => {
       zeitueberschreitung = true
@@ -290,11 +346,17 @@ export function starte(
 
     kind.on('error', (err) => {
       clearTimeout(wecker)
-      aufloesen({ ausgabe: String(err), code: null, abgeschnitten, zeitueberschreitung })
+      aufloesen({
+        ausgabe: String(err), code: null,
+        abgeschnitten: sammler.abgeschnitten(), zeitueberschreitung,
+      })
     })
     kind.on('close', (code) => {
       clearTimeout(wecker)
-      aufloesen({ ausgabe, code, abgeschnitten, zeitueberschreitung })
+      aufloesen({
+        ausgabe: sammler.text(), code,
+        abgeschnitten: sammler.abgeschnitten(), zeitueberschreitung,
+      })
     })
   })
 }

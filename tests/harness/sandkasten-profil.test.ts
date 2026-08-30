@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   profilText, sbplLiteral, sbplRegex, STANDARD_ZWISCHENSPEICHER,
+  baueSammler, schneideAufBytes,
   type SandkastenKontext,
 } from '../../src/main/harness/sandkasten'
 
@@ -196,5 +197,88 @@ describe('STANDARD_ZWISCHENSPEICHER', () => {
   it('gibt kein Verzeichnis frei, unter dem Gradle Startskripte ausfuehrt', () => {
     expect(STANDARD_ZWISCHENSPEICHER).not.toContain('.gradle')
     for (const e of STANDARD_ZWISCHENSPEICHER) expect(e).not.toBe('.gradle/init.d')
+  })
+})
+
+/**
+ * Der Ausgabesammler. Er wird hier und nicht ueber `starte` geprueft, weil der Schnittpunkt eines
+ * Chunks dem Kernel gehoert — ein Test ueber einem echten Lauf koennte ihn nicht herstellen und
+ * bliebe gruen, egal wie dekodiert wird.
+ *
+ * Wofuer das zaehlt: keel misst billige Modelle an den Projekten dieser Maschine, und deren
+ * Bauausgabe ist deutsch. Ein Umlaut, der als Ersatzzeichen ankommt, verfaelscht genau die
+ * Messung, fuer die es keel gibt.
+ */
+describe('baueSammler — Kodierung und Deckel', () => {
+  it('setzt eine UTF-8-Folge ueber die Chunkgrenze hinweg zusammen', () => {
+    const s = baueSammler(1024)
+    const bytes = Buffer.from('Prüfung fehlgeschlagen', 'utf-8')
+    // Mitten in den zwei Bytes des 'ü' getrennt. Vorher wurde jedes Stueck einzeln dekodiert und
+    // aus dem einen Zeichen wurden zwei U+FFFD.
+    const schnitt = Buffer.from('Pr', 'utf-8').length + 1
+    s.nimm(bytes.subarray(0, schnitt))
+    s.nimm(bytes.subarray(schnitt))
+    expect(s.text()).toBe('Prüfung fehlgeschlagen')
+    expect(s.text()).not.toContain('�')
+  })
+
+  it('setzt auch ein Zeichen ausserhalb der BMP ueber die Chunkgrenze zusammen', () => {
+    const s = baueSammler(1024)
+    const bytes = Buffer.from('a🔧b', 'utf-8')
+    for (let i = 2; i < 5; i++) {
+      // Jede der drei moeglichen Trennstellen innerhalb der vier Bytes des Zeichens.
+      const t = baueSammler(1024)
+      t.nimm(bytes.subarray(0, i))
+      t.nimm(bytes.subarray(i))
+      expect(t.text(), `Trennung nach Byte ${i}`).toBe('a🔧b')
+    }
+    s.nimm(bytes)
+    expect(s.text()).toBe('a🔧b')
+  })
+
+  it('zaehlt den Deckel in Bytes, nicht in UTF-16-Einheiten', () => {
+    // 40 Umlaute sind 80 Bytes und 40 UTF-16-Einheiten. Mit `ausgabe.length` als Mass waeren bei
+    // einem Deckel von 50 alle 40 durchgegangen — also 80 Bytes bei einer Grenze von 50.
+    const s = baueSammler(50)
+    s.nimm(Buffer.from('ä'.repeat(40), 'utf-8'))
+    expect(s.abgeschnitten()).toBe(true)
+    expect(Buffer.byteLength(s.text(), 'utf-8')).toBeLessThanOrEqual(50)
+  })
+
+  it('kappt nie mitten in einem Zeichen', () => {
+    // Deckel 51, Zeichen zwei Bytes breit: der Schnitt faellt zwischen die beiden Bytes des
+    // 26. Zeichens und muss um eines zurueckgehen.
+    const s = baueSammler(51)
+    s.nimm(Buffer.from('ä'.repeat(40), 'utf-8'))
+    expect(s.text()).not.toContain('�')
+    expect(s.text()).toBe('ä'.repeat(25))
+  })
+
+  it('nimmt nach dem Kappen nichts mehr an', () => {
+    const s = baueSammler(4)
+    s.nimm(Buffer.from('aaaaaaaa', 'utf-8'))
+    s.nimm(Buffer.from('SPAETER', 'utf-8'))
+    expect(s.text()).toBe('aaaa')
+    expect(s.text()).not.toContain('SPAETER')
+  })
+
+  it('laesst eine unvollstaendige Folge am Ende lieber weg, als sie zu erfinden', () => {
+    const s = baueSammler(1024)
+    s.nimm(Buffer.from([0x61, 0xc3]))
+    expect(s.text()).toBe('a')
+  })
+})
+
+describe('schneideAufBytes', () => {
+  it('laesst kurzen Text unangetastet', () => {
+    expect(schneideAufBytes('äöü', 64)).toBe('äöü')
+  })
+  it('schneidet auf die naechste Zeichengrenze unterhalb der Grenze', () => {
+    expect(schneideAufBytes('äöü', 3)).toBe('ä')
+  })
+  it('zerreisst kein Surrogatpaar', () => {
+    const geschnitten = schneideAufBytes('🔧🔧', 5)
+    expect(geschnitten).toBe('🔧')
+    expect(geschnitten).not.toContain('�')
   })
 })
