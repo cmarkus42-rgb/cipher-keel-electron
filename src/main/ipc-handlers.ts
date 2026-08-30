@@ -390,9 +390,12 @@ export function registerIpcHandlers(services: AppServices): void {
       // "looks healthy, isn't" case this file's `isAvailable()` gate already argues against
       // for the CLI-missing case).
       let mcpHinweis: string | null = null
+      // Set only once postLaunchInjection has resolved without throwing — see the doc
+      // comment on its call below for what a non-null value does and does not guarantee.
+      let undoInjection: (() => void) | null = null
       if (services.mcpHttpServer && adapter.postLaunchInjection) {
         try {
-          await adapter.postLaunchInjection({
+          undoInjection = await adapter.postLaunchInjection({
             projectPath: cwd,
             mcpUrl: services.mcpHttpServer.url,
             mcpApiKey: services.mcpHttpServer.apiKey,
@@ -417,7 +420,37 @@ export function registerIpcHandlers(services: AppServices): void {
       if (!services.tmux.isConnected()) {
         await services.tmux.connect()
       }
-      const sessionId = await services.tmux.createSession(name, { ...opts, cwd, command })
+
+      // I-1 follow-up (security review, 2026-08-30): moving postLaunchInjection ahead of
+      // createSession closed the race against the CLI's own config read, but opened a
+      // narrower gap — if createSession now fails, a live bearer key can be left behind in
+      // settings.local.json for a session that never came to exist. `undoInjection` (see its
+      // doc comment on ClaudeCodeAdapter.postLaunchInjection) reverts exactly what path 1
+      // wrote, never a blind wipe. Path 2 (the `claude mcp add-json` CLI registration) is
+      // NOT undone — same reasoning as there — so its residual is named in the thrown
+      // message instead of silently left for the outer catch's generic error text to hide.
+      let sessionId: string
+      try {
+        sessionId = await services.tmux.createSession(name, { ...opts, cwd, command })
+      } catch (err) {
+        if (undoInjection) {
+          try {
+            undoInjection()
+          } catch (undoErr) {
+            console.warn(
+              '[ipc] rollback of MCP settings.local.json after failed createSession also failed:',
+              undoErr,
+            )
+          }
+        }
+        const tmuxMsg = err instanceof Error ? err.message : String(err)
+        const residualNote = undoInjection
+          ? ' Der lokale MCP-Eintrag in settings.local.json wurde zurueckgenommen; ein ' +
+            'ueber die claude-CLI registrierter Eintrag (falls geschrieben) kann bestehen ' +
+            'bleiben, bis er ueberschrieben wird oder die App neu startet.'
+          : ''
+        throw new Error(tmuxMsg + residualNote)
+      }
       services.tmux.watchSession(name, name)
 
       if (ctx && services.graphWriter) {

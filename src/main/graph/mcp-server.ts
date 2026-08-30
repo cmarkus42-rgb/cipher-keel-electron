@@ -27,16 +27,32 @@
  * **Reachability (Paket B, mcp-http-server.ts) is conditional, not universal — say the
  * condition, not "yes" or "no".** All ten tools (the seven graph_* above and the three
  * keel_zelle* below) are reachable from a session that was started while the current app
- * instance is running: `SESSION_CREATE` (ipc-handlers.ts) calls `postLaunchInjection` right
- * after the tmux pane is created, handing the live HTTP server's address and per-boot key to
- * the spawned Claude Code process. A session whose tmux pane survives an app restart is not
- * reachable and cannot be made reachable by re-injecting: its `claude` process already read
- * `settings.local.json` at its own start and does not reload it live, while the server's
- * address and key are both fresh every app start (the key by design — config-store.ts keeps
- * secrets out of the persisted config, and this key is one). Such a session stays unreachable
- * until it is destroyed and a new one created. See mcp-http-server.ts's header comment for why
- * that is a property of the boot-scoped key, not something a fixed port would fix, and
- * docs/anpassbare-flaechen.md ("Was fehlt") for the human-facing half of this note.
+ * instance is running: `SESSION_CREATE` (ipc-handlers.ts) calls `postLaunchInjection` BEFORE
+ * the tmux pane is created (moved there by an I-1 fix, 2026-08-30 — running it after used to
+ * race the CLI's own one-time config read and could lose), handing the live HTTP server's
+ * address and per-boot key to the not-yet-spawned Claude Code process. A session whose tmux
+ * pane survives an app restart is not reachable and cannot be made reachable by re-injecting:
+ * its `claude` process already read `settings.local.json` at its own start and does not
+ * reload it live, while the server's address and key are both fresh every app start (the key
+ * by design — config-store.ts keeps secrets out of the persisted config, and this key is
+ * one). Such a session stays unreachable until it is destroyed and a new one created. See
+ * mcp-http-server.ts's header comment for why that is a property of the boot-scoped key, not
+ * something a fixed port would fix, and docs/anpassbare-flaechen.md ("Was fehlt") for the
+ * human-facing half of this note.
+ *
+ * **This is a measurement, not a promise (2026-08-30).** The freshly-started half of the
+ * condition above was watched happen, not inferred from written files: the app was launched
+ * for real (`run-keel` skill), a genuine Architect session was created through the actual
+ * grid-window UI (a Launcher-Kachel click, not a direct IPC call), and inside that session's
+ * real tmux pane, `/mcp` showed `cipher-keel · ✔ connected · 10 tools`, then on drill-down
+ * `Status: ✔ connected`, `Auth: ✔ authenticated`, and the URL matching that exact boot's
+ * port. The running Claude Code process — not curl, not this file's own tests — was then
+ * asked in the pane to call `graph_search` for a node written moments earlier via a direct
+ * HTTP call to the same server; it answered "Called cipher-keel" and returned that node's
+ * exact uid. That is "a running process read the config and used the tool," the distinction
+ * that matters — not "the file contains the right address." What the review above states but
+ * this run did not touch, and which stays unmeasured: the restart-surviving branch — no
+ * session has been carried across an app restart and then probed for reachability.
  *
  * The scoping this implies (B5): one key for every session of this app instance, not one key
  * per session. `keel_zelle_beauftragen`/`keel_zelle_ergebnis` are meant to let any strong

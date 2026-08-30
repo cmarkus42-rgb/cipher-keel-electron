@@ -14,8 +14,31 @@ Speicher-Zusage des Servers. Das Review fand außerdem, dass das Einspritzen urs
 braucht — ein Wettlauf gegen den `claude`-Prozess, den der Datei-Weg meist, der CLI-Weg
 (`claude mcp add-json`, bis zu 25 s) aber zuverlässig verlor. Behoben durch Vorziehen des
 Einspritzens vor `tmux.createSession`; ein dritter, nie gelesener Schreibpfad
-(`~/.claude/projects/<hash>/settings.json`) ist ersatzlos gestrichen. Eine frisch gestartete
-Sitzung ist damit tatsächlich erreichbar, nicht nur meistens. Eine Sitzung, die einen
+(`~/.claude/projects/<hash>/settings.json`) ist ersatzlos gestrichen. Das Vorziehen öffnete
+eine engere Lücke, die eine Nachprüfung fand: scheitert `tmux.createSession` jetzt NACH einem
+erfolgreichen Einspritzen, bliebe ein gültiger Bearer für eine nie entstandene Sitzung liegen.
+Behoben durch eine Rücknahme-Funktion, die `postLaunchInjection` seither zurückgibt: sie
+schreibt `settings.local.json` exakt auf den Stand vor dem eigenen Schreiben zurück (Eintrag
+löschen, wenn er vorher fehlte; vorherigen Eintrag wiederherstellen, wenn er schon da war) —
+nie ein blindes Löschen, weil eine zweite, noch laufende Sitzung im selben Projekt denselben
+Eintrag legitim braucht. Der CLI-Weg (`claude mcp add-json`) wird bewusst NICHT zurückgenommen
+(dieselbe Kollisionsgefahr träfe dort ebenso zu) — dieser Rest wird stattdessen in der
+Fehlermeldung an den Nutzer benannt, statt in einer stillen Aufräumfunktion zu verschwinden.
+
+**Eine frisch gestartete Sitzung ist damit tatsächlich erreichbar, nicht nur meistens — und
+das ist inzwischen eine Messung, kein Versprechen.** Gemessen am 2026-08-30, über die echte
+laufende App (`run-keel`-Skill), nicht gegen `handleRequest` oder eine Datei: eine echte
+Architect-Sitzung wurde über die tatsächliche Grid-Fenster-Oberfläche angelegt (Klick auf die
+Launcher-Kachel, kein direkter IPC-Aufruf), und im echten tmux-Pane dieser Sitzung zeigte
+`/mcp` `cipher-keel · ✔ connected · 10 tools`, im Detail `Status: ✔ connected`,
+`Auth: ✔ authenticated`, URL und Port passend zum selben Lauf. Der laufende Claude-Code-Prozess
+— nicht curl, kein Test dieses Repos — wurde im Pane aufgefordert, `graph_search` nach einem
+Knoten zu rufen, der Sekunden zuvor per direktem HTTP-Aufruf an denselben Server geschrieben
+worden war; die Antwort im Pane lautete „Called cipher-keel" mit exakt der passenden uid. Nicht
+gemessen und weiterhin offen: die neustart-überlebende Sitzung unten — dafür wurde die
+Bedingung überhaupt erst formuliert, und genau dieser Fall wurde in keinem Lauf geprüft.
+
+Eine Sitzung, die einen
 App-Neustart überlebt hat, bleibt es weiterhin nicht: ihr `claude`-Prozess hat Adresse und
 Schlüssel nur bei seinem eigenen Start gelesen, beide sind seither anders. Weder ein fester
 Port noch ein erneutes Einspritzen würde das heilen — der Schlüssel rotiert absichtlich bei
@@ -516,17 +539,22 @@ Einrichtung (siehe „Was fehlt" unten) — kein eigener Bau-Strang mehr.
   tmux-Zweig, ruft `postLaunchInjection` **vor** `tmux.createSession`, nachgebessert im selben
   Sicherheitsreview — siehe die Stand-Zeile oben).
 
-  **Was das tatsächlich bedeutet, ist eine Bedingung, keine Zusage.** Erreichbar sind die zehn
-  Werkzeuge für eine Sitzung, die gestartet wurde, während die aktuelle App-Instanz läuft. Eine
-  Sitzung, die einen App-Neustart überlebt hat (ihr tmux-Pane besteht unabhängig vom
-  Electron-Prozess weiter — `tmux-manager.ts`s `disconnect()` trennt nur den eigenen
-  Control-Client, tötet keine Sessions), bleibt unreichbar: ihr `claude`-Prozess hat Adresse und
-  Schlüssel nur bei seinem eigenen Start gelesen und lädt `settings.local.json` nicht live neu.
-  Weder ein erneutes Einspritzen noch ein fester Port würde das heilen — der Schlüssel rotiert
-  bei jedem App-Start absichtlich (das ist B2s ganzer Zweck), und ein fester Port hätte
-  dieselbe tote Sitzung, nur mit 401 statt „connection refused". Abhilfe ist Zerstören und
-  Neuanlegen der betroffenen Sitzung; das ist außerhalb der Reichweite dieses Servers, nicht
-  ein offener Punkt darin.
+  **Was das tatsächlich bedeutet, ist eine Bedingung, keine Zusage — und die Bedingung ist
+  inzwischen gemessen, nicht nur formuliert (siehe die Stand-Zeile oben für Datum, Methode und
+  den genauen Befund: echte App, echte Sitzung über die UI, echter tmux-Pane, ein
+  `graph_search`-Aufruf mit übereinstimmender uid).** Erreichbar sind die zehn Werkzeuge für
+  eine Sitzung, die gestartet wurde, während die aktuelle App-Instanz läuft. Eine Sitzung, die
+  einen App-Neustart überlebt hat (ihr tmux-Pane besteht unabhängig vom Electron-Prozess weiter
+  — `tmux-manager.ts`s `disconnect()` trennt nur den eigenen Control-Client, tötet keine
+  Sessions), bleibt unreichbar: ihr `claude`-Prozess hat Adresse und Schlüssel nur bei seinem
+  eigenen Start gelesen und lädt `settings.local.json` nicht live neu. Weder ein erneutes
+  Einspritzen noch ein fester Port würde das heilen — der Schlüssel rotiert bei jedem App-Start
+  absichtlich (das ist B2s ganzer Zweck), und ein fester Port hätte dieselbe tote Sitzung, nur
+  mit 401 statt „connection refused". Abhilfe ist Zerstören und Neuanlegen der betroffenen
+  Sitzung; das ist außerhalb der Reichweite dieses Servers, nicht ein offener Punkt darin. Und
+  anders als der Rest dieses Absatzes ist dieser Fall selbst **nicht** gemessen: kein Lauf hat
+  bisher eine Sitzung über einen echten App-Neustart hinweg am Leben gehalten und danach auf
+  MCP-Erreichbarkeit geprüft — die Aussage steht auf Herleitung, nicht auf Beobachtung.
 
   **Scoping (B5), entschieden statt offen gelassen.** `keel_zelle_beauftragen` kann jede Zelle
   beim Namen ansprechen, nicht nur eine, die zur aufrufenden Sitzung gehört;

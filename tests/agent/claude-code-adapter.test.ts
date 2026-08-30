@@ -165,11 +165,91 @@ describe('ClaudeCodeAdapter.postLaunchInjection', () => {
     vi.mocked(runCommand).mockRejectedValue(new Error('claude: command not found'))
     const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
 
-    await expect(adapter.postLaunchInjection(ctx)).resolves.toBeUndefined()
+    await expect(adapter.postLaunchInjection(ctx)).resolves.toEqual(expect.any(Function))
 
     const written = JSON.parse(
       fs.readFileSync(path.join(projectDir, '.claude', 'settings.local.json'), 'utf-8'),
     )
     expect(written.mcpServers['cipher-keel'].url).toBe(ctx.mcpUrl)
+  })
+
+  // I-1 follow-up (security review, 2026-08-30): the undo closure this method now returns.
+  // Named "the leiche" by the review — a live bearer left in settings.local.json for a
+  // session whose subsequent tmux.createSession failed, because moving injection ahead of
+  // createSession (the original I-1 fix) made it possible to inject successfully and still
+  // never have a session. Before that move this was structurally impossible: a failure
+  // always happened before injection ever ran.
+  describe('the undo closure (I-1 follow-up — the orphaned-injection case)', () => {
+    const settingsPathFor = (dir: string) => path.join(dir, '.claude', 'settings.local.json')
+
+    it('removes the cipher-keel entry entirely when there was none before', async () => {
+      const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
+      const undo = await adapter.postLaunchInjection(ctx)
+
+      // Confirm the entry actually exists first — otherwise "it's gone after undo" would be
+      // true for a trivial, wrong reason (it was never there).
+      expect(
+        JSON.parse(fs.readFileSync(settingsPathFor(projectDir), 'utf-8')).mcpServers['cipher-keel'],
+      ).toBeDefined()
+
+      undo()
+
+      const after = JSON.parse(fs.readFileSync(settingsPathFor(projectDir), 'utf-8'))
+      expect(after.mcpServers['cipher-keel']).toBeUndefined()
+    })
+
+    it('restores the previous entry instead of deleting it, when one already existed', async () => {
+      // Simulates a second session in the SAME project, in the same app boot: an earlier,
+      // still-valid session already wrote this exact entry. This is the case the review's
+      // "Falle" warns about — a blind delete here would destroy a live sibling session's
+      // registration, not just this failed session's own.
+      const claudeDir = path.join(projectDir, '.claude')
+      fs.mkdirSync(claudeDir, { recursive: true })
+      const priorEntry = {
+        type: 'http',
+        url: 'http://127.0.0.1:11111/mcp',
+        headers: { Authorization: 'Bearer prior-sessions-still-live-key' },
+      }
+      fs.writeFileSync(
+        settingsPathFor(projectDir),
+        JSON.stringify({ mcpServers: { 'cipher-keel': priorEntry } }),
+      )
+
+      const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
+      const undo = await adapter.postLaunchInjection(ctx)
+
+      // The new (failed) session's own key really did overwrite it in the meantime.
+      expect(
+        JSON.parse(fs.readFileSync(settingsPathFor(projectDir), 'utf-8')).mcpServers['cipher-keel'].url,
+      ).toBe(ctx.mcpUrl)
+
+      undo()
+
+      const after = JSON.parse(fs.readFileSync(settingsPathFor(projectDir), 'utf-8'))
+      expect(after.mcpServers['cipher-keel']).toEqual(priorEntry)
+    })
+
+    it('leaves keys other than cipher-keel untouched by the undo', async () => {
+      const claudeDir = path.join(projectDir, '.claude')
+      fs.mkdirSync(claudeDir, { recursive: true })
+      fs.writeFileSync(settingsPathFor(projectDir), JSON.stringify({ someOtherKey: 'kept' }))
+
+      const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
+      const undo = await adapter.postLaunchInjection(ctx)
+      undo()
+
+      const after = JSON.parse(fs.readFileSync(settingsPathFor(projectDir), 'utf-8'))
+      expect(after.someOtherKey).toBe('kept')
+      expect(after.mcpServers['cipher-keel']).toBeUndefined()
+    })
+
+    it('is a safe no-op if settings.local.json is gone by the time undo runs', async () => {
+      const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
+      const undo = await adapter.postLaunchInjection(ctx)
+
+      fs.rmSync(path.join(projectDir, '.claude'), { recursive: true, force: true })
+
+      expect(() => undo()).not.toThrow()
+    })
   })
 })

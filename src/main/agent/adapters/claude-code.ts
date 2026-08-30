@@ -101,15 +101,36 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
    * the same review found it: that directory holds session transcripts (`*.jsonl`), and
    * Claude Code does not read settings from it at all. It was a secret written to disk for
    * no reader — removed outright, not "fixed", because there was nothing to fix it into.
+   *
+   * Return value (added for the I-1 follow-up, security review 2026-08-30): moving this call
+   * ahead of `tmux.createSession` closed the race but opened a narrower gap the review
+   * caught — if `createSession` now fails *after* this succeeds, a live bearer is left behind
+   * for a session that never came to exist. The returned closure undoes exactly what path 1
+   * wrote, and only that: it restores `settings.local.json` to whatever it held immediately
+   * before this call (deletes the `cipher-keel` entry if there was none, restores the prior
+   * entry if there was one) — never a blind delete, because this method merges into a file
+   * that may already carry another session's still-valid registration for the same project
+   * (one key for the whole app instance, see B5 — so a second session in the same project
+   * would otherwise be "restoring" a value that is, byte for byte, what a still-running first
+   * session also depends on). Path 2 is deliberately NOT undone: reversing a `claude mcp`
+   * CLI registration would mean either parsing `~/.claude.json` ourselves (a format this file
+   * intentionally does not touch directly, see path 2 above) or running `claude mcp remove`
+   * again — which would remove the one local entry for this project outright, the exact same
+   * collision risk path 1's undo avoids, since another session in the same project may depend
+   * on it. That residual is named to the caller instead (ipc-handlers.ts surfaces it in the
+   * thrown error's message) — it is self-limiting even so: rewritten by the next successful
+   * injection for this project, and moot entirely once the app restarts (B2's key rotates).
    */
-  async postLaunchInjection(ctx: AdapterContext): Promise<void> {
+  async postLaunchInjection(ctx: AdapterContext): Promise<() => void> {
     const mcpServerConfig = {
       type: 'http',
       url: ctx.mcpUrl,
       headers: { Authorization: `Bearer ${ctx.mcpApiKey}` },
     }
 
-    // Path 1: Direct write to local settings.local.json
+    // Path 1: Direct write to local settings.local.json — tracked so undoSettingsWrite can
+    // put back exactly what was here before, not just delete what this call added.
+    let undoSettingsWrite: (() => void) | null = null
     try {
       const claudeDir = path.join(ctx.projectPath, '.claude')
       const localSettingsPath = path.join(claudeDir, 'settings.local.json')
@@ -126,14 +147,38 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
       if (!settings.mcpServers || typeof settings.mcpServers !== 'object') {
         settings.mcpServers = {}
       }
-      ;(settings.mcpServers as Record<string, unknown>)['cipher-keel'] = mcpServerConfig
+      const mcpServers = settings.mcpServers as Record<string, unknown>
+      const hadEntryBefore = Object.prototype.hasOwnProperty.call(mcpServers, 'cipher-keel')
+      const previousEntry = mcpServers['cipher-keel']
 
+      mcpServers['cipher-keel'] = mcpServerConfig
       fs.writeFileSync(localSettingsPath, JSON.stringify(settings, null, 2), 'utf-8')
+
+      undoSettingsWrite = () => {
+        // Re-read rather than reuse the `settings` object above: something else may have
+        // written to this file between the write and the undo (however unlikely in the
+        // narrow window this covers) — undoing against a stale in-memory copy could clobber
+        // that change. A missing/unreadable file means there is nothing left to undo.
+        let current: Record<string, unknown>
+        try {
+          current = JSON.parse(fs.readFileSync(localSettingsPath, 'utf-8'))
+        } catch {
+          return
+        }
+        if (!current.mcpServers || typeof current.mcpServers !== 'object') return
+        const currentServers = current.mcpServers as Record<string, unknown>
+        if (hadEntryBefore) {
+          currentServers['cipher-keel'] = previousEntry
+        } else {
+          delete currentServers['cipher-keel']
+        }
+        fs.writeFileSync(localSettingsPath, JSON.stringify(current, null, 2), 'utf-8')
+      }
     } catch (err) {
       console.warn('[ClaudeCodeAdapter] Local settings.local.json write failed:', err)
     }
 
-    // Path 2: CLI command
+    // Path 2: CLI command — not undone on rollback, see the doc comment above.
     try {
       const serverJson = JSON.stringify(mcpServerConfig)
 
@@ -146,6 +191,10 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
       ], { cwd: ctx.projectPath, timeout: 15_000 })
     } catch (err) {
       console.warn('[ClaudeCodeAdapter] CLI MCP registration failed:', err)
+    }
+
+    return () => {
+      if (undoSettingsWrite) undoSettingsWrite()
     }
   }
 

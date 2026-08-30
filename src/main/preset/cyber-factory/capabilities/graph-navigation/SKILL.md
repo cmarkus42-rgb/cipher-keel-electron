@@ -17,10 +17,15 @@ reduzierten Mechanismen zu.
 **Sieben Tools, keine anderen — und erreichbar unter einer Bedingung.** Der Graph-MCP-Server
 stellt genau sieben `graph_*`-Tools zur Verfügung — es gibt keine weiteren. Erreichbar sind sie,
 wenn diese Sitzung gestartet wurde, während die aktuelle App-Instanz läuft (`SESSION_CREATE`
-registriert Adresse und Schlüssel des lokalen HTTP-Servers direkt nach dem Start). Eine Sitzung,
-die einen Neustart der App überlebt hat, verliert sie und bekommt sie nicht zurück, bis sie
-zerstört und neu angelegt wird (siehe `docs/anpassbare-flaechen.md`, Abschnitt „Was fehlt", für
-den vollen Befund):
+registriert Adresse und Schlüssel des lokalen HTTP-Servers, bevor die tmux-Sitzung entsteht).
+Eine Sitzung, die einen Neustart der App überlebt hat, verliert sie und bekommt sie nicht
+zurück, bis sie zerstört und neu angelegt wird (siehe `docs/anpassbare-flaechen.md`, Abschnitt
+„Was fehlt", für den vollen Befund). **Gemessen, nicht nur behauptet (2026-08-30):** eine echte
+Architect-Sitzung über die Grid-Oberfläche angelegt, im echten tmux-Pane `/mcp` geprüft
+(`cipher-keel · ✔ connected · 10 tools`, `Auth: ✔ authenticated`) und einen echten
+`graph_search`-Aufruf beobachtet, dessen Antwort die uid eines zuvor geschriebenen Knotens
+exakt traf — Details in `docs/anpassbare-flaechen.md`. Nicht geprüft und weiterhin offen: der
+Fall einer Sitzung, die einen App-Neustart überlebt hat:
 
 - **`graph_search`** — Volltext-/Vektor-Suche. Pflichtparameter `query`; optional `limit`
   (Default 10) und `kind` (Knotentyp-Filter). Liefert kompakte Treffer (uid, kind, title,

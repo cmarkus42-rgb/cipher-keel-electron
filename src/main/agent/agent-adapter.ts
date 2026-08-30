@@ -202,8 +202,19 @@ export interface CliSitzungsAdapter extends AgentAdapterBasis {
   // --- lifecycle ---
   /** Build a structured launch command. Never returns a raw shell string. */
   buildLaunchCommand(opts: LaunchOpts): LaunchCommand
-  /** Optional post-launch setup (e.g. MCP server registration). */
-  postLaunchInjection?(ctx: AdapterContext): Promise<void>
+  /**
+   * Optional post-launch setup (e.g. MCP server registration). Runs before the session's
+   * process is spawned, not after — see ClaudeCodeAdapter's doc comment on its own
+   * implementation for why (security review finding I-1, 2026-08-30: the process reads its
+   * config once, at its own start).
+   *
+   * Returns an undo closure rather than void (I-1 follow-up, same review): if the caller's
+   * next step (spawning the session) fails, whatever this call wrote may now be a live
+   * credential with no session behind it. The closure reverts exactly what this call itself
+   * changed — never a blind wipe, since a merge-based injection may share state with an
+   * already-successful sibling session. An adapter with nothing to undo may return a no-op.
+   */
+  postLaunchInjection?(ctx: AdapterContext): Promise<() => void>
   /** Read context usage for a session. Only call if supports('status-line'). */
   getContextUsage?(sessionId: string): Promise<ContextUsage | null>
   /** Inject status reporting hook into project. Only call if supports('status-line'). */
