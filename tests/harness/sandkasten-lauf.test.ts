@@ -125,6 +125,18 @@ describe.skipIf(process.platform !== 'darwin')('starte — Grenzen des Laufs', (
     expect(r.zeitueberschreitung).toBe(true)
   }, 20_000)
 
+  it('bindet die Wanduhr auch bei einem Kommando, das forkt', async () => {
+    // Der Fall, der die Zeitgrenze wirklich braucht. `sleep 5` allein prueft die eine Form, die
+    // die Shell mit `exec` an sich zieht — dort genuegt ein Kill auf die eine Pid, und der Test
+    // war gruen, waehrend die Grenze fuer jede Pipeline und jeden Hintergrundjob nicht band.
+    // Gemessen ohne Gruppenkill: 5024 ms bei 300 ms Grenze, mit `zeitueberschreitung: true`.
+    // Die Wanduhr ist darum die Zusicherung, nicht die Flagge.
+    const t0 = Date.now()
+    const r = await starte('sleep 5 | cat', ktx, 'zu', 300)
+    expect(r.zeitueberschreitung).toBe(true)
+    expect(Date.now() - t0).toBeLessThan(2000)
+  }, 20_000)
+
   it('deckelt die Ausgabe und sagt es', async () => {
     const r = await starte('yes abcdefgh | head -c 200000', ktx, 'zu')
     expect(r.abgeschnitten).toBe(true)

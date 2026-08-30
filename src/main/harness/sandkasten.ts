@@ -166,6 +166,14 @@ export function starte(
       ['-p', profil, '/bin/sh', '-c', kommando],
       {
         cwd: ktx.wurzel,
+        // `detached` makes the child a process *group* leader, and that is what makes the wall
+        // clock below binding. Without it, `kill` reaches only the `sandbox-exec` pid: for a
+        // command the shell can `exec` in place that is the same process and it works, but any
+        // command that forks — a pipeline, a background job, i.e. every real build tool — leaves
+        // grandchildren holding the stdout pipe open, and `close` does not fire until they finish
+        // on their own. Measured on 2026-08-30 against a 300 ms limit: `sleep 5` ended after
+        // 306 ms, `sleep 5 | cat` after 5024 ms with the flag already claiming a timeout.
+        detached: true,
         env: {
           PATH: getEnhancedPath(),
           HOME: ktx.heim,
@@ -192,7 +200,10 @@ export function starte(
 
     const wecker = setTimeout(() => {
       zeitueberschreitung = true
-      kind.kill('SIGKILL')
+      // The negated pid is the process *group*, which is the whole point of `detached` above.
+      // Wrapped, because the group can already be gone between the timer firing and the signal
+      // (ESRCH) — and a throw here would escape the promise instead of ending the run.
+      try { process.kill(-kind.pid!, 'SIGKILL') } catch { /* schon beendet */ }
     }, zeitgrenzeMs)
 
     kind.on('error', (err) => {
