@@ -17,7 +17,8 @@
  */
 import type { SettingsAnsicht, Schreiber } from '../../../shared/settings-types'
 import { GeheimnisFeld } from './GeheimnisFeld'
-import { WirkungVermerk } from './WirkungVermerk'
+import { wirkungText } from './WirkungVermerk'
+import { InfoKnopf } from './InfoKnopf'
 
 /**
  * Die Anbieter mit dem, was ein Nutzer wissen muss, **bevor** er waehlt. Die Brave-Zeile ist der
@@ -77,7 +78,11 @@ export function NetzReiter({
       <div style={styles.block}>
         <div style={styles.kopf}>
           <span style={styles.name}>Suchanbieter</span>
-          <WirkungVermerk wirkung="naechster-lauf" />
+          <InfoKnopf
+            id="netz:bevorzugt"
+            beschriftung="Suchanbieter"
+            text={wirkungText('naechster-lauf')}
+          />
         </div>
         <select
           value={netz.bevorzugt}
@@ -109,7 +114,11 @@ export function NetzReiter({
       <div style={styles.block}>
         <div style={styles.kopf}>
           <span style={styles.name}>SearXNG-Endpunkt</span>
-          <WirkungVermerk wirkung="naechster-lauf" />
+          <InfoKnopf
+            id="netz:searxngEndpunkt"
+            beschriftung="SearXNG-Endpunkt"
+            text={wirkungText('naechster-lauf')}
+          />
         </div>
         {/* Keyed auf den Wert: siehe ModelleReiter — ein unkontrolliertes Feld zeigte sonst
             weiter, womit es eingehaengt wurde, nachdem ein Schreiben eine frische Ansicht
@@ -131,7 +140,11 @@ export function NetzReiter({
       <div style={styles.block}>
         <div style={styles.kopf}>
           <span style={styles.name}>Positivliste fuer das Nachschlagen</span>
-          <WirkungVermerk wirkung="naechster-lauf" />
+          <InfoKnopf
+            id="netz:positivliste"
+            beschriftung="Positivliste fuer das Nachschlagen"
+            text={wirkungText('naechster-lauf')}
+          />
         </div>
         <div style={styles.hinweis}>
           Nur diese Hosts darf der Hauptlauf holen. Ein Eintrag deckt seine Unterdomaenen mit ab.

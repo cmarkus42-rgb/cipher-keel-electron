@@ -1,9 +1,17 @@
 /**
- * WirkungVermerk — says when a change takes effect, next to the field it belongs to.
+ * wirkungText — sagt, wann eine Aenderung wirkt.
  *
  * A page that makes every field look the same lies about three different lifetimes: the
  * model registry is read on every resolution, tiers at session launch, voice.enabled at
  * service start. That is the silent-failure shape the project treats as most expensive.
+ *
+ * **Die Komponente `WirkungVermerk` gab es hier bis zum 2026-08-30 und gibt es absichtlich
+ * nicht mehr.** Der Satz steht jetzt in jedem Reiter hinter einem Info-Knopf. Als Komponente
+ * bliebe er ein zweiter, sichtbarer Weg neben dem Knopf — und genau dieses Nebeneinander war
+ * der Fehler der ersten Fassung: derselbe Hinweis im Reiter „Modelle" verborgen und in den drei
+ * anderen offen. Dass die Ausnahme jetzt nicht mehr baubar ist, ist kein Nebeneffekt des
+ * Loeschens, sondern sein Zweck. Die Datei behaelt ihren Namen, weil sie weiterhin die eine
+ * Stelle ist, an der diese vier Saetze stehen.
  */
 import type { Wirkung } from '../../../shared/settings-types'
 
@@ -18,22 +26,6 @@ const TEXT: Record<Wirkung, string> = {
   'neustart': 'braucht einen Neustart der App',
 }
 
-/**
- * Derselbe Satz ohne die Huelle, fuer die Stellen, die ihn in eigenem Umfeld setzen — im
- * Popup eines Info-Knopfes etwa, wo der Randabstand und das Kursiv der Zeile daneben stoerten.
- * Eine Funktion statt einer zweiten Tabelle: der Text bleibt an genau einer Stelle.
- */
 export function wirkungText(wirkung: Wirkung): string {
   return TEXT[wirkung]
-}
-
-export function WirkungVermerk({ wirkung }: { wirkung: Wirkung }) {
-  return <span style={style}>{wirkungText(wirkung)}</span>
-}
-
-const style = {
-  color: '#666',
-  fontSize: 11,
-  fontStyle: 'italic' as const,
-  marginLeft: 8,
 }

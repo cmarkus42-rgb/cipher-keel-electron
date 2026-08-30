@@ -5,7 +5,8 @@
  * (tts-piper.ts). Showing them side by side without saying so would be a lie by layout.
  */
 import type { SettingsAnsicht, Schreiber } from '../../../shared/settings-types'
-import { WirkungVermerk } from './WirkungVermerk'
+import { wirkungText } from './WirkungVermerk'
+import { InfoKnopf } from './InfoKnopf'
 
 export function SprachausgabeReiter({
   ansicht,
@@ -19,21 +20,36 @@ export function SprachausgabeReiter({
       <h2 style={styles.ueberschrift}>Sprachausgabe</h2>
 
       <div style={styles.block}>
-        <label style={styles.zeile}>
-          <input
-            type="checkbox"
-            checked={ansicht.sprachausgabe.aktiv}
-            onChange={e => schreibe('settings:einfachfeld-setzen', 'sprachausgabe:aktiv', e.target.checked)}
+        {/*
+          Der Info-Knopf steht **neben** dem label, nicht darin: ein `button` innerhalb eines
+          `label` schaltet beim Klick das Kontrollkaestchen um. Der Vermerk stand hier vorher
+          im label — als reiner Text harmlos, als Knopf waere er es nicht.
+        */}
+        <div style={styles.zeile}>
+          <label style={styles.zeile}>
+            <input
+              type="checkbox"
+              checked={ansicht.sprachausgabe.aktiv}
+              onChange={e => schreibe('settings:einfachfeld-setzen', 'sprachausgabe:aktiv', e.target.checked)}
+            />
+            <span style={styles.name}>Sprachausgabe aktiv</span>
+          </label>
+          <InfoKnopf
+            id="sprachausgabe:aktiv"
+            beschriftung="Sprachausgabe aktiv"
+            text={wirkungText('neustart')}
           />
-          <span style={styles.name}>Sprachausgabe aktiv</span>
-          <WirkungVermerk wirkung="neustart" />
-        </label>
+        </div>
       </div>
 
       <div style={styles.block}>
         <div style={styles.kopf}>
           <span style={styles.name}>Stimme</span>
-          <WirkungVermerk wirkung="sofort" />
+          <InfoKnopf
+            id="sprachausgabe:stimme"
+            beschriftung="Stimme"
+            text={wirkungText('sofort')}
+          />
         </div>
         <input
           key={ansicht.sprachausgabe.stimme}
