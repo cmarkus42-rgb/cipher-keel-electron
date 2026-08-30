@@ -39,6 +39,7 @@ import type { AusgehenderSprung } from './netzwache'
 import type { SandkastenKontext } from './sandkasten'
 import { entscheide, istWirkend } from './tor'
 import { RECHERCHIEREN_NAME, fuehreRecherche } from './rechercheur'
+import { execFileAsync } from '../util/exec-util'
 
 export interface Auftrag {
   auftragstext: string
@@ -144,6 +145,49 @@ function pruefeStartbedingungen(eintrag: ModellEintrag): void {
 }
 
 /**
+ * Die Startvorbedingung wirkender Werkzeuge: die Wurzel ist ein Git-Repo, und der Arbeitsbaum ist
+ * sauber.
+ *
+ * Warum das traegt und nicht bloss beruhigt: `.git` ist in pfadwache geschuetzt und im
+ * Sandkastenprofil vom Schreiben ausgenommen. Der Rueckweg `git diff` / `git checkout` gehoert
+ * damit ueber den ganzen Lauf ausschliesslich dem Menschen — kein Werkzeug und kein Kindprozess
+ * kann ihn wegnehmen. Diese Pruefung stellt nur sicher, dass es zu Beginn etwas gibt, worauf man
+ * zurueckkann.
+ *
+ * Kein Git-Repo heisst: kein Start. Nicht "Start mit Warnung" — eine Warnung, die einmal
+ * weggeklickt wurde, ist beim zweiten Mal keine mehr, und der Preis ist die Arbeit eines Tages.
+ *
+ * Was sie *nicht* ist: Schutz vor Zeitverlust. Ein Lauf kann Stunden Arbeit zerschreiben;
+ * wiederherstellbar ist, was committet war.
+ */
+export async function pruefeArbeitsbaum(
+  wurzel: string,
+): Promise<{ ok: true } | { ok: false; meldung: string }> {
+  let ausgabe: string
+  try {
+    const r = await execFileAsync('git', ['-C', wurzel, 'status', '--porcelain'])
+    ausgabe = String(r.stdout)
+  } catch {
+    return {
+      ok: false,
+      meldung:
+        `'${wurzel}' ist kein Git-Repository. Ein Lauf mit schreibenden Werkzeugen startet nur ` +
+        `dort, wo es einen Rueckweg gibt — lege eines an ('git init') und sichere den ` +
+        `Ausgangsstand mit einem Commit.`,
+    }
+  }
+  if (ausgabe.trim() !== '') {
+    return {
+      ok: false,
+      meldung:
+        `Der Arbeitsbaum ist nicht sauber. Ein Lauf mit schreibenden Werkzeugen wuerde Aenderungen ` +
+        `ueberschreiben, die nirgends gesichert sind:\n${ausgabe.trim()}`,
+    }
+  }
+  return { ok: true }
+}
+
+/**
  * The run id may be passed in. The IPC surface needs it *before* the run starts, because the
  * abort mark is keyed by it — minting it inside and handing it back afterwards would leave a
  * window in which a run cannot be cancelled.
@@ -162,6 +206,13 @@ export async function starteLauf(
       `Die Werkzeugliste hat ${stummel.length} Eintraege, die Faehigkeitszeile empfiehlt ` +
       `hoechstens ${f.werkzeugObergrenze}.`,
     )
+  }
+
+  // Vor `run.started`: ein Lauf, der hier scheitert, hat nie begonnen, und im Protokoll steht kein
+  // angefangener Lauf ohne Ende.
+  if (u.registry.alle().some(w => istWirkend(w.name))) {
+    const baum = await pruefeArbeitsbaum(auftrag.wurzel)
+    if (!baum.ok) throw new Error(baum.meldung)
   }
 
   schreibe(u, laufId, 'run.started', {

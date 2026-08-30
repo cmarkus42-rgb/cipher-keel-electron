@@ -8,6 +8,7 @@ import { DATEI_WERKZEUGE } from '../../src/main/harness/werkzeug-datei'
 import { effekteOhneEntscheidung } from '../../src/main/harness/tor'
 import { effekteOhneIntent } from '../../src/main/harness/intent-vor-effekt'
 import type { Werkzeug } from '../../src/main/harness/werkzeuge'
+import { execFileAsync } from '../../src/main/util/exec-util'
 import { baueUmgebung } from './lauf.test-helfer'
 
 /** Die Angabe ist Pflicht in `ModelAntwort`; ihr Inhalt spielt hier keine Rolle. */
@@ -17,10 +18,18 @@ const BUDGETS = { runden: 4, wanduhrMs: 60_000, kostenCent: 100, kontextAnteil: 
 let heim: string
 let wurzel: string
 
-beforeEach(() => {
+// Diese Suite faehrt wirkende Werkzeuge (SCHREIB_WERKZEUGE, und ein Doppel unter dem Namen
+// 'datei_schreiben') durch `starteLauf` — seit Task 8 ist ein sauberes Git-Repo an der Wurzel die
+// Startvorbedingung dafuer (siehe pruefeArbeitsbaum in lauf.ts). Ein leerer Commit reicht: es geht
+// nur um einen Ausgangsstand, auf den 'git diff' / 'git checkout' zurueckkoennen, nicht um Inhalt.
+beforeEach(async () => {
   heim = realpathSync(mkdtempSync(join(tmpdir(), 'keel-lw-')))
   wurzel = join(heim, 'projekt')
   mkdirSync(wurzel, { recursive: true })
+  await execFileAsync('git', ['init', '-q', wurzel])
+  await execFileAsync('git', ['-C', wurzel, 'config', 'user.email', 'test@test.invalid'])
+  await execFileAsync('git', ['-C', wurzel, 'config', 'user.name', 'Test'])
+  await execFileAsync('git', ['-C', wurzel, 'commit', '-q', '--allow-empty', '-m', 'leer'])
 })
 afterEach(() => rmSync(heim, { recursive: true, force: true }))
 
