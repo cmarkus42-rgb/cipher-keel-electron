@@ -1395,9 +1395,17 @@ beforeAll(() => {
   wurzel = join(heim, 'projekt')
   mkdirSync(wurzel, { recursive: true })
   const wache = { wurzel, heim, userDataPfad: join(heim, 'userData') }
+  // Ein eigenes Verzeichnis, **nicht** die OS-Temp-Wurzel: `realpathSync(tmpdir())` ist der
+  // Vorfahr dieses ganzen Testbaums (heim liegt selbst darunter), und
+  // `(allow file-write* (subpath <tmpdir>))` machte damit die Grenze um `heim` gegenstandslos —
+  // derselbe Fall wie in sandkasten-lauf.test.ts, dort schon einmal gefunden. In der Produktion
+  // ist TMPDIR kein Vorfahr des Heimatverzeichnisses; die Fixture muss dieselbe Lage herstellen,
+  // sonst prueft sie einen Fall, den es nicht gibt.
+  const eigenesTmp = join(heim, 'tmp')
+  mkdirSync(eigenesTmp, { recursive: true })
   ktx = {
     wache, graphDb: null,
-    sandkasten: { ...wache, zwischenspeicher: [], tmpdir: realpathSync(tmpdir()) },
+    sandkasten: { ...wache, zwischenspeicher: [], tmpdir: eigenesTmp },
   }
 })
 afterAll(() => rmSync(heim, { recursive: true, force: true }))
@@ -1406,7 +1414,7 @@ describe.skipIf(process.platform !== 'darwin')('shell_ausfuehren — echter Lauf
   it('fuehrt aus und gibt die Ausgabe zurueck', async () => {
     const r = await shell.ausfuehren({ kommando: 'echo hallo' }, ktx)
     expect(r.ok).toBe(true)
-    if (r.ok) expect(r.inhalt[0].text).toContain('hallo')
+    if (r.ok) expect((r.inhalt[0] as { text: string }).text).toContain('hallo')
   })
 
   it('nennt den Rueckgabecode bei einem Fehlschlag, statt still ok zu melden', async () => {
@@ -1436,7 +1444,7 @@ describe.skipIf(process.platform !== 'darwin')('shell_ausfuehren — echter Lauf
       { kommando: 'curl -s -m 8 -o /dev/null -w "%{http_code}" https://example.com || true' }, ktx,
     )
     expect(r.ok).toBe(true)
-    if (r.ok) expect(r.inhalt[0].text).toContain('000')
+    if (r.ok) expect((r.inhalt[0] as { text: string }).text).toContain('000')
   }, 20_000)
 
   it('nennt ein fehlendes Kommando', async () => {
