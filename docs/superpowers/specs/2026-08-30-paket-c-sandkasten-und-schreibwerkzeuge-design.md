@@ -156,10 +156,16 @@ Funktionen mit je eigenen Tests, nicht eine mit einem Schalter.
 (allow sysctl-read)
 (allow mach-lookup)
 
-; Lesen: grundsaetzlich ja …
+; Lesen: grundsaetzlich ja — die Verbote unten ueberstimmen das
 (allow file-read*)
 
-; … ausser den Verboten der Pfadwache, hier gespiegelt und beidseitig
+; Schreibziele: die Wurzel und die Zwischenspeicher (4.4)
+(allow file-write* (subpath "<wurzel>"))
+(allow file-write* (subpath "<tmpdir>"))
+(allow file-write* (subpath "<zwischenspeicher-1>") …)
+(allow file-write-data (literal "/dev/null"))
+
+; ── Ab hier nur noch Verbote, und keine Erlaubnis darf ihnen folgen ──
 (deny file-read* file-write*
   (subpath "<heim>/.ssh")
   (subpath "<userData>")
@@ -169,16 +175,18 @@ Funktionen mit je eigenen Tests, nicht eine mit einem Schalter.
   (regex #"^<wurzel>/(.*/)?(id_rsa|id_ed25519|id_ecdsa|id_dsa)$")
   (regex #"^<wurzel>/(.*/)?[^/]*\.(pem|key|p12|keystore|jks)$"))
 
-; Schreiben: die Wurzel, und die Verwaltung des Rueckwegs ausdruecklich nicht
-(allow file-write* (subpath "<wurzel>"))
+; Die Verwaltung des Rueckwegs ausdruecklich nicht
 (deny  file-write* (regex #"^<wurzel>/(.*/)?\.git(/|$)"))
-
-; Schreiben ausserhalb: nur die benannten Zwischenspeicher (4.4)
-(allow file-write* (subpath "<tmpdir>"))
-(allow file-write* (subpath "<zwischenspeicher-1>") …)
-
-(allow file-write-data (literal "/dev/null"))
 ```
+
+**Die Reihenfolge ist die Aussage, nicht das Vorhandensein der Zeile.** Der erste Entwurf stellte die Verbote nach oben — nach dem Muster von M8 §4.6 und der Pfadwache, wo *„deny rules never yield to an allow rule"* gilt. **SBPL funktioniert nicht so.** Beim Bau von Paket C gemessen, mit zwei Profilen, die sich nur in der Reihenfolge zweier Zeilen unterschieden:
+
+```
+deny .env  VOR  allow file-write* <wurzel>   ->  echo zerstoert > .env  gelingt
+deny .env  NACH allow file-write* <wurzel>   ->  Operation not permitted, Inhalt unveraendert
+```
+
+Seatbelt entscheidet nach der **zuletzt passenden** Regel. Ein Verbot vor einer umfassenderen Erlaubnis sieht im Profiltext aus wie Schutz und ist keiner — und zwar unsichtbar für jede Prüfung, die nur fragt, ob die Zeile da ist. Deshalb: alle Erlaubnisse zuerst, alle Verbote zuletzt, und ein eigener Wächter, der genau diese Ordnung hält.
 
 **Jede dieser Regeln trägt `(.*/)?`, und das ist beim Review aufgefallen, nicht beim Entwurf.** Die erste Fassung sperrte nur direkte Kinder — die Pfadwache prüft aber den **Basename** und `istIn(pfad, heim)`, also jede Tiefe (`pfadwache.ts:99-101`), und ihr `.git`-Verbot trifft *jedes* Segment mit diesem Namen. Ein Sandkasten, der nur `<wurzel>/.git` schützt, lässt das `.git` eines Submoduls offen und ist damit schwächer als die Wache, die er spiegeln soll. Gegen echtes `sandbox-exec` nachgemessen: mit `(.*/)?` fallen verschachteltes `.git` und verschachteltes `.cipher-` beide, ohne es beide nicht.
 

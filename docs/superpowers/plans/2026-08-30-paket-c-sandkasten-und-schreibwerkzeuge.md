@@ -142,6 +142,30 @@ describe('Waechter: jedes Leseverbot ist auch ein Schreibverbot', () => {
   })
 })
 
+describe('Waechter: kein Verbot steht vor einer Erlaubnis', () => {
+  // Der teuerste Fund dieser Strecke. SBPL entscheidet nach der **zuletzt** passenden Regel:
+  // ein `(deny ... .env)` vor `(allow file-write* (subpath <wurzel>))` ist wirkungslos, und im
+  // Profiltext sieht es trotzdem nach Schutz aus. Gemessen mit zwei Profilen, die sich nur in
+  // der Reihenfolge dieser zwei Zeilen unterschieden: davor gelang `echo > .env`, danach kam
+  // 'Operation not permitted'.
+  //
+  // Dieser Waechter ist der einzige Texttest, der das faengt — alle anderen pruefen, ob eine
+  // Zeile *da* ist, und da war sie.
+  it('jede allow-Zeile steht vor jeder deny-Zeile', () => {
+    const zeilen = profilText(ktx, 'offen').split('\n').map(z => z.trim())
+    const istDeny = (z: string): boolean => z.startsWith('(deny') && z !== '(deny default)'
+    const letzteErlaubnis = zeilen.findLastIndex(z => z.startsWith('(allow'))
+    const erstesVerbot = zeilen.findIndex(istDeny)
+    expect(erstesVerbot).toBeGreaterThan(-1)
+    expect(letzteErlaubnis).toBeGreaterThan(-1)
+    expect(
+      erstesVerbot,
+      `Verbot in Zeile ${erstesVerbot} steht vor Erlaubnis in Zeile ${letzteErlaubnis} — ` +
+      `SBPL nimmt die letzte passende Regel, das Verbot waere wirkungslos.`,
+    ).toBeGreaterThan(letzteErlaubnis)
+  })
+})
+
 describe('Waechter: jedes Verbot ist verankert', () => {
   // Ein globales deny auf *.pem sperrt /etc/ssl/cert.pem und bricht jedes TLS im Kindprozess —
   // also ausgerechnet npm ci.
@@ -286,12 +310,36 @@ export function profilText(ktx: SandkastenKontext, netz: NetzModus): string {
     zeilen.push('(allow network-outbound)', '(allow network-bind)', '')
   }
 
+  // ALLE Erlaubnisse zuerst, ALLE Verbote zuletzt. Das ist die tragende Regel dieser Funktion,
+  // und sie ist am 2026-08-30 gegen echtes sandbox-exec gemessen worden: **SBPL entscheidet nach
+  // der zuletzt passenden Regel**, nicht nach der ersten und nicht "deny gewinnt". Gemessen mit
+  // zwei Profilen, die sich nur in der Reihenfolge zweier Zeilen unterschieden:
+  //
+  //   deny .env  VOR  allow write <wurzel>  ->  echo zerstoert > .env  gelingt
+  //   deny .env  NACH allow write <wurzel>  ->  Operation not permitted, Inhalt unveraendert
+  //
+  // Ein Verbot vor einer umfassenderen Erlaubnis ist also wirkungslos — es sieht im Profiltext
+  // aus wie Schutz und ist keiner. Genau deshalb reicht eine Textpruefung ueber diesem Profil
+  // nicht: die Reihenfolge ist die Aussage, nicht das Vorhandensein der Zeile.
   zeilen.push(
-    '; Lesen: grundsaetzlich ja …',
+    '; Lesen: grundsaetzlich ja — die Verbote stehen unten und ueberstimmen das.',
     '(allow file-read*)',
     '',
-    '; … ausser den Verboten der Pfadwache. Beidseitig, nie nur lesend: ein deny auf file-read*',
-    '; allein laesst das Ueberschreiben zu, und dann ist das Geheimnis vertraulich und zerstoerbar.',
+    '; Schreibziele: die Wurzel und die Zwischenspeicher der Toolchains.',
+    `(allow file-write* (subpath "${w}"))`,
+    `(allow file-write* (subpath "${sbplLiteral(ktx.tmpdir)}"))`,
+  )
+
+  for (const z of ktx.zwischenspeicher) {
+    zeilen.push(`(allow file-write* (subpath "${sbplLiteral(z)}"))`)
+  }
+
+  zeilen.push(
+    '(allow file-write-data (literal "/dev/null"))',
+    '',
+    '; Ab hier nur noch Verbote, und keine Erlaubnis darf ihnen folgen. Beidseitig, nie nur',
+    '; lesend: ein deny auf file-read* allein laesst das Ueberschreiben zu, und dann ist das',
+    '; Geheimnis vertraulich und zerstoerbar.',
     `(deny file-read* file-write* (subpath "${sbplLiteral(ktx.heim)}/.ssh"))`,
     `(deny file-read* file-write* (subpath "${sbplLiteral(ktx.userDataPfad)}"))`,
     // `(.*/)?` in jeder dieser Regeln, und das ist keine Kosmetik: pfadwache prueft den
@@ -305,25 +353,15 @@ export function profilText(ktx: SandkastenKontext, netz: NetzModus): string {
     // Anchored to the root, never global: a global deny on *.pem locks /etc/ssl/cert.pem and
     // breaks TLS in the child — that is, `npm ci` itself.
     `(deny file-read* file-write* (regex #"^${wRe}/(.*/)?[^/]*\\.(pem|key|p12|keystore|jks)$"))`,
-    '',
-    '; Schreiben: die Wurzel — und die Verwaltung des Rueckwegs ausdruecklich nicht. Ein',
-    '; `git reset --hard` naehme genau den Rueckweg weg, auf dem die Startvorbedingung beruht.',
-    `(allow file-write* (subpath "${w}"))`,
     // Jedes `.git`-Segment in jeder Tiefe, nicht bloss `<wurzel>/.git`: pfadwache verwirft einen
     // Pfad, sobald *irgendein* Segment `.git` heisst (pfadwache.ts:101). Ein Submodul oder ein
     // eingebettetes Repo unter `vendor/` waere sonst beschreibbar, waehrend die Wache es
-    // verweigert — und die Rueckwegzusage gilt dann nur fuer das oberste Repo.
+    // verweigert — und die Rueckwegzusage gilt dann nur fuer das oberste Repo. Ein
+    // `git reset --hard` naehme ausserdem genau den Rueckweg weg, auf dem die
+    // Startvorbedingung beruht.
     `(deny file-write* (regex #"^${wRe}/(.*/)?\\.git(/|$)"))`,
     '',
-    '; Schreibziele ausserhalb der Wurzel: die Zwischenspeicher der Toolchains.',
-    `(allow file-write* (subpath "${sbplLiteral(ktx.tmpdir)}"))`,
   )
-
-  for (const z of ktx.zwischenspeicher) {
-    zeilen.push(`(allow file-write* (subpath "${sbplLiteral(z)}"))`)
-  }
-
-  zeilen.push('', '(allow file-write-data (literal "/dev/null"))', '')
   return zeilen.join('\n')
 }
 ```
@@ -389,15 +427,25 @@ beforeAll(() => {
   writeFileSync(join(wurzel, '.git', 'HEAD'), 'historie')
   writeFileSync(join(wurzel, '.env'), 'GEHEIM=original')
   writeFileSync(join(wurzel, 'a.ts'), 'export const a = 1')
-  writeFileSync(join(heim, '.ssh', 'id_rsa'), 'privat')
-  writeFileSync(join(heim, '.cipher-test.env'), 'TOKEN=x')
+  // Ein Inhalt, der in keinem Pfad vorkommen kann. 'privat' waere hier falsch: die kanonisierte
+  // Temp-Wurzel dieses Rechners heisst /private/var/..., und eine Zusicherung
+  // `not.toContain('privat')` pruefte dann den Pfad in der Fehlermeldung statt den Schluessel.
+  writeFileSync(join(heim, '.ssh', 'id_rsa'), 'SCHLUESSELMATERIAL-Q7X')
+  writeFileSync(join(heim, '.cipher-test.env'), 'TOKEN=GEHEIM-Q7X')
   mkdirSync(join(heim, 'fremd'), { recursive: true })
   writeFileSync(join(heim, 'fremd', 'wichtig.txt'), 'wichtige arbeit')
+  // Ein eigenes Verzeichnis, **nicht** die OS-Temp-Wurzel: `realpathSync(tmpdir())` ist der
+  // Vorfahr dieses ganzen Testbaums, und `(allow file-write* (subpath <tmpdir>))` machte damit
+  // jede Grenze des Profils gegenstandslos — der fremde Baum und `.git` lagen darunter. In der
+  // Produktion ist TMPDIR (/var/folders/...) kein Vorfahr einer Projektwurzel; die Fixture muss
+  // dieselbe Lage herstellen, sonst prueft sie einen Fall, den es nicht gibt.
+  const eigenesTmp = join(heim, 'tmp')
+  mkdirSync(eigenesTmp, { recursive: true })
   ktx = {
     wurzel, heim,
     userDataPfad: join(heim, 'Library', 'Application Support', 'cipher-keel'),
     zwischenspeicher: [],
-    tmpdir: realpathSync(tmpdir()),
+    tmpdir: eigenesTmp,
   }
 })
 
@@ -451,12 +499,12 @@ describe.skipIf(process.platform !== 'darwin')('starte — die Grenze haelt', ()
 
   it('liest keinen SSH-Schluessel', async () => {
     const r = await starte(`cat ${heim}/.ssh/id_rsa`, ktx, 'zu')
-    expect(r.ausgabe).not.toContain('privat')
+    expect(r.ausgabe).not.toContain('SCHLUESSELMATERIAL-Q7X')
   })
 
   it('liest keine .cipher-Datei', async () => {
     const r = await starte(`cat ${heim}/.cipher-test.env`, ktx, 'zu')
-    expect(r.ausgabe).not.toContain('TOKEN')
+    expect(r.ausgabe).not.toContain('GEHEIM-Q7X')
   })
 
   it('liest gewoehnlichen Quelltext', async () => {
