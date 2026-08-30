@@ -17,6 +17,9 @@ const FORMULAR = readFileSync(
 const CONFIG_PATHS = [
   'agent.startArgs',
   'agent.modelTiers',
+  // Der Harness-Platz (2026-08-30). Bis dahin war die Harness-Wahl die im Inventar benannte
+  // offene Stelle: kimi-code war gebaut, aber ueber keine Flaeche erreichbar.
+  'agent.harness',
   'voice.enabled',
   'voice.piperVoice',
   'llm.tagging',
@@ -146,6 +149,16 @@ describe('CK-NFR-012 — the adjustable-surface inventory', () => {
     }
     // Und die Protokollzusage, die kein Schalter ist.
     expect(INVENTORY).toContain('netz.ausgehend')
+  })
+
+  it('nennt die Harness-Wahl nicht mehr als unerreichbar', () => {
+    // Die Zeile war bis zum 2026-08-30 der ehrliche Vermerk einer Luecke: ein zweiter fremder
+    // Harness war gebaut, aber nur ueber getForRuntime erreichbar. Steht der Vermerk nach dem
+    // Bau der Flaeche weiter da, weist das Inventar an der Flaeche vorbei, die es benennen soll.
+    const zeile = INVENTORY.split('\n').find(l => l.includes('**Harness-Wahl**'))
+    expect(zeile).toBeDefined()
+    expect(zeile).not.toContain('und das ist die offene Stelle')
+    expect(zeile).toContain('agent.harness')
   })
 
   it('documents the cost budget price table', () => {
