@@ -9,6 +9,8 @@
 const INSTALL_HINTS: Record<string, string> = {
   tmux: 'tmux nicht gefunden. Installation mit: brew install tmux',
   claude: 'Claude Code CLI nicht gefunden. Installation unter: https://claude.com/claude-code',
+  kimi: 'Kimi Code CLI nicht gefunden. Installation unter: ' +
+    'https://moonshotai.github.io/kimi-code/',
 }
 
 /**
