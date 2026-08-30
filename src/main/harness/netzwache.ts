@@ -9,6 +9,11 @@
  * fixed destination. A fetch tool makes the destination attacker-choosable, and the argument
  * stops holding exactly there.
  *
+ * keel has had a sandbox since 2026-08-30 (sandkasten.ts), and it does not take this module's job
+ * over: it binds the *child process* of `shell_ausfuehren`, whose `zu` profile carries no
+ * `network-outbound` at all. Both network tools here fetch from the main process, which no profile
+ * covers. So this stays the only boundary on that path, and the sentence above still describes it.
+ *
  * Two modes, from the addendum of 2026-08-21. The main run reaches documentation sites off a
  * positive list, so that a model can read a file and look up the matching API in the *same* run.
  * The researcher's sub-run reaches the open net, but has no file and no graph tool beside it.

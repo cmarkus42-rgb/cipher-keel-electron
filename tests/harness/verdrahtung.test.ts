@@ -60,6 +60,8 @@ describe('Verdrahtung: gebaute Werkzeuge sind vom Lauf aus erreichbar', () => {
     // nie sieht — und das faellt sonst niemandem auf, weil sein eigener Test gruen bleibt.
     expect(namen).toEqual([
       'datei_lesen',
+      'datei_loeschen',
+      'datei_schreiben',
       'faehigkeit_lesen',
       'graph_abfragen',
       'graph_ausweiten',
@@ -68,10 +70,63 @@ describe('Verdrahtung: gebaute Werkzeuge sind vom Lauf aus erreichbar', () => {
       'inhalt_suchen',
       'recherchieren',
       'seite_lesen',
+      'shell_ausfuehren',
       'verzeichnis_listen',
       'web_suchen',
       'werkzeug_schema',
     ])
+  })
+
+  /**
+   * Die zweite Haelfte, wie beim Netzkontext: die Registry allein genuegt nicht.
+   * `shell_ausfuehren` antwortet ohne `ktx.sandkasten` auf **jeden** Aufruf „Fuer diesen Lauf ist
+   * kein Sandkasten eingerichtet" — ein verdrahtetes, nutzloses Werkzeug, und jeder Test darunter
+   * bliebe gruen. Gebaut wird der Kontext in `baueLaufUmgebung`, und die ist von hier aus nicht
+   * aufrufbar (echte `harness.db`, echtes better-sqlite3-Binding), also wird derselbe Rumpf
+   * gelesen wie beim Rechercheur-Modell darunter. Grob, und der einzige Test, der diesen Ausgang
+   * faengt.
+   */
+  it('setzt einen Sandkastenkontext in die LaufUmgebung ein', async () => {
+    const { readFileSync } = await import('node:fs')
+    const quelle = readFileSync(
+      new URL('../../src/main/harness-sitzung.ts', import.meta.url), 'utf8')
+    const beginn = quelle.indexOf('async function baueLaufUmgebung(')
+    expect(beginn, 'baueLaufUmgebung wurde umbenannt — dieser Test muss mit').toBeGreaterThan(0)
+    const ende = quelle.indexOf('\n}', beginn)
+    const rumpf = quelle.slice(beginn, ende)
+    expect(rumpf, 'baueLaufUmgebung baut keinen Sandkastenkontext — `shell_ausfuehren` steht dann ' +
+      'in der Registry und lehnt jeden Aufruf ab')
+      .toContain('baueSandkastenKontext(wurzel)')
+
+    // Und er muss auch **ankommen**: gebaut und nicht eingesetzt waere genau der Ausgang, um den
+    // es in dieser Datei geht. `wache` bekommt dasselbe Objekt, weil SandkastenKontext den
+    // WacheKontext erweitert — Argumentpruefung und Prozessgrenze reden so ueber ein Verzeichnis.
+    expect(rumpf).toMatch(/^\s*sandkasten,$/m)
+    expect(rumpf).toMatch(/^\s*wache: sandkasten,$/m)
+  })
+
+  /**
+   * Der Kontext muss die Pfade tragen, ueber die das Profil seine Verbote schreibt. Ein leeres
+   * `zwischenspeicher` waere kein Fehler, den irgendetwas anzeigt — `npm ci` schluege dann fehl
+   * und saehe aus wie ein Netzproblem.
+   */
+  it('gibt dem Sandkastenkontext absolute Zwischenspeicherpfade und ein tmpdir', async () => {
+    const { baueSandkastenKontext } = await import('../../src/main/harness-sitzung')
+    const { STANDARD_ZWISCHENSPEICHER } = await import('../../src/main/harness/sandkasten')
+    const { homedir, tmpdir } = await import('node:os')
+    const k = baueSandkastenKontext('/tmp/keel-probe-wurzel')
+
+    expect(k.wurzel).toBe('/tmp/keel-probe-wurzel')
+    expect(k.heim).toBe(homedir())
+    // Der electron-Ersatz oben gibt diesen Pfad aus — geprueft wird, dass `app.getPath` gefragt
+    // wurde und nicht etwa `wurzel` ein zweites Mal.
+    expect(k.userDataPfad).toBe('/tmp/keel-test')
+    expect(k.tmpdir).toBe(tmpdir())
+    expect(k.zwischenspeicher).toHaveLength(STANDARD_ZWISCHENSPEICHER.length)
+    expect(k.zwischenspeicher).toContain(`${homedir()}/.npm`)
+    // Absolut, nicht heimrelativ: das Profil schreibt sie woertlich in ein `(subpath "...")`,
+    // und ein relativer Pfad waere dort eine Regel, die nie greift.
+    for (const p of k.zwischenspeicher) expect(p.startsWith('/')).toBe(true)
   })
 
   /**

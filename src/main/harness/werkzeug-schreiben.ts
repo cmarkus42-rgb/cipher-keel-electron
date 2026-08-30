@@ -20,7 +20,9 @@
 import { closeSync, constants, mkdirSync, openSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, relative } from 'node:path'
 import { pruefePfad } from './pfadwache'
-import type { Werkzeug, WerkzeugErgebnis, WerkzeugKontext } from './werkzeuge'
+// `WerkzeugKontext` steht hier nicht: beide Werkzeuge bekommen `ktx` ueber die `Werkzeug`-Form
+// typisiert, und ein ungenutzter Typimport laesst `npm run lint` fallen.
+import type { Werkzeug, WerkzeugErgebnis } from './werkzeuge'
 
 function fehlendesFeld(feld: string): WerkzeugErgebnis {
   return { ok: false, meldung: `Das Feld '${feld}' fehlt in der Eingabe.` }

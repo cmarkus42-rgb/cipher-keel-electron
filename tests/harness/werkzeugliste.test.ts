@@ -41,6 +41,8 @@ describe('die ausgelieferte Werkzeugliste', () => {
     // Praefix und damit am Zwischenspeicher des Anbieters. Das soll auffallen.
     expect(namen).toEqual([
       'datei_lesen',
+      'datei_loeschen',
+      'datei_schreiben',
       'faehigkeit_lesen',
       'graph_abfragen',
       'graph_ausweiten',
@@ -49,15 +51,32 @@ describe('die ausgelieferte Werkzeugliste', () => {
       'inhalt_suchen',
       'recherchieren',
       'seite_lesen',
+      'shell_ausfuehren',
       'verzeichnis_listen',
       'web_suchen',
     ])
   })
 
-  it('kommt mit aufgeschobenem Laden auf 12 Stummel — das Meta-Werkzeug zaehlt mit', async () => {
+  it('kommt mit aufgeschobenem Laden auf 15 Stummel — das Meta-Werkzeug zaehlt mit', async () => {
     const mitMeta = (await ausgelieferteRegistry()).stummel(true).map(s => s.name)
     expect(mitMeta).toContain(META_WERKZEUG_NAME)
-    expect(mitMeta).toHaveLength(12)
+    expect(mitMeta).toHaveLength(15)
+  })
+
+  /**
+   * Paket C: der Sandkasten, die beiden Schreibwerkzeuge und das Tor waren gebaut, getestet und
+   * exportiert — und von der Registry des Laufs aus nicht erreichbar. Genau der Ausgang, den
+   * tests/harness/verdrahtung.test.ts fuer die Netz-Haelfte schon einmal gefunden hat.
+   *
+   * Geprueft wird ueber `alle()` und nicht ueber `stummel()`: `alle()` ist die Liste, die
+   * `starteLauf` nach `istWirkend` absucht, um die Git-Vorbedingung zu ziehen (lauf.ts). Fehlen
+   * die drei dort, faellt nicht nur das Werkzeug aus — die Vorbedingung greift auch nicht mehr.
+   */
+  it('traegt die drei wirkenden Werkzeuge in der echten Registry', async () => {
+    const namen = (await ausgelieferteRegistry()).alle().map(w => w.name)
+    expect(namen).toContain('datei_schreiben')
+    expect(namen).toContain('datei_loeschen')
+    expect(namen).toContain('shell_ausfuehren')
   })
 
   /**

@@ -2,8 +2,9 @@
  * ereignisse — what the loop writes down, and nothing else.
  *
  * The list is deliberately shorter than M8 section 3.1: an event type whose trigger does not
- * exist yet is not declared. Tool events are here because this stretch has reading tools;
- * delegation, heartbeat and suspension are not.
+ * exist yet is not declared. Tool events are here because this stretch has tools — reading ones
+ * from the start, and writing and executing ones since 2026-08-30, which is what `tool.entschieden`
+ * below exists for. Delegation, heartbeat and suspension are still not.
  */
 
 /**

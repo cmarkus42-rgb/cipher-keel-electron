@@ -1,9 +1,16 @@
 /**
  * werkzeug-datei — reading, listing, searching. In-process, never through a shell.
  *
- * A `grep` via execFile would be convenient and would give up exactly the boundary that
- * justifies this stretch having no sandbox: the moment a command is assembled, checking its
- * arguments is theatre again.
+ * A `grep` via execFile would be convenient and would give up exactly the boundary this module
+ * rests on: the moment a command is assembled, checking its arguments is theatre again.
+ *
+ * The sentence used to end "the boundary that justifies this stretch having no sandbox". Since
+ * 2026-08-30 the stretch *does* have one (sandkasten.ts), and the reason to stay in-process is no
+ * weaker for it — it is a different reason, and it is worth naming because the sandbox looks like
+ * it would cover this and does not. The profile grants `(allow file-read*)` and then denies a
+ * named set; **reading is not confined to the root there**, only writing is. pfadwache confines
+ * reading to the root. A `grep` shelled out through the sandbox would therefore be allowed to read
+ * the whole machine minus the deny list — strictly more than what this tool allows today.
  *
  * Every path passes pfadwache first. A rejection becomes a tool result with ok: false — the
  * run continues, and the model learns why. A model that reaches too far should find out, not die.

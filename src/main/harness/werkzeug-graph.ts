@@ -7,7 +7,14 @@
  * tests/harness/werkzeug-graph.test.ts holds both renderings to the same four operations.
  *
  * Writing operations — graph_upsert_node, graph_link, graph_maintain — are deliberately absent.
- * They belong to the stretch that brings the sandbox.
+ * That sentence used to end with "they belong to the stretch that brings the sandbox". The
+ * sandbox is here (sandkasten.ts, 2026-08-30), and they are still absent — so the reason has to
+ * be said instead of deferred: neither of the two boundaries that stretch built would see such a
+ * write. pfadwache checks a *path argument*, and a graph write has none; the sandbox profile
+ * denies the child process the whole userData directory the graph lives in, but these tools run
+ * in-process on the `graphDb` handle the run is handed, so no child process is involved at all. A
+ * graph write tool is therefore its own decision with its own boundary, not a follow-on to this
+ * one.
  *
  * Findings addressed:
  * - F1: Size limits on limit (1..100), depth (1..5)
