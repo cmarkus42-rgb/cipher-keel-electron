@@ -386,7 +386,9 @@ export function registerIpcHandlers(services: AppServices): void {
       // AdapterContext.sessionId), so running it after createSession was a race against the
       // very `claude` process it configures — createSession's own send-keys spawns that
       // process roughly 500ms after the pane opens, and `claude` reads its MCP config once,
-      // at its own start. The `settings.local.json` write usually wins that race by luck of
+      // at its own start (that "once" is inferred, not measured — the doc comment on
+      // postLaunchInjection says what it rests on and what does not depend on it). The
+      // `settings.local.json` write usually wins that race by luck of
       // timing; the `claude mcp add-json` CLI round-trip (up to 25s) reliably loses it.
       // Running injection first removes the race rather than narrowing it: nothing below
       // depends on the tmux session existing yet. postLaunchInjection is optional on

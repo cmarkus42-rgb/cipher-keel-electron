@@ -136,6 +136,13 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
    * session: that process read its MCP config once, at its own start, and does not reload it —
    * the same fact the I-1 note above rests on.
    *
+   * That fact is INFERRED, not observed, and it now carries weight in five files: it comes
+   * from the CLI's documented behaviour and from the I-1 race (a late `add-json` never
+   * surfaced in an already-open pane), but no run has yet changed the config under a live
+   * session to watch it not react. Nothing load-bearing rests on the inference ALONE: reasons
+   * 1 and 3 below stand without it, and the I-1 reordering is safe either way, because
+   * injecting early is harmless if the CLI does reload. Measuring it is still owed.
+   *
    * Path 2 is deliberately NOT undone, and the reason is not "a still-running sibling hangs
    * on the entry" — by the fact just stated, it does not:
    *   1. `claude mcp remove` can only delete, never restore. That is the actual difference
