@@ -214,9 +214,17 @@ läuft das Kommando trotzdem — nur **ohne** Netz. Der Fehlerfall ist ein schei
 offener Kanal. Die Erkennung ist damit eine Bequemlichkeit, die fail-closed irrt, und genau
 deshalb darf sie ungenau sein.
 
-**Was das nicht schliesst, und es steht auch im Werkzeugtext:** ein `postinstall`-Skript läuft
-unter `offen` mit vollem Netz. Das ist dieselbe Lücke, die entsteht, wenn ein Mensch selbst
-`npm ci` tippt — sie wird hier benannt, nicht behauptet.
+**Was das nicht schliesst — und die erste Fassung dieses Absatzes hat es um einen Schritt zu klein
+gemacht:** ein `postinstall`-Skript läuft unter `offen` mit vollem Netz. Hier stand, das sei
+dieselbe Lücke, die entsteht, wenn ein Mensch selbst `npm ci` tippt. Das stimmt nicht: der Mensch,
+der `npm ci` tippt, hat die `package.json` nicht auch geschrieben. Der Lauf kann beides — er
+schreibt sich ein `preinstall`/`postinstall` in die `package.json` und ruft danach den
+Paketbefehl auf, der Netz freischaltet. Aus „eine fremde Abhängigkeit könnte das tun" wird damit
+„der Lauf kann es selbst wollen". Der Weg ins Netz steht ihm also offen, wenn er ihn sucht; was
+bleibt, ist der Rest des Profils (kein `~/.ssh`, kein `~/.cipher-*`, keine `.env`, kein `.git`,
+kein Schreiben ausserhalb der Wurzel und der Zwischenspeicher). Benannt, nicht geschlossen — der
+Abgleich in `PAKETBEFEHLE` wird deswegen *nicht* geändert, weil ein schärferer Abgleich denselben
+Weg nicht verstellt.
 
 **Was es schliesst, und das ist der Grund für den ganzen Modus:** `netzwache.ts` sagt über sich,
 keels §1.1 rechtfertige den Verzicht auf einen Sandkasten damit, *„the only channel out is the
@@ -230,6 +238,14 @@ DGX), das von dieser Maschine aus erreichbar ist.
 **Seatbelt kann `100.64/10` nicht ausdrücken.** Ein Profil kann `localhost` gezielt sperren, aber
 keine CIDR-Bereiche filtern. Das ist eine Grenze des Werkzeugs, keine Entwurfswahl — und der
 Grund, warum die Vorgabe `zu` heisst und nicht „offen ausser innen".
+
+**Nachgetragen am 2026-08-30:** das „kann" oben war lange nur ein Können — das gebaute Profil
+sperrte `localhost` unter `offen` *nicht*, und damit war der MCP-Server aus Paket B unter jedem
+Paketbefehl erreichbar, genau der Fall, den der Absatz darüber beschreibt. `(deny network-outbound
+(remote ip "localhost:*"))` steht jetzt hinter den Erlaubnissen im `offen`-Zweig. Gemessen gegen
+echtes `sandbox-exec`, in beide Richtungen: ohne die Zeile antwortete ein `http.createServer` auf
+`127.0.0.1` mit 200, mit ihr kam 000, während `https://example.com` weiter 200 lieferte. Das
+Tailnet bleibt davon unberührt — dafür bräuchte es den CIDR-Filter, den es nicht gibt.
 
 ### 4.4 Die Zwischenspeicher — eine anpassbare Fläche (CK-NFR-012)
 

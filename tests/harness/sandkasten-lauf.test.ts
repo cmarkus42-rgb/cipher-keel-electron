@@ -86,14 +86,21 @@ describe.skipIf(process.platform !== 'darwin')('starte — die Grenze haelt', ()
     expect(readFileSync(join(wurzel, '.env'), 'utf-8')).toBe('GEHEIM=original')
   })
 
+  // Beide Zusicherungen, nicht nur die negative: `not.toContain` allein bestuende auch, wenn
+  // `cat` aus einem ganz anderen Grund nichts ausgab — ein vertippter Pfad, eine Fixture, die
+  // nie entstand, ein Sandkasten, der gar nicht startete. Der .env-Test daneben zeigt die Form.
+  // Diese zwei sind die wertvollsten Verbote des Profils; sie duerfen nicht die schwaechsten
+  // Tests der Datei sein.
   it('liest keinen SSH-Schluessel', async () => {
     const r = await starte(`cat ${heim}/.ssh/id_rsa`, ktx, 'zu')
     expect(r.ausgabe).not.toContain('SCHLUESSELMATERIAL-Q7X')
+    expect(r.ausgabe).toContain('Operation not permitted')
   })
 
   it('liest keine .cipher-Datei', async () => {
     const r = await starte(`cat ${heim}/.cipher-test.env`, ktx, 'zu')
     expect(r.ausgabe).not.toContain('GEHEIM-Q7X')
+    expect(r.ausgabe).toContain('Operation not permitted')
   })
 
   it('liest gewoehnlichen Quelltext', async () => {
@@ -103,20 +110,84 @@ describe.skipIf(process.platform !== 'darwin')('starte — die Grenze haelt', ()
   })
 })
 
+/**
+ * Beide Netzmodi, ohne einen einzigen Byte ins Internet.
+ *
+ * Die erste Fassung fuhr `curl https://example.com` und behauptete an der 200, `offen` erlaube
+ * ausgehende Verbindungen. Das war eine Aussage ueber die Maschine: im Zug oder auf einem
+ * abgeschotteten Runner wird der Test rot, ohne dass sich eine Zeile Code geaendert haette —
+ * genau die Sorte Test, die tests/harness/verdrahtung.test.ts fuer den Schluesselbund schon
+ * einmal ausgebaut hat („Ein Test, dessen Farbe an der Maschine haengt, sagt ueber den Code
+ * nichts"). Und sie unterschied „das Profil erlaubt ausgehend" nicht von „diese Maschine hat DNS".
+ *
+ * Zwei Gegenstellen auf dieser Maschine statt einer draussen:
+ *
+ * - **Ein Unix-Socket** im Projektbaum. Ein `connect(2)` darauf faellt in Seatbelt unter
+ *   `network-outbound` — es ist also derselbe Schalter, den `offen` umlegt, und er braucht keine
+ *   Netzwerkschnittstelle. Das ist der Nachweis, dass `offen` ausgehende Verbindungen erlaubt und
+ *   `zu` sie verbietet.
+ * - **Ein HTTP-Server auf 127.0.0.1.** Er belegt die Gegenrichtung: `offen` erlaubt ausgehend und
+ *   sperrt trotzdem die eigene Maschine, weil dort Paket Bs MCP-Server mit einem Bearer aus dem
+ *   Projektbaum lauscht.
+ *
+ * Am 2026-08-30 daneben gemessen, damit die Kenntnis nicht verlorengeht, ohne dass ein Test
+ * daran haengt: unter `offen` mit dem localhost-Verbot antwortete `curl https://example.com`
+ * weiter mit 200 — das Verbot verengt den Modus, es hebt ihn nicht auf.
+ */
 describe.skipIf(process.platform !== 'darwin')('starte — Netz', () => {
-  it('zu: kein Socket', async () => {
+  let port = 0
+  let sockPfad = ''
+  let httpServer: import('node:http').Server
+  let sockServer: import('node:net').Server
+
+  beforeAll(async () => {
+    const { createServer } = await import('node:http')
+    const { createServer: createSockServer } = await import('node:net')
+    sockPfad = join(wurzel, 'probe.sock')
+    httpServer = createServer((_q, s) => s.end('LOOPBACK-ANTWORT'))
+    sockServer = createSockServer(c => c.end('SOCKET-ANTWORT\n'))
+    await new Promise<void>(f => httpServer.listen(0, '127.0.0.1', f))
+    await new Promise<void>(f => sockServer.listen(sockPfad, f))
+    port = (httpServer.address() as { port: number }).port
+  })
+
+  afterAll(async () => {
+    await new Promise<void>(f => httpServer.close(() => f()))
+    await new Promise<void>(f => sockServer.close(() => f()))
+  })
+
+  it('offen: erlaubt eine ausgehende Verbindung', async () => {
+    const r = await starte(`nc -U ${sockPfad} < /dev/null`, ktx, 'offen')
+    expect(r.ausgabe).toContain('SOCKET-ANTWORT')
+    expect(r.code).toBe(0)
+  }, 20_000)
+
+  it('zu: erlaubt keine ausgehende Verbindung', async () => {
+    const r = await starte(`nc -U ${sockPfad} < /dev/null`, ktx, 'zu')
+    expect(r.ausgabe).not.toContain('SOCKET-ANTWORT')
+    expect(r.code).not.toBe(0)
+  }, 20_000)
+
+  it('offen: erreicht die eigene Maschine trotzdem nicht', async () => {
     const r = await starte(
-      'curl -s -m 8 -o /dev/null -w "%{http_code}" https://example.com', ktx, 'zu',
+      `curl -s -m 8 -o /dev/null -w "%{http_code}" http://127.0.0.1:${port}/`, ktx, 'offen',
     )
     expect(r.ausgabe.trim()).toContain('000')
   }, 20_000)
 
-  it('offen: erreicht das Netz', async () => {
+  it('zu: erreicht die eigene Maschine nicht', async () => {
     const r = await starte(
-      'curl -s -m 8 -o /dev/null -w "%{http_code}" https://example.com', ktx, 'offen',
+      `curl -s -m 8 -o /dev/null -w "%{http_code}" http://127.0.0.1:${port}/`, ktx, 'zu',
     )
-    expect(r.ausgabe.trim()).toContain('200')
+    expect(r.ausgabe.trim()).toContain('000')
   }, 20_000)
+
+  // Die Gegenprobe zum Test darueber, und ohne sie sagte er nichts: die 000 koennte auch von
+  // einem Server kommen, der gar nicht laeuft. Ungesandboxed muss dieselbe Adresse antworten.
+  it('der Server dieser Probe antwortet ausserhalb des Sandkastens', async () => {
+    const antwort = await fetch(`http://127.0.0.1:${port}/`)
+    expect(await antwort.text()).toBe('LOOPBACK-ANTWORT')
+  })
 })
 
 describe.skipIf(process.platform !== 'darwin')('starte — Grenzen des Laufs', () => {

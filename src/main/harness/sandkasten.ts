@@ -133,8 +133,35 @@ export function profilText(ktx: SandkastenKontext, netz: NetzModus): string {
     // `git reset --hard` naehme ausserdem genau den Rueckweg weg, auf dem die
     // Startvorbedingung beruht.
     `(deny file-write* (regex #"^${wRe}/(.*/)?\\.git(/|$)"))`,
-    '',
   )
+
+  if (netz === 'offen') {
+    // Der Modus `offen` heisst "darf ins Netz", nicht "darf an diese Maschine". Paket B legt
+    // einen gueltigen MCP-Bearer **in den Projektbaum** (`.claude/settings.local.json` bzw.
+    // `.kimi-code/mcp.json`) und lauscht auf 127.0.0.1; ein Kindprozess, der den Baum lesen und
+    // localhost erreichen kann, hat keels eigene Werkzeuge in der Hand. Unter einem Paketbefehl
+    // war das bis zum 2026-08-30 der Fall.
+    //
+    // Am 2026-08-30 gegen echtes sandbox-exec gemessen, gegen einen http.createServer auf
+    // 127.0.0.1 und in beide Richtungen:
+    //
+    //   offen ohne diese Zeile  ->  curl http://127.0.0.1:<port>  =  200
+    //   offen mit  dieser Zeile ->  curl http://127.0.0.1:<port>  =  000
+    //   offen mit  dieser Zeile ->  curl https://example.com      =  200  (Netz bleibt offen)
+    //   offen mit  dieser Zeile ->  nc -U <sock> im Projekt       =  rc 0 (Unix-Sockets bleiben)
+    //
+    // Die Zeile steht bei den uebrigen Verboten und nicht im `offen`-Zweig oben, weil dieses
+    // Profil die Ordnung "alle Erlaubnisse zuerst, alle Verbote zuletzt" traegt. Nachgemessen
+    // gilt fuer *diese* Regel beides — sie sperrt localhost auch vor `(allow network-outbound)`
+    // stehend —, aber das ist eine Eigenschaft des ungefilterten Gegenparts und keine, auf die
+    // sich die naechste Zeile verlassen soll.
+    zeilen.push('(deny network-outbound (remote ip "localhost:*"))')
+  }
+
+  // Kein CIDR-Filter: Seatbelt kann `100.64/10` nicht ausdruecken, das Tailnet (MS-01, VPS, DGX)
+  // bleibt unter `offen` also erreichbar. Deshalb ist die Vorgabe `zu` und nicht "offen ausser
+  // innen" — benannt, nicht geschlossen.
+  zeilen.push('')
   return zeilen.join('\n')
 }
 
@@ -176,8 +203,16 @@ export interface SandkastenLauf {
  *
  * Zwei Loecher, beide benannt und keines geschlossen:
  *
- * - Ein `postinstall`-Skript laeuft unter `offen` mit vollem Netz. Dieselbe Luecke, die ein
- *   Mensch eingeht, der selbst `npm ci` tippt.
+ * - Ein `postinstall`-Skript laeuft unter `offen` mit vollem Netz, und das ist **nicht** dieselbe
+ *   Luecke, die ein Mensch eingeht, der selbst `npm ci` tippt — dieser Satz stand hier und war
+ *   falsch. Der Mensch, der `npm ci` tippt, hat die `package.json` nicht auch geschrieben. Der
+ *   Lauf kann beides: er schreibt sich ein `preinstall`/`postinstall` in die `package.json`
+ *   (`datei_schreiben` darf das, die Datei liegt in der Wurzel und ist nicht geschuetzt) und
+ *   ruft danach den Paketbefehl auf, der Netz freischaltet. Aus "eine fremde Abhaengigkeit
+ *   koennte das tun" wird damit "der Lauf kann es selbst wollen", und das ist eine andere
+ *   Aussage. Der Weg ins Netz steht dem Lauf also offen, wenn er ihn sucht; was bleibt, ist der
+ *   Rest des Profils — kein Zugriff auf `~/.ssh`, `~/.cipher-*`, `.env`, `.git`, und keine
+ *   Schreibrechte ausserhalb der Wurzel und der Zwischenspeicher.
  * - Der Treffer gilt dem **fuehrenden** Kommando der Zeile, und das Profil gilt der ganzen Zeile:
  *   `npm ci && curl …` traegt beides ins Netz. Ein vorangestelltes `cd sub && npm ci` trifft
  *   dagegen nicht und laeuft ohne Netz — die Ungenauigkeit irrt also in beide Richtungen, nicht

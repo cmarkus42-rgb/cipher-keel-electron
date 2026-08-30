@@ -66,6 +66,26 @@ describe('profilText — Netzmodus', () => {
     expect(p).toContain('(allow network-outbound)')
     expect(p).toContain('(allow network-bind)')
   })
+
+  // `offen` heisst "darf ins Netz", nicht "darf an diese Maschine": Paket B legt einen gueltigen
+  // MCP-Bearer in den Projektbaum und lauscht auf 127.0.0.1. Ohne diese Zeile hat jeder
+  // Paketbefehl keels eigene Werkzeuge in Reichweite.
+  it('offen: verbietet trotzdem localhost', () => {
+    expect(profilText(ktx, 'offen')).toContain('(deny network-outbound (remote ip "localhost:*"))')
+  })
+
+  // Die Stellung ist Teil der Aussage: das Verbot muss hinter `(allow network-outbound)` stehen,
+  // sonst haengt seine Wirkung an einer Eigenschaft des ungefilterten Gegenparts statt an der
+  // Ordnung, die dieses Profil sonst ueberall traegt.
+  it('offen: das localhost-Verbot steht hinter der Netz-Erlaubnis', () => {
+    const p = profilText(ktx, 'offen')
+    expect(p.indexOf('(deny network-outbound'))
+      .toBeGreaterThan(p.indexOf('(allow network-outbound)'))
+  })
+
+  it('zu: kein Netzverbot noetig, es gibt keine Netz-Erlaubnis', () => {
+    expect(profilText(ktx, 'zu')).not.toContain('network-outbound')
+  })
 })
 
 describe('Waechter: jedes Leseverbot ist auch ein Schreibverbot', () => {
@@ -105,12 +125,16 @@ describe('Waechter: kein Verbot steht vor einer Erlaubnis', () => {
 describe('Waechter: jedes Verbot ist verankert', () => {
   // Ein globales deny auf *.pem sperrt /etc/ssl/cert.pem und bricht jedes TLS im Kindprozess —
   // also ausgerechnet npm ci.
-  it('jede deny-Regel nennt die Wurzel oder das Heim', () => {
-    // "(deny default)" ist die Grundregel der ganzen Sandbox und nennt keinen Pfad — sie ist
-    // keine der pfadbezogenen Verbotsregeln, gegen die dieser Waechter antritt, und faellt daher
-    // aus der Pruefung heraus.
-    const zeilen = profilText(ktx, 'zu').split('\n')
-      .filter(z => z.trimStart().startsWith('(deny') && z.trim() !== '(deny default)')
+  it.each(['zu', 'offen'] as const)('jede Datei-deny-Regel nennt die Wurzel oder das Heim (%s)', (netz) => {
+    // Zwei Zeilen fallen absichtlich heraus, und beide aus demselben Grund: sie sind keine
+    // pfadbezogenen Verbote. "(deny default)" ist die Grundregel der ganzen Sandbox, und
+    // "(deny network-outbound …)" verbietet ein Ziel im Netz, kein Verzeichnis — ein Anker auf
+    // die Wurzel waere dort sinnlos. Geprueft werden beide Netzmodi, weil das localhost-Verbot
+    // nur in einem von beiden entsteht und dieser Waechter sonst am Profil vorbeiliefe, das es
+    // traegt.
+    const zeilen = profilText(ktx, netz).split('\n')
+      .filter(z => z.trimStart().startsWith('(deny'))
+      .filter(z => z.trim() !== '(deny default)' && !z.includes('network-'))
     expect(zeilen.length).toBeGreaterThan(0)
     for (const z of zeilen) {
       const verankert = z.includes(ktx.wurzel) || z.includes(ktx.heim)
