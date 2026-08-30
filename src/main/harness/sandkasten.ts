@@ -135,6 +135,14 @@ import { getEnhancedPath } from '../util/exec-util'
 export const STANDARD_ZEITGRENZE_MS = 120_000
 
 /**
+ * Hard ceiling on `zeitgrenzeMs`, whatever the model asks for. Adjustable surface (CK-NFR-012).
+ * Without this, `STANDARD_ZEITGRENZE_MS` is a default and not a ceiling: `shell_ausfuehren` is
+ * the one tool that starts a process, and its `zeitgrenzeMs` comes straight from the model's
+ * input. Not command inspection — this never reads `kommando`.
+ */
+export const MAX_ZEITGRENZE_MS = 15 * 60_000
+
+/**
  * Output cap. Not comfort: the output goes into the model context. An `npm ci` with 4 MB of
  * output blows a local 27B model's window in a single turn, and then the test track measures who
  * guessed `--silent`.
@@ -156,8 +164,16 @@ export interface SandkastenLauf {
  * does not match here. If the match is wrong, the failure case is a failing build, never an open
  * channel: it errs fail-closed, and that is exactly why it is allowed to be imprecise.
  *
- * What it does not close, and the tool text says so too: a `postinstall` script runs with full
- * network under `offen`. That is the same gap a human takes on when typing `npm ci` themselves.
+ * Zwei Loecher, beide benannt und keines geschlossen:
+ *
+ * - Ein `postinstall`-Skript laeuft unter `offen` mit vollem Netz. Dieselbe Luecke, die ein
+ *   Mensch eingeht, der selbst `npm ci` tippt.
+ * - Der Treffer gilt dem **fuehrenden** Kommando der Zeile, und das Profil gilt der ganzen Zeile:
+ *   `npm ci && curl …` traegt beides ins Netz. Ein vorangestelltes `cd sub && npm ci` trifft
+ *   dagegen nicht und laeuft ohne Netz — die Ungenauigkeit irrt also in beide Richtungen, nicht
+ *   nur in die sichere. Sie gewinnt nichts, was ein selbstgeschriebenes `postinstall` nicht auch
+ *   gaebe, und darum bleibt der Abgleich wie er ist; die Aussage darueber wird korrigiert, nicht
+ *   der Abgleich.
  */
 export const PAKETBEFEHLE = [
   'npm ci', 'npm install', 'npm i ', 'yarn install', 'pnpm install', 'pnpm i ',
