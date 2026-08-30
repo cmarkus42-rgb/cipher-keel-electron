@@ -36,6 +36,8 @@ import { META_WERKZEUG_NAME, type WerkzeugErgebnis, type WerkzeugRegistry } from
 import { FAEHIGKEIT_WERKZEUG_NAME, unbekannteFaehigkeitMeldung } from './faehigkeiten'
 import type { NetzKontext } from './werkzeug-netz'
 import type { AusgehenderSprung } from './netzwache'
+import type { SandkastenKontext } from './sandkasten'
+import { entscheide, istWirkend } from './tor'
 import { RECHERCHIEREN_NAME, fuehreRecherche } from './rechercheur'
 
 export interface Auftrag {
@@ -71,6 +73,11 @@ export interface LaufUmgebung {
    * ausgehenden URLs des Unterlaufs in das Protokoll des Elternlaufs.
    */
   netz?: Omit<NetzKontext, 'ereignisse' | 'melde'>
+  /**
+   * Der Prozessrand fuer `shell_ausfuehren`. Fehlt er, antwortet das Werkzeug benannt statt zu
+   * laufen — dieselbe Regel wie bei `netz`.
+   */
+  sandkasten?: SandkastenKontext
   /**
    * Modell und Transport des Rechercheur-Unterlaufs, aus dem Zuordnungsplatz `rolle:rechercheur`.
    * `null` heisst: der Unterlauf faehrt das Modell dieses Laufs (rechercheur.ts).
@@ -366,10 +373,17 @@ async function fahre(laufId: string, auftrag: Auftrag, u: LaufUmgebung): Promise
         beende(u, laufId, ereignisse, abschlussVorab, nurText(antwort.bloecke), auftrag.pflichtfelder)
         return
       }
-      // All tools in this stretch read, so all calls of a turn may run concurrently. The
-      // Single-Writer rule from M8 section 3.2 holds trivially: no call writes. The mechanism
-      // for it arrives with the writing tools.
-      await Promise.all(aufrufe.map(a => fuehreAus(u, laufId, auftrag, a)))
+      // Single-Writer (M8 section 3.2). Enthaelt die Aufrufmenge eines Zuges *einen* wirkenden
+      // Aufruf, laeuft der **ganze** Zug sequenziell, in Blockreihenfolge. Nicht "nur die
+      // schreibenden serialisieren, die lesenden nebenher": ein Lesevorgang parallel zu einem
+      // Schreibvorgang auf derselben Datei liefert je nach Zeitpunkt Altes oder Neues, und das
+      // Protokoll saehe in beiden Faellen gleich aus. Die Reproduzierbarkeit eines Laufs ist genau
+      // das, was die Teststrecke misst.
+      if (aufrufe.some(a => istWirkend(a.name))) {
+        for (const a of aufrufe) await fuehreAus(u, laufId, auftrag, a)
+      } else {
+        await Promise.all(aufrufe.map(a => fuehreAus(u, laufId, auftrag, a)))
+      }
       // Wall-clock time moved while the tools ran even though no new model.answered event did —
       // reconstructed again, not carried, same rule as everywhere else in this loop.
       const verbrauchNachWerkzeugen = verbrauchAusEreignissen(ereignisse, auftrag.modellId, u.uhr())
@@ -426,6 +440,36 @@ async function fuehreAus(
   u: LaufUmgebung, laufId: string, auftrag: Auftrag, a: Extract<Block, { art: 'werkzeug-aufruf' }>,
 ): Promise<void> {
   schreibe(u, laufId, 'tool.intent', { aufrufId: a.id, name: a.name, eingabe: a.eingabe })
+
+  // Ankuendigung, Entscheidung, Wirkung. Nur wirkende Werkzeuge: die Kette auch ueber die
+  // lesenden zu legen hiesse, jedem Lesevorgang ein Ereignis zu spendieren, dessen Antwort immer
+  // ja ist — das Protokoll wuerde laenger und nicht wahrer.
+  // `istWirkend` davor ist nicht bloss eine Abkuerzung, sondern die Bedingung, unter der
+  // `entscheide` ueberhaupt aussagekraeftig ist: fuer jeden Namen ausser dem Shell-Werkzeug faellt
+  // es in den Pfadzweig und beurteilte ein `pfad`-Feld, das ein fremdes Werkzeug gar nicht hat.
+  if (istWirkend(a.name)) {
+    // `.erlaubt` wird sofort gelesen. `entscheide` gibt **immer** ein Objekt zurueck, also waere
+    // ein `if (entscheide(...))` immer wahr und das Tor stillschweigend abgeschaltet — der Typ
+    // kann das nicht verhindern.
+    //
+    // Was es faengt, ist genau ein Test: "ein Nein haelt die Wirkung an" in
+    // tests/harness/lauf-wirkende-werkzeuge.test.ts. Er braucht ein Werkzeug, das den Pfad nicht
+    // selbst noch einmal prueft — die echten Schreibwerkzeuge tun das (werkzeug-schreiben.ts,
+    // Tiefenverteidigung) und lehnen mit **wortgleicher** Meldung ab. Ueber ihnen sieht ein hier
+    // angehaltener Aufruf im Protokoll aus wie ein durchgelassener, der am Werkzeug scheitert;
+    // gemessen am 2026-08-30 faerbte das Streichen dieser Abbruchzeile keinen Test ueber den
+    // echten Werkzeugen rot.
+    const urteil = entscheide(a.name, a.eingabe, u.wache)
+    schreibe(u, laufId, 'tool.entschieden', {
+      aufrufId: a.id, name: a.name, erlaubt: urteil.erlaubt, grund: urteil.grund,
+    })
+    if (!urteil.erlaubt) {
+      // Ein Nein ist ein Werkzeugfehler, kein Laufende — dieselbe Regel wie bei den lesenden
+      // Werkzeugen: wer zu weit greift, soll es erfahren, nicht daran sterben.
+      schreibe(u, laufId, 'tool.failed', { aufrufId: a.id, name: a.name, meldung: urteil.grund })
+      return
+    }
+  }
 
   // `recherchieren` startet einen eigenen Lauf und braucht dafuer Protokoll, Transport, Uhr und
   // Abbruchmarke — nichts davon steht einem Werkzeug ueber seinem WerkzeugKontext zur Verfuegung.
@@ -540,7 +584,9 @@ async function fuehreAus(
           },
         }
       : undefined
-    const r = await werkzeug.ausfuehren(a.eingabe, { wache: u.wache, graphDb: u.graphDb, netz })
+    const r = await werkzeug.ausfuehren(a.eingabe, {
+      wache: u.wache, graphDb: u.graphDb, netz, sandkasten: u.sandkasten,
+    })
     schreibeWerkzeugErgebnis(u, laufId, a, r)
   } catch (err) {
     schreibe(u, laufId, 'tool.failed', {
