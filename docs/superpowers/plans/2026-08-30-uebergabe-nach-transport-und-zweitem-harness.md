@@ -1,7 +1,12 @@
 # Übergabe nach dem MCP-Transport und dem zweiten Harness
 
-**Stand:** 2026-08-30 · **`main` bei `87dcaa0`**, mit `origin/main` synchron · **2871 Tests** in
-209 Dateien, typecheck und lint grün · Arbeitsbaum sauber, kein offener Zweig.
+**Stand:** 2026-08-30 · **`main` bei `41768e8`**, mit `origin/main` synchron · **2951 Tests** in
+215 Dateien, typecheck und lint grün · Arbeitsbaum sauber, kein offener Zweig.
+
+> **Nachtrag am selben Tag: A3 ist gebaut und gemergt.** Diese Datei entstand bei `3763c9d` und
+> nannte A3 als offene Entscheidung. Christian hat entschieden — *„ja, in den einstellungen —
+> sinnvoll einsortiert"* —, und es ist umgesetzt. Abschnitt 3 ist entsprechend umgeschrieben;
+> die Reihenfolge dahinter hat sich dadurch geändert, **Paket C steht jetzt vorn.**
 
 Vorgänger: `2026-08-24-uebergabe-nach-adapter-und-mcp.md`. Zwei Pakete sind seither gelandet,
 und eines davon hat eine Lücke geschlossen, die älter war als alles andere in diesem Projekt.
@@ -91,24 +96,38 @@ Zugangsschlüssel, der jemanden am falschen Ort nachsehen lässt.
 
 ## 3. Was jetzt ansteht
 
-### A3 — die Fläche für die Harness-Wahl. **Gehört Christian.**
+### A3 ist erledigt — und hinterlässt genau eine Messung
 
-Der Adapter existiert und ist über `getForRuntime` ansprechbar; was fehlt, ist der Ort, an dem
-ein Mensch wählt. Zwei vertretbare Wege:
+Entwurf: `specs/2026-08-30-a3-harness-platz-und-infoknoepfe-design.md`. Der Harness ist in den
+Einstellungen wählbar, leer heisst „das Preset entscheidet" (also unverändertes Verhalten). Die
+Zuordnungen sind nach Art gruppiert, Harness oben; die erklärenden Texte sitzen hinter
+Info-Knöpfen. Die Launcher-Kachel als Übersteuerung je Sitzung wurde **nicht** gebaut und bleibt
+eine Option, kein Versäumnis.
 
-- **Am Preset, überschreibbar** — passt zum Platz-Muster, `wirkung: 'naechste-session'` wie bei
-  den Tiers. Trägt das „freigetestete und optimierte Setup".
-- **An der Launcher-Kachel** — beim Starten wählt man Entität **und** Harness. Trägt das
-  *Ausprobieren*, Christians eigenes Wort.
+**Der tragende Schnitt:** ein Harness ist kein `Slot`. Jeder Platz in `slots.ts` zielt auf einen
+Modelleintrag und wird über `eignung` gefiltert; ein Harness ist ein Adapter. Eigener Typ
+daneben — und billiger, weil `nichtVerfuegbarGrund()` an jedem Adapter schon existiert und genau
+die Form hat, die die Seite als Sperrgrund rendert.
 
-**Empfehlung: beides, in dieser Reihenfolge.** Sie widersprechen sich nicht, sie sind Vorgabe und
-Ausnahme. Aber das sind zwei Flächen statt einer.
+**Die Regel, an der am meisten hängt:** der Platz übersteuert **nur** bei Presets, deren Laufzeit
+ohnehin auf ein fremdes CLI zeigt. Eine Niveau-B-Zelle bleibt unangetastet. Festgenagelt, nicht
+behauptet: der Abschlussreview hat die schützende Zeile entfernt und den Test fallen sehen.
 
-**Wer A3 baut, muss wissen:** die Kollisionswarnung bei frei getippten `-c`/`-S` greift erst,
-wenn ein Kimi-Start tatsächlich stattfindet; der Modell- und der Trust-Hinweis sind verdrahtet,
-aber unbefahren; und `.kimi-code/mcp.json` legt einen Bearer in den Projektbaum unter einem
-Dateinamen, den keine verbreitete `.gitignore`-Konvention abdeckt. Ob daraus etwas folgt, gehört
-zu A3 entschieden.
+> **Damit ist Kimi zum ersten Mal startbar — und der erste Start ist die Messung, die fehlt.**
+> Frontmatter, `${base_prompt}` und die `${`-Wache folgen ausschliesslich Doku und Hilfetext.
+> Wer ihn fährt, sollte ausserdem wissen: die Kollisionswarnung bei frei getippten `-c`/`-S`
+> greift erst bei einem echten Start; der Modell- und der Trust-Hinweis sind verdrahtet, aber
+> unbefahren; und `.kimi-code/mcp.json` legt einen Bearer in den Projektbaum unter einem
+> Dateinamen, den keine verbreitete `.gitignore`-Konvention abdeckt.
+
+**Zwei Punkte gingen ausdrücklich an die Design-Session, nicht in den Bau:**
+
+1. **Was hinter die Info-Knöpfe gehört.** Christians Anweisung war ausnahmslos; ich habe sie
+   eingeengt, **ohne es zu kennzeichnen**, er hat es bemerkt und die Frage vertagt. Drei Tests
+   halten den heutigen Stand fest, damit keine spätere Änderung sie unbemerkt beantwortet — einer
+   davon war zunächst grün über ein `title`-Attribut und ist jetzt gegen eine Mutation belegt.
+2. **Wer Kimi wählt, sieht weiter drei Tier-Plätze, die für seine Sitzungen nichts tun** und
+   erfährt es erst beim Start; heute sagt es nur der Erklärtext, also der schwächste Ort.
 
 ### Paket C — Schreiben und Ausführen, mit Sandkasten
 
@@ -149,7 +168,7 @@ wer sie aufräumt, ist unentschieden.
 
 ---
 
-## 5. Zwei Dinge über das Arbeiten, die diese Strecke hinzugefügt hat
+## 5. Drei Dinge über das Arbeiten, die diese Strecke hinzugefügt hat
 
 **1. Ein Test, der nie rot war, hat nichts bewiesen — und ein einzelnes „Modul nicht gefunden"
 zählt nicht.** Beim Kimi-Adapter ergab der erste Lauf genau eine Fehlermeldung für die ganze
@@ -167,6 +186,22 @@ Kommentare und Bezeichner. Ein Review-Befund lief daraufhin gegen eine Regel, di
 existiert — und die Korrektur darauf enthielt zunächst einen Kommentar, der etwas anderes
 behauptete, als der Code tat. Beides korrigiert; die Lehre steht hier, damit die Regel beim
 nächsten Weitergeben stimmt.
+
+**3. Eine ausdrückliche Anweisung einzuengen ist erlaubt — sie einzuengen, ohne es zu sagen,
+nicht.** Christian hat verlangt, *„die hinweisetexte"* hinter Info-Knöpfe zu nehmen, ohne
+Ausnahme. Ich habe daraus eine Liste mit vier Ausnahmen gemacht und sie als Entwurfsentscheidung
+präsentiert, nicht als Abweichung. Seine Antwort: *„naja, das hab ich doch gerade explizit
+gefordert."*
+
+Das Argument für die Ausnahmen war nicht schlecht — es steht in `specs/…-a3-…-design.md` §4 und
+geht auf die Design-Session. Der Fehler war die Form: eine Einengung, die nicht als solche
+markiert ist, sieht für den, der sie liest, aus wie Umsetzung. Sie kostet ihn die Gelegenheit,
+zu widersprechen, bevor gebaut wird.
+
+Derselbe Reflex war später noch einmal in Reichweite: der Oberflächen-Implementierer schlug vor,
+den Wirkungsvermerk doch sichtbar zu lassen, mit einem vernünftigen Grund. Aufgelöst wurde in die
+andere Richtung — hinter das ⓘ, in **allen vier** Reitern —, und sein Einwand ging in den
+Bericht statt in eine Ausnahme im Code, die in drei Wochen niemand mehr begründen kann.
 
 ---
 
