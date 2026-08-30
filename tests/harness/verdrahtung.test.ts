@@ -118,19 +118,64 @@ describe('Verdrahtung: gebaute Werkzeuge sind vom Lauf aus erreichbar', () => {
     const { baueSandkastenKontext } = await import('../../src/main/harness-sitzung')
     const { STANDARD_ZWISCHENSPEICHER } = await import('../../src/main/harness/sandkasten')
     const { homedir, tmpdir } = await import('node:os')
+    const { realpathSync, mkdirSync } = await import('node:fs')
+    // Angelegt, damit die Aufloesung unten eine feste Antwort hat: `/tmp` ist auf macOS ein
+    // Symlink auf `/private/tmp`, und ob der Pfad existiert, haengt sonst von der Reihenfolge der
+    // Tests in dieser Datei ab.
+    mkdirSync('/tmp/keel-test', { recursive: true })
     const k = baueSandkastenKontext('/tmp/keel-probe-wurzel')
 
-    expect(k.wurzel).toBe('/tmp/keel-probe-wurzel')
-    expect(k.heim).toBe(homedir())
+    expect(k.heim).toBe(realpathSync(homedir()))
     // Der electron-Ersatz oben gibt diesen Pfad aus — geprueft wird, dass `app.getPath` gefragt
     // wurde und nicht etwa `wurzel` ein zweites Mal.
-    expect(k.userDataPfad).toBe('/tmp/keel-test')
-    expect(k.tmpdir).toBe(tmpdir())
+    expect(k.userDataPfad).toBe(realpathSync('/tmp/keel-test'))
+    // **Aufgeloest**, nicht wie geliefert: `os.tmpdir()` gibt auf macOS `/var/folders/…` zurueck,
+    // und `/var` ist ein Symlink auf `/private/var`. Seatbelt prueft gegen den kanonischen Pfad,
+    // ein `(subpath "/var/folders/…")` trifft also nichts — am 2026-08-30 gemessen: das Kind
+    // konnte nicht in sein eigenes TMPDIR schreiben.
+    expect(k.tmpdir).toBe(realpathSync(tmpdir()))
     expect(k.zwischenspeicher).toHaveLength(STANDARD_ZWISCHENSPEICHER.length)
-    expect(k.zwischenspeicher).toContain(`${homedir()}/.npm`)
+    expect(k.zwischenspeicher).toContain(`${realpathSync(homedir())}/.npm`)
     // Absolut, nicht heimrelativ: das Profil schreibt sie woertlich in ein `(subpath "...")`,
     // und ein relativer Pfad waere dort eine Regel, die nie greift.
     for (const p of k.zwischenspeicher) expect(p.startsWith('/')).toBe(true)
+  })
+
+  /**
+   * Die Wurzel geht **aufgeloest** ins Profil. `pfadwache` loest ohnehin auf (`realpathSync` in
+   * `pruefePfad`); das Profil bekam bis zum 2026-08-30 die rohe Zeichenkette, und damit reden die
+   * beiden Schichten ueber verschiedene Verzeichnisse, sobald die Wurzel ueber einen Symlink
+   * erreicht wird. Der Ausgang ist fail-closed und deshalb kein Loch — aber er sieht aus wie ein
+   * raetselhafter Rechtefehler in `npm ci` und nicht wie ein Sandkastenfehler, und genau das
+   * verbietet Annahme §10.2 des Entwurfs.
+   *
+   * Die Fixtures der Sandkastentests loesen selbst auf (`realpathSync(mkdtempSync(...))`, mit
+   * eigenem Kommentar), weshalb kein Test den Produktionsfall je sah.
+   */
+  it('loest die Wurzel auf, bevor sie ins Profil geht', async () => {
+    const { mkdtempSync, mkdirSync, symlinkSync, rmSync, realpathSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { baueSandkastenKontext } = await import('../../src/main/harness-sitzung')
+
+    const basis = realpathSync(mkdtempSync(join(tmpdir(), 'keel-symlink-')))
+    const echt = join(basis, 'echte-wurzel')
+    const ueberLink = join(basis, 'link-auf-wurzel')
+    mkdirSync(echt)
+    symlinkSync(echt, ueberLink)
+    try {
+      expect(baueSandkastenKontext(ueberLink).wurzel).toBe(echt)
+    } finally {
+      rmSync(basis, { recursive: true, force: true })
+    }
+  })
+
+  // Eine Wurzel, die es nicht gibt, behaelt ihre Form, statt den Bau der Umgebung zu sprengen —
+  // dafuer ist die Git-Vorbedingung zustaendig, und die lehnt benannt ab.
+  it('sprengt nichts, wenn es die Wurzel gar nicht gibt', async () => {
+    const { baueSandkastenKontext } = await import('../../src/main/harness-sitzung')
+    expect(baueSandkastenKontext('/gibt-es-nicht/keel-probe').wurzel)
+      .toBe('/gibt-es-nicht/keel-probe')
   })
 
   /**

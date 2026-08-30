@@ -21,6 +21,7 @@
 import { app } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { homedir, tmpdir } from 'node:os'
+import { realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { HARNESS_EREIGNIS } from '../shared/ipc-channels'
 import type { HarnessAntwort, HarnessEreignis, LaufAnzeige } from '../shared/harness-types'
@@ -129,11 +130,37 @@ export function baueWerkzeugRegistry(): WerkzeugRegistry {
  * Aufruf — und liefen die auseinander, prueft die Wache das eine Verzeichnis, waehrend der
  * Kindprozess im anderen schreiben darf.
  */
+/**
+ * Aufgeloest, weil Seatbelt seine Regeln gegen den **kanonischen** Pfad prueft und nicht gegen den
+ * Namen, unter dem wir hineingehen. Ein `(subpath "/var/folders/…")` trifft nichts, weil `/var`
+ * ein Symlink auf `/private/var` ist — und `os.tmpdir()` liefert genau diese Form. Am 2026-08-30
+ * gemessen: `echo x > $TMPDIR/probe` unter einem Profil mit `(allow file-write* (subpath
+ * "/var/folders/…"))` endete mit `Operation not permitted`. Dasselbe gilt fuer eine Projektwurzel,
+ * die ueber einen Symlink erreicht wird: das Kind darf dann in seiner eigenen Wurzel nicht
+ * schreiben, und `npm ci` scheitert als raetselhafter Rechtefehler. Fail-closed, also kein Loch —
+ * aber Annahme §10.2 des Entwurfs verlangt ausdruecklich, dass ein Sandkastenfehler *als solcher*
+ * erkennbar ist, und das war er hier nicht.
+ *
+ * `pfadwache` loest ihrerseits schon auf (`realpathSync` in `pruefePfad`); die beiden Schichten
+ * reden also erst mit dieser Zeile ueber dieselben Verzeichnisse.
+ *
+ * Ein nicht existierender Pfad behaelt seine Form, statt den Bau der Umgebung zu sprengen: dafuer
+ * ist die Git-Vorbedingung in `lauf.ts` zustaendig, und die lehnt eine fehlende Wurzel benannt ab.
+ * Bei den Zwischenspeichern ist es der Normalfall — `~/.pub-cache` gibt es auf dieser Maschine
+ * nicht, und das Profil darf es trotzdem nennen.
+ */
+function aufgeloest(pfad: string): string {
+  try { return realpathSync(pfad) } catch { return pfad }
+}
+
 export function baueSandkastenKontext(wurzel: string): SandkastenKontext {
+  const heim = aufgeloest(homedir())
   return {
-    wurzel, heim: homedir(), userDataPfad: app.getPath('userData'),
-    zwischenspeicher: STANDARD_ZWISCHENSPEICHER.map(p => join(homedir(), p)),
-    tmpdir: tmpdir(),
+    wurzel: aufgeloest(wurzel),
+    heim,
+    userDataPfad: aufgeloest(app.getPath('userData')),
+    zwischenspeicher: STANDARD_ZWISCHENSPEICHER.map(p => aufgeloest(join(heim, p))),
+    tmpdir: aufgeloest(tmpdir()),
   }
 }
 
