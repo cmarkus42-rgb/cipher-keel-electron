@@ -736,7 +736,11 @@ Das ist der Beweis, dass der Wächter beisst — er ist hier ohne Zutun rot gewo
 In `src/renderer/components/harness/EreignisPanel.tsx`, in `FARBE` nach `'tool.schema_loaded'`:
 
 ```ts
-  'tool.entschieden': '#e0af68',
+  // Nicht `#e0af68` — das ist `tool.intent`, und genau diese beiden stehen fuer denselben
+  // Aufruf direkt untereinander. Zwei gleiche Farben ausgerechnet dort heben die Farbspalte
+  // fuer das eine Paar auf, fuer das sie gebaut ist. Magenta ist in dieser Tabelle unbenutzt
+  // und von Gelb auf einen Blick zu unterscheiden.
+  'tool.entschieden': '#ff007c',
 ```
 
 In `kurzfassung`, nach dem Fall `'tool.schema_loaded'`:
@@ -750,16 +754,34 @@ In `kurzfassung`, nach dem Fall `'tool.schema_loaded'`:
         : `${String(n.name)} ABGELEHNT: ${String(n.grund)}`
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: Beide Zweige der Kurzfassung belegen**
+
+Der Reihen-Wächter läuft über `EREIGNIS_ARTEN` mit einer gemeinsamen Nutzlast, die kein `erlaubt`
+trägt — er trifft damit **nur** den Ablehnungszweig. Der Ja-Zweig ginge ungeprüft ins Feld, und er
+ist der häufigere. Zwei Tests dazu, neben den bestehenden Einzelfällen (`nennt bei skill.geladen…`):
+
+```ts
+  it('nennt bei tool.entschieden zuerst das Urteil, nicht den Grund', () => {
+    const e = { art: 'tool.entschieden', nutzlast: { aufrufId: 'a1', name: 'datei_schreiben', erlaubt: true, grund: 'Pfad liegt in der Wurzel' } }
+    expect(kurzfassung(e as never)).toBe('datei_schreiben erlaubt')
+  })
+
+  it('nennt bei einer Ablehnung den Grund, weil nur dort einer etwas aussagt', () => {
+    const e = { art: 'tool.entschieden', nutzlast: { aufrufId: 'a1', name: 'datei_schreiben', erlaubt: false, grund: 'Pfad liegt ausserhalb der Wurzel' } }
+    expect(kurzfassung(e as never)).toBe('datei_schreiben ABGELEHNT: Pfad liegt ausserhalb der Wurzel')
+  })
+```
+
+- [ ] **Step 5: Run tests to verify they pass**
 
 Run: `npx vitest run tests/renderer/ereignis-panel.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 npm run typecheck && npx vitest run tests/renderer/ereignis-panel.test.ts
-git add src/main/harness/ereignisse.ts src/renderer/components/harness/EreignisPanel.tsx
+git add src/main/harness/ereignisse.ts src/renderer/components/harness/EreignisPanel.tsx tests/renderer/ereignis-panel.test.ts
 git commit -m "feat(protokoll): tool.entschieden als eigene Ereignisart, im Panel sichtbar"
 ```
 
