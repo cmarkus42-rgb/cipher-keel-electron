@@ -85,6 +85,11 @@ export const KNOWN_RUNTIMES: ReadonlySet<string> = new Set<string>([
   // KeelHarnessAdapter since 2026-08-23 (agent/adapters/keel-harness.ts) — see
   // RUNTIME_TO_ADAPTER_ID in agent/registry.ts.
   'keel-harness',
+  // Kimi Code (@moonshot-ai/kimi-code) in einem tmux-Pane. Vierter Wert, aufgenommen am
+  // 2026-08-30 mit dem KimiCodeAdapter (agent/adapters/kimi-code.ts) — der zweite fremde
+  // Harness, damit die Wahl zwischen Harnessen ueberhaupt eine ist. Die Flaeche, an der ein
+  // Mensch sie trifft, gehoert noch nicht dazu (A3).
+  'kimi-cli-tmux',
 ])
 
 /**

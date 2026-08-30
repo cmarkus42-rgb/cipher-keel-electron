@@ -7,7 +7,8 @@ import {
   baueAgentDatei,
   schreibeAgentDatei,
 } from '../../src/main/agent/adapters/kimi-code'
-import { SITZUNG_FREMDES_CLI } from '../../src/main/agent/agent-adapter'
+import { AdapterRegistry } from '../../src/main/agent/registry'
+import { istSchleifenAdapter, SITZUNG_FREMDES_CLI } from '../../src/main/agent/agent-adapter'
 import { isCommandOnPath } from '../../src/main/util/exec-util'
 
 // Only isCommandOnPath is replaced: isAvailable() must be steerable in both directions, and
@@ -298,5 +299,19 @@ describe('KimiCodeAdapter Rest der Schnittstelle', () => {
     await expect(adapter().executeCommand('x')).rejects.toThrow(/SessionManager/)
     const strom = adapter().streamOutput('keel-x')[Symbol.asyncIterator]()
     await expect(strom.next()).rejects.toThrow(/tmux/)
+  })
+})
+
+describe('kimi-cli-tmux in der Registry', () => {
+  it('loest kimi-cli-tmux auf den KimiCodeAdapter auf', () => {
+    const registry = new AdapterRegistry({ getStartArgs: () => [] })
+    expect(registry.getForRuntime('kimi-cli-tmux').id).toBe('kimi-code')
+  })
+
+  it('reicht die freien Startparameter bis in den Kimi-Adapter durch', () => {
+    const registry = new AdapterRegistry({ getStartArgs: () => ['--plan'] })
+    const gefunden = registry.getForRuntime('kimi-cli-tmux')
+    if (istSchleifenAdapter(gefunden)) throw new Error('kimi ist kein Schleifen-Adapter')
+    expect(gefunden.buildLaunchCommand(opts).args).toContain('--plan')
   })
 })
