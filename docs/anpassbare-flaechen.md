@@ -1,18 +1,30 @@
 # Anpassbare Flächen — Inventar (CK-NFR-012)
 
-**Stand:** 2026-08-30 — der MCP-Transport (Paket B) gebaut: ein lokaler HTTP-Server
-(`127.0.0.1`, Port `0`/ephemer, Bearer-Schlüssel als `randomUUID()` je App-Start, nur im
-Speicher) macht alle zehn MCP-Werkzeuge (die sieben `graph_*` und die drei `keel_zelle*`)
-erreichbar — für eine Sitzung, die gestartet wurde, während die aktuelle App-Instanz läuft.
-Eine Sitzung, die einen App-Neustart überlebt hat, verliert sie und bekommt sie nicht zurück:
-ihr `claude`-Prozess hat Adresse und Schlüssel nur bei seinem eigenen Start gelesen, beide
-sind seither anders. Weder ein fester Port noch ein erneutes Einspritzen würde das heilen —
-der Schlüssel rotiert absichtlich bei jedem App-Start (Geheimnisse gehören nicht in die
-Konfigurationsdatei, siehe `config-store.ts`), und ohne rotierenden Schlüssel bliebe ein alter
-Server-Zugang beliebig lange gültig. Abhilfe ist Zerstören und Neuanlegen der betroffenen
-Sitzung, nicht Reparatur — siehe „Was fehlt" unten für den vollen Befund. Scoping (B5): ein
-Schlüssel für alle Sitzungen dieser App-Instanz, nicht einer je Sitzung — benannt, nicht
-stillschweigend hingenommen, siehe dort. Davor 2026-08-23 — drei neue MCP-Werkzeuge
+**Stand:** 2026-08-30 — der MCP-Transport (Paket B) gebaut und gegen ein Sicherheitsreview
+nachgebessert: ein lokaler HTTP-Server (`127.0.0.1`, Port `0`/ephemer, Bearer-Schlüssel als
+`randomUUID()` je App-Start) macht alle zehn MCP-Werkzeuge (die sieben `graph_*` und die drei
+`keel_zelle*`) erreichbar — für eine Sitzung, die gestartet wurde, während die aktuelle
+App-Instanz läuft. Der Server selbst hält diesen Schlüssel nur im Speicher und schreibt ihn
+nie in eine Konfigurationsdatei; das Einspritzen (`postLaunchInjection`) tut das absichtlich
+doch, in die Projekt-eigene `.claude/settings.local.json` und als CLI-Argument an
+`claude mcp add-json` — diese Offenlegung an die Sitzung, die den Schlüssel zur
+Authentifizierung braucht, ist der Zweck des Einspritzens, keine Ausnahme von der
+Speicher-Zusage des Servers. Das Review fand außerdem, dass das Einspritzen ursprünglich
+*nach* `tmux.createSession` lief, obwohl es dessen Rückgabewert (`sessionId`) gar nicht
+braucht — ein Wettlauf gegen den `claude`-Prozess, den der Datei-Weg meist, der CLI-Weg
+(`claude mcp add-json`, bis zu 25 s) aber zuverlässig verlor. Behoben durch Vorziehen des
+Einspritzens vor `tmux.createSession`; ein dritter, nie gelesener Schreibpfad
+(`~/.claude/projects/<hash>/settings.json`) ist ersatzlos gestrichen. Eine frisch gestartete
+Sitzung ist damit tatsächlich erreichbar, nicht nur meistens. Eine Sitzung, die einen
+App-Neustart überlebt hat, bleibt es weiterhin nicht: ihr `claude`-Prozess hat Adresse und
+Schlüssel nur bei seinem eigenen Start gelesen, beide sind seither anders. Weder ein fester
+Port noch ein erneutes Einspritzen würde das heilen — der Schlüssel rotiert absichtlich bei
+jedem App-Start (Geheimnisse gehören nicht in die Konfigurationsdatei, siehe
+`config-store.ts`), und ohne rotierenden Schlüssel bliebe ein alter Server-Zugang beliebig
+lange gültig. Abhilfe ist Zerstören und Neuanlegen der betroffenen Sitzung, nicht Reparatur —
+siehe „Was fehlt" unten für den vollen Befund. Scoping (B5): ein Schlüssel für alle Sitzungen
+dieser App-Instanz, nicht einer je Sitzung — benannt, nicht stillschweigend hingenommen,
+siehe dort. Davor 2026-08-23 — drei neue MCP-Werkzeuge
 (`keel_zellen`, `keel_zelle_beauftragen`, `keel_zelle_ergebnis`, graph/mcp-server.ts) gebaut,
 geprüft, aber zu dem Zeitpunkt noch nicht erreichbar. Davor am selben Tag `FOLGE_RESERVE` benannt (die Schwelle, ab der ein Folgeauftrag noch in
 denselben Lauf darf statt einen neuen zu öffnen; nicht editierbar, geschätzt statt gemessen —
@@ -496,10 +508,13 @@ Einrichtung (siehe „Was fehlt" unten) — kein eigener Bau-Strang mehr.
   `bin`-Eintrag in `package.json`, und `ClaudeCodeAdapter.postLaunchInjection` hatte ebenfalls
   keinen Aufrufer. Jetzt gebaut: ein lokaler HTTP-Server (`src/main/graph/mcp-http-server.ts`,
   `127.0.0.1`, Port `0`/ephemer nach `service-lifecycle.ts`s Muster mit eigenem
-  Status-Eintrag `mcp`), ein Bearer-Schlüssel als `randomUUID()` je App-Start (nur im Speicher,
-  nicht in der Konfigurationsdatei — siehe `config-store.ts`), und eine Registrierung beim
-  Sitzungsstart (`SESSION_CREATE`, tmux-Zweig, ruft `postLaunchInjection` direkt nach
-  `createSession`).
+  Status-Eintrag `mcp`), ein Bearer-Schlüssel als `randomUUID()` je App-Start (der Server hält
+  ihn nur im Speicher und schreibt ihn nie in die Konfigurationsdatei — siehe
+  `config-store.ts`; das Einspritzen selbst legt ihn absichtlich in die Projekt-eigene
+  `.claude/settings.local.json` und als CLI-Argument ab — siehe die Stand-Zeile oben für den
+  vollen Befund dazu), und eine Registrierung beim Sitzungsstart (`SESSION_CREATE`,
+  tmux-Zweig, ruft `postLaunchInjection` **vor** `tmux.createSession`, nachgebessert im selben
+  Sicherheitsreview — siehe die Stand-Zeile oben).
 
   **Was das tatsächlich bedeutet, ist eine Bedingung, keine Zusage.** Erreichbar sind die zehn
   Werkzeuge für eine Sitzung, die gestartet wurde, während die aktuelle App-Instanz läuft. Eine

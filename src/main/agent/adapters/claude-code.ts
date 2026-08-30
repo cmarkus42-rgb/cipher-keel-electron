@@ -4,8 +4,9 @@
  * Encapsulates all Claude Code CLI specifics:
  * - Launch via `claude`, with free-text start parameters from agent.startArgs (see
  *   AgentConfigReader below) prepended to the flags this adapter builds itself
- * - MCP injection via `claude mcp add-json` AND direct settings.json
- *   manipulation (triple-path for reliability)
+ * - MCP injection via direct `settings.local.json` write AND `claude mcp add-json`
+ *   (two paths — see postLaunchInjection's doc comment for why a third, once here, was
+ *   removed rather than fixed)
  * - StatusLine hook for context usage reporting
  * - CLAUDE.md as project marker
  *
@@ -14,7 +15,6 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
-import * as os from 'os'
 import { SITZUNG_FREMDES_CLI } from '../agent-adapter'
 import type {
   CliSitzungsAdapter,
@@ -80,12 +80,27 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
   }
 
   /**
-   * Post-launch injection: register MCP server in Claude Code's settings.
+   * Registers the MCP server in Claude Code's settings, so a session started by
+   * SESSION_CREATE (ipc-handlers.ts) can reach the ten MCP tools. Despite the method name
+   * (kept for the `CliSitzungsAdapter` interface, and because it does run once per launch),
+   * this now runs *before* `tmux.createSession` spawns the `claude` process, not after —
+   * see the call site's comment for why: `claude` reads its MCP config once, at its own
+   * start, so writing it after the process already exists was a race this could only
+   * sometimes win (security review finding I-1, 2026-08-30). Nothing here needs a live
+   * session — `ctx.sessionId` is not read below at all.
    *
-   * Uses THREE paths to ensure MCP tools are always available:
-   * 1. Direct write to `<project>/.claude/settings.local.json`
-   * 2. `claude mcp add-json` CLI command
-   * 3. Direct write to `~/.claude/projects/<hash>/settings.json`
+   * Uses TWO paths, not three:
+   * 1. Direct write to `<project>/.claude/settings.local.json` — the path Claude Code
+   *    actually reads a project's local MCP config from.
+   * 2. `claude mcp add-json` — the CLI's own registration command. Its bearer key argument
+   *    is visible in the process table for the command's short lifetime and is persisted by
+   *    Claude Code itself into `~/.claude.json`; that disclosure is inherent to using the
+   *    CLI's own command, not something this file adds independently.
+   *
+   * A third path — writing `~/.claude/projects/<hash>/settings.json` — existed here until
+   * the same review found it: that directory holds session transcripts (`*.jsonl`), and
+   * Claude Code does not read settings from it at all. It was a secret written to disk for
+   * no reader — removed outright, not "fixed", because there was nothing to fix it into.
    */
   async postLaunchInjection(ctx: AdapterContext): Promise<void> {
     const mcpServerConfig = {
@@ -131,34 +146,6 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
       ], { cwd: ctx.projectPath, timeout: 15_000 })
     } catch (err) {
       console.warn('[ClaudeCodeAdapter] CLI MCP registration failed:', err)
-    }
-
-    // Path 3: Direct settings.json in ~/.claude/projects/<hash>/
-    try {
-      const projectHash = ctx.projectPath
-        .split('/')
-        .map(seg => seg.replace(/^\./g, ''))
-        .join('-')
-      const settingsDir = path.join(os.homedir(), '.claude', 'projects', projectHash)
-      const settingsPath = path.join(settingsDir, 'settings.json')
-
-      fs.mkdirSync(settingsDir, { recursive: true })
-
-      let settings: Record<string, unknown> = {}
-      try {
-        settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
-      } catch {
-        // File doesn't exist or invalid JSON — start fresh
-      }
-
-      if (!settings.mcpServers || typeof settings.mcpServers !== 'object') {
-        settings.mcpServers = {}
-      }
-      ;(settings.mcpServers as Record<string, unknown>)['cipher-keel'] = mcpServerConfig
-
-      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8')
-    } catch (err) {
-      console.warn('[ClaudeCodeAdapter] Direct settings.json write failed:', err)
     }
   }
 

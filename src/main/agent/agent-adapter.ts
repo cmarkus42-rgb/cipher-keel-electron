@@ -69,7 +69,14 @@ export interface AdapterContext {
   mcpUrl: string
   /** MCP auth key */
   mcpApiKey: string
-  /** Session ULID */
+  /**
+   * The session's chosen name. Not a runtime-assigned id and not a ULID (nothing in this
+   * codebase mints one for a session) — `postLaunchInjection` runs before
+   * `tmux.createSession` returns one (security review finding I-1, 2026-08-30), so this is
+   * whatever the caller already knows at that point. `ClaudeCodeAdapter.postLaunchInjection`,
+   * the sole implementation today, does not read this field at all; kept on the contract in
+   * case a future write path needs to key by session.
+   */
   sessionId: string
 }
 

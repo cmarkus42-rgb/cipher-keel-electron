@@ -1,7 +1,21 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import * as fs from 'fs'
+import * as path from 'path'
+import * as os from 'os'
 import { ClaudeCodeAdapter } from '../../src/main/agent/adapters/claude-code'
 import { AdapterRegistry } from '../../src/main/agent/registry'
 import { istSchleifenAdapter } from '../../src/main/agent/agent-adapter'
+import { runCommand } from '../../src/main/util/exec-util'
+
+// Partial mock, same pattern used elsewhere in this repo (e.g. tests/service-lifecycle.test.ts):
+// only runCommand is replaced, so postLaunchInjection's real fs writes still happen for real,
+// and only the `claude` CLI invocation is intercepted — there is no real `claude` binary
+// guaranteed in a test environment, and even if there were, this is not the process boundary
+// these tests are about.
+vi.mock('../../src/main/util/exec-util', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/main/util/exec-util')>()
+  return { ...actual, runCommand: vi.fn().mockResolvedValue('') }
+})
 
 describe('ClaudeCodeAdapter launch command (entity prompt)', () => {
   const opts = { projectPath: '/tmp/p', sessionName: 'keel-demo-architect-ab12' }
@@ -62,5 +76,100 @@ describe('AdapterRegistry config wiring', () => {
     if (istSchleifenAdapter(adapter)) throw new Error('default adapter is not a CLI adapter')
     const cmd = adapter.buildLaunchCommand({ projectPath: '/tmp/p', sessionName: 'keel-x' })
     expect(cmd.args).not.toContain('--dangerously-skip-permissions')
+  })
+})
+
+// postLaunchInjection (Paket B / I-2, security review 2026-08-30): two write paths, not
+// three — the third (~/.claude/projects/<hash>/settings.json) was removed outright because
+// Claude Code never reads settings from that directory (it holds session transcripts only).
+describe('ClaudeCodeAdapter.postLaunchInjection', () => {
+  let projectDir: string
+  let ctx: { projectPath: string; mcpUrl: string; mcpApiKey: string; sessionId: string }
+
+  beforeEach(() => {
+    vi.mocked(runCommand).mockClear().mockResolvedValue('')
+    projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keel-inject-'))
+    ctx = {
+      projectPath: projectDir,
+      mcpUrl: 'http://127.0.0.1:54321/mcp',
+      mcpApiKey: 'test-key-1234',
+      sessionId: 'probe-session',
+    }
+  })
+
+  afterEach(() => {
+    fs.rmSync(projectDir, { recursive: true, force: true })
+  })
+
+  it('writes the project-local settings.local.json with the real url and key', async () => {
+    const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
+    await adapter.postLaunchInjection(ctx)
+
+    const written = JSON.parse(
+      fs.readFileSync(path.join(projectDir, '.claude', 'settings.local.json'), 'utf-8'),
+    )
+    expect(written.mcpServers['cipher-keel']).toEqual({
+      type: 'http',
+      url: ctx.mcpUrl,
+      headers: { Authorization: `Bearer ${ctx.mcpApiKey}` },
+    })
+  })
+
+  it('merges into an existing settings.local.json instead of clobbering it', async () => {
+    const claudeDir = path.join(projectDir, '.claude')
+    fs.mkdirSync(claudeDir, { recursive: true })
+    fs.writeFileSync(
+      path.join(claudeDir, 'settings.local.json'),
+      JSON.stringify({ someOtherKey: 'kept' }),
+    )
+
+    const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
+    await adapter.postLaunchInjection(ctx)
+
+    const written = JSON.parse(
+      fs.readFileSync(path.join(claudeDir, 'settings.local.json'), 'utf-8'),
+    )
+    expect(written.someOtherKey).toBe('kept')
+    expect(written.mcpServers['cipher-keel'].url).toBe(ctx.mcpUrl)
+  })
+
+  it('registers via the claude CLI (mcp remove then mcp add-json)', async () => {
+    const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
+    await adapter.postLaunchInjection(ctx)
+
+    const calls = vi.mocked(runCommand).mock.calls
+    expect(calls.some(([cmd, args]) => cmd === 'claude' && args?.[0] === 'mcp' && args?.[1] === 'remove')).toBe(true)
+    const addCall = calls.find(([cmd, args]) => cmd === 'claude' && args?.[1] === 'add-json')
+    expect(addCall).toBeDefined()
+    const addArgs = addCall![1]!
+    const serverJson = JSON.parse(addArgs[5] as string)
+    expect(serverJson.headers.Authorization).toBe(`Bearer ${ctx.mcpApiKey}`)
+  })
+
+  it('does not write anything under ~/.claude/projects (I-2 — the removed third path)', async () => {
+    // The path this test guards against reappearing used ctx.projectPath to derive a
+    // directory name under the real home directory — snapshot that exact directory's
+    // contents before and after, so a regression that brings the third write path back
+    // shows up as a new entry here rather than requiring this test to guess the hash.
+    const projectsDir = path.join(os.homedir(), '.claude', 'projects')
+    const before = fs.existsSync(projectsDir) ? new Set(fs.readdirSync(projectsDir)) : new Set()
+
+    const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
+    await adapter.postLaunchInjection(ctx)
+
+    const after = fs.existsSync(projectsDir) ? new Set(fs.readdirSync(projectsDir)) : new Set()
+    expect(after).toEqual(before)
+  })
+
+  it('tolerates a failed CLI registration without throwing (path 1 already succeeded)', async () => {
+    vi.mocked(runCommand).mockRejectedValue(new Error('claude: command not found'))
+    const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
+
+    await expect(adapter.postLaunchInjection(ctx)).resolves.toBeUndefined()
+
+    const written = JSON.parse(
+      fs.readFileSync(path.join(projectDir, '.claude', 'settings.local.json'), 'utf-8'),
+    )
+    expect(written.mcpServers['cipher-keel'].url).toBe(ctx.mcpUrl)
   })
 })

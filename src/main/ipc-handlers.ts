@@ -369,39 +369,56 @@ export function registerIpcHandlers(services: AppServices): void {
       })
       const command = formatShellCommand(launch.cmd, launch.args)
 
-      if (!services.tmux.isConnected()) {
-        await services.tmux.connect()
-      }
-      const sessionId = await services.tmux.createSession(name, { ...opts, cwd, command })
-      services.tmux.watchSession(name, name)
-
-      // B4 (MCP transport, Paket B): tells the just-launched Claude Code process where the
-      // ten MCP tools live and how to authenticate — the one thing that makes them reachable
-      // at all (see the header comment on graph/mcp-http-server.ts). postLaunchInjection is
-      // optional on CliSitzungsAdapter and absent entirely from SchleifenSitzungsAdapter
-      // (this branch cannot reach a loop adapter — see the `istSchleifenAdapter` guard
-      // above), so the `adapter.postLaunchInjection` check below is the real gate, not
-      // defensive dressing. Nothing here is swallowed silently: a missing MCP server is
-      // exactly the case named in mcp-http-server.ts's header comment (graph degraded), and
-      // a rejected injection still leaves the session usable via tmux — just without the ten
-      // tools — so neither failure mode should abort session creation, both are logged.
+      // B4 (MCP transport, Paket B), run BEFORE tmux.createSession — security review
+      // finding I-1 (2026-08-30): postLaunchInjection reads none of AdapterContext's fields
+      // from a live tmux session (see the doc comment on postLaunchInjection and on
+      // AdapterContext.sessionId), so running it after createSession was a race against the
+      // very `claude` process it configures — createSession's own send-keys spawns that
+      // process roughly 500ms after the pane opens, and `claude` reads its MCP config once,
+      // at its own start. The `settings.local.json` write usually wins that race by luck of
+      // timing; the `claude mcp add-json` CLI round-trip (up to 25s) reliably loses it.
+      // Running injection first removes the race rather than narrowing it: nothing below
+      // depends on the tmux session existing yet. postLaunchInjection is optional on
+      // CliSitzungsAdapter and absent entirely from SchleifenSitzungsAdapter (this branch
+      // cannot reach a loop adapter — see the `istSchleifenAdapter` guard above), so the
+      // `adapter.postLaunchInjection` check below is the real gate, not defensive dressing.
+      // Nothing here is swallowed silently: a missing MCP server is exactly the case named
+      // in mcp-http-server.ts's header comment (graph degraded), and a rejected injection
+      // still leaves the session usable via tmux — just without the ten tools — so neither
+      // failure mode should abort session creation; both are logged AND surfaced to the
+      // renderer via `hinweis` below (a session that silently has no tools is exactly the
+      // "looks healthy, isn't" case this file's `isAvailable()` gate already argues against
+      // for the CLI-missing case).
+      let mcpHinweis: string | null = null
       if (services.mcpHttpServer && adapter.postLaunchInjection) {
         try {
           await adapter.postLaunchInjection({
             projectPath: cwd,
             mcpUrl: services.mcpHttpServer.url,
             mcpApiKey: services.mcpHttpServer.apiKey,
-            sessionId,
+            // Not a live session id — see the doc comment on AdapterContext.sessionId. This
+            // runs before tmux.createSession would hand us one, and the sole implementation
+            // does not read this field anyway.
+            sessionId: name,
           })
         } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          mcpHinweis = `MCP-Registrierung fehlgeschlagen: ${msg}`
           console.warn('[ipc] postLaunchInjection failed:', err)
         }
       } else if (!services.mcpHttpServer) {
+        mcpHinweis = 'MCP-Registrierung uebersprungen: HTTP-Server nicht verfuegbar.'
         console.warn(
           `[ipc] session '${name}': MCP HTTP server not available — session started ` +
           'without MCP registration (the ten tools will not be reachable from it)'
         )
       }
+
+      if (!services.tmux.isConnected()) {
+        await services.tmux.connect()
+      }
+      const sessionId = await services.tmux.createSession(name, { ...opts, cwd, command })
+      services.tmux.watchSession(name, name)
 
       if (ctx && services.graphWriter) {
         try {
@@ -411,10 +428,15 @@ export function registerIpcHandlers(services: AppServices): void {
         }
       }
 
-      // Surfaced to the renderer so a wrong-shaped tier assignment (F2) is visible
-      // somewhere a user might see it, not only in a main-process console.warn. An extra
-      // field on an already-untyped IPC result — no contract redesign.
-      return { id: sessionId, name, error: null, hinweis: cliErgebnis?.hinweis ?? null }
+      // Surfaced to the renderer so a wrong-shaped tier assignment (F2) or a failed/skipped
+      // MCP registration (I-2 minor, security review 2026-08-30) is visible somewhere a user
+      // might see it, not only in a main-process console.warn. Joined rather than picking
+      // one: both are independent, both are rare, and a session can hit both at once. An
+      // extra field on an already-untyped IPC result — no contract redesign.
+      const hinweis = [cliErgebnis?.hinweis, mcpHinweis]
+        .filter((h): h is string => !!h)
+        .join(' ') || null
+      return { id: sessionId, name, error: null, hinweis }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       return { id: null, name: null, error: msg }

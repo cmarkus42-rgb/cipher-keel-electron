@@ -17,19 +17,29 @@
  *     port. The actual port only ever needs to reach `postLaunchInjection`
  *     (agent/adapters/claude-code.ts), which runs in the same process right after the
  *     server starts — nothing outside this process needs to guess it in advance.
- *   - The bearer key is minted fresh per app start (`randomUUID()`, see startMcpHttpServer)
- *     and lives only in memory — config-store.ts is explicit that secrets do not belong in
- *     the persisted config file, and this key is exactly that: a secret.
+ *   - The bearer key this module mints is fresh per app start (`randomUUID()`, see
+ *     startMcpHttpServer below) and lives only in memory here — this file itself never
+ *     writes it to a persisted config file, and config-store.ts is explicit that secrets do
+ *     not belong there. That claim is about this module's own storage, not about every place
+ *     the key ends up: `postLaunchInjection` deliberately writes it to a spawned session's
+ *     own `.claude/settings.local.json` and hands it to `claude mcp add-json` as a CLI
+ *     argument (see claude-code.ts) — that disclosure is the point of injection, not a leak
+ *     this file causes.
  *
  * What this buys, and what it does not: every session created while this app instance is
  * running can reach all ten tools (see postLaunchInjection's call site in ipc-handlers.ts,
- * SESSION_CREATE). A session whose tmux pane survives an app restart cannot be healed by
- * re-injecting — its `claude` process already read `settings.local.json` at its own start
- * and does not reload it live. That session stays unreachable until it is destroyed and a
- * new one created. This is not a bug this file introduces and not one it can fix: making
- * the port fixed would not help (the key still rotates by design, see startMcpHttpServer),
- * and making the key stable across restarts would undo the reason it rotates. Named here,
- * not silently accepted — see docs/anpassbare-flaechen.md, "Was fehlt", for the full note.
+ * SESSION_CREATE — called *before* the tmux pane is created, on purpose: `postLaunchInjection`
+ * reads none of `AdapterContext`'s fields from a live tmux session, so running it after
+ * `createSession` was a race it could not reliably win against the very process it was
+ * configuring — see the security-review finding I-1 in the Paket B history for the measured
+ * version of that race). A session whose tmux pane survives an app restart cannot be healed
+ * by re-injecting even so — its `claude` process already read `settings.local.json` at its
+ * own start and does not reload it live. That session stays unreachable until it is
+ * destroyed and a new one created. This is not a bug this file introduces and not one it can
+ * fix: making the port fixed would not help (the key still rotates by design, see
+ * startMcpHttpServer), and making the key stable across restarts would undo the reason it
+ * rotates. Named here, not silently accepted — see docs/anpassbare-flaechen.md, "Was fehlt",
+ * for the full note.
  *
  * Auth (B2): every request needs `Authorization: Bearer <key>`. Missing or wrong -> 401,
  * no body — a body would confirm to an unauthenticated caller that something is listening
@@ -53,7 +63,13 @@ export interface McpHttpServerHandle {
   readonly server: Server
   /** The bound ephemeral port, read back from the OS after listen() resolves (B3). */
   readonly port: number
-  /** The per-app-start bearer key (B2) — in memory only, never written to disk. */
+  /**
+   * The per-app-start bearer key (B2) — this module keeps it in memory only and never
+   * writes it to disk itself. `postLaunchInjection` (claude-code.ts) does write it, into a
+   * spawned session's own project settings and CLI invocation — an intentional disclosure
+   * to the session that needs to authenticate, not a claim that the key never touches disk
+   * anywhere in the app.
+   */
   readonly apiKey: string
   /** Full URL of the one route this server answers, e.g. http://127.0.0.1:54321/mcp. */
   readonly url: string
@@ -112,15 +128,27 @@ function isAuthorized(req: IncomingMessage, apiKey: string): boolean {
   return safeEqual(header, `Bearer ${apiKey}`)
 }
 
+/**
+ * Rejects once the body exceeds MAX_BODY_BYTES, but deliberately does NOT call
+ * `req.destroy()` here (minor finding from the security review, 2026-08-30): destroying the
+ * request destroys the underlying socket immediately, and `res` shares that socket — a
+ * `res.end()` written afterward in the caller's catch block never reaches the client at all
+ * (measured: the server-side call does not throw, but the client sees a connection reset,
+ * not a 413). `over` just stops accumulating further chunks; the caller writes 413 first,
+ * on the still-live socket, and destroys the (by then finished) request afterward to stop
+ * reading the rest of an oversized body.
+ */
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
     let total = 0
+    let over = false
     req.on('data', (chunk: Buffer) => {
+      if (over) return
       total += chunk.length
       if (total > MAX_BODY_BYTES) {
+        over = true
         reject(new Error('body too large'))
-        req.destroy()
         return
       }
       chunks.push(chunk)
@@ -160,8 +188,10 @@ async function handleHttpRequest(
   try {
     body = await readBody(req)
   } catch {
+    // Write the response BEFORE destroying the request — see the doc comment on readBody.
     res.writeHead(413)
     res.end()
+    req.destroy()
     return
   }
 
