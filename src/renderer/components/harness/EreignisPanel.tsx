@@ -18,7 +18,11 @@ export const FARBE: Record<string, string> = {
   'tool.completed': '#73daca',
   'tool.failed': '#f7768e',
   'tool.schema_loaded': '#bb9af7',
-  'tool.entschieden': '#e0af68',
+  // Nicht `#e0af68` — das ist `tool.intent`, und genau diese beiden stehen fuer denselben
+  // Aufruf direkt untereinander. Zwei gleiche Farben ausgerechnet dort heben die Farbspalte
+  // fuer das eine Paar auf, fuer das sie gebaut ist. Magenta ist in dieser Tabelle unbenutzt
+  // und von Gelb auf einen Blick zu unterscheiden.
+  'tool.entschieden': '#ff007c',
   'skill.geladen': '#c0caf5',
   'budget.warned': '#ff9e64',
   'netz.ausgehend': '#f7768e',
