@@ -10,6 +10,7 @@
 import type { AgentAdapter } from './agent-adapter'
 import { ClaudeCodeAdapter, type AgentConfigReader } from './adapters/claude-code'
 import { KeelHarnessAdapter } from './adapters/keel-harness'
+import { KimiCodeAdapter } from './adapters/kimi-code'
 import { KNOWN_RUNTIMES } from '../preset/schema'
 import type { AppServices } from '../window-manager'
 
@@ -23,6 +24,7 @@ import type { AppServices } from '../window-manager'
 export const RUNTIME_TO_ADAPTER_ID: ReadonlyMap<string, string> = new Map([
   ['claude-cli-tmux', 'claude-code'],
   ['keel-harness', 'keel-harness'],
+  ['kimi-cli-tmux', 'kimi-code'],
 ])
 
 /**
@@ -47,6 +49,11 @@ export class AdapterRegistry {
     this.adapters.set(claude.id, claude)
     const keel = new KeelHarnessAdapter(services)
     this.adapters.set(keel.id, keel)
+    // Braucht nur den Startparameter-Leser, keine Dienste — deshalb steht er auch in den
+    // beiden Registries, die ohne AppServices gebaut werden (model/ansicht.ts,
+    // settings/handlers.ts) vollstaendig da.
+    const kimi = new KimiCodeAdapter(configReader)
+    this.adapters.set(kimi.id, kimi)
   }
 
   register(adapter: AgentAdapter): void {
@@ -95,8 +102,12 @@ export class AdapterRegistry {
       // one checked here since it is the authoritative "is this a real runtime" answer.
       if (KNOWN_RUNTIMES.has(runtime)) {
         throw new Error(
-          `Die Laufzeit '${runtime}' ist gültig, aber ihr Adapter ist noch nicht gebaut — ` +
-          `das eigene Harness kommt in einem späteren Schritt.`
+          // Der Nachsatz nannte bis zum 2026-08-30 "das eigene Harness" als das, was noch
+          // kommt — das ist seit dem 2026-08-23 gebaut und seit heute auch der zweite fremde
+          // Harness. Eine Terminzusage, die schon erfuellt ist, sagt einem Leser das Falsche;
+          // der Satz nennt jetzt den Zustand statt eines Termins.
+          `Die Laufzeit '${runtime}' ist gueltig, aber ihr Adapter ist in dieser App nicht ` +
+          `gebaut.`
         )
       }
       throw new Error(

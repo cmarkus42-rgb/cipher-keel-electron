@@ -107,7 +107,7 @@ dasselbe Muster fortgesetzt, gegen das diese Strecke antritt.
 
 | Fläche | Wirkung | In der App sichtbar | Editierbar |
 |---|---|---|---|
-| `agent.startArgs` | Freitext-Startparameter je CLI-Adapter (ersetzt das frühere `agent.skipPermissions`); Vorgabe `--dangerously-skip-permissions` für `claude-code` | ja — Settings-Fenster, Reiter „CLI-Start" | ja — Settings-Fenster |
+| `agent.startArgs` | Freitext-Startparameter je CLI-Adapter (ersetzt das frühere `agent.skipPermissions`); Vorgabe `--dangerously-skip-permissions` für `claude-code`. Seit 2026-08-30 steht dort ein **zweiter** Adapter, `kimi-code` — ohne Vorgabewert, und zugleich der einzige Ort, an dem sich für Kimi Code ein Modell festlegen lässt (`-m <alias>`), weil der Adapter `-m` bewusst nie selbst setzt | ja — Settings-Fenster, Reiter „CLI-Start" | ja — Settings-Fenster |
 | `agent.modelTiers` | Tier → Modell-Handle (`light`/`standard`/`heavy`), Rückfall für einen leeren `tier:*`-Slot | ja — Settings-Fenster, Reiter „Modelle" (Rückfall-Handle je Tier), auch in der Prompt-Vorschau als aufgelöstes Modell | ja — Settings-Fenster |
 | `modelle.eintraege` / `modelle.zuordnung` | Der Modell-Registry: eigene und überschreibende Einträge, die **sieben** Zuordnungsslots | ja — Settings-Fenster, Reiter „Modelle" | ja — Settings-Fenster (anlegen, bearbeiten, löschen, zuordnen) |
 | `modelle.zuordnung.rollen.rechercheur` | Das Modell des **Rechercheur-Unterlaufs** (`recherchieren`). Bis 2026-08-22 erbte er das Modell des Hauptlaufs; damit war die Frage „welches Modell recherchiert am besten" nicht fahrbar. Leer heißt hier — anders als bei `tagging` und `worker` — **nicht** „nimm den `llm.*`-Endpunkt", sondern „nimm das Modell des Hauptlaufs"; einen eigenen Endpunkt gibt es für diese Rolle nicht. Gelesen wird je Lauf (`baueLaufUmgebung`), eine Änderung gilt also ab dem nächsten Lauf. Eine Zuordnung, die die eigene Schleife nicht fahren kann (cli-harness), fällt **benannt** auf den Rückfall zurück, statt den Lauf mitten im Werkzeugaufruf sterben zu lassen | ja — Settings-Fenster, Reiter „Modelle", Slot „Rolle Rechercheur — der abgeschottete Unterlauf" | ja — Settings-Fenster |
@@ -155,6 +155,7 @@ mehreren (der Workshop: `fixing` und `development`) bekommt einen Block je Phase
 |---|---|---|---|
 | `capabilityNiveau` | vom Adapter (M2 §11.3) | ja — Prompt-Vorschau, alle drei Stufen | nein — folgt dem Adapter, keine freie Wahl |
 | `runtime` | Preset-Rahmen | nein | nein — Folgephase. M2 §11.4 sieht einen Pro-Session-Override als M3-Arbeit vor |
+| **Harness-Wahl** (`runtime` = `claude-cli-tmux` / `kimi-cli-tmux` / `keel-harness`) | `KNOWN_RUNTIMES` (`preset/schema.ts`), aufgelöst über `RUNTIME_TO_ADAPTER_ID` (`agent/registry.ts`) | nein | **nein — und das ist die offene Stelle.** Seit dem 2026-08-30 gibt es mit `KimiCodeAdapter` einen zweiten fremden Harness, aber keine Fläche, an der ein Mensch ihn wählt: erreichbar ist er allein über `getForRuntime('kimi-cli-tmux')`. Die Fläche (Preset-Vorgabe, Launcher-Kachel oder beides) ist A3 und gehört bestätigt, bevor sie gebaut wird — Entwurf `docs/superpowers/specs/2026-08-30-paket-a-harness-wahl-design.md` §6 |
 | `model` | Preset-Rahmen, aufgelöst über `agent.modelTiers` | ja — Prompt-Vorschau | nur indirekt über `agent.modelTiers` |
 
 ## Der Worker zeigt auf den DGX Spark — Stand 2026-08-14

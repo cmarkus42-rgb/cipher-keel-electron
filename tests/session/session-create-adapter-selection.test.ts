@@ -22,6 +22,7 @@ import * as path from 'path'
 import * as os from 'os'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { SITZUNG_FREMDES_CLI } from '../../src/main/agent/agent-adapter'
+import { writeEntityPromptFile } from '../../src/main/session/prompt-file'
 
 type SessionCreateHandler = (
   event: unknown,
@@ -106,6 +107,12 @@ describe('session:create — adapter selection', () => {
               launchOpts.push(opts)
               return { cmd: 'claude', args: [] }
             },
+            // Pflichtmethode seit dem 2026-08-30: der Adapter schreibt die Prompt-Datei,
+            // nicht mehr der Handler (siehe CliSitzungsAdapter). Die Attrappe tut hier, was
+            // ClaudeCodeAdapter tut — dieser Test handelt von der Adapterwahl, nicht vom
+            // Dateiformat.
+            schreibeEntitaetsPromptDatei: (u: string, n: string, prompt: string) =>
+              writeEntityPromptFile(u, n, prompt),
           }
         }
         getDefault() {
