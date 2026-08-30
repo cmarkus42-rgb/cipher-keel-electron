@@ -1,9 +1,15 @@
 # Anpassbare Flächen — Inventar (CK-NFR-012)
 
 **Stand:** 2026-08-30 — **Paket C**: der Sandkasten und die drei wirkenden Werkzeuge
-(`datei_schreiben`, `datei_loeschen`, `shell_ausfuehren`) gebaut *und verdrahtet* — fünf neue
-anpassbare Flächen, drei ausdrückliche Nicht-Flächen, siehe den eigenen Abschnitt „Sandkasten und
-die drei wirkenden Werkzeuge" unten. Davor am selben Tag der MCP-Transport (Paket B) gebaut und gegen ein Sicherheitsreview
+(`datei_schreiben`, `datei_loeschen`, `shell_ausfuehren`) gebaut *und verdrahtet*. Fünf neue
+anpassbare Flächen und drei ausdrückliche Nicht-Flächen, alle im eigenen Abschnitt „Sandkasten
+und die drei wirkenden Werkzeuge" unten. **Eine Folge davon gehört an diese Stelle, weil sie
+jeden Nutzer trifft:** die Git-Vorbedingung greift seit der Verdrahtung bei *jedem* Lauf, nicht
+mehr nur bei einem mit wirkenden Werkzeugen — eine Wurzel ohne Repository oder mit unsauberem
+Arbeitsbaum lässt keinen Lauf mehr starten, auch keinen rein lesenden. Siehe die Zeile
+„Die Git-Vorbedingung" im selben Abschnitt.
+
+Davor am selben Tag der MCP-Transport (Paket B) gebaut und gegen ein Sicherheitsreview
 nachgebessert: ein lokaler HTTP-Server (`127.0.0.1`, Port `0`/ephemer, Bearer-Schlüssel als
 `randomUUID()` je App-Start) macht alle zehn MCP-Werkzeuge (die sieben `graph_*` und die drei
 `keel_zelle*`) erreichbar — für eine Sitzung, die gestartet wurde, während die aktuelle
@@ -492,7 +498,7 @@ Alle fünf stehen in `src/main/harness/sandkasten.ts`; die Liste ist gegen
 |---|---|---|
 | **`WIRKENDE_WERKZEUGE`** (`datei_schreiben`, `datei_loeschen`, `shell_ausfuehren`) | `src/main/harness/tor.ts` | Eine Quelle, drei Verbraucher: das Tor, die Single-Writer-Regel in `lauf.ts` und die Git-Vorbedingung beim Laufstart. Wer diese Menge einstellbar machte, machte die drei Regeln einstellbar — dieselbe Begründung wie bei `unterlaufRegistry` oben |
 | **Der Profiltext selbst** (`profilText`) | `src/main/harness/sandkasten.ts` | Die verankerten Verbote (`~/.ssh`, `userData`, `.cipher-*`, Shell-Profile, `.env*`, Schlüsseldateien, jedes `.git`-Segment) sind die Sicherheitsgrenze dieser Strecke. Sie stehen **nach** allen Erlaubnissen, weil SBPL nach der zuletzt passenden Regel entscheidet — ein Schalter, der die Reihenfolge oder einen Eintrag anfasst, wäre ein Schalter für die Grenze |
-| **Die Git-Vorbedingung** (`pruefeArbeitsbaum`) | `src/main/harness/lauf.ts` | Ein Lauf mit wirkenden Werkzeugen startet nur über einem sauberen Arbeitsbaum. Es gibt dafür bewusst kein Übergehen: die Vorbedingung *ist* der Rückweg, auf den sich alles Übrige verlässt |
+| **Die Git-Vorbedingung** (`pruefeArbeitsbaum`) | `src/main/harness/lauf.ts` | Ein Lauf mit wirkenden Werkzeugen startet nur über einem sauberen Arbeitsbaum. Es gibt dafür bewusst kein Übergehen: die Vorbedingung *ist* der Rückweg, auf den sich alles Übrige verlässt. **Seit der Verdrahtung von Paket C heißt das: jeder Lauf.** `starteLauf` zieht die Vorbedingung, sobald die Registry des Laufs auch nur ein wirkendes Werkzeug trägt, und `baueWerkzeugRegistry` ist die einzige Registry eines Hauptlaufs und trägt seither alle drei. Die Einschränkung „mit wirkenden Werkzeugen" unterscheidet damit nichts mehr. **Folge, die ein Nutzer zu sehen bekommt:** keel weigert sich zu starten, wenn die Projektwurzel kein Git-Repository ist oder ihr Arbeitsbaum nicht sauber ist — auch für einen rein lesenden Auftrag. Das ist spezifikationskonform und kein Fehler, aber es ist ein harter Startabbruch mit benannter Meldung, kein Hinweis. Die Möglichkeiten, das später wieder zu verengen, stehen im Entwurf dieser Strecke |
 
 **Eine Annahme, die zur Fläche gehört und deshalb nicht im Quelltext verstecken bleibt:**
 `sandbox-exec` existiert auf macOS und wird durchgesetzt — gemessen auf Darwin 25.4 am

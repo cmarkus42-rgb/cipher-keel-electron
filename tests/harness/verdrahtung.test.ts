@@ -11,7 +11,11 @@
  * jemand aufruft. Genau diese Luecke schliesst diese Datei — und zwar so, dass sie auch das
  * naechste Werkzeug faengt: geprueft wird gegen die Registry, die `harness-handlers.ts`
  * tatsaechlich baut, nicht gegen eine im Test nachgebaute Liste. Ein nachgebauter Aufruf haette
- * den Befund nicht gefunden (tests/harness/werkzeugliste.test.ts baut nach und war gruen).
+ * den Befund nicht gefunden — tests/harness/werkzeugliste.test.ts baute damals nach und war
+ * gruen. **Das gilt fuer ihn nicht mehr:** er laedt seit dem Befund dieselbe echte
+ * `baueWerkzeugRegistry` (siehe seinen Helfer `ausgelieferteRegistry`), ist also heute so
+ * belastbar wie diese Datei. Der Satz stand hier noch in der alten Form und liess einen Leser
+ * den falschen der beiden Waechter fuer den vertrauenswuerdigen halten.
  *
  * Gegenproben zum Zuordnungsplatz des Rechercheurs (2026-08-22), beide ausgefuehrt und rot
  * gesehen:
