@@ -3,6 +3,25 @@
 **Gefunden:** 2026-08-23, beim Versuch, Kimi Code als zweites CLI-Harness einzutragen.
 **Status:** offener Entwurfsbefund. **Nichts gebaut, nichts geändert.**
 
+> **Korrektur vom 2026-08-30 — dieser Befund beschreibt das falsche Problem.**
+>
+> Er unterstellt, das Ziel sei „ein Kimi-**Modell** in einem Tier-Platz". Das war es nie. Christian
+> dazu: *„es geht nicht um Kimi K3 sondern um den cli harness kimicode — dort hinterlege ich dann
+> das modell was ich will … ich will ja auch cli-harnesse wechseln/probieren können."*
+>
+> Damit fällt die Prämisse. Das Modell eines CLI-Harness ist **dessen** Sache — Kimi Code bringt
+> es in seiner eigenen Konfiguration mit, und `-m` überschreibt es je Aufruf. keel muss es gar
+> nicht kennen.
+>
+> Die **eigentliche** Lücke ist eine andere und größer: **keel kann den Harness nicht wählen.**
+> Er steckt in `rahmen.runtime` und damit im Preset-Quelltext. Ein Mensch, der Claude Code gegen
+> Kimi Code tauschen oder beide nebeneinander probieren will, hat dafür keine Fläche.
+>
+> Was unten über die Mechanik steht, bleibt richtig und wird gebraucht (`cli` wird nirgends
+> gelesen; `claude-code.ts:79` nagelt `cmd: 'claude'` fest). Nur die daraus gezogene Frage war
+> falsch gestellt. Die richtige steht in
+> `docs/superpowers/plans/2026-08-30-naechste-schritte-harness-wahl-und-mcp-transport.md`.
+
 ---
 
 ## Der Anlass
