@@ -17,13 +17,37 @@ Einspritzens vor `tmux.createSession`; ein dritter, nie gelesener Schreibpfad
 (`~/.claude/projects/<hash>/settings.json`) ist ersatzlos gestrichen. Das Vorziehen öffnete
 eine engere Lücke, die eine Nachprüfung fand: scheitert `tmux.createSession` jetzt NACH einem
 erfolgreichen Einspritzen, bliebe ein gültiger Bearer für eine nie entstandene Sitzung liegen.
-Behoben durch eine Rücknahme-Funktion, die `postLaunchInjection` seither zurückgibt: sie
-schreibt `settings.local.json` exakt auf den Stand vor dem eigenen Schreiben zurück (Eintrag
-löschen, wenn er vorher fehlte; vorherigen Eintrag wiederherstellen, wenn er schon da war) —
-nie ein blindes Löschen, weil eine zweite, noch laufende Sitzung im selben Projekt denselben
-Eintrag legitim braucht. Der CLI-Weg (`claude mcp add-json`) wird bewusst NICHT zurückgenommen
-(dieselbe Kollisionsgefahr träfe dort ebenso zu) — dieser Rest wird stattdessen in der
-Fehlermeldung an den Nutzer benannt, statt in einer stillen Aufräumfunktion zu verschwinden.
+Behoben durch eine Rücknahme-Funktion, die `postLaunchInjection` seither zurückgibt: sie bringt
+den **Eintrag** `cipher-keel` auf seinen Vorzustand (löschen, wenn er vorher fehlte; vorherigen
+Eintrag wiederherstellen, wenn er schon da war) — nicht die Datei. Existierte die Datei vorher
+nicht, bleiben `.claude/` und eine `settings.local.json` mit `{"mcpServers": {}}` liegen; enthielt
+sie kaputtes JSON, hat schon der Injektions-Schreibvorgang diesen Inhalt vernichtet, und keine
+Rücknahme holt ihn zurück. Kein Bearer bleibt in einem der Fälle liegen, aber das Versprechen gilt
+dem Eintrag, nicht der Datei. Kein blindes Löschen, und zwar aus einem engeren Grund, als hier
+zuerst stand: ein *laufender* `claude`-Prozess hängt gerade **nicht** mehr am Eintrag — er hat die
+MCP-Konfiguration genau einmal gelesen, bei seinem eigenen Start. Was ein blindes Löschen träfe,
+ist eine Schwestersitzung, die bereits eingespritzt wurde, deren `claude`-Prozess die Konfiguration
+aber noch nicht gelesen hat (nebenläufiges `SESSION_CREATE`), sowie jeder spätere Neustart von
+`claude` in einem schon offenen Pane. Der CLI-Weg (`claude mcp add-json`) wird bewusst NICHT
+zurückgenommen, aus drei Gründen: `claude mcp remove` kann nur löschen, nie wiederherstellen (das
+ist der eigentliche Unterschied zwischen den beiden Wegen — Pfad 1 kennt den Vorzustand, Pfad 2
+nicht); es träfe dasselbe enge Fenster wie oben; und aus einer synchronen Rücknahme-Funktion ist
+ein externer CLI-Aufruf mit Sekunden-Laufzeit ohnehin nicht ausführbar. Ehrlich dazu gehört, was
+sonst untergeht: der Erfolgspfad ruft bei **jeder** Injektion ohnehin
+`claude mcp remove -s local cipher-keel` und nimmt dieselbe Kollision in Kauf — der Unterschied
+ist, dass dort sofort ein gleichwertiger Eintrag folgt, bei einem Rücknahme-Remove nicht. Dieser
+Rest wird stattdessen in der Fehlermeldung an den Nutzer benannt, statt in einer stillen
+Aufräumfunktion zu verschwinden; ein App-Neustart entfernt ihn nicht, er macht ihn nur wertlos,
+weil der Schlüssel rotiert.
+
+Die Rücknahme-Funktion **meldet außerdem, was sie erreicht hat** (`() => boolean`, seit der
+Nachprüfung zu `4358cac`). Der Rückgabewert bedeutet genau einen Satz: *„`settings.local.json`
+trägt keinen Eintrag aus diesem Versuch mehr."* `false` — mit Grund auf der Konsole — heißt, dass
+sie das nicht feststellen konnte: Datei nicht mehr lesbar, oder kein `mcpServers`-Objekt mehr
+darin. Der Nutzertext unterscheidet die beiden Fälle seither, statt die Rücknahme unbedingt zu
+behaupten. Der `connect()`-Aufruf auf tmux steht seit derselben Runde **vor** dem Einspritzen: er
+ist der wahrscheinlichste tmux-Fehler überhaupt (kein Server, tmux nicht installiert), und von
+seinem alten Platz zwischen Einspritzen und `createSession` warf er an jeder Rücknahme vorbei.
 
 **Eine frisch gestartete Sitzung ist damit tatsächlich erreichbar, nicht nur meistens — und
 das ist inzwischen eine Messung, kein Versprechen.** Gemessen am 2026-08-30, über die echte
