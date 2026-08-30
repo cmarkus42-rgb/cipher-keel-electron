@@ -27,12 +27,18 @@
  *     this file causes.
  *
  * What this buys, and what it does not: every session created while this app instance is
- * running can reach all ten tools (see postLaunchInjection's call site in ipc-handlers.ts,
- * SESSION_CREATE — called *before* the tmux pane is created, on purpose: `postLaunchInjection`
- * reads none of `AdapterContext`'s fields from a live tmux session, so running it after
- * `createSession` was a race it could not reliably win against the very process it was
- * configuring — see the security-review finding I-1 in the Paket B history for the measured
- * version of that race). A session whose tmux pane survives an app restart cannot be healed
+ * running can reach all ten tools. That half is a measurement, not a promise (2026-08-30):
+ * a real Architect session created through the grid window, `/mcp` in its own tmux pane
+ * showing `cipher-keel · ✔ connected · 10 tools` and `Auth: ✔ authenticated`, and a real
+ * `graph_search` call from that very process returning the uid of a node written seconds
+ * earlier — see mcp-server.ts's "This is a measurement, not a promise" note and
+ * docs/anpassbare-flaechen.md for the full record, including what stayed unmeasured (the
+ * restart-surviving branch below). The mechanism behind it: postLaunchInjection's call site
+ * in ipc-handlers.ts, SESSION_CREATE — called *before* the tmux pane is created, on purpose:
+ * `postLaunchInjection` reads none of `AdapterContext`'s fields from a live tmux session, so
+ * running it after `createSession` was a race it could not reliably win against the very
+ * process it was configuring — see the security-review finding I-1 in the Paket B history for
+ * the measured version of that race. A session whose tmux pane survives an app restart cannot be healed
  * by re-injecting even so — its `claude` process already read `settings.local.json` at its
  * own start and does not reload it live. That session stays unreachable until it is
  * destroyed and a new one created. This is not a bug this file introduces and not one it can

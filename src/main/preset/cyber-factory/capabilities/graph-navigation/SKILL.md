@@ -24,8 +24,10 @@ zurück, bis sie zerstört und neu angelegt wird (siehe `docs/anpassbare-flaeche
 Architect-Sitzung über die Grid-Oberfläche angelegt, im echten tmux-Pane `/mcp` geprüft
 (`cipher-keel · ✔ connected · 10 tools`, `Auth: ✔ authenticated`) und einen echten
 `graph_search`-Aufruf beobachtet, dessen Antwort die uid eines zuvor geschriebenen Knotens
-exakt traf — Details in `docs/anpassbare-flaechen.md`. Nicht geprüft und weiterhin offen: der
-Fall einer Sitzung, die einen App-Neustart überlebt hat:
+exakt traf — Details in `docs/anpassbare-flaechen.md`. Nicht geprüft und weiterhin offen ist der
+Fall einer Sitzung, die einen App-Neustart überlebt hat.
+
+**Die sieben Werkzeuge:**
 
 - **`graph_search`** — Volltext-/Vektor-Suche. Pflichtparameter `query`; optional `limit`
   (Default 10) und `kind` (Knotentyp-Filter). Liefert kompakte Treffer (uid, kind, title,

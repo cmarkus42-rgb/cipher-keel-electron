@@ -120,6 +120,10 @@ describe('session:create — rolling back a successful injection when createSess
     // dropped, per the review's "benenn die Tatsache" instruction.
     expect(result.error).toMatch(/claude-CLI registrierter Eintrag/)
     expect(result.error).toMatch(/wurde zurueckgenommen/)
+    // Befund 4 der Fixrunde zu 4358cac: der Eintrag in der claude-CLI-Konfiguration
+    // verschwindet beim App-Neustart nicht, er wird nur wertlos. Der Text sagte das
+    // Gegenteil ("bis er ueberschrieben wird oder die App neu startet").
+    expect(result.error).toMatch(/App-Neustart entfernt ihn nicht/)
   })
 
   // Fixrunde zu 4358cac, Befund 2: der Hinweistext hing allein an "es gab eine Closure" und
