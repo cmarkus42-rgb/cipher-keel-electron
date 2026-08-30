@@ -15,6 +15,7 @@ function statusMap(overrides: Partial<ServiceStatusMap> = {}): ServiceStatusMap 
     graph:     { id: 'graph',     state: 'ready', reason: null },
     kanban:    { id: 'kanban',    state: 'ready', reason: null },
     notes:     { id: 'notes',     state: 'ready', reason: null },
+    mcp:       { id: 'mcp',       state: 'ready', reason: null },
     ...overrides,
   }
 }

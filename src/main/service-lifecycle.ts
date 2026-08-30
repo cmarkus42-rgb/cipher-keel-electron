@@ -40,6 +40,7 @@ import { describeToolFailure, describeMissingTool } from './util/missing-tool'
 import { openGraphDb } from './graph/db'
 import { resolveBetterSqliteBinding } from './graph/native-binding'
 import { GraphMcpServer } from './graph/mcp-server'
+import { startMcpHttpServer } from './graph/mcp-http-server'
 import { GraphWriter } from './graph/writer'
 import { harnessDb } from './harness-sitzung'
 import { lesen } from './harness'
@@ -160,6 +161,19 @@ export function shutdownServices(services: AppServices): void {
   services.graphMcpServer = null
   services.kanbanStore = null
 
+  // Stops accepting new connections; existing ones drain on their own. Fire-and-forget
+  // like tmux.disconnect() above — the app is quitting either way, and a session whose
+  // tmux pane survives this (tmux is a separate daemon, unaffected by any of this
+  // function) already carries the stale address/key that goes with app-restart in
+  // general, not with this specific close() call. See the doc comment on
+  // mcp-http-server.ts for that limitation.
+  try {
+    services.mcpHttpServer?.server.close()
+  } catch (err) {
+    console.warn('[service-lifecycle] mcpHttpServer.close() failed:', err)
+  }
+  services.mcpHttpServer = null
+
   status = freshStatus()
   initPromise = null
 }
@@ -209,6 +223,7 @@ async function runInit(
   void initVoice(services, ctx)
 
   initGraph(services, ctx)
+  await initMcp(services)
   initNotes(services, ctx)
 
   broadcast(APP_READY, { timestamp: Date.now() })
@@ -334,6 +349,30 @@ function initGraph(services: AppServices, ctx: ServiceInitContext): void {
     setStatus('graph', 'degraded', reasonOf(err))
     setStatus('kanban', 'degraded', 'graph unavailable: ' + reasonOf(err))
     console.warn('[service-lifecycle] Knowledge Graph init failed:', err)
+  }
+}
+
+/**
+ * Starts the MCP HTTP transport (Paket B) that makes the ten MCP tools (seven graph_*,
+ * three keel_zelle*) reachable at all — see the header comment on mcp-http-server.ts for
+ * why a local, ephemeral-port, per-boot-key server is the shape this takes. Runs after
+ * initGraph because it wraps `services.graphMcpServer`, which initGraph just built; a
+ * degraded graph (services.graphMcpServer stays null) means there is nothing to serve, so
+ * 'mcp' is reported degraded too rather than starting a server with no tools behind it.
+ */
+async function initMcp(services: AppServices): Promise<void> {
+  if (!services.graphMcpServer) {
+    setStatus('mcp', 'degraded', 'graph unavailable: kein GraphMcpServer zum Bedienen')
+    return
+  }
+  try {
+    services.mcpHttpServer = await startMcpHttpServer(services.graphMcpServer)
+    setStatus('mcp', 'ready', null)
+    console.log(`[service-lifecycle] MCP HTTP server listening on ${services.mcpHttpServer.url}`)
+  } catch (err) {
+    services.mcpHttpServer = null
+    setStatus('mcp', 'degraded', reasonOf(err))
+    console.warn('[service-lifecycle] MCP HTTP server init failed:', err)
   }
 }
 

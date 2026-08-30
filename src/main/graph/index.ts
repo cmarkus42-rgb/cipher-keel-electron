@@ -53,6 +53,10 @@ export {
   type McpToolDef, type JsonRpcRequest, type JsonRpcResponse
 } from './mcp-server'
 export {
+  startMcpHttpServer,
+  type McpHttpServerHandle
+} from './mcp-http-server'
+export {
   parseVaultFile, contentHash, atomicVaultWrite, buildVaultContent,
   writeInferredEdges, fullReindex, incrementalIndex, handleVaultDeletion,
   getIndexVersion, VaultConflictError,

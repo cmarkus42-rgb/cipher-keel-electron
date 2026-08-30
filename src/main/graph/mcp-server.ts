@@ -15,30 +15,36 @@
  *   graph_maintain     — Maintenance operations (CK-GRAPH-024)
  *
  * 3 more tools (2026-08-23), the connection upward the harness-adapter design (§10) named but
- * deliberately did not build: once a transport exists (see the note below), a strong session
- * (Systems Engineer, Architect, Cyber Factory) would beauftragt a Niveau-B-Gitterzelle the same
- * way it would reach the graph — neither is reachable today, see below:
+ * at the time deliberately did not build a transport for: a strong session (Systems Engineer,
+ * Architect, Cyber Factory) can beauftragen a Niveau-B-Gitterzelle the same way it reaches the
+ * graph:
  *   keel_zellen             — list Niveau-B cells and their state
  *   keel_zelle_beauftragen  — give a cell an order; returns the laufId immediately, does not
  *                             wait for the run to finish (a run takes minutes; a blocking MCP
  *                             call would be a time bomb)
  *   keel_zelle_ergebnis     — poll a laufId for its end state and result block
  *
- * **This entire class has no reachable caller today — not one line of the above included.**
- * Verified 2026-08-23: `handleRequest` is called nowhere outside this file's own tests and
- * `startStdioServer`. `startStdioServer` itself is called nowhere. There is no `bin` entry in
- * package.json, and `ClaudeCodeAdapter.postLaunchInjection` — the method that would register an
- * MCP server with a live Claude Code session — also has no caller anywhere in `src/` or
- * `tests/` (the sole hit is a comment in `session/materialise-capabilities.ts:9`). What is
- * missing is a transport (this class only speaks newline-delimited JSON-RPC over an already-
- * open stdin/stdout, or takes a request object directly — neither is wired to a real process
- * boundary) AND a registration step at session start that tells a spawned Claude Code session
- * where to find it. That is a local HTTP server with its own auth and lifecycle — a separate
- * decision, not made here. This affects the seven graph_* tools exactly as much as the three
- * keel_zellen* tools below: none of the ten has ever been reachable from a running session.
- * Named here on purpose, the same way `RUNTIMES_WITHOUT_ADAPTER` (agent/registry.ts) names a
- * gap instead of leaving it silent — see docs/anpassbare-flaechen.md, section "Was fehlt", for
- * the human-facing half of this note.
+ * **Reachability (Paket B, mcp-http-server.ts) is conditional, not universal — say the
+ * condition, not "yes" or "no".** All ten tools (the seven graph_* above and the three
+ * keel_zelle* below) are reachable from a session that was started while the current app
+ * instance is running: `SESSION_CREATE` (ipc-handlers.ts) calls `postLaunchInjection` right
+ * after the tmux pane is created, handing the live HTTP server's address and per-boot key to
+ * the spawned Claude Code process. A session whose tmux pane survives an app restart is not
+ * reachable and cannot be made reachable by re-injecting: its `claude` process already read
+ * `settings.local.json` at its own start and does not reload it live, while the server's
+ * address and key are both fresh every app start (the key by design — config-store.ts keeps
+ * secrets out of the persisted config, and this key is one). Such a session stays unreachable
+ * until it is destroyed and a new one created. See mcp-http-server.ts's header comment for why
+ * that is a property of the boot-scoped key, not something a fixed port would fix, and
+ * docs/anpassbare-flaechen.md ("Was fehlt") for the human-facing half of this note.
+ *
+ * The scoping this implies (B5): one key for every session of this app instance, not one key
+ * per session. `keel_zelle_beauftragen`/`keel_zelle_ergebnis` are meant to let any strong
+ * session reach any Niveau-B cell — that is the design above, not an oversight — so a
+ * per-session key would buy authentication granularity (which session made this HTTP call)
+ * without buying authorization granularity (which cells that session may touch), since nothing
+ * in the tool logic ties a cell to an owning session. Accepted and named: these are sessions of
+ * the same human, on his own machine.
  */
 
 import type Database from 'better-sqlite3'

@@ -256,16 +256,19 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
       return `### Worker-Session-Startup (Claude Code)
 
 Starte Worker mit: \`${this.startBefehl()}\`
-MCP-Tools stehen heute nicht zur Verfuegung — der Transport dafuer ist noch nicht gebaut
-(siehe docs/anpassbare-flaechen.md, Abschnitt "Was fehlt").
+MCP-Tools stehen einer Sitzung zur Verfuegung, die gestartet wurde, waehrend diese
+App-Instanz laeuft. Eine Sitzung, die einen Neustart der App ueberlebt hat, verliert sie,
+bis sie zerstoert und neu angelegt wird (siehe docs/anpassbare-flaechen.md, Abschnitt
+"Was fehlt").
 Instruktionen DIREKT via tmux send-keys in den Pane schicken.
 `
     }
     return `### Worker Session Startup (Claude Code)
 
 Start workers with: \`${this.startBefehl()}\`
-MCP tools are not available today — the transport for them is not built yet
-(see docs/anpassbare-flaechen.md, "Was fehlt" section).
+MCP tools are available to a session that was started while this app instance is
+running. A session that survived an app restart loses them until it is destroyed and
+recreated (see docs/anpassbare-flaechen.md, "Was fehlt" section).
 Send instructions DIRECTLY via tmux send-keys into the pane.
 `
   }
@@ -279,8 +282,10 @@ Send instructions DIRECTLY via tmux send-keys into the pane.
       return `### Worker-Session-Startup (Claude Code)
 
 Starte Worker mit: \`${this.startBefehl()}\`
-MCP-Tools stehen heute nicht zur Verfuegung — der Transport dafuer ist noch nicht gebaut
-(siehe docs/anpassbare-flaechen.md, Abschnitt "Was fehlt").
+MCP-Tools stehen einer Sitzung zur Verfuegung, die gestartet wurde, waehrend diese
+App-Instanz laeuft. Eine Sitzung, die einen Neustart der App ueberlebt hat, verliert sie,
+bis sie zerstoert und neu angelegt wird (siehe docs/anpassbare-flaechen.md, Abschnitt
+"Was fehlt").
 Instruktionen DIREKT via tmux send-keys in den Pane schicken.
 Session-Prefix fuer Cyber-Factory-Worker: \`ckeel-cf-\`
 `
@@ -288,8 +293,9 @@ Session-Prefix fuer Cyber-Factory-Worker: \`ckeel-cf-\`
     return `### Worker Session Startup (Claude Code)
 
 Start workers with: \`${this.startBefehl()}\`
-MCP tools are not available today — the transport for them is not built yet
-(see docs/anpassbare-flaechen.md, "Was fehlt" section).
+MCP tools are available to a session that was started while this app instance is
+running. A session that survived an app restart loses them until it is destroyed and
+recreated (see docs/anpassbare-flaechen.md, "Was fehlt" section).
 Send instructions DIRECTLY via tmux send-keys into the pane.
 Session prefix for Cyber Factory workers: \`ckeel-cf-\`
 `

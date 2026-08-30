@@ -375,6 +375,34 @@ export function registerIpcHandlers(services: AppServices): void {
       const sessionId = await services.tmux.createSession(name, { ...opts, cwd, command })
       services.tmux.watchSession(name, name)
 
+      // B4 (MCP transport, Paket B): tells the just-launched Claude Code process where the
+      // ten MCP tools live and how to authenticate — the one thing that makes them reachable
+      // at all (see the header comment on graph/mcp-http-server.ts). postLaunchInjection is
+      // optional on CliSitzungsAdapter and absent entirely from SchleifenSitzungsAdapter
+      // (this branch cannot reach a loop adapter — see the `istSchleifenAdapter` guard
+      // above), so the `adapter.postLaunchInjection` check below is the real gate, not
+      // defensive dressing. Nothing here is swallowed silently: a missing MCP server is
+      // exactly the case named in mcp-http-server.ts's header comment (graph degraded), and
+      // a rejected injection still leaves the session usable via tmux — just without the ten
+      // tools — so neither failure mode should abort session creation, both are logged.
+      if (services.mcpHttpServer && adapter.postLaunchInjection) {
+        try {
+          await adapter.postLaunchInjection({
+            projectPath: cwd,
+            mcpUrl: services.mcpHttpServer.url,
+            mcpApiKey: services.mcpHttpServer.apiKey,
+            sessionId,
+          })
+        } catch (err) {
+          console.warn('[ipc] postLaunchInjection failed:', err)
+        }
+      } else if (!services.mcpHttpServer) {
+        console.warn(
+          `[ipc] session '${name}': MCP HTTP server not available — session started ` +
+          'without MCP registration (the ten tools will not be reachable from it)'
+        )
+      }
+
       if (ctx && services.graphWriter) {
         try {
           writeSessionNode(services.graphWriter, { ...ctx, name })

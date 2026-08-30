@@ -14,12 +14,13 @@ reduzierten Mechanismen zu.
 
 ## Vorgehen
 
-**Sieben Tools, keine anderen — und Stand 2026-08-23 ohne Transport.** Der Graph-MCP-Server
-stellt genau sieben `graph_*`-Tools zur Verfügung — es gibt keine weiteren. Ob eine laufende
-Sitzung sie tatsächlich erreichen kann, ist eine andere Frage: es gibt heute keinen Transport
-und keine Registrierung beim Sitzungsstart (siehe `docs/anpassbare-flaechen.md`, Abschnitt „Was
-fehlt"). Diese Beschreibung gilt für den Vertrag der Tools, nicht als Zusage, dass sie in dieser
-Sitzung aufrufbar sind:
+**Sieben Tools, keine anderen — und erreichbar unter einer Bedingung.** Der Graph-MCP-Server
+stellt genau sieben `graph_*`-Tools zur Verfügung — es gibt keine weiteren. Erreichbar sind sie,
+wenn diese Sitzung gestartet wurde, während die aktuelle App-Instanz läuft (`SESSION_CREATE`
+registriert Adresse und Schlüssel des lokalen HTTP-Servers direkt nach dem Start). Eine Sitzung,
+die einen Neustart der App überlebt hat, verliert sie und bekommt sie nicht zurück, bis sie
+zerstört und neu angelegt wird (siehe `docs/anpassbare-flaechen.md`, Abschnitt „Was fehlt", für
+den vollen Befund):
 
 - **`graph_search`** — Volltext-/Vektor-Suche. Pflichtparameter `query`; optional `limit`
   (Default 10) und `kind` (Knotentyp-Filter). Liefert kompakte Treffer (uid, kind, title,
