@@ -592,6 +592,12 @@ export const STANDARD_ZEITGRENZE_MS = 120_000
  * Die Decke ueber der Vorgabe. `shell_ausfuehren` nimmt `zeitgrenzeMs` aus der Modelleingabe
  * entgegen; ohne diese Grenze waere die Vorgabe darueber eine Empfehlung und kein Rand — ein
  * `zeitgrenzeMs: 100000000` hielte den Lauf tagelang offen. Anpassbare Flaeche (CK-NFR-012).
+ *
+ * Dazu ein Testsaum (`_testSetzeMaxZeitgrenzeMs` / `_testMaxZeitgrenzeMsZuruecksetzen`) nach dem
+ * Muster von `_testSetzeSuchZeitbudgetMs` in werkzeug-datei.ts: fuenfzehn Minuten sind in einem
+ * Test nicht abwartbar, und eine Decke, die kein Test haelt, ist eine Zusage im Kommentar. Die
+ * Uebersteuerung ersetzt **nur die Konstante**, nicht die Klemmung — der Test faehrt also den
+ * echten Ausdruck und nicht den Saum. Produktionscode ruft ihn nie.
  */
 export const MAX_ZEITGRENZE_MS = 15 * 60_000
 
