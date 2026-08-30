@@ -146,7 +146,12 @@ describe('Waechter: jedes Verbot ist verankert', () => {
   // Ein globales deny auf *.pem sperrt /etc/ssl/cert.pem und bricht jedes TLS im Kindprozess —
   // also ausgerechnet npm ci.
   it('jede deny-Regel nennt die Wurzel oder das Heim', () => {
-    const zeilen = profilText(ktx, 'zu').split('\n').filter(z => z.trimStart().startsWith('(deny'))
+    // `(deny default)` ist die Grundregel des Profils und nennt keinen Pfad — sie ist keine der
+    // pfadbezogenen Verbotsregeln, gegen die dieser Waechter antritt. Genau diese eine woertliche
+    // Zeile faellt heraus, nichts sonst: der Ausschluss ist eng, damit eine Regel, die ihren
+    // Anker verliert, weiter auffliegt.
+    const zeilen = profilText(ktx, 'zu').split('\n')
+      .filter(z => z.trimStart().startsWith('(deny') && z.trim() !== '(deny default)')
     expect(zeilen.length).toBeGreaterThan(0)
     for (const z of zeilen) {
       const verankert = z.includes(ktx.wurzel) || z.includes(ktx.heim)
