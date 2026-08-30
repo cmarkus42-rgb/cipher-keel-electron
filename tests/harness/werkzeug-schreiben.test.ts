@@ -58,8 +58,10 @@ describe('datei_schreiben', () => {
   })
 
   it('folgt keinem Symlink aus der Wurzel heraus', async () => {
-    // Die Pfadwache loest Symlinks auf und lehnt darum ab; O_NOFOLLOW schliesst zusaetzlich das
-    // Zeitfenster zwischen Pruefung und Oeffnen.
+    // Was dieser Test belegt, ist die **Pfadwache**, nicht O_NOFOLLOW: `pruefePfad` loest den
+    // Symlink auf, sieht ein Ziel ausserhalb der Wurzel und lehnt ab — `openSync` wird nie
+    // erreicht. O_NOFOLLOW greift nur bei einem Tausch *nach* der Aufloesung, und diesen Fall
+    // belegt kein Test dieser Strecke (siehe den Kommentar an `dateiSchreiben`).
     symlinkSync(join(heim, 'geheim', 'ziel.txt'), join(wurzel, 'abkuerzung.txt'))
     const r = await schreiben.ausfuehren({ pfad: 'abkuerzung.txt', inhalt: 'zerstoert' }, ktx)
     expect(r.ok).toBe(false)

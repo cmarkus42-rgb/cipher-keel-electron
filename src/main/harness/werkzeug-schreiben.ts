@@ -17,7 +17,7 @@
  * evidence*, not on suspicion.
  */
 
-import { closeSync, constants, mkdirSync, openSync, statSync, unlinkSync, writeSync } from 'node:fs'
+import { closeSync, constants, mkdirSync, openSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, relative } from 'node:path'
 import { pruefePfad } from './pfadwache'
 import type { Werkzeug, WerkzeugErgebnis, WerkzeugKontext } from './werkzeuge'
@@ -47,16 +47,33 @@ const dateiSchreiben: Werkzeug = {
     if (!wache.ok) return { ok: false, meldung: wache.grund }
 
     try {
+      // Laeuft vor dem bewachten Oeffnen und hat kein Gegenstueck zu O_NOFOLLOW. Scheitert das
+      // Oeffnen danach, bleiben die hier angelegten Verzeichnisse liegen: das Ergebnis ist
+      // `ok: false`, die Verzeichnisse sind trotzdem da. Fuer einen von der Wache abgelehnten
+      // Pfad passiert das nicht — der kehrt oben um, bevor diese Zeile laeuft.
       mkdirSync(dirname(wache.pfad), { recursive: true })
-      // O_NOFOLLOW on the final component. pfadwache resolves symlinks *before* the check; between
-      // check and open a symlink can be swapped (TOCTOU). This closes that constructively instead
-      // of noting it as residual risk.
+      // O_NOFOLLOW auf der letzten Komponente. Was es leistet und was nicht, genau benannt —
+      // die erste Fassung dieses Kommentars war eine Ueberbehauptung und ein Review hat sie
+      // auseinandergenommen:
+      //
+      // pfadwache loest Symlinks auf und gibt den **aufgeloesten** Pfad zurueck. Im Normalbetrieb
+      // sieht `openSync` deshalb nie einen Symlink, und das Flag greift nicht — der Symlink-Test
+      // dieser Datei ist aus genau diesem Grund gruen, nicht wegen O_NOFOLLOW. Das Flag greift in
+      // einem Fall: die letzte Komponente wird zwischen Aufloesung und Oeffnen getauscht (TOCTOU).
+      // **Kein Test dieser Strecke belegt ihn** — synchron und ohne Mocks ist er nicht
+      // herstellbar. Tiefenverteidigung gegen ein echtes Rennen, keine gepruefte Zusage.
+      //
+      // Nicht gedeckt: dasselbe Rennen um ein *Zwischenverzeichnis* (siehe `mkdirSync` darueber).
+      // Benanntes Restrisiko, nicht geschlossen.
       const fd = openSync(
         wache.pfad,
         constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
         0o644,
       )
-      try { writeSync(fd, inhalt) } finally { closeSync(fd) }
+      // `writeFileSync` ueber dem Deskriptor, nicht `writeSync`: letzteres ist ein duenner Aufsatz
+      // auf write(2) und darf weniger schreiben als der Puffer haelt. Sein Rueckgabewert wurde
+      // nicht geprueft, ein Teilschreibvorgang waere also als Erfolg durchgegangen.
+      try { writeFileSync(fd, inhalt) } finally { closeSync(fd) }
     } catch (err) {
       const m = err instanceof Error ? err.message : String(err)
       return { ok: false, meldung: `Datei nicht schreibbar: ${relative(ktx.wache.wurzel, wache.pfad)} (${m})` }
