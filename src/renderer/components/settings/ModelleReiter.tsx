@@ -36,32 +36,24 @@ const GRUPPEN = [
   { art: 'tier', titel: 'Tiers' },
   { art: 'sitzung', titel: 'Sitzung' },
   { art: 'rolle', titel: 'Rollen' },
-] as const
+] as const satisfies readonly { art: SlotAnsicht['art']; titel: string }[]
 
 /**
- * Welcher Platz in welche Gruppe gehoert.
+ * Der Waechter, der die Stelle des frueheren „ungruppierten Restes" einnimmt.
  *
- * **Hier sollte `slot.art` stehen, und es kann nicht.** Die Art *ist* ein Feld —
- * `Slot.art` in src/main/model/slots.ts —, aber `slotAnsicht` in src/main/model/ansicht.ts
- * reicht sie nicht ins Ansichtsmodell durch: `SlotAnsicht` (src/shared/settings-types.ts)
- * traegt sie nicht, und der Hauptprozess ist in diesem Auftrag nur zu lesen. Sobald
- * `SlotAnsicht.art` existiert, faellt diese Tabelle ersatzlos weg.
+ * Solange die Gruppierung ueber eine Id-Tabelle lief, brauchte es unten auf der Seite einen
+ * sichtbaren Rest fuer Plaetze, die die Tabelle nicht kannte — sonst waeren sie stumm
+ * verschwunden. Mit `slot.art` ist die Menge der Arten geschlossen, und der Rest waere
+ * beweisbar leer: toter Code, der eine Sorgfalt vortaeuscht, die der Typ schon leistet.
  *
- * Eine ausgeschriebene Tabelle und **kein** `startsWith` auf der Id: das Praefix ist eine
- * Zeichenkette, die zufaellig danebensteht, und der Kommentar zu `rolle:rechercheur` weiter
- * unten in dieser Datei haelt fest, wo genau dieses Vorgehen schon einmal falsch war. Eine
- * Tabelle laesst sich gegen slots.ts pruefen, und ein neu hinzugekommener Platz landet nicht
- * still in der falschen Gruppe, sondern unten im ungruppierten Rest — sichtbar.
+ * Ersatzlos streichen waere aber schlechter als der Rest. Kaeme eine vierte Art dazu, fielen
+ * ihre Plaetze ohne diese Zeile *ganz* von der Seite, ohne Fehler und ohne Spur. Die Zeile
+ * uebersetzt dann nicht mehr — der Bau bricht dort ab, wo die Gruppe fehlt, statt im Fenster.
  */
-const GRUPPE_JE_PLATZ: Record<string, string> = {
-  'tier:light': 'tier',
-  'tier:standard': 'tier',
-  'tier:heavy': 'tier',
-  'sitzung:niveau-b': 'sitzung',
-  'rolle:tagging': 'rolle',
-  'rolle:worker': 'rolle',
-  'rolle:rechercheur': 'rolle',
-}
+type GruppierteArt = (typeof GRUPPEN)[number]['art']
+const _keineArtOhneGruppe: [Exclude<SlotAnsicht['art'], GruppierteArt>] extends [never]
+  ? true
+  : never = true
 
 const OERTLICHKEIT_TEXT: Record<string, string> = {
   'lokal': 'lokal',
@@ -138,9 +130,14 @@ function Zuordnung({
       ))}
       {slot.gewaehltHinweis && <div style={styles.sperrgrund}>{slot.gewaehltHinweis}</div>}
       <Warnliste warnungen={slot.warnungen} />
-      {slot.id.startsWith('tier:') && (
+      {slot.art === 'tier' && (
         <div style={styles.rueckfallFeld}>
           <label style={styles.marke}>Rueckfall-Handle</label>
+          {/*
+            `slot.art` entscheidet, ob das Feld erscheint — `slot.id.slice(5)` sagt nur noch,
+            *welches* Tier gemeint ist. Das ist der Schluessel, keine Art: das Ansichtsmodell
+            fuehrt ihn nicht, und aus der Art allein waere er nicht zu gewinnen.
+          */}
           {/*
             Keyed on the value, not just the slot: an uncontrolled input keeps whatever
             it was mounted with, and every write returns a whole fresh view. Without
@@ -164,8 +161,13 @@ function Zuordnung({
         Hauptlaufs. Ueber das Praefix zu gehen ergab hier `endpunkt === undefined` und damit
         ein Formular, das `undefined:undefined` anbot und beim Schreiben einen Endpunkt
         angelegt haette, den niemand liest.
+
+        Auch die Vorbedingung fragt inzwischen `slot.art` statt des Praefixes; `slice(6)` liefert
+        nur noch den Schluessel der Rolle. Beides zusammen heisst: die Art kommt aus dem
+        Ansichtsmodell, und ob es fuer diese Rolle wirklich einen Endpunkt gibt, sagt weiterhin
+        der Endpunkt selbst.
       */}
-      {slot.id.startsWith('rolle:') && (() => {
+      {slot.art === 'rolle' && (() => {
         const rolle = slot.id.slice(6) as keyof SettingsAnsicht['rueckfallEndpunkte']
         const endpunkt = ansicht.rueckfallEndpunkte[rolle]
         if (!endpunkt) return null
@@ -219,7 +221,7 @@ export function ModelleReiter({
       <HarnessPlatzFeld platz={ansicht.harnessPlatz} schreibe={schreibe} />
 
       {GRUPPEN.map(g => {
-        const gruppe = ansicht.slots.filter(s => GRUPPE_JE_PLATZ[s.id] === g.art)
+        const gruppe = ansicht.slots.filter(s => s.art === g.art)
         if (gruppe.length === 0) return null
         return (
           <div key={g.art}>
@@ -230,14 +232,6 @@ export function ModelleReiter({
           </div>
         )
       })}
-      {/*
-        Ein Platz, den GRUPPE_JE_PLATZ nicht kennt, faellt hier heraus statt in die falsche
-        Gruppe. Ohne Ueberschrift, weil es fuer ihn keine gibt — und ohne erfundene: sichtbar
-        stehen bleiben ist die richtige Auskunft, „Sonstiges" waere eine Behauptung.
-      */}
-      {ansicht.slots.filter(s => !GRUPPE_JE_PLATZ[s.id]).map(slot => (
-        <Zuordnung key={slot.id} slot={slot} ansicht={ansicht} schreibe={schreibe} />
-      ))}
 
       <div style={styles.eintraegeKopf}>
         <h2 style={styles.ueberschrift}>Eintraege</h2>

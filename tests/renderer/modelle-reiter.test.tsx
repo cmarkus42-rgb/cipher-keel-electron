@@ -85,9 +85,9 @@ function ansichtMit(slots: SlotAnsicht[], extra: Partial<SettingsAnsicht> = {}):
 }
 
 const ALLE_ARTEN = [
-  slot('tier:light'),
-  slot('rolle:tagging', { wirkung: 'sofort' }),
-  slot('sitzung:niveau-b'),
+  slot('tier:light', { art: 'tier' }),
+  slot('rolle:tagging', { art: 'rolle', wirkung: 'sofort' }),
+  slot('sitzung:niveau-b', { art: 'sitzung' }),
 ]
 
 /** Die Ueberschriften der Zuordnungsgruppen, in der Reihenfolge, in der sie im Fenster stehen. */
@@ -121,9 +121,58 @@ describe('Modelle-Reiter — die Einsortierung', () => {
 
   it('gibt einer leeren Gruppe keine Ueberschrift', () => {
     const html = renderToStaticMarkup(
-      <ModelleReiter ansicht={ansichtMit([slot('tier:light')])} schreibe={stumm} />,
+      <ModelleReiter ansicht={ansichtMit([slot('tier:light', { art: 'tier' })])} schreibe={stumm} />,
     )
     expect(gruppenUeberschriften(html)).toEqual(['Harness', 'Tiers'])
+  })
+
+  /*
+   * Der eine Fall, an dem sich die beiden Wege unterscheiden: Id-Praefix und Art sagen
+   * Verschiedenes. Nur so ist pruefbar, welchem von beiden die Gruppierung folgt — bei
+   * uebereinstimmenden Werten waere jede Zusicherung darueber unbelegt. Die Art ist die
+   * Aussage des Hauptprozesses, das Praefix eine Zeichenkette, die zufaellig danebensteht.
+   */
+  it('gruppiert ueber die Art, nicht ueber das Praefix der Id', () => {
+    const html = renderToStaticMarkup(
+      <ModelleReiter
+        ansicht={ansichtMit([slot('rolle:tagging', { art: 'sitzung' })])}
+        schreibe={stumm}
+      />,
+    )
+    expect(gruppenUeberschriften(html)).toEqual(['Harness', 'Sitzung'])
+  })
+
+  /*
+   * Die Gruppierung war nicht die einzige Stelle, die die Art aus dem Id-Praefix ablas. Zwei
+   * weitere hingen daran: das Rueckfall-Handle der Tiers und das Endpunktformular der Rollen.
+   * Auch sie fragen jetzt das Feld. Was am Praefix haengen bleibt, ist der *Schluessel*
+   * (`light`, `tagging`) — der ist keine Art, und das Ansichtsmodell fuehrt ihn nicht.
+   */
+  it('haengt das Rueckfall-Handle an die Art, nicht an das Praefix der Id', () => {
+    const html = renderToStaticMarkup(
+      <ModelleReiter
+        ansicht={ansichtMit([slot('tier:light', { art: 'rolle' })])}
+        schreibe={stumm}
+      />,
+    )
+    expect(html).not.toContain('Rueckfall-Handle')
+  })
+
+  it('haengt das Endpunktformular an die Art, nicht an das Praefix der Id', () => {
+    const html = renderToStaticMarkup(
+      <ModelleReiter
+        ansicht={ansichtMit([slot('rolle:tagging', { art: 'sitzung' })])}
+        schreibe={stumm}
+      />,
+    )
+    expect(html).not.toContain('llm.tagging')
+  })
+
+  it('laesst keinen Platz aus der Gruppierung fallen', () => {
+    const html = renderToStaticMarkup(
+      <ModelleReiter ansicht={ansichtMit(ALLE_ARTEN)} schreibe={stumm} />,
+    )
+    for (const s of ALLE_ARTEN) expect(html).toContain(s.beschriftung)
   })
 })
 
