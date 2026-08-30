@@ -37,12 +37,34 @@ Dazu die Mechanik, die der alte Befund richtig beschreibt und die bleibt:
 ist das billig: er unterscheidet sich in `cmd` (`kimi`), im Modell-Schalter (`-m`) und in der
 Frage, wie ein Entitäts-Prompt hineinkommt.
 
-> **Vorher zu klären, und zwar durch Nachsehen, nicht durch Annahme:** `ClaudeCodeAdapter`
-> weigert sich ausdrücklich zu starten, wenn `--append-system-prompt-file` fehlt — eine Sitzung
-> ohne Entitäts-Prompt sieht aus wie eine arbeitende und ist keine. Kimi Code hat laut `--help`
-> **keinen** solchen Schalter; es kennt `--agent-file <path>` (Agentendefinition als Markdown) und
-> `--skills-dir`. Ob eines davon den Entitäts-Prompt trägt, entscheidet, ob A1 überhaupt geht.
-> **Das ist der erste Schritt, und wenn er nicht trägt, fällt das ganze Paket anders aus.**
+> **Der Vorbehalt ist am 2026-08-30 ausgeräumt — A1 ist baubar.** Die Frage war, ob Kimi Code
+> überhaupt einen Entitäts-Prompt annimmt; es hat kein `--append-system-prompt-file`. Aus der
+> Dokumentation (`moonshotai.github.io/kimi-code`, Abschnitt „Custom Agents"), wörtlich:
+>
+> > *„Each file describes one agent: the frontmatter (YAML metadata at the top of the file)
+> > declares its name, description, and tool access, and the file body is its **system prompt**."*
+>
+> `--agent-file <pfad>` ist damit das Gegenstück. keel schreibt den zusammengesetzten Prompt
+> ohnehin schon in eine Datei (`writeEntityPromptFile`); für Kimi muss eine Frontmatter davor.
+> **Das ist der Unterschied, den ein `KimiCodeAdapter` trägt** — nicht bloß ein anderer `cmd`.
+>
+> **Drei Einschränkungen, die aus derselben Quelle kommen und den Adapter formen:**
+>
+> - `--agent-file` **kann nicht mit `--session`/`--continue` kombiniert werden** („the agent is
+>   bound at session creation and resuming restores the bound agent automatically"). Der
+>   Claude-Adapter benutzt `--resume` und `--fork-session`. Für Kimi heißt das: Prompt beim
+>   Anlegen binden, beim Fortsetzen **weglassen** — nicht beides.
+> - `--agent-file` und `--agent` schließen einander aus, und der Schalter ist nicht wiederholbar.
+> - `-p` (nicht-interaktiv) verträgt sich nicht mit `--yolo`, `--auto` oder `--plan`.
+>
+> **Für Paket C nebenbei interessant:** Kimi bringt ein eigenes Rechtemodell mit (`auto`, `yolo`,
+> Plan-Modus, „static deny rules"), und die Dokumentation warnt ausdrücklich, `--yolo` überspringe
+> die Freigabe *„including file writes and shell command execution"*. Ein fremder Harness hat für
+> die Frage, die Paket C stellt, also schon eine Antwort — die man ansehen sollte, bevor man eine
+> eigene erfindet.
+>
+> **`opencode` ist auf dieser Maschine nicht installiert** — als dritter Harness bleibt es
+> vorerst hypothetisch.
 
 **A2 — `kimi-cli-tmux` in `KNOWN_RUNTIMES` und `RUNTIME_TO_ADAPTER_ID`.** Der Zweig in
 `getForRuntime`, der „gültig, aber nicht gebaut" wirft, ist genau dafür stehengeblieben.

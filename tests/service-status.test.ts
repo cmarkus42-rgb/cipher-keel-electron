@@ -15,8 +15,8 @@ import {
 } from '../src/shared/service-status'
 
 describe('SUBSYSTEM_IDS', () => {
-  it('covers exactly the six subsystems the lifecycle initializes', () => {
-    expect([...SUBSYSTEM_IDS]).toEqual(['tmux', 'claudeCli', 'voice', 'graph', 'kanban', 'notes'])
+  it('covers exactly the seven subsystems the lifecycle initializes', () => {
+    expect([...SUBSYSTEM_IDS]).toEqual(['tmux', 'claudeCli', 'voice', 'graph', 'kanban', 'notes', 'mcp'])
   })
 
   it('has no duplicates', () => {
@@ -98,6 +98,7 @@ describe('ServiceStatusMap', () => {
       graph:     { id: 'graph',     state: 'ready',    reason: null },
       kanban:    { id: 'kanban',    state: 'ready',    reason: null },
       notes:     { id: 'notes',     state: 'ready',    reason: null },
+      mcp:       { id: 'mcp',       state: 'ready',    reason: null },
     }
 
     expect(map.claudeCli.state).toBe('degraded')

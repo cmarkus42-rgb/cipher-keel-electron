@@ -14,6 +14,7 @@
 import { BrowserWindow } from 'electron'
 import { join } from 'path'
 import { GraphMcpServer } from './graph/mcp-server'
+import type { McpHttpServerHandle } from './graph/mcp-http-server'
 import { GraphWriter } from './graph/writer'
 import { VoiceManager } from './voice/voice-manager'
 import { NoteManager } from './notes/note-manager'
@@ -40,6 +41,14 @@ export interface AppServices {
   graphDb: Database.Database | null
   graphWriter: GraphWriter | null
   graphMcpServer: GraphMcpServer | null
+  /**
+   * The MCP transport (Paket B) that makes `graphMcpServer` reachable at all — set once by
+   * `initMcp` (service-lifecycle.ts), right after `initGraph` builds `graphMcpServer` itself.
+   * `SESSION_CREATE` (ipc-handlers.ts) reads `.url`/`.apiKey` off this to fill
+   * `AdapterContext` for `postLaunchInjection`. Null until init runs, and null again after
+   * `shutdownServices` — same lifecycle as `graphDb`/`graphMcpServer` above.
+   */
+  mcpHttpServer: McpHttpServerHandle | null
   noteManager: NoteManager | null
   noteTagging: NoteTagging | null
   tagClassRepo: TagClassRepo | null

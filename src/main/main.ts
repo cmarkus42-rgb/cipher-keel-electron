@@ -42,6 +42,7 @@ const services: AppServices = {
   graphDb: null,
   graphWriter: null,
   graphMcpServer: null,
+  mcpHttpServer: null,
   noteManager: null,
   noteTagging: null,
   tagClassRepo: null,

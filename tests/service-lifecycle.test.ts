@@ -45,6 +45,7 @@ function makeServices(overrides: Partial<AppServices> = {}): AppServices {
     graphDb: null,
     graphWriter: null,
     graphMcpServer: null,
+    mcpHttpServer: null,
     noteManager: null,
     noteTagging: null,
     tagClassRepo: null,
@@ -123,6 +124,46 @@ describe('initializeServices — graph (Befund 1)', () => {
     await initializeServices(services, makeContext())
 
     expect(services.graphDb!.name).toBe(join(userDataPath, 'graph.db'))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Paket B — the MCP HTTP transport
+// ---------------------------------------------------------------------------
+
+describe('initializeServices — mcp transport (Paket B)', () => {
+  it('starts an HTTP server bound to 127.0.0.1 on an ephemeral port, with a fresh key', async () => {
+    const services = makeServices()
+
+    await initializeServices(services, makeContext())
+
+    expect(services.mcpHttpServer).not.toBeNull()
+    expect(services.mcpHttpServer!.port).toBeGreaterThan(0)
+    expect(services.mcpHttpServer!.url).toBe(`http://127.0.0.1:${services.mcpHttpServer!.port}/mcp`)
+    expect(services.mcpHttpServer!.apiKey).toMatch(/^[0-9a-f-]{36}$/)
+  })
+
+  it('reports mcp as ready once graph is ready', async () => {
+    const status = await initializeServices(makeServices(), makeContext())
+
+    expect(status.mcp.state).toBe('ready')
+  })
+
+  it('serves the real graphMcpServer instance — a genuine HTTP call reaches a tool', async () => {
+    const services = makeServices()
+    await initializeServices(services, makeContext())
+
+    const res = await fetch(services.mcpHttpServer!.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${services.mcpHttpServer!.apiKey}`,
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    })
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { result: { tools: Array<{ name: string }> } }
+    expect(json.result.tools.map((t) => t.name)).toContain('graph_search')
   })
 })
 
@@ -348,11 +389,11 @@ describe('setStatus broadcasts services:status-changed (Befund 3)', () => {
     await initializeServices(makeServices(), makeContext())
 
     const statusMessages = win.sent.filter(m => m.channel === 'services:status-changed')
-    // Default happy path: tmux, claudeCli, voice (disabled), graph, kanban,
-    // notes — each transitions exactly once away from its "not initialized" baseline.
-    expect(statusMessages).toHaveLength(6)
+    // Default happy path: tmux, claudeCli, voice (disabled), graph, kanban, notes, mcp —
+    // each transitions exactly once away from its "not initialized" baseline.
+    expect(statusMessages).toHaveLength(7)
     const ids = statusMessages.map(m => (m.args[0] as { id: string }).id).sort()
-    expect(ids).toEqual(['claudeCli', 'graph', 'kanban', 'notes', 'tmux', 'voice'].sort())
+    expect(ids).toEqual(['claudeCli', 'graph', 'kanban', 'mcp', 'notes', 'tmux', 'voice'].sort())
   })
 
   it('carries the subsystem id, state and reason as the payload', async () => {
@@ -408,12 +449,14 @@ describe('shutdownServices', () => {
 
   it('nulls the refs it tears down, including kanbanStore', () => {
     const fakeDb = { close: vi.fn() }
+    const fakeMcpServer = { close: vi.fn() }
     const services = makeServices({
       noteWatcher: { stop: vi.fn() },
       voiceManager: { stopSession: vi.fn() },
       graphDb: fakeDb,
       graphWriter: {},
       graphMcpServer: {},
+      mcpHttpServer: { server: fakeMcpServer, port: 12345, apiKey: 'x', url: 'http://127.0.0.1:12345/mcp' },
       kanbanStore: {},
     } as unknown as Partial<AppServices>)
 
@@ -424,8 +467,10 @@ describe('shutdownServices', () => {
     expect(services.graphDb).toBeNull()
     expect(services.graphWriter).toBeNull()
     expect(services.graphMcpServer).toBeNull()
+    expect(services.mcpHttpServer).toBeNull()
     expect(services.kanbanStore).toBeNull()
     expect(fakeDb.close).toHaveBeenCalled()
+    expect(fakeMcpServer.close).toHaveBeenCalled()
   })
 
   it('one disposer throwing does not prevent the rest from running', () => {

@@ -9,8 +9,15 @@
 // Subsystems
 // ---------------------------------------------------------------------------
 
-/** All subsystems initialized by service-lifecycle, in initialization order. */
-export const SUBSYSTEM_IDS = ['tmux', 'claudeCli', 'voice', 'graph', 'kanban', 'notes'] as const
+/**
+ * All subsystems initialized by service-lifecycle, in initialization order.
+ *
+ * 'mcp' (added with the MCP transport, Paket B): the local HTTP server that makes the ten
+ * MCP tools (seven graph_*, three keel_zelle*) reachable at all. Distinct from 'graph' —
+ * a degraded graph still leaves 'mcp' worth reporting separately, since the server itself
+ * (bind, ephemeral port) can fail independently of the database opening.
+ */
+export const SUBSYSTEM_IDS = ['tmux', 'claudeCli', 'voice', 'graph', 'kanban', 'notes', 'mcp'] as const
 
 export type SubsystemId = (typeof SUBSYSTEM_IDS)[number]
 

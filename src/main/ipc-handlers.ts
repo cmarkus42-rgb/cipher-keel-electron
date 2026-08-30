@@ -369,10 +369,121 @@ export function registerIpcHandlers(services: AppServices): void {
       })
       const command = formatShellCommand(launch.cmd, launch.args)
 
+      // Ahead of the injection below, not between it and createSession, where it stood until
+      // the follow-up review of 4358cac: connect() is the likeliest tmux failure there is (no
+      // tmux server running, tmux not installed), and from between the two it would have
+      // thrown past every rollback path — a live bearer left in settings.local.json with no
+      // note to the user that it is there. Ordered this way, no key is written at all while
+      // tmux is unreachable: the gap closes constructively instead of through a second undo
+      // path. The rollback around createSession below still covers the window that remains.
       if (!services.tmux.isConnected()) {
         await services.tmux.connect()
       }
-      const sessionId = await services.tmux.createSession(name, { ...opts, cwd, command })
+
+      // B4 (MCP transport, Paket B), run BEFORE tmux.createSession — security review
+      // finding I-1 (2026-08-30): postLaunchInjection reads none of AdapterContext's fields
+      // from a live tmux session (see the doc comment on postLaunchInjection and on
+      // AdapterContext.sessionId), so running it after createSession was a race against the
+      // very `claude` process it configures — createSession's own send-keys spawns that
+      // process roughly 500ms after the pane opens, and `claude` reads its MCP config once,
+      // at its own start (that "once" is inferred, not measured — the doc comment on
+      // postLaunchInjection says what it rests on and what does not depend on it). The
+      // `settings.local.json` write usually wins that race by luck of
+      // timing; the `claude mcp add-json` CLI round-trip (up to 25s) reliably loses it.
+      // Running injection first removes the race rather than narrowing it: nothing below
+      // depends on the tmux session existing yet. postLaunchInjection is optional on
+      // CliSitzungsAdapter and absent entirely from SchleifenSitzungsAdapter (this branch
+      // cannot reach a loop adapter — see the `istSchleifenAdapter` guard above), so the
+      // `adapter.postLaunchInjection` check below is the real gate, not defensive dressing.
+      // Nothing here is swallowed silently: a missing MCP server is exactly the case named
+      // in mcp-http-server.ts's header comment (graph degraded), and a rejected injection
+      // still leaves the session usable via tmux — just without the ten tools — so neither
+      // failure mode should abort session creation; both are logged AND surfaced to the
+      // renderer via `hinweis` below (a session that silently has no tools is exactly the
+      // "looks healthy, isn't" case this file's `isAvailable()` gate already argues against
+      // for the CLI-missing case).
+      let mcpHinweis: string | null = null
+      // Set only once postLaunchInjection has resolved without throwing — see the doc
+      // comment on its call below for what a non-null value does and does not guarantee.
+      // Non-null says "there is something to take back", never "taking it back worked":
+      // that second question is what the closure's boolean answers.
+      let undoInjection: (() => boolean) | null = null
+      if (services.mcpHttpServer && adapter.postLaunchInjection) {
+        try {
+          undoInjection = await adapter.postLaunchInjection({
+            projectPath: cwd,
+            mcpUrl: services.mcpHttpServer.url,
+            mcpApiKey: services.mcpHttpServer.apiKey,
+            // Not a live session id — see the doc comment on AdapterContext.sessionId. This
+            // runs before tmux.createSession would hand us one, and the sole implementation
+            // does not read this field anyway.
+            sessionId: name,
+          })
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          mcpHinweis = `MCP-Registrierung fehlgeschlagen: ${msg}`
+          console.warn('[ipc] postLaunchInjection failed:', err)
+        }
+      } else if (!services.mcpHttpServer) {
+        mcpHinweis = 'MCP-Registrierung uebersprungen: HTTP-Server nicht verfuegbar.'
+        console.warn(
+          `[ipc] session '${name}': MCP HTTP server not available — session started ` +
+          'without MCP registration (the ten tools will not be reachable from it)'
+        )
+      }
+
+      // I-1 follow-up (security review, 2026-08-30): moving postLaunchInjection ahead of
+      // createSession closed the race against the CLI's own config read, but opened a
+      // narrower gap — if createSession now fails, a live bearer key can be left behind in
+      // settings.local.json for a session that never came to exist. The order is
+      // connect -> injection -> createSession (see the connect block above for why connect
+      // moved out from between the last two), so this rollback covers exactly the
+      // createSession window that is left. `undoInjection` (see its doc comment on
+      // ClaudeCodeAdapter.postLaunchInjection) reverts exactly what path 1 wrote, never a
+      // blind wipe, and REPORTS whether it got there — the residual note below distinguishes
+      // the two outcomes instead of claiming the good one unconditionally. Path 2 (the
+      // `claude mcp add-json` CLI registration) is NOT undone — same reasoning as there — so
+      // its residual is named in the thrown message instead of silently left for the outer
+      // catch's generic error text to hide.
+      let sessionId: string
+      try {
+        sessionId = await services.tmux.createSession(name, { ...opts, cwd, command })
+      } catch (err) {
+        // Two outcomes, two sentences. Until the follow-up review of 4358cac this text hung
+        // on "there was a closure" alone and claimed the rollback unconditionally — also
+        // where the closure had thrown, and where it had bailed out without doing anything.
+        // A false all-clear about a credential is worse than no note at all.
+        let zurueckgenommen = false
+        if (undoInjection) {
+          try {
+            zurueckgenommen = undoInjection()
+          } catch (undoErr) {
+            console.warn(
+              '[ipc] rollback of MCP settings.local.json after failed createSession also failed:',
+              undoErr,
+            )
+          }
+        }
+        const tmuxMsg = err instanceof Error ? err.message : String(err)
+        let residualNote = ''
+        if (undoInjection && zurueckgenommen) {
+          // The CLI entry (path 2) stays put by design — see postLaunchInjection's doc
+          // comment. An app restart does not remove it; it rotates the key and thereby
+          // makes the entry worthless, which is not the same thing and reads differently
+          // to whoever goes looking for it.
+          residualNote =
+            ' Der lokale MCP-Eintrag in settings.local.json wurde zurueckgenommen; ein ' +
+            'ueber die claude-CLI registrierter Eintrag (falls geschrieben) kann bestehen ' +
+            'bleiben, bis er ueberschrieben wird — ein App-Neustart entfernt ihn nicht, ' +
+            'macht ihn aber wertlos, weil der Schluessel bei jedem App-Start wechselt.'
+        } else if (undoInjection) {
+          residualNote =
+            ' Achtung: der lokale MCP-Eintrag in settings.local.json konnte nicht ' +
+            'zurueckgenommen werden — dort kann ein gueltiger Zugangsschluessel liegen ' +
+            'bleiben.'
+        }
+        throw new Error(tmuxMsg + residualNote)
+      }
       services.tmux.watchSession(name, name)
 
       if (ctx && services.graphWriter) {
@@ -383,10 +494,15 @@ export function registerIpcHandlers(services: AppServices): void {
         }
       }
 
-      // Surfaced to the renderer so a wrong-shaped tier assignment (F2) is visible
-      // somewhere a user might see it, not only in a main-process console.warn. An extra
-      // field on an already-untyped IPC result — no contract redesign.
-      return { id: sessionId, name, error: null, hinweis: cliErgebnis?.hinweis ?? null }
+      // Surfaced to the renderer so a wrong-shaped tier assignment (F2) or a failed/skipped
+      // MCP registration (I-2 minor, security review 2026-08-30) is visible somewhere a user
+      // might see it, not only in a main-process console.warn. Joined rather than picking
+      // one: both are independent, both are rare, and a session can hit both at once. An
+      // extra field on an already-untyped IPC result — no contract redesign.
+      const hinweis = [cliErgebnis?.hinweis, mcpHinweis]
+        .filter((h): h is string => !!h)
+        .join(' ') || null
+      return { id: sessionId, name, error: null, hinweis }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       return { id: null, name: null, error: msg }

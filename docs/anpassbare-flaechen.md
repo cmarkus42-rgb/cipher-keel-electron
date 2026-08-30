@@ -1,8 +1,79 @@
 # Anpassbare Flächen — Inventar (CK-NFR-012)
 
-**Stand:** 2026-08-23 — drei neue MCP-Werkzeuge (`keel_zellen`, `keel_zelle_beauftragen`,
-`keel_zelle_ergebnis`, graph/mcp-server.ts) gebaut, geprüft, **aber nicht erreichbar** — siehe
-„Was fehlt" unten für den vollen Befund. Davor am selben Tag `FOLGE_RESERVE` benannt (die Schwelle, ab der ein Folgeauftrag noch in
+**Stand:** 2026-08-30 — der MCP-Transport (Paket B) gebaut und gegen ein Sicherheitsreview
+nachgebessert: ein lokaler HTTP-Server (`127.0.0.1`, Port `0`/ephemer, Bearer-Schlüssel als
+`randomUUID()` je App-Start) macht alle zehn MCP-Werkzeuge (die sieben `graph_*` und die drei
+`keel_zelle*`) erreichbar — für eine Sitzung, die gestartet wurde, während die aktuelle
+App-Instanz läuft. Der Server selbst hält diesen Schlüssel nur im Speicher und schreibt ihn
+nie in eine Konfigurationsdatei; das Einspritzen (`postLaunchInjection`) tut das absichtlich
+doch, in die Projekt-eigene `.claude/settings.local.json` und als CLI-Argument an
+`claude mcp add-json` — diese Offenlegung an die Sitzung, die den Schlüssel zur
+Authentifizierung braucht, ist der Zweck des Einspritzens, keine Ausnahme von der
+Speicher-Zusage des Servers. Das Review fand außerdem, dass das Einspritzen ursprünglich
+*nach* `tmux.createSession` lief, obwohl es dessen Rückgabewert (`sessionId`) gar nicht
+braucht — ein Wettlauf gegen den `claude`-Prozess, den der Datei-Weg meist, der CLI-Weg
+(`claude mcp add-json`, bis zu 25 s) aber zuverlässig verlor. Behoben durch Vorziehen des
+Einspritzens vor `tmux.createSession`; ein dritter, nie gelesener Schreibpfad
+(`~/.claude/projects/<hash>/settings.json`) ist ersatzlos gestrichen. Das Vorziehen öffnete
+eine engere Lücke, die eine Nachprüfung fand: scheitert `tmux.createSession` jetzt NACH einem
+erfolgreichen Einspritzen, bliebe ein gültiger Bearer für eine nie entstandene Sitzung liegen.
+Behoben durch eine Rücknahme-Funktion, die `postLaunchInjection` seither zurückgibt: sie bringt
+den **Eintrag** `cipher-keel` auf seinen Vorzustand (löschen, wenn er vorher fehlte; vorherigen
+Eintrag wiederherstellen, wenn er schon da war) — nicht die Datei. Existierte die Datei vorher
+nicht, bleiben `.claude/` und eine `settings.local.json` mit `{"mcpServers": {}}` liegen; enthielt
+sie kaputtes JSON, hat schon der Injektions-Schreibvorgang diesen Inhalt vernichtet, und keine
+Rücknahme holt ihn zurück. Kein Bearer bleibt in einem der Fälle liegen, aber das Versprechen gilt
+dem Eintrag, nicht der Datei. Kein blindes Löschen, und zwar aus einem engeren Grund, als hier
+zuerst stand: ein *laufender* `claude`-Prozess hängt gerade **nicht** mehr am Eintrag — er hat die
+MCP-Konfiguration genau einmal gelesen, bei seinem eigenen Start. Was ein blindes Löschen träfe,
+ist eine Schwestersitzung, die bereits eingespritzt wurde, deren `claude`-Prozess die Konfiguration
+aber noch nicht gelesen hat (nebenläufiges `SESSION_CREATE`), sowie jeder spätere Neustart von
+`claude` in einem schon offenen Pane. Der CLI-Weg (`claude mcp add-json`) wird bewusst NICHT
+zurückgenommen, aus drei Gründen: `claude mcp remove` kann nur löschen, nie wiederherstellen (das
+ist der eigentliche Unterschied zwischen den beiden Wegen — Pfad 1 kennt den Vorzustand, Pfad 2
+nicht); es träfe dasselbe enge Fenster wie oben; und aus einer synchronen Rücknahme-Funktion ist
+ein externer CLI-Aufruf mit Sekunden-Laufzeit ohnehin nicht ausführbar. Ehrlich dazu gehört, was
+sonst untergeht: der Erfolgspfad ruft bei **jeder** Injektion ohnehin
+`claude mcp remove -s local cipher-keel` und nimmt dieselbe Kollision in Kauf — der Unterschied
+ist, dass dort sofort ein gleichwertiger Eintrag folgt, bei einem Rücknahme-Remove nicht. Dieser
+Rest wird stattdessen in der Fehlermeldung an den Nutzer benannt, statt in einer stillen
+Aufräumfunktion zu verschwinden; ein App-Neustart entfernt ihn nicht, er macht ihn nur wertlos,
+weil der Schlüssel rotiert.
+
+Die Rücknahme-Funktion **meldet außerdem, was sie erreicht hat** (`() => boolean`, seit der
+Nachprüfung zu `4358cac`). Der Rückgabewert bedeutet genau einen Satz: *„`settings.local.json`
+trägt keinen Eintrag aus diesem Versuch mehr."* `false` — mit Grund auf der Konsole — heißt, dass
+sie das nicht feststellen konnte: Datei nicht mehr lesbar, oder kein `mcpServers`-Objekt mehr
+darin. Der Nutzertext unterscheidet die beiden Fälle seither, statt die Rücknahme unbedingt zu
+behaupten. Der `connect()`-Aufruf auf tmux steht seit derselben Runde **vor** dem Einspritzen: er
+ist der wahrscheinlichste tmux-Fehler überhaupt (kein Server, tmux nicht installiert), und von
+seinem alten Platz zwischen Einspritzen und `createSession` warf er an jeder Rücknahme vorbei.
+
+**Eine frisch gestartete Sitzung ist damit tatsächlich erreichbar, nicht nur meistens — und
+das ist inzwischen eine Messung, kein Versprechen.** Gemessen am 2026-08-30, über die echte
+laufende App (`run-keel`-Skill), nicht gegen `handleRequest` oder eine Datei: eine echte
+Architect-Sitzung wurde über die tatsächliche Grid-Fenster-Oberfläche angelegt (Klick auf die
+Launcher-Kachel, kein direkter IPC-Aufruf), und im echten tmux-Pane dieser Sitzung zeigte
+`/mcp` `cipher-keel · ✔ connected · 10 tools`, im Detail `Status: ✔ connected`,
+`Auth: ✔ authenticated`, URL und Port passend zum selben Lauf. Der laufende Claude-Code-Prozess
+— nicht curl, kein Test dieses Repos — wurde im Pane aufgefordert, `graph_search` nach einem
+Knoten zu rufen, der Sekunden zuvor per direktem HTTP-Aufruf an denselben Server geschrieben
+worden war; die Antwort im Pane lautete „Called cipher-keel" mit exakt der passenden uid. Nicht
+gemessen und weiterhin offen: die neustart-überlebende Sitzung unten — dafür wurde die
+Bedingung überhaupt erst formuliert, und genau dieser Fall wurde in keinem Lauf geprüft.
+
+Eine Sitzung, die einen
+App-Neustart überlebt hat, bleibt es weiterhin nicht: ihr `claude`-Prozess hat Adresse und
+Schlüssel nur bei seinem eigenen Start gelesen, beide sind seither anders. Weder ein fester
+Port noch ein erneutes Einspritzen würde das heilen — der Schlüssel rotiert absichtlich bei
+jedem App-Start (Geheimnisse gehören nicht in die Konfigurationsdatei, siehe
+`config-store.ts`), und ohne rotierenden Schlüssel bliebe ein alter Server-Zugang beliebig
+lange gültig. Abhilfe ist Zerstören und Neuanlegen der betroffenen Sitzung, nicht Reparatur —
+siehe „Was fehlt" unten für den vollen Befund. Scoping (B5): ein Schlüssel für alle Sitzungen
+dieser App-Instanz, nicht einer je Sitzung — benannt, nicht stillschweigend hingenommen,
+siehe dort. Davor 2026-08-23 — drei neue MCP-Werkzeuge
+(`keel_zellen`, `keel_zelle_beauftragen`, `keel_zelle_ergebnis`, graph/mcp-server.ts) gebaut,
+geprüft, aber zu dem Zeitpunkt noch nicht erreichbar. Davor am selben Tag `FOLGE_RESERVE` benannt (die Schwelle, ab der ein Folgeauftrag noch in
 denselben Lauf darf statt einen neuen zu öffnen; nicht editierbar, geschätzt statt gemessen —
 siehe Abschnitt „Die vier Lauf-Budgets" unten). Davor am selben Tag der neue Zuordnungsplatz
 `sitzung:niveau-b` (keels eigene Agentenschleife
@@ -477,30 +548,45 @@ Einrichtung (siehe „Was fehlt" unten) — kein eigener Bau-Strang mehr.
   Einstellungen-Tabelle oben ab. Weiterhin nicht editierbar: die Prompt-Schichten und
   Preset-Eigenschaften (siehe die Tabellen dort) sowie das Niveau-B-Harness selbst (gebaut seit
   2026-08-23; seine vier Lauf-Budgets bleiben hart verdrahtet, siehe Tabelle oben).
-- **Der Transportweg für den MCP-Server (`src/main/graph/mcp-server.ts`) — nicht nur eine
-  fehlende Oberfläche, sondern keine erreichbare Fläche.** Geprüft am 2026-08-23, anlässlich des
-  Baus von `keel_zellen`/`keel_zelle_beauftragen`/`keel_zelle_ergebnis` (den drei Werkzeugen,
-  die einer starken Sitzung erlauben sollen, eine Niveau-B-Gitterzelle zu beauftragen): **keines
-  der jetzt zehn Werkzeuge dieses Servers — auch nicht die sieben `graph_*`-Werkzeuge, die schon
-  seit CK-GRAPH-037 dort liegen — ist von einer laufenden Sitzung aus erreichbar.**
-  `GraphMcpServer.handleRequest` wird nirgends außerhalb der eigenen Tests und
-  `startStdioServer` gerufen; `startStdioServer` selbst nirgends; es gibt keinen `bin`-Eintrag
-  in `package.json`. Und `ClaudeCodeAdapter.postLaunchInjection` — die Methode, die eine
-  laufende Claude-Code-Sitzung überhaupt erst auf einen MCP-Server hinweisen würde — hat
-  ebenfalls keinen Aufrufer irgendwo in `src/` oder `tests/`; der einzige Treffer ist ein
-  Kommentar in `session/materialise-capabilities.ts:9`. Was fehlt, ist ein **Transport** (ein
-  lokaler HTTP-Server mit eigener Authentifizierung und eigenem Lebenszyklus — `AdapterContext`
-  trägt bereits `mcpUrl`/`mcpApiKey`, aber niemand befüllt oder bedient sie) **und** eine
-  **Registrierung** beim Sitzungsstart, die einer gestarteten Sitzung sagt, wo der Server steht.
-  Das ist eine eigene Sicherheitsfläche und eine eigene Entscheidung — nicht nebenbei gebaut.
-  Die drei neuen Werkzeuge selbst (samt der mit `SESSION_AUFTRAG` geteilten Auftragslogik in
-  `session/schleifen-auftrag.ts`) sind fertig und geprüft; sie werden erreichbar, sobald der
-  Transport steht, nicht vorher.
+- ~~Der Transportweg für den MCP-Server.~~ — **erledigt 2026-08-30 (Paket B).** Bis dahin war
+  keines der zehn Werkzeuge (sieben `graph_*` seit CK-GRAPH-037, drei `keel_zelle*` seit
+  2026-08-23) von einer laufenden Sitzung aus erreichbar: `GraphMcpServer.handleRequest` hatte
+  keinen Produktionsaufrufer, `startStdioServer` wurde nirgends gerufen, es gab keinen
+  `bin`-Eintrag in `package.json`, und `ClaudeCodeAdapter.postLaunchInjection` hatte ebenfalls
+  keinen Aufrufer. Jetzt gebaut: ein lokaler HTTP-Server (`src/main/graph/mcp-http-server.ts`,
+  `127.0.0.1`, Port `0`/ephemer nach `service-lifecycle.ts`s Muster mit eigenem
+  Status-Eintrag `mcp`), ein Bearer-Schlüssel als `randomUUID()` je App-Start (der Server hält
+  ihn nur im Speicher und schreibt ihn nie in die Konfigurationsdatei — siehe
+  `config-store.ts`; das Einspritzen selbst legt ihn absichtlich in die Projekt-eigene
+  `.claude/settings.local.json` und als CLI-Argument ab — siehe die Stand-Zeile oben für den
+  vollen Befund dazu), und eine Registrierung beim Sitzungsstart (`SESSION_CREATE`,
+  tmux-Zweig, ruft `postLaunchInjection` **vor** `tmux.createSession`, nachgebessert im selben
+  Sicherheitsreview — siehe die Stand-Zeile oben).
 
-  **Auth ist nicht die einzige offene Frage, wenn der Transport kommt — Scoping ist eine
-  zweite.** `keel_zelle_beauftragen` kann heute jede Zelle beim Namen ansprechen, nicht nur
-  eine, die zur aufrufenden Sitzung gehört; `keel_zelle_ergebnis` liefert den Ergebnisblock
-  **jedes** Laufs in der Harness-Datenbank zu einer beliebigen `laufId`, nicht nur eines
-  selbst gestarteten. Heute folgenlos, weil nichts das Werkzeug ruft — sobald ein Transport
-  eine Sitzung an diese Werkzeuge heranlässt, muss geklärt sein, ob und wie eine Sitzung auf
-  fremde Zellen und fremde Läufe beschränkt wird, nicht nur, ob sie sich authentifizieren kann.
+  **Was das tatsächlich bedeutet, ist eine Bedingung, keine Zusage — und die Bedingung ist
+  inzwischen gemessen, nicht nur formuliert (siehe die Stand-Zeile oben für Datum, Methode und
+  den genauen Befund: echte App, echte Sitzung über die UI, echter tmux-Pane, ein
+  `graph_search`-Aufruf mit übereinstimmender uid).** Erreichbar sind die zehn Werkzeuge für
+  eine Sitzung, die gestartet wurde, während die aktuelle App-Instanz läuft. Eine Sitzung, die
+  einen App-Neustart überlebt hat (ihr tmux-Pane besteht unabhängig vom Electron-Prozess weiter
+  — `tmux-manager.ts`s `disconnect()` trennt nur den eigenen Control-Client, tötet keine
+  Sessions), bleibt unreichbar: ihr `claude`-Prozess hat Adresse und Schlüssel nur bei seinem
+  eigenen Start gelesen und lädt `settings.local.json` nicht live neu. Weder ein erneutes
+  Einspritzen noch ein fester Port würde das heilen — der Schlüssel rotiert bei jedem App-Start
+  absichtlich (das ist B2s ganzer Zweck), und ein fester Port hätte dieselbe tote Sitzung, nur
+  mit 401 statt „connection refused". Abhilfe ist Zerstören und Neuanlegen der betroffenen
+  Sitzung; das ist außerhalb der Reichweite dieses Servers, nicht ein offener Punkt darin. Und
+  anders als der Rest dieses Absatzes ist dieser Fall selbst **nicht** gemessen: kein Lauf hat
+  bisher eine Sitzung über einen echten App-Neustart hinweg am Leben gehalten und danach auf
+  MCP-Erreichbarkeit geprüft — die Aussage steht auf Herleitung, nicht auf Beobachtung.
+
+  **Scoping (B5), entschieden statt offen gelassen.** `keel_zelle_beauftragen` kann jede Zelle
+  beim Namen ansprechen, nicht nur eine, die zur aufrufenden Sitzung gehört;
+  `keel_zelle_ergebnis` liefert den Ergebnisblock jedes Laufs zu einer beliebigen `laufId`. Das
+  bleibt so: ein Schlüssel gilt für alle Sitzungen dieser App-Instanz, nicht einer je Sitzung.
+  Ein Schlüssel je Sitzung kaufte Authentifizierungs-Granularität (welche Sitzung rief auf) ohne
+  Autorisierungs-Granularität (welche Zellen diese Sitzung anfassen darf) — nichts in der
+  Werkzeuglogik bindet eine Zelle an eine Sitzung, und genau das ist Absicht: eine starke
+  Sitzung (Systems Engineer, Architect, Cyber Factory) soll jede Niveau-B-Zelle beauftragen
+  können. Das wäre Besitzverfolgung je Zelle, ein eigener Entwurf, nicht Teil dieses Pakets.
+  Benannte Tatsache: es sind Sitzungen desselben Menschen auf seiner eigenen Maschine.

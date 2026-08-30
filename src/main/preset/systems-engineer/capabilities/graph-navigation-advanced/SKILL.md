@@ -14,12 +14,20 @@ Vault-Indexierung. Auf Niveau B/C entfällt diese Capability; dort greifst du nu
 
 ## Vorgehen
 
-**Sieben Tools, keine anderen — und Stand 2026-08-23 ohne Transport.** Der Graph-MCP-Server
-stellt genau sieben `graph_*`-Tools zur Verfügung. Ob eine laufende Sitzung sie tatsächlich
-erreichen kann, ist eine andere Frage: es gibt heute keinen Transport und keine Registrierung
-beim Sitzungsstart (siehe `docs/anpassbare-flaechen.md`, Abschnitt „Was fehlt"). Diese
-Beschreibung gilt für den Vertrag der Tools, nicht als Zusage, dass sie in dieser Sitzung
-aufrufbar sind:
+**Sieben Tools, keine anderen — und erreichbar unter einer Bedingung.** Der Graph-MCP-Server
+stellt genau sieben `graph_*`-Tools zur Verfügung. Erreichbar sind sie, wenn diese Sitzung
+gestartet wurde, während die aktuelle App-Instanz läuft (`SESSION_CREATE` registriert Adresse
+und Schlüssel des lokalen HTTP-Servers, bevor die tmux-Sitzung entsteht). Eine Sitzung, die
+einen Neustart der App überlebt hat, verliert sie und bekommt sie nicht zurück, bis sie
+zerstört und neu angelegt wird (siehe `docs/anpassbare-flaechen.md`, Abschnitt „Was fehlt", für
+den vollen Befund). **Gemessen, nicht nur behauptet (2026-08-30):** eine echte
+Architect-Sitzung über die Grid-Oberfläche angelegt, im echten tmux-Pane `/mcp` geprüft
+(`cipher-keel · ✔ connected · 10 tools`, `Auth: ✔ authenticated`) und einen echten
+`graph_search`-Aufruf beobachtet, dessen Antwort die uid eines zuvor geschriebenen Knotens
+exakt traf — Details in `docs/anpassbare-flaechen.md`. Nicht geprüft und weiterhin offen ist der
+Fall einer Sitzung, die einen App-Neustart überlebt hat.
+
+**Die sieben Werkzeuge:**
 
 - **`graph_search`** — Volltext-/Vektor-Suche. Pflichtparameter `query`; optional `limit`
   (Default 10) und `kind` (Knotentyp-Filter). Liefert kompakte Treffer (uid, kind, title,

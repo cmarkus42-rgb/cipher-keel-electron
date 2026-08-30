@@ -69,7 +69,14 @@ export interface AdapterContext {
   mcpUrl: string
   /** MCP auth key */
   mcpApiKey: string
-  /** Session ULID */
+  /**
+   * The session's chosen name. Not a runtime-assigned id and not a ULID (nothing in this
+   * codebase mints one for a session) — `postLaunchInjection` runs before
+   * `tmux.createSession` returns one (security review finding I-1, 2026-08-30), so this is
+   * whatever the caller already knows at that point. `ClaudeCodeAdapter.postLaunchInjection`,
+   * the sole implementation today, does not read this field at all; kept on the contract in
+   * case a future write path needs to key by session.
+   */
   sessionId: string
 }
 
@@ -195,8 +202,27 @@ export interface CliSitzungsAdapter extends AgentAdapterBasis {
   // --- lifecycle ---
   /** Build a structured launch command. Never returns a raw shell string. */
   buildLaunchCommand(opts: LaunchOpts): LaunchCommand
-  /** Optional post-launch setup (e.g. MCP server registration). */
-  postLaunchInjection?(ctx: AdapterContext): Promise<void>
+  /**
+   * Optional post-launch setup (e.g. MCP server registration). Runs before the session's
+   * process is spawned, not after — see ClaudeCodeAdapter's doc comment on its own
+   * implementation for why (security review finding I-1, 2026-08-30: the process reads its
+   * config once, at its own start).
+   *
+   * Returns an undo closure rather than void (I-1 follow-up, same review): if the caller's
+   * next step (spawning the session) fails, whatever this call wrote may now be a live
+   * credential with no session behind it. The closure reverts exactly what this call itself
+   * changed — never a blind wipe, since a merge-based injection may share state with a
+   * sibling session that has been injected but has not yet read the config, or with a later
+   * restart of the same process in an existing pane.
+   *
+   * The closure's `boolean` (widened from `void` in the follow-up review of 4358cac) means
+   * exactly one sentence and nothing wider: **"settings.local.json traegt keinen Eintrag aus
+   * diesem Versuch mehr."** `true` also covers the trivial cases — nothing was written, or
+   * the target is gone. `false` means the closure could not establish that, and something may
+   * still be lying there; it must say why on the console. A throw counts as `false` for the
+   * caller. An adapter with nothing to undo may return a no-op that returns `true`.
+   */
+  postLaunchInjection?(ctx: AdapterContext): Promise<() => boolean>
   /** Read context usage for a session. Only call if supports('status-line'). */
   getContextUsage?(sessionId: string): Promise<ContextUsage | null>
   /** Inject status reporting hook into project. Only call if supports('status-line'). */
