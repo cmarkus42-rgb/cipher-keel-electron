@@ -19,6 +19,19 @@ import * as path from 'path'
 import * as os from 'os'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { SITZUNG_FREMDES_CLI } from '../../src/main/agent/agent-adapter'
+import { writeEntityPromptFile } from '../../src/main/session/prompt-file'
+
+// Was der Handler seit dem 2026-08-30 nicht mehr selbst weiss: welchen Ort die Einspritzung
+// dieses Adapters schreibt und was eine Ruecknahme dort nicht erreicht. Der Anteil von
+// ClaudeCodeAdapter, hier nachgebaut statt importiert, damit dieser Test weiter ueber einen
+// Attrappen-Adapter laeuft.
+const CLAUDE_EINSPRITZUNG = {
+  ort: '.claude/settings.local.json',
+  nichtZuruecknehmbarerRest:
+    'ein ueber die claude-CLI registrierter Eintrag (falls geschrieben) kann bestehen ' +
+    'bleiben, bis er ueberschrieben wird — ein App-Neustart entfernt ihn nicht, macht ihn ' +
+    'aber wertlos, weil der Schluessel bei jedem App-Start wechselt',
+}
 
 type SessionCreateHandler = (
   event: unknown,
@@ -45,7 +58,10 @@ describe('session:create — rolling back a successful injection when createSess
     fs.rmSync(projectDir, { recursive: true, force: true })
   })
 
-  async function loadHandler(undo: unknown = undoSpy): Promise<SessionCreateHandler> {
+  async function loadHandler(
+    undo: unknown = undoSpy,
+    einspritzung: unknown = CLAUDE_EINSPRITZUNG,
+  ): Promise<SessionCreateHandler> {
     let registeredHandler: SessionCreateHandler | undefined
 
     vi.doMock('electron', () => ({
@@ -72,6 +88,9 @@ describe('session:create — rolling back a successful injection when createSess
             isAvailable: () => true,
             nichtVerfuegbarGrund: () => null,
             buildLaunchCommand: () => ({ cmd: 'claude', args: [] }),
+            schreibeEntitaetsPromptDatei: (u: string, n: string, prompt: string) =>
+              writeEntityPromptFile(u, n, prompt),
+            mcpEinspritzung: einspritzung,
             // The one call this whole file is about: succeeds, and hands back an undo
             // closure the handler must call when createSession subsequently fails.
             postLaunchInjection: vi.fn().mockResolvedValue(undo),
@@ -180,6 +199,11 @@ describe('session:create — rolling back a successful injection when createSess
             isAvailable: () => true,
             nichtVerfuegbarGrund: () => null,
             buildLaunchCommand: () => ({ cmd: 'claude', args: [] }),
+            schreibeEntitaetsPromptDatei: (u: string, n: string, prompt: string) =>
+              writeEntityPromptFile(u, n, prompt),
+            // Ein Adapter mit Vertrauens-Befund — der Satz soll den Renderer erreichen,
+            // sobald die Einspritzung durch ist, und nicht schon beim Bauen der Zeile.
+            mcpEinspritzung: { ...CLAUDE_EINSPRITZUNG, vertrauensHinweis: 'Vorgabe ist nicht vertrauen.' },
             postLaunchInjection: vi.fn().mockResolvedValue(undoSpy),
           }
         }
@@ -201,5 +225,31 @@ describe('session:create — rolling back a successful injection when createSess
 
     expect(result.error).toBeNull()
     expect(undoSpy).not.toHaveBeenCalled()
+    expect((result as { hinweis?: string | null }).hinweis)
+      .toMatch(/Vorgabe ist nicht vertrauen/)
+  })
+
+  // Fixrunde 2026-08-30: derselbe Defekt, den A0 am Vertragssatz behoben hat, stand hier im
+  // Aufrufer noch — der nutzersichtbare Ruecknahme-Text nannte hart settings.local.json,
+  // obwohl der Code drumherum adapterneutral ist. Fuer einen Harness, der woanders
+  // hinschreibt, schickte er jemanden in eine Datei, die es nicht gibt.
+  it('nennt den Ort, den der Adapter schreibt, nicht den von Claude Code', async () => {
+    const handler = await loadHandler(undoSpy, { ort: '.kimi-code/mcp.json' })
+
+    const result = await handler({}, { entityId: 'architect', name: 'fremder-ort', cwd: projectDir })
+
+    expect(result.error).toMatch(/\.kimi-code\/mcp\.json/)
+    expect(result.error).not.toMatch(/settings\.local\.json/)
+    // Kein zweiter Weg, also auch kein Satz darueber — statt einer Floskel auf Verdacht.
+    expect(result.error).not.toMatch(/claude-CLI/)
+    expect(result.error).toMatch(/wurde zurueckgenommen\./)
+  })
+
+  it('benennt die Unkenntnis, wenn ein Adapter seinen Ort nicht nennt', async () => {
+    const handler = await loadHandler(undoSpy, null)
+
+    const result = await handler({}, { entityId: 'architect', name: 'ohne-ort', cwd: projectDir })
+
+    expect(result.error).toMatch(/MCP-Konfiguration dieses Harness/)
   })
 })

@@ -322,3 +322,39 @@ describe('ClaudeCodeAdapter.postLaunchInjection', () => {
     })
   })
 })
+
+// Die Prompt-Datei ist seit der Fixrunde vom 2026-08-30 eine Pflichtmethode auf
+// CliSitzungsAdapter: SESSION_CREATE rief bis dahin writeEntityPromptFile selbst und
+// entschied damit im Handler, welches Dateiformat ein Harness bekommt — eine Entscheidung,
+// die der naechste fremde Harness stillschweigend falsch geerbt haette. Fuer Claude Code
+// muss dieser Umbau bis auf das Byte folgenlos sein, und genau das prueft der Test hier:
+// nicht "gruen", sondern gleich.
+describe('ClaudeCodeAdapter schreibt die Entitaets-Prompt-Datei', () => {
+  let tmp: string
+  beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'keel-claude-prompt-')) })
+  afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }) })
+
+  it('schreibt Byte fuer Byte dasselbe wie writeEntityPromptFile, an denselben Pfad', async () => {
+    const { writeEntityPromptFile } = await import('../../src/main/session/prompt-file')
+    const prompt = '# Entitaet\n\nEin Prompt mit Umlauten (a-Umlaut: ä), einem Dollar,\n' +
+      'einem CRLF-Rest\r\nund einem Abschluss ohne Zeilenumbruch.'
+
+    const vorher = path.join(tmp, 'vorher')
+    const nachher = path.join(tmp, 'nachher')
+    const alt = writeEntityPromptFile(vorher, 'keel-demo-architekt-ab12', prompt)
+    const neu = new ClaudeCodeAdapter({ getStartArgs: () => [] })
+      .schreibeEntitaetsPromptDatei(nachher, 'keel-demo-architekt-ab12', prompt)
+
+    expect(path.relative(nachher, neu)).toBe(path.relative(vorher, alt))
+    expect(Buffer.compare(fs.readFileSync(alt), fs.readFileSync(neu))).toBe(0)
+    expect(fs.statSync(neu).mode & 0o777).toBe(fs.statSync(alt).mode & 0o777)
+  })
+
+  it('nennt den Ort seiner MCP-Einspritzung, statt ihn dem Aufrufer zu ueberlassen', () => {
+    const a = new ClaudeCodeAdapter({ getStartArgs: () => [] })
+    expect(a.mcpEinspritzung?.ort).toBe('.claude/settings.local.json')
+    // Pfad 2 (claude mcp add-json) wird nicht zurueckgenommen — der Satz darueber ist
+    // Claude-Wissen und stand bis zur Fixrunde im Handler.
+    expect(a.mcpEinspritzung?.nichtZuruecknehmbarerRest).toMatch(/claude-CLI/)
+  })
+})

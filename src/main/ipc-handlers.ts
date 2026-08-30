@@ -122,7 +122,11 @@ import { buildPromptPreview } from './session/preview-prompt'
 import { buildPhaseInputSection } from './session/phase-input'
 import { assembleEntityClaudeMd } from './session/assemble-entity'
 import { materialiseCapabilities } from './session/materialise-capabilities'
-import { writeEntityPromptFile, removeEntityPromptFile } from './session/prompt-file'
+// Nur noch das Aufraeumen: geschrieben wird ueber den Adapter (siehe SESSION_CREATE), damit
+// das Dateiformat dort entschieden wird, wo der Harness bekannt ist. Geloescht wird weiter
+// hier, weil removeEntityPromptFile nach Sitzungsname arbeitet und nichts ueber das Format
+// wissen muss.
+import { removeEntityPromptFile } from './session/prompt-file'
 import { formatShellCommand, splitShellArgs } from './util/shell-quote'
 import { AdapterRegistry } from './agent/registry'
 import { istSchleifenAdapter, SITZUNG_EIGENE_SCHLEIFE, type EntitaetsTeile } from './agent/agent-adapter'
@@ -344,7 +348,16 @@ export function registerIpcHandlers(services: AppServices): void {
         // Resolved from the graph, so a degraded graph costs the layer, not the session.
         phaseInput: await buildPhaseInputSection(services.graphDb, def.rahmen.phasenBindung),
       })
-      const promptPath = writeEntityPromptFile(app.getPath('userData'), name, prompt)
+      // Der Adapter schreibt die Datei, nicht dieser Handler. Bis zum 2026-08-30 stand hier
+      // `writeEntityPromptFile(...)` direkt — damit entschied die Stelle mit dem wenigsten
+      // Wissen ueber den Harness, welches Dateiformat er bekommt. Fuer Claude Code ist es der
+      // rohe Prompt, fuer Kimi Code eine Agent-Datei mit Frontmatter und Basis-Platzhalter,
+      // und eine falsche Wahl waere nicht laut: Kimi verwirft die Datei. Beide schreiben
+      // weiterhin durch writeEntityPromptFile, weshalb removeEntityPromptFile in
+      // SESSION_DESTROY unveraendert aufraeumt (es loescht nach Sitzungsname).
+      const promptPath = adapter.schreibeEntitaetsPromptDatei(
+        app.getPath('userData'), name, prompt,
+      )
 
       // The Rahmen's model is a tier label (Schenkel 1) or a provider:model handle
       // (Schenkel 2, M2 section 6.3). Unresolvable values omit --model, which is what
@@ -419,6 +432,15 @@ export function registerIpcHandlers(services: AppServices): void {
             // does not read this field anyway.
             sessionId: name,
           })
+          // Erst jetzt, weil der Satz von der geschriebenen Konfiguration handelt und nicht
+          // von der Kommandozeile: Kimi Code fragt beim Start in einem noch nicht vertrauten
+          // Ordner nach, ob den projektlokalen MCP-Servern zu trauen ist, Vorgabe "nein" —
+          // wer das wegklickt, hat eine Sitzung ohne die zehn Werkzeuge. Adapter ohne so einen
+          // Befund (Claude Code) setzen das Feld nicht, und dann steht hier nichts.
+          // Kein Beweis, dass wirklich geschrieben wurde: postLaunchInjection protokolliert
+          // eigene Schreibfehler und loest trotzdem auf. Naeher kommt der Aufrufer nicht heran,
+          // ohne dem Vertrag einen zweiten Rueckgabewert zu geben.
+          mcpHinweis = adapter.mcpEinspritzung?.vertrauensHinweis ?? null
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
           mcpHinweis = `MCP-Registrierung fehlgeschlagen: ${msg}`
@@ -465,22 +487,24 @@ export function registerIpcHandlers(services: AppServices): void {
           }
         }
         const tmuxMsg = err instanceof Error ? err.message : String(err)
+        // Der Dateiname kommt vom Adapter (`mcpEinspritzung`, siehe agent-adapter.ts), nicht
+        // mehr aus diesem Handler: bis zum 2026-08-30 stand hier zweimal hart
+        // `settings.local.json`, obwohl der Code drumherum adapterneutral ist — fuer eine
+        // Kimi-Sitzung haette der Satz jemanden in einer Datei suchen lassen, die nie
+        // geschrieben wurde. Der Rueckfall benennt die Unkenntnis, statt einen Ort zu raten.
+        const ort = adapter.mcpEinspritzung?.ort ?? 'der MCP-Konfiguration dieses Harness'
         let residualNote = ''
         if (undoInjection && zurueckgenommen) {
-          // The CLI entry (path 2) stays put by design — see postLaunchInjection's doc
-          // comment. An app restart does not remove it; it rotates the key and thereby
-          // makes the entry worthless, which is not the same thing and reads differently
-          // to whoever goes looking for it.
-          residualNote =
-            ' Der lokale MCP-Eintrag in settings.local.json wurde zurueckgenommen; ein ' +
-            'ueber die claude-CLI registrierter Eintrag (falls geschrieben) kann bestehen ' +
-            'bleiben, bis er ueberschrieben wird — ein App-Neustart entfernt ihn nicht, ' +
-            'macht ihn aber wertlos, weil der Schluessel bei jedem App-Start wechselt.'
+          // Was eine Ruecknahme nicht erreicht, weiss der Adapter (Claude: der ueber die CLI
+          // registrierte Eintrag, der nur geloescht, nie wiederhergestellt werden kann). Wer
+          // nichts zurueckbehaelt, laesst das Feld leer, und dann steht hier auch nichts.
+          const rest = adapter.mcpEinspritzung?.nichtZuruecknehmbarerRest
+          residualNote = ` Der lokale MCP-Eintrag in ${ort} wurde zurueckgenommen` +
+            (rest ? `; ${rest}.` : '.')
         } else if (undoInjection) {
           residualNote =
-            ' Achtung: der lokale MCP-Eintrag in settings.local.json konnte nicht ' +
-            'zurueckgenommen werden — dort kann ein gueltiger Zugangsschluessel liegen ' +
-            'bleiben.'
+            ` Achtung: der lokale MCP-Eintrag in ${ort} konnte nicht zurueckgenommen ` +
+            'werden — dort kann ein gueltiger Zugangsschluessel liegen bleiben.'
         }
         throw new Error(tmuxMsg + residualNote)
       }

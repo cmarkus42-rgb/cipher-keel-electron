@@ -89,6 +89,23 @@ describe('KimiCodeAdapter Startbefehl', () => {
     expect(adapter().appGesteuerteParameter).toContain('--agent-file')
   })
 
+  it('bricht ab, wenn ein Fortsetzen-Schalter in den freien Startparametern steht', () => {
+    // Kimis Parser braeche auch selbst ab — aber an der falschen Stelle: der Mensch saehe
+    // einen Parser-Fehler im Pane statt der Erklaerung.
+    for (const getippt of ['-c', '--continue', '-S', '--session', '--session=abc']) {
+      expect(() => adapter([getippt]).buildLaunchCommand({
+        ...opts, appendSystemPromptFile: '/tmp/x.md',
+      }), getippt).toThrow(/--agent-file/)
+    }
+  })
+
+  it('laesst freie Startparameter durch, die nichts mit dem Fortsetzen zu tun haben', () => {
+    const cmd = adapter(['-y', '--plan']).buildLaunchCommand({
+      ...opts, appendSystemPromptFile: '/tmp/x.md',
+    })
+    expect(cmd.args.slice(0, 2)).toEqual(['-y', '--plan'])
+  })
+
   it('startet nicht mit leerem Prompt-Pfad', () => {
     expect(() => adapter().buildLaunchCommand({ ...opts, appendSystemPromptFile: '' }))
       .toThrow(/--agent-file/)
@@ -102,14 +119,24 @@ describe('KimiCodeAdapter Hinweise', () => {
     expect(cmd.hinweise?.join(' ')).toMatch(/eigenen Konfiguration/)
   })
 
-  it('schweigt ueber den Tier-Platz, wenn kein Modell hereingereicht wurde', () => {
-    const cmd = adapter().buildLaunchCommand({ ...opts })
-    expect(cmd.hinweise?.join(' ') ?? '').not.toMatch(/Tier-Platz/)
+  it('schweigt ganz, wenn es zu diesem Start nichts zu sagen gibt', () => {
+    // Kein leeres Array: ein Feld, das jeder Start setzt, liest bald niemand mehr.
+    expect(adapter().buildLaunchCommand({ ...opts }).hinweise).toBeUndefined()
   })
 
-  it('benennt die Trust-Rueckfrage bei jedem Start', () => {
-    const cmd = adapter().buildLaunchCommand({ ...opts })
-    expect(cmd.hinweise?.join(' ')).toMatch(/Don't trust/)
+  it('traegt die Trust-Rueckfrage nicht am Startbefehl, sondern an der Einspritzung', () => {
+    // Sie gilt, weil eine projektlokale mcp.json geschrieben wird — nicht, weil eine
+    // Kommandozeile gebaut wird. Am Startbefehl stuende sie auch dann, wenn gar kein
+    // MCP-Server laeuft und niemand nach Vertrauen gefragt wird.
+    const cmd = adapter().buildLaunchCommand({ ...opts, model: 'kimi-k2' })
+    expect(cmd.hinweise?.join(' ') ?? '').not.toMatch(/trust/i)
+    expect(adapter().mcpEinspritzung?.vertrauensHinweis).toMatch(/Don't trust/)
+  })
+
+  it('nennt den Ort seiner Einspritzung und hat keinen nicht zuruecknehmbaren Rest', () => {
+    // Anders als bei Claude: kein mcp-Befehl, also kein zweiter Weg, der liegen bliebe.
+    expect(adapter().mcpEinspritzung?.ort).toBe('.kimi-code/mcp.json')
+    expect(adapter().mcpEinspritzung?.nichtZuruecknehmbarerRest).toBeUndefined()
   })
 
   it('setzt beim Claude-Adapter keine Hinweise', async () => {
@@ -176,6 +203,19 @@ describe('KimiCodeAdapter schreibt die Agent-Datei', () => {
 
   it('schreibt nichts, wenn die Wache anschlaegt', () => {
     expect(() => schreibeAgentDatei(tmp, 'keel-x', 'Nimm $' + '{foo}.')).toThrow()
+    expect(fs.existsSync(path.join(tmp, 'entity-prompts', 'keel-x.md'))).toBe(false)
+  })
+
+  it('liefert ueber die Pflichtmethode des Adapters dieselbe Datei', () => {
+    // Der Weg, den SESSION_CREATE geht: der Adapter entscheidet das Format, nicht der
+    // Handler. Fuer Kimi ist das die Agent-Datei, nicht der rohe Prompt.
+    const p = adapter().schreibeEntitaetsPromptDatei(tmp, 'keel-x', 'Ein Prompt.')
+    expect(fs.readFileSync(p, 'utf-8')).toBe(baueAgentDatei('keel-x', 'Ein Prompt.'))
+  })
+
+  it('schreibt auch ueber die Pflichtmethode nichts, wenn die Wache anschlaegt', () => {
+    expect(() => adapter().schreibeEntitaetsPromptDatei(tmp, 'keel-x', 'Nimm $' + '{foo}.'))
+      .toThrow(/Zeile 7/)
     expect(fs.existsSync(path.join(tmp, 'entity-prompts', 'keel-x.md'))).toBe(false)
   })
 })

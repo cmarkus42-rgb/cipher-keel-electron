@@ -41,6 +41,7 @@ import type {
   LaunchCommand,
   LaunchOpts,
   AdapterContext,
+  McpEinspritzungsBeschreibung,
   ProjectInstructions,
   SendOpts,
   OutputEvent,
@@ -65,11 +66,21 @@ const MCP_SERVERNAME = 'cipher-keel'
 const BASIS_PLATZHALTER = '${base_prompt}'
 
 /**
- * Zeilenindex (0-basiert) des Platzhalters in der zusammengesetzten Agent-Datei — vier
- * Frontmatter-Zeilen davor. Die Wache unten braucht ihn, um genau diese eine Sequenz
- * durchzulassen und jede andere zu melden.
+ * Der Kopf der Agent-Datei: Frontmatter, Basis-Platzhalter, Leerzeile. Als Array, weil die
+ * Wache unten wissen muss, in welcher Zeile der Platzhalter steht — der Index wird daraus
+ * abgeleitet (`indexOf`) statt danebengeschrieben. Ein gepflegter Zahlenwert und ein Array,
+ * das sich aendert, laufen sonst irgendwann auseinander.
  */
-const PLATZHALTER_ZEILE = 4
+function kopfZeilen(name: string): string[] {
+  return [
+    '---',
+    `name: ${name}`,
+    `description: Entitaets-Prompt aus cipher keel fuer die Sitzung ${name}.`,
+    '---',
+    BASIS_PLATZHALTER,
+    '',
+  ]
+}
 
 /** Wortlaut aus Spec Abschnitt 4. Erscheint, wenn ein Preset einen Tier-Platz aufgeloest hat. */
 const MODELL_HINWEIS =
@@ -81,11 +92,22 @@ const MODELL_HINWEIS =
  * Spec Abschnitt 3.4. Ein Betriebsbefund, kein Entwurfsdetail: keel kann die Rueckfrage nicht
  * umgehen und soll es nicht — es kann sie benennen, damit niemand mit einer Sitzung dasteht,
  * die gesund aussieht und die zehn Werkzeuge nicht hat.
+ *
+ * Er haengt an `mcpEinspritzung`, nicht am Startbefehl: die Rueckfrage folgt der geschriebenen
+ * Datei, nicht der gebauten Kommandozeile. Am Startbefehl stuende der Satz auch dann, wenn gar
+ * kein MCP-Server laeuft und niemand nach Vertrauen fragt — und ein Satz, der bei jedem Start
+ * steht, wird zu einem, den niemand mehr liest.
  */
 const TRUST_HINWEIS =
   'Kimi Code fragt beim Sitzungsstart in einem noch nicht vertrauten Ordner nach, ob den ' +
   'projektlokalen MCP-Servern vertraut wird; die Vorgabe ist "Don\'t trust". Wer die ' +
   'Rueckfrage wegklickt, hat eine Sitzung ohne die zehn keel-Werkzeuge.'
+
+/**
+ * Die Fortsetzen-Schalter in allen Schreibweisen, die commander.js annimmt — gebraucht, um sie
+ * in den freien Startparametern des Nutzers zu erkennen, nicht um sie zu setzen.
+ */
+const ISTFORTSETZEN = /^(-S|-c|--session|--continue)(=|$)/
 
 /**
  * Der Sitzungsname als kebab-case-Bezeichner fuer das `name`-Feld im Frontmatter.
@@ -121,10 +143,10 @@ function kebabName(sessionName: string): string {
  * ueber die er reden kann, ohne zu raten, aus welchen Schichten der Prompt zusammengesetzt
  * wurde. Die ersten sechs Zeilen sind Frontmatter, Platzhalter und Leerzeile.
  */
-function pruefeTemplateSequenzen(text: string): void {
+function pruefeTemplateSequenzen(text: string, platzhalterZeile: number): void {
   const funde: string[] = []
   text.split('\n').forEach((zeile, i) => {
-    if (i === PLATZHALTER_ZEILE && zeile === BASIS_PLATZHALTER) return
+    if (i === platzhalterZeile && zeile === BASIS_PLATZHALTER) return
     let ab = zeile.indexOf('${')
     while (ab !== -1) {
       const zu = zeile.indexOf('}', ab)
@@ -139,7 +161,7 @@ function pruefeTemplateSequenzen(text: string): void {
     `Rendern der Agent-Datei ersetzen wuerde: ${funde.join('; ')}. Der Rumpf einer ` +
     'Agent-Datei wird als Template gerendert, eine dokumentierte Maskierung gibt es nicht — ' +
     `erlaubt ist allein der von diesem Adapter selbst gesetzte ${BASIS_PLATZHALTER} in der ` +
-    `Zeile ${PLATZHALTER_ZEILE + 1}.`
+    `Zeile ${platzhalterZeile + 1}.`
   )
 }
 
@@ -155,17 +177,19 @@ function pruefeTemplateSequenzen(text: string): void {
  * darunter ist der Schreibweg.
  */
 export function baueAgentDatei(sessionName: string, prompt: string): string {
-  const name = kebabName(sessionName)
-  const text = [
-    '---',
-    `name: ${name}`,
-    `description: Entitaets-Prompt aus cipher keel fuer die Sitzung ${name}.`,
-    '---',
-    BASIS_PLATZHALTER,
-    '',
-    prompt,
-  ].join('\n')
-  pruefeTemplateSequenzen(text)
+  const kopf = kopfZeilen(kebabName(sessionName))
+  const platzhalterZeile = kopf.indexOf(BASIS_PLATZHALTER)
+  if (platzhalterZeile === -1) {
+    // Nur erreichbar, wenn jemand den Platzhalter aus dem Kopf entfernt — dann ist der Prompt
+    // aber ein Ersatz fuer Kimis Vorgabe-Prompt statt einer Ergaenzung, und das gehoert nicht
+    // stillschweigend geschrieben.
+    throw new Error(
+      `[KimiCodeAdapter] Der Kopf der Agent-Datei enthaelt ${BASIS_PLATZHALTER} nicht mehr — ` +
+      'ohne ihn ersetzt unser Prompt Kimis eigenen Vorgabe-Prompt, statt ihn zu ergaenzen.'
+    )
+  }
+  const text = [...kopf, prompt].join('\n')
+  pruefeTemplateSequenzen(text, platzhalterZeile)
   return text
 }
 
@@ -265,21 +289,67 @@ export class KimiCodeAdapter implements CliSitzungsAdapter {
       }
     }
 
-    const args: string[] = [...this.configReader.getStartArgs(this.id), ...fortsetzen]
+    const getippt = this.configReader.getStartArgs(this.id)
+    if (opts.appendSystemPromptFile) {
+      // Dieselbe Unvereinbarkeit, nur aus der anderen Richtung: der Schalter kommt nicht vom
+      // Aufrufer, sondern aus den freien Startparametern. Ohne diesen Wurf braeche Kimis
+      // Parser ab — aber an der falschen Stelle: der Mensch saehe einen Parser-Fehler im Pane
+      // statt der Erklaerung, und zwar erst beim Start.
+      const kollision = getippt.find(a => ISTFORTSETZEN.test(a))
+      if (kollision) {
+        throw new Error(
+          `[KimiCodeAdapter] In den freien Startparametern steht '${kollision}', und diese ` +
+          'Sitzung bekommt --agent-file. Kimi Code laesst beides nicht zusammen zu ("Cannot ' +
+          'be combined with --session/--continue"): ein fortgesetzter Lauf bringt seinen ' +
+          'gebundenen Agenten selbst mit, ein neuer bekommt ihn ueber --agent-file. Der ' +
+          'Parameter gehoert aus dem Feld heraus, wenn keel die Sitzungen anlegen soll.'
+        )
+      }
+    }
+
+    const args: string[] = [...getippt, ...fortsetzen]
     if (opts.appendSystemPromptFile) {
       args.push('--agent-file', opts.appendSystemPromptFile)
     }
 
-    const hinweise: string[] = []
     // Kein -m, aber auch kein Schweigen: ein Preset loest weiter einen Tier-Platz auf und
     // reicht das Ergebnis herein. Wer es hier still fallen liesse, haette einen Menschen, der
     // ein Modell eingestellt hat und ein anderes bekommt, ohne dass es irgendwo steht.
-    if (opts.model && opts.model.trim()) {
-      hinweise.push(MODELL_HINWEIS)
-    }
-    hinweise.push(TRUST_HINWEIS)
+    //
+    // Der Trust-Hinweis steht bewusst NICHT hier, sondern an `mcpEinspritzung` — siehe dort.
+    // Deshalb bleibt das Feld weg, wenn es nichts zu sagen gibt, statt ein leeres Array zu
+    // tragen: ein Hinweisfeld, das jeder Start setzt, liest bald niemand mehr.
+    const hinweise = opts.model && opts.model.trim() ? [MODELL_HINWEIS] : undefined
 
-    return { cmd: 'kimi', args, hinweise }
+    return { cmd: 'kimi', args, ...(hinweise ? { hinweise } : {}) }
+  }
+
+  /**
+   * Der Kimi-eigene Teil des Entitaets-Prompts: er wird zur Agent-Datei (Frontmatter,
+   * `${base_prompt}`, dann unser Text) statt roh geschrieben zu werden. Die Wache laeuft in
+   * `baueAgentDatei`, also **vor** jedem Schreiben — eine abgewiesene Zusammensetzung
+   * hinterlaesst keine halbgueltige Datei.
+   *
+   * Geschrieben wird ueber `writeEntityPromptFile` wie beim Claude-Weg, damit
+   * `removeEntityPromptFile` in SESSION_DESTROY weiter aufraeumt: es loescht nach
+   * Sitzungsname, nicht nach Inhalt oder Format, und trifft diese Datei deshalb unveraendert.
+   */
+  schreibeEntitaetsPromptDatei(
+    userDataPath: string,
+    sessionName: string,
+    prompt: string,
+  ): string {
+    return schreibeAgentDatei(userDataPath, sessionName, prompt)
+  }
+
+  /**
+   * Ein Ort, kein zweiter Weg — und ein Satz, den ein Mensch braucht, bevor er glaubt, seine
+   * Sitzung habe die zehn Werkzeuge. `nichtZuruecknehmbarerRest` bleibt leer, weil es hier
+   * nichts gibt, das eine Ruecknahme nicht erreicht: Kimi Code hat keinen mcp-Befehl.
+   */
+  readonly mcpEinspritzung: McpEinspritzungsBeschreibung = {
+    ort: '.kimi-code/mcp.json',
+    vertrauensHinweis: TRUST_HINWEIS,
   }
 
   /**
@@ -311,6 +381,21 @@ export class KimiCodeAdapter implements CliSitzungsAdapter {
    * Der Modus 0600 gilt nur fuer eine Datei, die dieser Aufruf **anlegt**: eine schon
    * vorhandene wird nicht umgestellt. Ihre Rechte hat jemand anderes gesetzt, und ein
    * Sitzungsstart ist kein guter Anlass, das zu uebergehen.
+   *
+   * **Was hier bewusst in Kauf genommen wird, damit es nicht unausgesprochen bleibt:** dieser
+   * Schreibvorgang legt einen gueltigen Bearer-Schluessel in den Projektbaum des Nutzers.
+   * prompt-file.ts argumentiert in seinem Modulkopf ueber genau dieses Problem und weicht ihm
+   * aus — der Entitaets-Prompt landet deshalb unter `userData`. Hier geht das nicht: die Datei
+   * muss dort liegen, wo Kimi Code sie liest, und das ist das Projekt. Der Unterschied zu
+   * Claudes `.claude/settings.local.json` ist nicht die Art der Offenlegung, sondern ihre
+   * Bekanntheit: `.claude/` steht in vielen `.gitignore`-Dateien, `.kimi-code/` in so gut wie
+   * keiner. Ein versehentliches Einchecken ist damit wahrscheinlicher, nicht anders. Dieser
+   * Adapter aendert deshalb **nichts** an der `.gitignore` des Nutzers — ein Werkzeug, das
+   * ungefragt in die Versionskontrolle eines fremden Projekts schreibt, waere der groessere
+   * Uebergriff. Selbstbegrenzend ist die Offenlegung ohnehin: der Schluessel wechselt bei
+   * jedem App-Start (B2), ein eingecheckter Eintrag ist also spaetestens dann wertlos —
+   * wertlos, nicht weg. Ob daraus etwas folgt (ein Hinweis beim ersten Start, ein Vorschlag
+   * fuer die `.gitignore`), gehoert zu A3 und nicht hierher.
    */
   async postLaunchInjection(ctx: AdapterContext): Promise<() => boolean> {
     const eintrag = {

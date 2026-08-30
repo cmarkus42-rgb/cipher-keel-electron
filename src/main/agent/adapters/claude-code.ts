@@ -21,6 +21,7 @@ import type {
   LaunchCommand,
   LaunchOpts,
   AdapterContext,
+  McpEinspritzungsBeschreibung,
   ProjectInstructions,
   SendOpts,
   OutputEvent,
@@ -30,6 +31,7 @@ import { CapabilityNiveau } from '../../preset/niveau'
 import { runCommand, isCommandOnPath } from '../../util/exec-util'
 import { formatShellCommand } from '../../util/shell-quote'
 import { describeMissingTool } from '../../util/missing-tool'
+import { writeEntityPromptFile } from '../../session/prompt-file'
 
 /** Minimal interface for reading the agent config section. */
 export interface AgentConfigReader {
@@ -77,6 +79,35 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
       args.push('--append-system-prompt-file', opts.appendSystemPromptFile)
     }
     return { cmd: 'claude', args }
+  }
+
+  /**
+   * Claude Code reads the file behind `--append-system-prompt-file` as plain text and appends
+   * it — no frontmatter, no placeholders, nothing to compose. So this is `writeEntityPromptFile`
+   * and deliberately nothing else: the same call SESSION_CREATE made itself until 2026-08-30,
+   * with the same arguments, writing the same bytes to the same path. The method exists so the
+   * decision has an owner (see the contract in agent-adapter.ts), not because Claude's answer
+   * to it changed.
+   */
+  schreibeEntitaetsPromptDatei(
+    userDataPath: string,
+    sessionName: string,
+    prompt: string,
+  ): string {
+    return writeEntityPromptFile(userDataPath, sessionName, prompt)
+  }
+
+  /**
+   * Both paths of postLaunchInjection in the words a user gets to see — see the doc comment
+   * there for why path 2 stays behind, and `McpEinspritzungsBeschreibung` for why this sits on
+   * the adapter instead of in SESSION_CREATE, where the filename used to be hard-coded.
+   */
+  readonly mcpEinspritzung: McpEinspritzungsBeschreibung = {
+    ort: '.claude/settings.local.json',
+    nichtZuruecknehmbarerRest:
+      'ein ueber die claude-CLI registrierter Eintrag (falls geschrieben) kann bestehen ' +
+      'bleiben, bis er ueberschrieben wird — ein App-Neustart entfernt ihn nicht, macht ihn ' +
+      'aber wertlos, weil der Schluessel bei jedem App-Start wechselt',
   }
 
   /**

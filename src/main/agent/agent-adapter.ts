@@ -100,9 +100,10 @@ export interface AdapterContext {
    * The session's chosen name. Not a runtime-assigned id and not a ULID (nothing in this
    * codebase mints one for a session) — `postLaunchInjection` runs before
    * `tmux.createSession` returns one (security review finding I-1, 2026-08-30), so this is
-   * whatever the caller already knows at that point. `ClaudeCodeAdapter.postLaunchInjection`,
-   * the sole implementation today, does not read this field at all; kept on the contract in
-   * case a future write path needs to key by session.
+   * whatever the caller already knows at that point. Neither implementation reads this field
+   * at all — claude-code.ts and, since 2026-08-30, kimi-code.ts; kept on the contract in case
+   * a future write path needs to key by session. (This said "the sole implementation today"
+   * until that second one landed: the claim held, the count did not.)
    */
   sessionId: string
 }
@@ -207,6 +208,37 @@ export interface AgentAdapterBasis {
   buildCyberFactoryPromptFragment(lang: 'de' | 'en'): string
 }
 
+/** What a caller may say about an adapter's MCP injection without knowing the adapter. */
+export interface McpEinspritzungsBeschreibung {
+  /**
+   * The project-relative path `postLaunchInjection` writes, as a human should read it —
+   * `.claude/settings.local.json`, `.kimi-code/mcp.json`. Names the file a user would go
+   * looking in, so it belongs to the adapter that writes it, not to the handler that calls it.
+   */
+  readonly ort: string
+  /**
+   * A sentence that becomes true once the injection has written: something about this harness
+   * a user has to know to tell a healthy session from one that only looks healthy. Kimi Code
+   * asks whether project-local MCP servers may be trusted and defaults to "no"; whoever
+   * clicks that away has a session without the ten tools.
+   *
+   * Surfaced by the caller after `postLaunchInjection` resolved, not from
+   * `buildLaunchCommand`: the trust question follows the file being written, not a command
+   * line being built. It is still not proof the write happened — `postLaunchInjection` logs
+   * its own write failures and resolves anyway — but it is as close as the caller can get
+   * without a second return value on a contract that has had two security rounds.
+   */
+  readonly vertrauensHinweis?: string
+  /**
+   * What a rollback provably cannot take back, if anything. Claude Code registers a second
+   * time through `claude mcp add-json`, and `claude mcp remove` can only delete, never
+   * restore — so that entry stays and gets named to the user instead. Kimi Code has no `mcp`
+   * command at all and therefore no second path: an adapter with nothing left over leaves
+   * this unset, and the caller then says nothing rather than hedging.
+   */
+  readonly nichtZuruecknehmbarerRest?: string
+}
+
 /**
  * A harness that runs as its own process in a tmux pane. Everything here is about a command
  * line and a pane: an in-process loop has no honest answer to any of it.
@@ -229,6 +261,38 @@ export interface CliSitzungsAdapter extends AgentAdapterBasis {
   // --- lifecycle ---
   /** Build a structured launch command. Never returns a raw shell string. */
   buildLaunchCommand(opts: LaunchOpts): LaunchCommand
+
+  /**
+   * Write the assembled entity prompt in whatever shape THIS harness reads, and return the
+   * absolute path — the path that then goes on the command line (Claude Code:
+   * `--append-system-prompt-file`, Kimi Code: `--agent-file`).
+   *
+   * Mandatory, not optional, and that is the whole point of it existing. SESSION_CREATE
+   * called `writeEntityPromptFile` itself until 2026-08-30 and thereby decided in the handler
+   * what file format a harness gets. That works for exactly one harness. Kimi Code needs
+   * frontmatter and a `${base_prompt}` placeholder in the body or its file is rejected — and
+   * a caller that does not know this writes a plausible-looking file that the CLI throws
+   * away. Here the choice of adapter IS the wiring: a third CLI adapter cannot be written
+   * without answering the question, and it cannot be answered in the wrong place.
+   *
+   * Everything that made `writeEntityPromptFile` (session/prompt-file.ts) the right home for
+   * the write itself still holds and is not re-decided per adapter: the file lives under
+   * `userData`, never in the versioned project tree; mode 0600; one path per session name.
+   * Both implementations go through it. What differs is the CONTENT.
+   *
+   * Cleanup does not move with this: `removeEntityPromptFile` in SESSION_DESTROY deletes by
+   * session name, not by content or format, so it keeps working for every adapter that
+   * writes through `writeEntityPromptFile` — which both do, and which an adapter picking its
+   * own location would silently break.
+   *
+   * Any validation an adapter does on the prompt runs BEFORE the write, so a rejected prompt
+   * leaves no half-valid file behind (Kimi's `${`-guard is the case in point).
+   */
+  schreibeEntitaetsPromptDatei(
+    userDataPath: string,
+    sessionName: string,
+    prompt: string,
+  ): string
   /**
    * Optional post-launch setup (e.g. MCP server registration). Runs before the session's
    * process is spawned, not after — see ClaudeCodeAdapter's doc comment on its own
@@ -251,6 +315,19 @@ export interface CliSitzungsAdapter extends AgentAdapterBasis {
    * return a no-op that returns `true`.
    */
   postLaunchInjection?(ctx: AdapterContext): Promise<() => boolean>
+
+  /**
+   * The words for what `postLaunchInjection` does — set by every adapter that has one.
+   *
+   * SESSION_CREATE has to talk about that write in two places: it tells a user about the
+   * trust prompt a fresh MCP entry can trigger, and, when `tmux.createSession` fails, whether
+   * the bearer key it wrote was taken back. Until 2026-08-30 it wrote those sentences itself
+   * with Claude's filename in them — `settings.local.json`, hard-coded, in a handler that is
+   * otherwise adapter-neutral. For a Kimi session that sentence sends someone looking in a
+   * file that was never written. It is a text about a credential, which is the worst kind of
+   * sentence to be wrong.
+   */
+  readonly mcpEinspritzung?: McpEinspritzungsBeschreibung
   /** Read context usage for a session. Only call if supports('status-line'). */
   getContextUsage?(sessionId: string): Promise<ContextUsage | null>
   /** Inject status reporting hook into project. Only call if supports('status-line'). */
