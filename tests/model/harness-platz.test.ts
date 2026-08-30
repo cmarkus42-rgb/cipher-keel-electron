@@ -1,3 +1,5 @@
+import * as fs from 'fs'
+import * as path from 'path'
 import { describe, it, expect } from 'vitest'
 import { AdapterRegistry } from '../../src/main/agent/registry'
 import type { AgentAdapter } from '../../src/main/agent/agent-adapter'
@@ -99,6 +101,27 @@ describe('Harness-Platz — was er uebersteuert', () => {
   it('umgeht die Laufzeitaufloesung nicht', () => {
     expect(() => loeseHarnessAuf(registry(), 'erfundene-laufzeit', 'kimi-code'))
       .toThrow(/erfundene-laufzeit/)
+  })
+})
+
+// Kein Test in diesem Repo erreicht einen ipcMain-Handler, und SESSION_CREATE ist die eine
+// Stelle, an der der Harness einer Sitzung feststeht. Die Regel selbst haelt `loeseHarnessAuf`
+// oben; diese Wache haelt, dass der Handler sie auch benutzt statt an ihr vorbei aufzuloesen.
+describe('Harness-Platz — die Verdrahtung in SESSION_CREATE', () => {
+  const HANDLER = fs.readFileSync(
+    path.join(__dirname, '../../src/main/ipc-handlers.ts'), 'utf8',
+  )
+
+  it('loest den Harness ueber loeseHarnessAuf auf', () => {
+    expect(HANDLER).toContain('loeseHarnessAuf(')
+  })
+
+  it('loest die Laufzeit nicht mehr an der Wahl vorbei auf', () => {
+    expect(HANDLER).not.toContain('adapterRegistry.getForRuntime(')
+  })
+
+  it('liest die Wahl aus der Konfiguration', () => {
+    expect(HANDLER).toContain("configStore.get('agent').harness")
   })
 })
 
