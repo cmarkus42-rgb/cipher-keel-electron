@@ -109,8 +109,8 @@ describe('profilText — Grundgeruest', () => {
   it('erlaubt Schreiben in der Wurzel', () => {
     expect(p).toContain('(allow file-write* (subpath "/Users/x/projekt"))')
   })
-  it('verbietet Schreiben in .git', () => {
-    expect(p).toContain('(deny file-write* (subpath "/Users/x/projekt/.git"))')
+  it('verbietet Schreiben in .git, in jeder Tiefe', () => {
+    expect(p).toContain('(deny file-write* (regex #"^/Users/x/projekt/(.*/)?\\.git(/|$)"))')
   })
   it('erlaubt jeden mitgegebenen Zwischenspeicher', () => {
     expect(p).toContain('(allow file-write* (subpath "/Users/x/.npm"))')
@@ -172,8 +172,9 @@ describe('profilText — die Verbote der Pfadwache, gespiegelt', () => {
       '(deny file-read* file-write* (subpath "/Users/x/Library/Application Support/cipher-keel"))',
     )
   })
-  it('sperrt ~/.cipher-* beidseitig', () => {
-    expect(alles).toContain('(deny file-read* file-write* (regex #"^/Users/x/\\.cipher-"))')
+  it('sperrt ~/.cipher-* beidseitig, in jeder Tiefe', () => {
+    // Die Tiefe ist der Punkt: pfadwache prueft den Basename unter dem ganzen Heim-Teilbaum.
+    expect(alles).toContain('(deny file-read* file-write* (regex #"^/Users/x/(.*/)?\\.cipher-"))')
   })
   it('sperrt .env unter der Wurzel, in jeder Tiefe', () => {
     expect(alles).toContain('#"^/Users/x/projekt/(.*/)?\\.env(\\..*)?$"')
@@ -184,8 +185,8 @@ describe('profilText — die Verbote der Pfadwache, gespiegelt', () => {
   it('sperrt Schluesselendungen unter der Wurzel', () => {
     expect(alles).toContain('#"^/Users/x/projekt/(.*/)?[^/]*\\.(pem|key|p12|keystore|jks)$"')
   })
-  it('sperrt Shell-Startdateien im Heim', () => {
-    expect(alles).toContain('#"^/Users/x/\\.(zshrc|zprofile|zshenv|bashrc|bash_profile|profile)$"')
+  it('sperrt Shell-Startdateien im Heim, in jeder Tiefe', () => {
+    expect(alles).toContain('#"^/Users/x/(.*/)?\\.(zshrc|zprofile|zshenv|bashrc|bash_profile|profile)$"')
   })
 })
 
@@ -293,8 +294,12 @@ export function profilText(ktx: SandkastenKontext, netz: NetzModus): string {
     '; allein laesst das Ueberschreiben zu, und dann ist das Geheimnis vertraulich und zerstoerbar.',
     `(deny file-read* file-write* (subpath "${sbplLiteral(ktx.heim)}/.ssh"))`,
     `(deny file-read* file-write* (subpath "${sbplLiteral(ktx.userDataPfad)}"))`,
-    `(deny file-read* file-write* (regex #"^${hRe}/\\.cipher-"))`,
-    `(deny file-read* file-write* (regex #"^${hRe}/\\.(zshrc|zprofile|zshenv|bashrc|bash_profile|profile)$"))`,
+    // `(.*/)?` in jeder dieser Regeln, und das ist keine Kosmetik: pfadwache prueft den
+    // **Basename** und `istIn(pfad, heim)` — also jede Tiefe unter dem Heim. Eine Regel ohne
+    // dieses Segment traefe nur direkte Kinder, und der Sandkasten waere schwaecher als die
+    // Wache, die er spiegeln soll.
+    `(deny file-read* file-write* (regex #"^${hRe}/(.*/)?\\.cipher-"))`,
+    `(deny file-read* file-write* (regex #"^${hRe}/(.*/)?\\.(zshrc|zprofile|zshenv|bashrc|bash_profile|profile)$"))`,
     `(deny file-read* file-write* (regex #"^${wRe}/(.*/)?\\.env(\\..*)?$"))`,
     `(deny file-read* file-write* (regex #"^${wRe}/(.*/)?(id_rsa|id_ed25519|id_ecdsa|id_dsa)$"))`,
     // Anchored to the root, never global: a global deny on *.pem locks /etc/ssl/cert.pem and
@@ -304,7 +309,11 @@ export function profilText(ktx: SandkastenKontext, netz: NetzModus): string {
     '; Schreiben: die Wurzel — und die Verwaltung des Rueckwegs ausdruecklich nicht. Ein',
     '; `git reset --hard` naehme genau den Rueckweg weg, auf dem die Startvorbedingung beruht.',
     `(allow file-write* (subpath "${w}"))`,
-    `(deny file-write* (subpath "${w}/.git"))`,
+    // Jedes `.git`-Segment in jeder Tiefe, nicht bloss `<wurzel>/.git`: pfadwache verwirft einen
+    // Pfad, sobald *irgendein* Segment `.git` heisst (pfadwache.ts:101). Ein Submodul oder ein
+    // eingebettetes Repo unter `vendor/` waere sonst beschreibbar, waehrend die Wache es
+    // verweigert — und die Rueckwegzusage gilt dann nur fuer das oberste Repo.
+    `(deny file-write* (regex #"^${wRe}/(.*/)?\\.git(/|$)"))`,
     '',
     '; Schreibziele ausserhalb der Wurzel: die Zwischenspeicher der Toolchains.',
     `(allow file-write* (subpath "${sbplLiteral(ktx.tmpdir)}"))`,

@@ -163,15 +163,15 @@ Funktionen mit je eigenen Tests, nicht eine mit einem Schalter.
 (deny file-read* file-write*
   (subpath "<heim>/.ssh")
   (subpath "<userData>")
-  (regex #"^<heim>/\.cipher-")
-  (regex #"^<heim>/\.(zshrc|zprofile|zshenv|bashrc|bash_profile|profile)$")
+  (regex #"^<heim>/(.*/)?\.cipher-")
+  (regex #"^<heim>/(.*/)?\.(zshrc|zprofile|zshenv|bashrc|bash_profile|profile)$")
   (regex #"^<wurzel>/(.*/)?\.env(\..*)?$")
   (regex #"^<wurzel>/(.*/)?(id_rsa|id_ed25519|id_ecdsa|id_dsa)$")
   (regex #"^<wurzel>/(.*/)?[^/]*\.(pem|key|p12|keystore|jks)$"))
 
 ; Schreiben: die Wurzel, und die Verwaltung des Rueckwegs ausdruecklich nicht
 (allow file-write* (subpath "<wurzel>"))
-(deny  file-write* (subpath "<wurzel>/.git"))
+(deny  file-write* (regex #"^<wurzel>/(.*/)?\.git(/|$)"))
 
 ; Schreiben ausserhalb: nur die benannten Zwischenspeicher (4.4)
 (allow file-write* (subpath "<tmpdir>"))
@@ -179,6 +179,8 @@ Funktionen mit je eigenen Tests, nicht eine mit einem Schalter.
 
 (allow file-write-data (literal "/dev/null"))
 ```
+
+**Jede dieser Regeln trägt `(.*/)?`, und das ist beim Review aufgefallen, nicht beim Entwurf.** Die erste Fassung sperrte nur direkte Kinder — die Pfadwache prüft aber den **Basename** und `istIn(pfad, heim)`, also jede Tiefe (`pfadwache.ts:99-101`), und ihr `.git`-Verbot trifft *jedes* Segment mit diesem Namen. Ein Sandkasten, der nur `<wurzel>/.git` schützt, lässt das `.git` eines Submoduls offen und ist damit schwächer als die Wache, die er spiegeln soll. Gegen echtes `sandbox-exec` nachgemessen: mit `(.*/)?` fallen verschachteltes `.git` und verschachteltes `.cipher-` beide, ohne es beide nicht.
 
 **Die Endungsverbote sind auf die Wurzel und das Heimverzeichnis verankert, nicht global.** Ein
 globales `deny` auf `*.pem` sperrt `/etc/ssl/cert.pem` und bricht jedes TLS im Kindprozess — also
