@@ -116,6 +116,14 @@ export interface SlotAnsicht {
    * war in ModelleReiter.tsx schon einmal falsch — ihr Kommentar dort erklaert den Fall.
    */
   art: 'tier' | 'rolle' | 'sitzung'
+  /**
+   * Der Schluessel innerhalb der Art (`light`, `tagging`, `niveau-b`), durchgereicht aus
+   * `Slot.schluessel`. Steht hier aus demselben Grund wie `art`: ohne ihn muesste die
+   * Oberflaeche ihn aus der Id schneiden (`slice(5)`, `slice(6)`) und stuetzte damit die
+   * Wache auf ein Feld und die Entnahme auf eine Zeichenkette — zwei Fakten fuer eine
+   * Aussage, und die Zeichenkette ist die schwaechere.
+   */
+  schluessel: string
   /** Empty string means no assignment. */
   gewaehlt: string
   optionen: SlotOptionAnsicht[]

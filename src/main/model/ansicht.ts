@@ -169,8 +169,10 @@ function slotAnsicht(slot: Slot, eintraege: ModellEintrag[]): SlotAnsicht {
   // `sitzung:niveau-b` sagt sie ausdruecklich, dass es keinen gibt. Vor dieser Aenderung stand
   // hier hartcodiert "Es gilt der Rueckfall." — fuer einen Platz ohne Rueckfall eine falsche
   // Auskunft, und die einzige, die der Nutzer in diesem Zustand ueberhaupt zu sehen bekommt
-  // (der Renderer zeigt `rueckfallText` selbst nur bei leerem Platz, nicht bei einer
-  // vorhandenen, aber unbenutzbaren Zuordnung).
+  // (der Renderer zeigte `rueckfallText` selbst nur bei leerem Platz, nicht bei einer
+  // vorhandenen, aber unbenutzbaren Zuordnung — seit c68a51e steht er stattdessen immer
+  // hinter dem Info-Knopf, was diese Doppelung erst recht noetig macht: `gewaehltHinweis`
+  // ist in dem Zustand weiterhin das, was ungefragt auf der Seite steht).
   const rueckfall = rueckfallText(slot)
 
   // An assignment is only worth warning about if it actually holds. Two ways it does not:
@@ -199,6 +201,7 @@ function slotAnsicht(slot: Slot, eintraege: ModellEintrag[]): SlotAnsicht {
     id: slot.id,
     beschriftung: slot.beschriftung,
     art: slot.art,
+    schluessel: slot.schluessel,
     gewaehlt: gewaehlt ?? '',
     optionen,
     warnungen: warnListe,

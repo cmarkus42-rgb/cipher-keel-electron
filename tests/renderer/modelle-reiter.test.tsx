@@ -18,9 +18,10 @@ function slot(id: string, extra: Partial<SlotAnsicht> = {}): SlotAnsicht {
   return {
     id,
     beschriftung: `Platz ${id}`,
-    // Vorgabe, damit jeder Aufrufer, der die Art nicht selbst setzt, weiter uebersetzt.
-    // Wer nach Gruppen prueft, gibt sie ueber `extra` mit.
+    // Vorgaben, damit jeder Aufrufer, der Art und Schluessel nicht selbst setzt, weiter
+    // uebersetzt. Wer nach Gruppen oder nach dem Schluessel prueft, gibt sie ueber `extra` mit.
     art: 'tier',
+    schluessel: 'light',
     gewaehlt: '',
     optionen: [],
     warnungen: [],
