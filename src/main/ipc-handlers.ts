@@ -369,6 +369,17 @@ export function registerIpcHandlers(services: AppServices): void {
       })
       const command = formatShellCommand(launch.cmd, launch.args)
 
+      // Ahead of the injection below, not between it and createSession, where it stood until
+      // the follow-up review of 4358cac: connect() is the likeliest tmux failure there is (no
+      // tmux server running, tmux not installed), and from between the two it would have
+      // thrown past every rollback path — a live bearer left in settings.local.json with no
+      // note to the user that it is there. Ordered this way, no key is written at all while
+      // tmux is unreachable: the gap closes constructively instead of through a second undo
+      // path. The rollback around createSession below still covers the window that remains.
+      if (!services.tmux.isConnected()) {
+        await services.tmux.connect()
+      }
+
       // B4 (MCP transport, Paket B), run BEFORE tmux.createSession — security review
       // finding I-1 (2026-08-30): postLaunchInjection reads none of AdapterContext's fields
       // from a live tmux session (see the doc comment on postLaunchInjection and on
@@ -417,18 +428,19 @@ export function registerIpcHandlers(services: AppServices): void {
         )
       }
 
-      if (!services.tmux.isConnected()) {
-        await services.tmux.connect()
-      }
-
       // I-1 follow-up (security review, 2026-08-30): moving postLaunchInjection ahead of
       // createSession closed the race against the CLI's own config read, but opened a
       // narrower gap — if createSession now fails, a live bearer key can be left behind in
-      // settings.local.json for a session that never came to exist. `undoInjection` (see its
-      // doc comment on ClaudeCodeAdapter.postLaunchInjection) reverts exactly what path 1
-      // wrote, never a blind wipe. Path 2 (the `claude mcp add-json` CLI registration) is
-      // NOT undone — same reasoning as there — so its residual is named in the thrown
-      // message instead of silently left for the outer catch's generic error text to hide.
+      // settings.local.json for a session that never came to exist. The order is
+      // connect -> injection -> createSession (see the connect block above for why connect
+      // moved out from between the last two), so this rollback covers exactly the
+      // createSession window that is left. `undoInjection` (see its doc comment on
+      // ClaudeCodeAdapter.postLaunchInjection) reverts exactly what path 1 wrote, never a
+      // blind wipe, and REPORTS whether it got there — the residual note below distinguishes
+      // the two outcomes instead of claiming the good one unconditionally. Path 2 (the
+      // `claude mcp add-json` CLI registration) is NOT undone — same reasoning as there — so
+      // its residual is named in the thrown message instead of silently left for the outer
+      // catch's generic error text to hide.
       let sessionId: string
       try {
         sessionId = await services.tmux.createSession(name, { ...opts, cwd, command })
