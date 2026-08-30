@@ -169,6 +169,36 @@ describe('Modelle-Reiter — die Einsortierung', () => {
     expect(html).not.toContain('llm.tagging')
   })
 
+  /*
+   * Der Schluessel kommt aus dem Feld, nicht aus der Id. Wieder nur an einem Platz pruefbar,
+   * dessen Id und Schluessel auseinandergehen — bei uebereinstimmenden Werten sagt der Test
+   * nichts darueber aus, welchem von beiden das Fenster folgt.
+   */
+  it('nimmt das Rueckfall-Handle zum Schluessel des Platzes, nicht zum Id-Ausschnitt', () => {
+    const html = renderToStaticMarkup(
+      <ModelleReiter
+        ansicht={ansichtMit(
+          [slot('tier:light', { art: 'tier', schluessel: 'heavy' })],
+          { modellTiers: { light: 'HANDLE-LIGHT', standard: 'HANDLE-STANDARD', heavy: 'HANDLE-HEAVY' } },
+        )}
+        schreibe={stumm}
+      />,
+    )
+    expect(html).toContain('HANDLE-HEAVY')
+    expect(html).not.toContain('HANDLE-LIGHT')
+  })
+
+  it('nimmt das Endpunktformular zum Schluessel des Platzes, nicht zum Id-Ausschnitt', () => {
+    const html = renderToStaticMarkup(
+      <ModelleReiter
+        ansicht={ansichtMit([slot('rolle:tagging', { art: 'rolle', schluessel: 'worker' })])}
+        schreibe={stumm}
+      />,
+    )
+    expect(html).toContain('llm.worker')
+    expect(html).not.toContain('llm.tagging')
+  })
+
   it('laesst keinen Platz aus der Gruppierung fallen', () => {
     const html = renderToStaticMarkup(
       <ModelleReiter ansicht={ansichtMit(ALLE_ARTEN)} schreibe={stumm} />,

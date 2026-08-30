@@ -134,9 +134,10 @@ function Zuordnung({
         <div style={styles.rueckfallFeld}>
           <label style={styles.marke}>Rueckfall-Handle</label>
           {/*
-            `slot.art` entscheidet, ob das Feld erscheint — `slot.id.slice(5)` sagt nur noch,
-            *welches* Tier gemeint ist. Das ist der Schluessel, keine Art: das Ansichtsmodell
-            fuehrt ihn nicht, und aus der Art allein waere er nicht zu gewinnen.
+            `slot.art` entscheidet, ob das Feld erscheint, `slot.schluessel` sagt *welches* Tier
+            gemeint ist. Beides sind Felder des Ansichtsmodells. Bis zum 2026-08-30 kam der
+            Schluessel aus `slot.id.slice(5)` — Wache und Entnahme stuetzten sich damit auf zwei
+            verschiedene Fakten fuer dieselbe Aussage, und die Zeichenkette war die schwaechere.
           */}
           {/*
             Keyed on the value, not just the slot: an uncontrolled input keeps whatever
@@ -146,10 +147,10 @@ function Zuordnung({
             would quietly not be true.
           */}
           <input
-            key={ansicht.modellTiers[slot.id.slice(5) as 'light' | 'standard' | 'heavy']}
-            defaultValue={ansicht.modellTiers[slot.id.slice(5) as 'light' | 'standard' | 'heavy']}
+            key={ansicht.modellTiers[slot.schluessel as 'light' | 'standard' | 'heavy']}
+            defaultValue={ansicht.modellTiers[slot.schluessel as 'light' | 'standard' | 'heavy']}
             onBlur={e =>
-              schreibe('settings:einfachfeld-setzen', `modelltier:${slot.id.slice(5)}`, e.target.value)
+              schreibe('settings:einfachfeld-setzen', `modelltier:${slot.schluessel}`, e.target.value)
             }
             style={styles.eingabe}
           />
@@ -162,13 +163,13 @@ function Zuordnung({
         ein Formular, das `undefined:undefined` anbot und beim Schreiben einen Endpunkt
         angelegt haette, den niemand liest.
 
-        Auch die Vorbedingung fragt inzwischen `slot.art` statt des Praefixes; `slice(6)` liefert
-        nur noch den Schluessel der Rolle. Beides zusammen heisst: die Art kommt aus dem
-        Ansichtsmodell, und ob es fuer diese Rolle wirklich einen Endpunkt gibt, sagt weiterhin
-        der Endpunkt selbst.
+        Die Vorbedingung fragt `slot.art`, der Schluessel kommt aus `slot.schluessel` — beide
+        aus dem Ansichtsmodell, keiner mehr aus der Id. Ob es fuer diese Rolle wirklich einen
+        Endpunkt gibt, sagt weiterhin der Endpunkt selbst; das ist die Bedingung, die den
+        Rechercheur richtig behandelt.
       */}
       {slot.art === 'rolle' && (() => {
-        const rolle = slot.id.slice(6) as keyof SettingsAnsicht['rueckfallEndpunkte']
+        const rolle = slot.schluessel as keyof SettingsAnsicht['rueckfallEndpunkte']
         const endpunkt = ansicht.rueckfallEndpunkte[rolle]
         if (!endpunkt) return null
         return (
