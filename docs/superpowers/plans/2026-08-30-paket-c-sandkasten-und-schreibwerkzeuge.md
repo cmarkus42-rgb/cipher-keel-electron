@@ -2050,7 +2050,24 @@ describe('pruefeArbeitsbaum', () => {
   it('lehnt ein Verzeichnis ohne Git ab — nicht Start mit Warnung', async () => {
     const r = await pruefeArbeitsbaum(wurzel)
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.meldung).toContain('Git')
+    if (!r.ok) expect(r.meldung).toContain('kein Git-Repository')
+  })
+
+  it('unterscheidet ein fehlendes git-Binary vom fehlenden Repository', async () => {
+    // Ohne diese Unterscheidung schickt die Meldung jemanden zu `git init`, waehrend das Problem
+    // ein nicht installiertes git ist. Der PATH wird hier geleert, damit execFile ENOENT wirft.
+    const alterPfad = process.env.PATH
+    process.env.PATH = ''
+    try {
+      const r = await pruefeArbeitsbaum(wurzel)
+      expect(r.ok).toBe(false)
+      if (!r.ok) {
+        expect(r.meldung).toContain('nicht aufrufbar')
+        expect(r.meldung).not.toContain('git init')
+      }
+    } finally {
+      process.env.PATH = alterPfad
+    }
   })
 })
 ```
@@ -2086,9 +2103,26 @@ export async function pruefeArbeitsbaum(
 ): Promise<{ ok: true } | { ok: false; meldung: string }> {
   let ausgabe: string
   try {
+    // Ist `wurzel` ein Unterverzeichnis eines groesseren Repos, antwortet git ueber das
+    // **umschliessende** Repo. Eine schmutzige Datei irgendwo darin blockiert dann einen sauberen
+    // Teilbaum. Das ist die sichere Richtung (zu viel verweigert, nie zu wenig), und der Rueckweg
+    // gehoert ohnehin dem Repo, nicht dem Teilbaum — deshalb bleibt es so und steht hier, statt
+    // dass es jemand spaeter als Fehler meldet.
     const r = await execFileAsync('git', ['-C', wurzel, 'status', '--porcelain'])
     ausgabe = String(r.stdout)
-  } catch {
+  } catch (err) {
+    // Zwei Ausgaenge, nicht einer: fehlt das Binary, ist `git init` die falsche Antwort auf das
+    // falsche Problem, und wer der Meldung folgt, sucht an der falschen Stelle. Verweigert wird
+    // in beiden Faellen — unterschieden wird, was der Mensch dagegen tun kann.
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
+      return {
+        ok: false,
+        meldung:
+          `'git' ist auf diesem Rechner nicht aufrufbar. Ein Lauf mit schreibenden Werkzeugen ` +
+          `startet nur dort, wo ein Rueckweg pruefbar ist — installiere git oder nimm die ` +
+          `schreibenden Werkzeuge aus diesem Lauf.`,
+      }
+    }
     return {
       ok: false,
       meldung:
@@ -2102,7 +2136,8 @@ export async function pruefeArbeitsbaum(
       ok: false,
       meldung:
         `Der Arbeitsbaum ist nicht sauber. Ein Lauf mit schreibenden Werkzeugen wuerde Aenderungen ` +
-        `ueberschreiben, die nirgends gesichert sind:\n${ausgabe.trim()}`,
+        `ueberschreiben, die nirgends gesichert sind — sichere sie erst ('git commit' oder ` +
+        `'git stash'):\n${ausgabe.trim()}`,
     }
   }
   return { ok: true }
