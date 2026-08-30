@@ -39,7 +39,9 @@ const PLATZ: HarnessPlatzAnsicht = {
     { adapterId: 'kimi-code', name: 'Kimi CLI', sperrgrund: 'Das Werkzeug kimi fehlt im Pfad.' },
   ],
   gewaehltHinweis: null,
-  rueckfallText: 'Keine Wahl — es gilt die Laufzeit des Presets.',
+  // Die beiden Fassungen sind hier absichtlich bis auf kein Wort deckungsgleich: nur so kann
+  // ein Test sagen, welche von beiden an welcher Stelle steht.
+  rueckfallText: 'Der lange Satz, der in zwei Saetzen erklaert, was ohne Wahl gilt.',
   erklaertext: 'Die Wahl zwischen den fremden CLI-Harnessen.',
   wirkung: 'naechste-session',
 }
@@ -63,21 +65,24 @@ describe('Harness-Platz — was auf der Seite steht', () => {
     expect(html).not.toMatch(/<option[^>]*value="claude-code"[^>]*disabled/)
   })
 
-  it('nennt den Rueckfalltext als leeren Eintrag, solange nichts gewaehlt ist', () => {
+  it('beschriftet den leeren Eintrag mit der kurzen Fassung, nicht mit dem langen Satz', () => {
     const html = renderToStaticMarkup(<HarnessPlatzFeld platz={PLATZ} schreibe={stumm} />)
-    expect(html).toContain('Keine Wahl — es gilt die Laufzeit des Presets.')
+    expect(html).toContain('— keine Wahl, es gilt die Laufzeit des Presets —')
+    expect(html).not.toContain('Der lange Satz, der in zwei Saetzen erklaert')
     // Nicht die Formulierung der Modellplaetze: dort heisst es „keine Zuordnung", hier
     // entscheidet das Preset — das ist ein Ausgang, keine Leere.
     expect(html).not.toContain('keine Zuordnung')
   })
 
-  it('haelt den Erklaertext hinter dem Info-Knopf zurueck, bis jemand ihn oeffnet', () => {
+  it('haelt Erklaertext, langen Rueckfalltext und Wirkung hinter dem Info-Knopf zurueck', () => {
     const zu = renderToStaticMarkup(<HarnessPlatzFeld platz={PLATZ} schreibe={stumm} />)
     expect(zu).not.toContain('Die Wahl zwischen den fremden CLI-Harnessen.')
+    expect(zu).not.toContain('Der lange Satz, der in zwei Saetzen erklaert')
     expect(zu).not.toContain('gilt ab der naechsten Session')
     infoUmschalten('harness:sitzung')
     const auf = renderToStaticMarkup(<HarnessPlatzFeld platz={PLATZ} schreibe={stumm} />)
     expect(auf).toContain('Die Wahl zwischen den fremden CLI-Harnessen.')
+    expect(auf).toContain('Der lange Satz, der in zwei Saetzen erklaert')
     expect(auf).toContain('gilt ab der naechsten Session')
   })
 

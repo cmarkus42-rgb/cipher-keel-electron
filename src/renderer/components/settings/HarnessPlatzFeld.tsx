@@ -7,10 +7,12 @@
  * `ansicht.harnessPlatz` statt `ansicht.slots`, `adapterId` statt `eintragId`, und
  * SETTINGS_HARNESS_SETZEN statt SETTINGS_ZUORDNUNG_SETZEN.
  *
- * Der leere Eintrag traegt den `rueckfallText` des Hauptprozesses, nicht das
+ * Der leere Eintrag traegt den `rueckfallKurz` des Hauptprozesses, nicht das
  * „— keine Zuordnung —" der Modellplaetze: ein leerer Harness-Platz ist keine Leere, sondern
- * ein benannter Ausgang (es gilt die Laufzeit des Presets). Der Text dafuer kommt fertig von
- * drueben; eine zweite Formulierung waere eine zweite Quelle.
+ * ein benannter Ausgang (es gilt die Laufzeit des Presets). Der lange `rueckfallText` erklaert
+ * dasselbe in zwei Saetzen und steht hinter dem ⓘ. **Beide Fassungen kommen fertig von
+ * drueben**; hier zu kuerzen hiesse, die zweite ausgerechnet an der Stelle zu erfinden, die
+ * keinen Text erfinden darf.
  *
  * Keine Hooks in dieser Funktion — der Zustand des Info-Knopfes liegt in ihm selbst. Das ist
  * kein Zufall, sondern der Grund, weshalb ein Test in Node sie direkt aufrufen und ihren
@@ -47,6 +49,7 @@ export function HarnessPlatzFeld({
           text={
             <>
               {platz.erklaertext}
+              <span style={styles.rueckfall}>{platz.rueckfallText}</span>
               <span style={styles.wirkung}>{wirkungText(platz.wirkung)}</span>
             </>
           }
@@ -57,7 +60,7 @@ export function HarnessPlatzFeld({
         onChange={e => schreibe(SETTINGS_HARNESS_SETZEN, e.target.value)}
         style={styles.auswahl}
       >
-        <option value="">{platz.rueckfallText}</option>
+        <option value="">{platz.rueckfallKurz}</option>
         {platz.optionen.map(o => (
           <option
             key={o.adapterId}
@@ -93,5 +96,6 @@ const styles = {
     borderRadius: 3, color: '#ddd', padding: '4px 6px', fontSize: 12,
   },
   sperrgrund: { color: '#ff9a9a', fontSize: 12, marginTop: 6 },
+  rueckfall: { display: 'block' as const, marginTop: 6, color: '#999' },
   wirkung: { display: 'block' as const, marginTop: 6, color: '#666', fontStyle: 'italic' as const },
 }
