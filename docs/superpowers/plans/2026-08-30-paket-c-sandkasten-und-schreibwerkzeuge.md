@@ -1768,7 +1768,13 @@ In `src/main/harness/lauf.ts`, in `fuehreAus`, **unmittelbar nach** der `tool.in
   // Ankuendigung, Entscheidung, Wirkung. Nur wirkende Werkzeuge: die Kette auch ueber die
   // lesenden zu legen hiesse, jedem Lesevorgang ein Ereignis zu spendieren, dessen Antwort immer
   // ja ist — das Protokoll wuerde laenger und nicht wahrer.
+  // `istWirkend` davor ist nicht bloss eine Abkuerzung, sondern die Bedingung, unter der
+  // `entscheide` ueberhaupt aussagekraeftig ist: fuer jeden Namen ausser `shell_ausfuehren` faellt
+  // es in den Pfadzweig und beurteilte ein `pfad`-Feld, das ein fremdes Werkzeug gar nicht hat.
   if (istWirkend(a.name)) {
+    // `.erlaubt` wird sofort gelesen. `entscheide` gibt **immer** ein Objekt zurueck, also waere
+    // ein `if (entscheide(...))` immer wahr und das Tor stillschweigend abgeschaltet — der Typ
+    // kann das nicht verhindern. Was es verhindert, ist die Mutationsprobe in Step 5.
     const urteil = entscheide(a.name, a.eingabe, u.wache)
     schreibe(u, laufId, 'tool.entschieden', {
       aufrufId: a.id, name: a.name, erlaubt: urteil.erlaubt, grund: urteil.grund,
