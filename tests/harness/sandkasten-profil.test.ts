@@ -29,6 +29,21 @@ describe('sbplRegex', () => {
   it('entwertet Klammern und Anfuehrungszeichen', () => {
     expect(sbplRegex('/a/(b)"c')).toBe('/a/\\(b\\)\\"c')
   })
+  /**
+   * Der Rueckstrich war die einzige der beiden Entwertungsregeln, die kein Test anfasste — und
+   * ausgerechnet um sie geht es im Kopf des Moduls. Ein Rueckstrich wird zu **zwei**, nicht zu
+   * vier: `#"…"` hat keine Zeichenketten-Ebene, die einen davon verbraucht. Am 2026-08-30 gegen
+   * echtes sandbox-exec gemessen, mit einem Verzeichnis `b\c`:
+   *
+   *   (regex #"^…/b\\c/")    ->  Operation not permitted   (die Regel trifft)
+   *   (regex #"^…/b\\\\c/")  ->  Inhalt kommt durch        (sie trifft nicht mehr)
+   *
+   * Vier Rueckstriche waeren also nicht strenger, sondern wirkungslos — genau der Ausgang, vor
+   * dem der Modulkopf warnt.
+   */
+  it('macht aus einem Rueckstrich zwei, nicht vier', () => {
+    expect(sbplRegex('/a/b\\c')).toBe('/a/b\\\\c')
+  })
 })
 
 describe('profilText — Grundgeruest', () => {

@@ -81,6 +81,16 @@ describe.skipIf(process.platform !== 'darwin')('shell_ausfuehren — echter Lauf
     if (r.ok) expect((r.inhalt[0] as { text: string }).text).toContain('hallo')
   })
 
+  it('kennzeichnet die Ausgabe als fremd', async () => {
+    // Die Herkunft wird an genau dieser Stelle gesetzt und war von nichts festgehalten: aus
+    // `quelle: 'fremd'` ein `'lokal'` zu machen liess alle Tests gruen. `lokal` hiesse "aus
+    // dieser Maschine" und verschwiege, dass eine Abhaengigkeit in diesen Text schreiben kann
+    // und er im Modellkontext landet — der Wert ist genau dafuer erfunden worden (form.ts).
+    const r = await shell.ausfuehren({ kommando: 'echo hallo' }, ktx)
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.quelle).toBe('fremd')
+  })
+
   it('nennt den Rueckgabecode bei einem Fehlschlag, statt still ok zu melden', async () => {
     const r = await shell.ausfuehren({ kommando: 'exit 3' }, ktx)
     expect(r.ok).toBe(false)

@@ -176,6 +176,14 @@ export async function pruefeArbeitsbaum(
     // Zwei Ausgaenge, nicht einer: fehlt das Binary, ist `git init` die falsche Antwort auf das
     // falsche Problem, und wer der Meldung folgt, sucht an der falschen Stelle. Verweigert wird
     // in beiden Faellen — unterschieden wird, was der Mensch dagegen tun kann.
+    //
+    // Zwei sind es und drei waeren richtig: der Zweig unter ENOENT faengt **jeden** anderen
+    // Fehler von `git status` ein und nennt ihn "kein Git-Repository". Ein Repo mit sehr vielen
+    // Aenderungen (maxBuffer der execFile-Vorgabe ueberschritten) und ein Repo, das git wegen
+    // `detected dubious ownership` verweigert, sind beide Repos — und der Mensch, der der Meldung
+    // folgt, tippt `git init` in ein bestehendes Repository. Fail-closed, also nicht gefaehrlich,
+    // aber in die Irre fuehrend. Nicht in diesem Bogen geaendert, weil jede weitere
+    // Unterscheidung auf der Fehlerzeile von git beruht und damit auf deren Wortlaut.
     if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
       return {
         ok: false,

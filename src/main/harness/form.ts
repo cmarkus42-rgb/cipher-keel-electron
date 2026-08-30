@@ -22,6 +22,14 @@
  * Ausgabe eines Build-Werkzeugs. Ein eigener Wert und kein `netz`, weil ein Protokolleintrag sonst
  * behauptete, ein `npm ci` sei von einer Gegenstelle gekommen; und kein `lokal`, weil das
  * verschwiege, dass ein Paket in diesen Text schreiben kann und er im Modellkontext landet.
+ *
+ * **Die Angabe gilt nur dem Erfolgsfall, und das ist eine Luecke, keine Feinheit.** Scheitert ein
+ * Kommando, gehen die Bytes des Kindes in `meldung` eines `WerkzeugErgebnis` — und das Feld hat
+ * kein `quelle` daneben. Die fremde Ausgabe eines fehlgeschlagenen Baus kommt also ohne diese
+ * Kennzeichnung im Modellkontext an, obwohl sie dieselbe Herkunft hat. Was dagegen haelt, ist
+ * keine Typangabe, sondern die Reihenfolge: `werkzeug-shell.ts` stellt in jedem Fehlerausgang
+ * keels eigenen Satz **vor** die fremde Ausgabe, damit eine Abhaengigkeit, die eine Zeile in
+ * diesem Stil druckt, sie nicht vortaeuschen kann — sie kaeme immer danach.
  */
 export type WerkzeugQuelle = 'netz' | 'lokal' | 'fremd'
 

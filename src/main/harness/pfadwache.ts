@@ -19,7 +19,18 @@
  * second layer is not a copy of this one but its mirror in the kernel, and the two are deliberately
  * kept in step: `SandkastenKontext` extends `WacheKontext` (one source for the three paths), and
  * where a rule here matches on a *basename* at any depth, the SBPL rule over there carries an
- * any-depth segment of its own, so the sandbox is never weaker than the guard it mirrors.
+ * any-depth segment of its own.
+ *
+ * The sentence that used to close this paragraph — "so the sandbox is never weaker than the guard
+ * it mirrors" — was true of the write rules it was written about and false for reads, and it is
+ * corrected here rather than trimmed, because a reader who believes it stops checking. What holds:
+ * for the *named* paths and basenames both layers deny — `.git`, `~/.ssh`, `~/.cipher-*`, `.env`,
+ * key files and key extensions, and the sandbox denies them for writing too. What does not hold:
+ * everything else that is merely *readable*. This guard confines reading to the project root; the
+ * profile grants `(allow file-read*)` and takes seven denies off it, so a shelled-out `cat` reads
+ * anything on this machine that is not on that list — the whole home directory, every other
+ * project, /etc. That is the price of running real build tools, and it is the reason the profile's
+ * deny list has to name every secret shape by hand rather than inherit a root boundary from here.
  */
 
 import { realpathSync } from 'node:fs'

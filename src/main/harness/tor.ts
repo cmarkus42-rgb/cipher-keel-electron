@@ -10,6 +10,19 @@
  * other two and writes the refusal. A place that can say no for two of three inputs is a gate; one
  * that can for none was the finding.
  *
+ * **What it contributes today is the entry, not the prevention — and the next builder should read
+ * that here and not only in the design doc.** Measured while Task 7 was built and confirmed
+ * independently by review: no refusal of this gate is the only thing standing between a call and
+ * its effect. Every branch is mirrored downstream — `werkzeug-schreiben.ts` asks pfadwache again
+ * on purpose, missing fields are named there too, and `shell_ausfuehren` is waved through anyway.
+ * Take the abort out and the log looks identical. Its contribution is `tool.entschieden`: proof
+ * that a decision happened and why, where before a refusal was visible only as an absent effect.
+ *
+ * It becomes load-bearing the moment a *fourth* acting tool arrives without a check of its own.
+ * The only test that would notice that day is the trusting-double in
+ * tests/harness/lauf-wirkende-werkzeuge.test.ts — it builds exactly that situation, and it is the
+ * only place where a mutation of this gate bites. Whoever adds that tool inherits it.
+ *
  * There is deliberately no rule over a shell *command* here. Against a shell a string check is
  * theatre — `$(...)` and a rewritten npm script walk past it — and the boundary is the sandbox.
  */
@@ -61,6 +74,12 @@ export function entscheide(
  *
  * Reading tools are not required to have one: laying the chain over them too would spend an event
  * on every read whose answer is always yes. The log would get longer and not truer.
+ *
+ * **One branch reports a violation that is none.** The closing turn in lauf.ts writes `tool.intent`
+ * and `tool.failed` for every call the model still makes after a budget was hit, without passing
+ * the gate — deliberately: nothing is executed there, the run ends on that turn. If an acting tool
+ * ever shows up in that set, this function counts it. No production caller exists today, so nobody
+ * sees it; whoever wires one should read that hit as this branch and not as a breach.
  */
 export function effekteOhneEntscheidung(ereignisse: Ereignis[]): Ereignis[] {
   const entschieden = new Set<string>()

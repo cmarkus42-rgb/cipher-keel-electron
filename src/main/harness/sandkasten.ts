@@ -14,6 +14,30 @@
  * The profile is generated as text and passed inline via `-p`, not written to a file with `-D`
  * parameters: this way `profilText` is a pure function, testable without ever starting a process,
  * and the rules — the part that can be wrong — are checkable like pfadwache's.
+ *
+ * DIE NAHT ZWISCHEN DEN BEIDEN SCHICHTEN, GEMESSEN — 2026-08-30
+ *
+ * Die naheliegende Sorge, und sie kommt beim naechsten Lesen wieder: das Kind im Sandkasten legt
+ * eine **harte Verknuepfung** von einem Geheimnis ausserhalb der Wurzel *in* die Wurzel, und
+ * danach kuerzt das in-Prozess-Werkzeug `datei_schreiben` — das keinen Sandkasten hat — den Inode
+ * ab. `realpathSync` sieht eine harte Verknuepfung nicht (sie hat keinen Zielpfad, sie *ist* der
+ * Inode), `pruefePfad` liesse den Pfad also durch. Damit haetten die zwei Schichten, die einander
+ * nicht beruehren sollen, ueber eine Datei doch aneinander gerueckt.
+ *
+ * Der Kernel schliesst das im ersten Schritt, und die Gegenprobe zeigt den Mechanismus statt eines
+ * Zufalls — beides in einem echten Profil gefahren:
+ *
+ *   ln <datei-ausserhalb>  <wurzel>/notiz.txt   ->  Operation not permitted
+ *   ln <wurzel>/a.txt      <wurzel>/b.txt       ->  rc=0, Verknuepfungszahl 2
+ *
+ * `ln` ist also nicht pauschal gesperrt: Seatbelt vermittelt die **Quelle** von `link(2)`, und die
+ * liegt beim Angriff ausserhalb der Erlaubnis. Der Angriff scheitert vor seinem ersten Schritt.
+ *
+ * Deshalb steht hier **kein** `fstat`/`nlink`-Waechter in `werkzeug-schreiben.ts`: er bewachte
+ * einen Weg, den der Kernel schon zu hat, und eine Datei mit mehreren Verknuepfungen ist im
+ * Normalbetrieb nichts Verdaechtiges. Und deshalb steht die Messung hier und nicht in einer
+ * Notiz: sie ist es, die "die zwei Schichten beruehren einander nicht" von einer Hoffnung zu einer
+ * Aussage macht.
  */
 
 import type { WacheKontext } from './pfadwache'
@@ -57,6 +81,24 @@ export function sbplLiteral(pfad: string): string {
  * For `#"..."`: an SBPL regex literal. A separate function with its own tests rather than one with
  * a flag — the two escaping rules are genuinely different, and a shared function with a switch is
  * where they would quietly drift into each other.
+ *
+ * Ein Rueckstrich wird zu `\\`, und das ist gemessen und nicht abgeleitet. Die Sorge des Reviews
+ * war, `#"…"` habe eine Zeichenketten-Ebene, die einen der beiden Rueckstriche verbrauche, sodass
+ * vier noetig waeren. Am 2026-08-30 gegen echtes sandbox-exec gefahren, mit einem Verzeichnis
+ * `b\c` und einer Datei darin:
+ *
+ *   (deny file-read* (regex #"^…/b\\c/"))    ->  cat  =  Operation not permitted   (trifft)
+ *   (deny file-read* (regex #"^…/b\\\\c/"))  ->  cat  =  Inhalt kommt durch        (trifft nicht)
+ *
+ * `#"…"` entwertet also nichts: der Regex-Motor sieht die Zeichen, wie sie dastehen, und `\\` ist
+ * dort der Rueckstrich. Zwei sind richtig, vier waeren zwei Rueckstriche und wuerden die Regel
+ * lautlos wirkungslos machen — der Ausgang, vor dem der Kopf dieses Moduls warnt. Ein Test haelt
+ * beide Richtungen fest.
+ *
+ * **Was diese Funktion nicht kann, gemessen am selben Tag:** ein Anfuehrungszeichen im Pfad.
+ * `\"` beendet das Literal trotzdem, `sandbox-exec` antwortet mit `unbound variable` und startet
+ * gar nicht erst. Ein Projektpfad mit `"` fuehrt damit zu einem Lauf, der mit „Der Sandkasten
+ * liess sich nicht starten" endet — fail-closed und benannt, aber nicht behoben.
  */
 export function sbplRegex(pfad: string): string {
   return pfad.replace(/[\\^$.|?*+()[\]{}"]/g, '\\$&')
