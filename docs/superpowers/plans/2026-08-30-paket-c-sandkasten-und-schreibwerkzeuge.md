@@ -536,6 +536,18 @@ describe.skipIf(process.platform !== 'darwin')('starte — Grenzen des Laufs', (
     expect(r.zeitueberschreitung).toBe(true)
   }, 20_000)
 
+  it('bindet die Wanduhr auch bei einem Kommando, das forkt', async () => {
+    // Der Fall, der die Zeitgrenze wirklich braucht. `sleep 5` allein prueft die eine Form, die
+    // die Shell mit `exec` an sich zieht — dort genuegt ein Kill auf die eine Pid, und der Test
+    // war gruen, waehrend die Grenze fuer jede Pipeline und jeden Hintergrundjob nicht band.
+    // Gemessen ohne Gruppenkill: 5024 ms bei 300 ms Grenze, mit `zeitueberschreitung: true`.
+    // Die Wanduhr ist darum die Zusicherung, nicht die Flagge.
+    const t0 = Date.now()
+    const r = await starte('sleep 5 | cat', ktx, 'zu', 300)
+    expect(r.zeitueberschreitung).toBe(true)
+    expect(Date.now() - t0).toBeLessThan(2000)
+  }, 20_000)
+
   it('deckelt die Ausgabe und sagt es', async () => {
     const r = await starte('yes abcdefgh | head -c 200000', ktx, 'zu')
     expect(r.abgeschnitten).toBe(true)
@@ -608,6 +620,14 @@ export function starte(
       ['-p', profil, '/bin/sh', '-c', kommando],
       {
         cwd: ktx.wurzel,
+        // `detached` makes the child a process *group* leader, and that is what makes the wall
+        // clock below binding. Without it, `kill` reaches only the `sandbox-exec` pid: for a
+        // command the shell can `exec` in place that is the same process and it works, but any
+        // command that forks — a pipeline, a background job, i.e. every real build tool — leaves
+        // grandchildren holding the stdout pipe open, and `close` does not fire until they finish
+        // on their own. Measured on 2026-08-30 against a 300 ms limit: `sleep 5` ended after
+        // 306 ms, `sleep 5 | cat` after 5024 ms with the flag already claiming a timeout.
+        detached: true,
         env: {
           PATH: getEnhancedPath(),
           HOME: ktx.heim,
@@ -634,7 +654,10 @@ export function starte(
 
     const wecker = setTimeout(() => {
       zeitueberschreitung = true
-      kind.kill('SIGKILL')
+      // The negated pid is the process *group*, which is the whole point of `detached` above.
+      // Wrapped, because the group can already be gone between the timer firing and the signal
+      // (ESRCH) — and a throw here would escape the promise instead of ending the run.
+      try { process.kill(-kind.pid!, 'SIGKILL') } catch { /* schon beendet */ }
     }, zeitgrenzeMs)
 
     kind.on('error', (err) => {
@@ -1477,6 +1500,12 @@ const shellAusfuehren: Werkzeug = {
     // rejection into a mysterious build error.
     if (r.zeitueberschreitung) {
       return { ok: false, meldung: `Abgebrochen: die Zeitgrenze von ${zeitgrenze} ms ist ueberschritten.` }
+    }
+    // Ein Spawn-Fehler liefert ebenfalls `code: null` — ohne eigenen Zweig kaeme er als
+    // "Rueckgabecode null" heraus, und ein Modell suchte den Fehler in seinem Kommando statt im
+    // Sandkasten, der gar nicht erst startete. Drei Ausgaenge, drei Texte.
+    if (r.code === null) {
+      return { ok: false, meldung: `Der Sandkasten liess sich nicht starten: ${r.ausgabe}` }
     }
     if (r.code !== 0) {
       return {
