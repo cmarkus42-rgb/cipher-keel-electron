@@ -216,11 +216,12 @@ export interface CliSitzungsAdapter extends AgentAdapterBasis {
    * restart of the same process in an existing pane.
    *
    * The closure's `boolean` (widened from `void` in the follow-up review of 4358cac) means
-   * exactly one sentence and nothing wider: **"settings.local.json traegt keinen Eintrag aus
-   * diesem Versuch mehr."** `true` also covers the trivial cases — nothing was written, or
-   * the target is gone. `false` means the closure could not establish that, and something may
-   * still be lying there; it must say why on the console. A throw counts as `false` for the
-   * caller. An adapter with nothing to undo may return a no-op that returns `true`.
+   * exactly one sentence and nothing wider: **"die von dieser Methode geschriebene
+   * Konfiguration traegt keinen Eintrag aus diesem Versuch mehr."** `true` also covers the
+   * trivial cases — nothing was written, or the target is gone. `false` means the closure
+   * could not establish that, and something may still be lying there; it must say why on the
+   * console. A throw counts as `false` for the caller. An adapter with nothing to undo may
+   * return a no-op that returns `true`.
    */
   postLaunchInjection?(ctx: AdapterContext): Promise<() => boolean>
   /** Read context usage for a session. Only call if supports('status-line'). */
