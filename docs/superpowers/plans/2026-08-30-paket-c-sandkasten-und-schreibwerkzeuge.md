@@ -2270,6 +2270,9 @@ In `docs/anpassbare-flaechen.md` einen Abschnitt für Paket C ergänzen, mit je 
 - **`STANDARD_ZWISCHENSPEICHER`** (`sandkasten.ts`) — Schreibziele ausserhalb der Wurzel. Warum es sie gibt: `flutter pub get` schreibt nach `~/.pub-cache`, `npm ci` nach `~/.npm`; nur die Wurzel freizugeben hiesse, dass jede Installation scheitert. **Die weichste Stelle des Sandkastens** — jeder Eintrag ist ein Loch, die Liste steht darum an einer Stelle und wächst nicht stillschweigend. Wermutstropfen, der benannt gehört: sobald Flutter installiert ist, braucht es zusätzlich `$FLUTTER_ROOT/bin/cache`, denn Flutter schreibt in die eigene Installation.
 - **`PAKETBEFEHLE`** (`sandkasten.ts`) — welche Kommandos das Netzprofil `offen` bekommen. **Keine Positivliste dessen, was laufen darf:** ein nicht getroffenes Kommando läuft trotzdem, nur ohne Netz. Sie irrt fail-closed und darf darum ungenau sein.
 - **`STANDARD_ZEITGRENZE_MS`** (120 000) und **`MAX_AUSGABE_BYTES`** (65 536) — der Deckel ist kein Komfort: die Ausgabe geht in den Modellkontext.
+- **`MAX_ZEITGRENZE_MS`** (900 000) — die Decke über der Vorgabe. Sie existiert, weil `zeitgrenzeMs` aus der **Modelleingabe** kommt: ohne sie wäre die Vorgabe darüber eine Empfehlung und kein Rand, und ein `zeitgrenzeMs: 100000000` hielte den Lauf tagelang offen. Beim Task-6-Review gefunden, nicht beim Entwurf.
+
+**Der Abgleich ist Pflicht, nicht Kür:** die vier Einträge oben stammen aus dem ersten Entwurf, `MAX_ZEITGRENZE_MS` kam erst durch einen Review dazu. Vor dem Schreiben also `grep -n "^export const [A-Z_]*" src/main/harness/sandkasten.ts` fahren und gegen die Liste halten — eine anpassbare Fläche, die niemand dokumentiert hat, ist genau die, die später niemand findet.
 
 - [ ] **Step 6: Close the outdated promises**
 
