@@ -49,6 +49,23 @@ describe('pruefeArbeitsbaum', () => {
   it('lehnt ein Verzeichnis ohne Git ab — nicht Start mit Warnung', async () => {
     const r = await pruefeArbeitsbaum(wurzel)
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.meldung).toContain('Git')
+    if (!r.ok) expect(r.meldung).toContain('kein Git-Repository')
+  })
+
+  it('unterscheidet ein fehlendes git-Binary vom fehlenden Repository', async () => {
+    // Ohne diese Unterscheidung schickt die Meldung jemanden zu `git init`, waehrend das Problem
+    // ein nicht installiertes git ist. Der PATH wird hier geleert, damit execFile ENOENT wirft.
+    const alterPfad = process.env.PATH
+    process.env.PATH = ''
+    try {
+      const r = await pruefeArbeitsbaum(wurzel)
+      expect(r.ok).toBe(false)
+      if (!r.ok) {
+        expect(r.meldung).toContain('nicht aufrufbar')
+        expect(r.meldung).not.toContain('git init')
+      }
+    } finally {
+      process.env.PATH = alterPfad
+    }
   })
 })
