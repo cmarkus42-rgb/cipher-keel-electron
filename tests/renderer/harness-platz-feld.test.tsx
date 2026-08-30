@@ -33,6 +33,7 @@ const PLATZ: HarnessPlatzAnsicht = {
   id: 'harness:sitzung',
   beschriftung: 'Harness — womit eine Sitzung läuft',
   gewaehlt: '',
+  rueckfallKurz: '— keine Wahl, es gilt die Laufzeit des Presets —',
   optionen: [
     { adapterId: 'claude-code', name: 'Claude Code', sperrgrund: null },
     { adapterId: 'kimi-code', name: 'Kimi CLI', sperrgrund: 'Das Werkzeug kimi fehlt im Pfad.' },

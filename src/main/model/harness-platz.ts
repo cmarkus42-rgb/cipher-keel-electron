@@ -39,6 +39,16 @@ export interface HarnessPlatz {
   readonly erklaertext: string
   /** Deutsch: was gilt, solange nichts gewaehlt ist. */
   readonly rueckfallText: string
+  /**
+   * Derselbe Sachverhalt in Beschriftungslaenge, fuer den leeren Eintrag im Auswahlfeld.
+   *
+   * Zwei Felder statt einer Kuerzung im Renderer: `rueckfallText` erklaert in zwei Saetzen,
+   * eine Option traegt eine Zeile. Wer dort kuerzt, erfindet die zweite Fassung an der einen
+   * Stelle, die laut ihrem eigenen Kopfkommentar keinen Text erfinden darf
+   * (settings-window.tsx). Beide Fassungen stehen deshalb hier nebeneinander, wo sie beim
+   * Umformulieren zusammen ins Auge fallen.
+   */
+  readonly rueckfallKurz: string
 }
 
 export const HARNESS_PLATZ: HarnessPlatz = {
@@ -53,6 +63,7 @@ export const HARNESS_PLATZ: HarnessPlatz = {
   rueckfallText:
     'Keine Wahl — es gilt die Laufzeit des Presets. Das ist die Vorgabe, also genau das ' +
     'bisherige Verhalten: wer nichts einstellt, merkt nichts.',
+  rueckfallKurz: '— keine Wahl, es gilt die Laufzeit des Presets —',
 }
 
 export interface HarnessOption {

@@ -198,6 +198,7 @@ function slotAnsicht(slot: Slot, eintraege: ModellEintrag[]): SlotAnsicht {
   return {
     id: slot.id,
     beschriftung: slot.beschriftung,
+    art: slot.art,
     gewaehlt: gewaehlt ?? '',
     optionen,
     warnungen: warnListe,
@@ -266,6 +267,7 @@ function harnessPlatzAnsicht(): HarnessPlatzAnsicht {
     optionen,
     gewaehltHinweis,
     rueckfallText: HARNESS_PLATZ.rueckfallText,
+    rueckfallKurz: HARNESS_PLATZ.rueckfallKurz,
     erklaertext: HARNESS_PLATZ.erklaertext,
     wirkung: HARNESS_PLATZ.wirkung,
   }

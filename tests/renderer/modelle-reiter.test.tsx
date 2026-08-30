@@ -18,6 +18,9 @@ function slot(id: string, extra: Partial<SlotAnsicht> = {}): SlotAnsicht {
   return {
     id,
     beschriftung: `Platz ${id}`,
+    // Vorgabe, damit jeder Aufrufer, der die Art nicht selbst setzt, weiter uebersetzt.
+    // Wer nach Gruppen prueft, gibt sie ueber `extra` mit.
+    art: 'tier',
     gewaehlt: '',
     optionen: [],
     warnungen: [],
@@ -60,6 +63,7 @@ function ansichtMit(slots: SlotAnsicht[], extra: Partial<SettingsAnsicht> = {}):
       id: 'harness:sitzung',
       beschriftung: 'Harness — womit eine Sitzung läuft',
       gewaehlt: '',
+      rueckfallKurz: '— keine Wahl, es gilt die Laufzeit des Presets —',
       optionen: [{ adapterId: 'claude-code', name: 'Claude Code', sperrgrund: null }],
       gewaehltHinweis: null,
       rueckfallText: 'RUECKFALL-HARNESS',

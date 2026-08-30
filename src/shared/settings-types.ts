@@ -109,6 +109,13 @@ export interface SlotOptionAnsicht {
 export interface SlotAnsicht {
   id: string
   beschriftung: string
+  /**
+   * Wonach das Fenster gruppiert. Durchgereicht aus `Slot.art` (model/slots.ts), damit die
+   * Oberflaeche die Art nicht aus dem Id-Praefix ableiten muss: das Praefix ist eine
+   * Zeichenkette, die zufaellig danebensteht, die Art ist die Aussage. Genau diese Ableitung
+   * war in ModelleReiter.tsx schon einmal falsch — ihr Kommentar dort erklaert den Fall.
+   */
+  art: 'tier' | 'rolle' | 'sitzung'
   /** Empty string means no assignment. */
   gewaehlt: string
   optionen: SlotOptionAnsicht[]
@@ -169,6 +176,8 @@ export interface HarnessPlatzAnsicht {
   gewaehltHinweis: string | null
   /** Deutsch: was gilt, solange nichts gewaehlt ist. */
   rueckfallText: string
+  /** Derselbe Sachverhalt in Beschriftungslaenge, fuer den leeren Eintrag im Auswahlfeld. */
+  rueckfallKurz: string
   /**
    * Deutsch: was der Platz tut und was ausdruecklich nicht. Gehoert hinter einen Info-Knopf —
    * er erklaert, er schraenkt nicht ein (Entwurf §4).
