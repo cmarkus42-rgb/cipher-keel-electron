@@ -589,6 +589,13 @@ import { getEnhancedPath } from '../util/exec-util'
 export const STANDARD_ZEITGRENZE_MS = 120_000
 
 /**
+ * Die Decke ueber der Vorgabe. `shell_ausfuehren` nimmt `zeitgrenzeMs` aus der Modelleingabe
+ * entgegen; ohne diese Grenze waere die Vorgabe darueber eine Empfehlung und kein Rand — ein
+ * `zeitgrenzeMs: 100000000` hielte den Lauf tagelang offen. Anpassbare Flaeche (CK-NFR-012).
+ */
+export const MAX_ZEITGRENZE_MS = 15 * 60_000
+
+/**
  * Output cap. Not comfort: the output goes into the model context. An `npm ci` with 4 MB of
  * output blows a local 27B model's window in a single turn, and then the test track measures who
  * guessed `--silent`.
@@ -1353,7 +1360,7 @@ Create `tests/harness/werkzeug-shell.test.ts`:
 
 ```ts
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { mkdtempSync, mkdirSync, rmSync, readFileSync, realpathSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, realpathSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { istPaketbefehl } from '../../src/main/harness/sandkasten'
@@ -1420,7 +1427,9 @@ describe.skipIf(process.platform !== 'darwin')('shell_ausfuehren — echter Lauf
   it('nennt den Rueckgabecode bei einem Fehlschlag, statt still ok zu melden', async () => {
     const r = await shell.ausfuehren({ kommando: 'exit 3' }, ktx)
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.meldung).toContain('3')
+    // 'Rueckgabecode 3', nicht bloss '3': jede dreistellige Zahl in irgendeiner Meldung wuerde
+    // sonst genuegen, und der Test sagte nichts ueber den Code aus.
+    if (!r.ok) expect(r.meldung).toContain('Rueckgabecode 3')
   })
 
   it('schreibt in der Wurzel', async () => {
@@ -1432,6 +1441,9 @@ describe.skipIf(process.platform !== 'darwin')('shell_ausfuehren — echter Lauf
   it('schreibt nicht ausserhalb der Wurzel', async () => {
     const r = await shell.ausfuehren({ kommando: `echo raus > ${heim}/verboten.txt` }, ktx)
     expect(r.ok).toBe(false)
+    // Die eigentliche Zusicherung: `ok: false` allein bestuende auch, wenn der Sandkasten aus
+    // einem ganz anderen Grund nicht startete. Was zaehlt, ist dass die Datei nie entstand.
+    expect(existsSync(join(heim, 'verboten.txt'))).toBe(false)
   })
 
   it('bekommt ohne Paketbefehl kein Netz', async () => {
@@ -1480,8 +1492,16 @@ Expected: FAIL — `istPaketbefehl` und das Modul `werkzeug-shell` fehlen.
  * does not match here. If the match is wrong, the failure case is a failing build, never an open
  * channel: it errs fail-closed, and that is exactly why it is allowed to be imprecise.
  *
- * What it does not close, and the tool text says so too: a `postinstall` script runs with full
- * network under `offen`. That is the same gap a human takes on when typing `npm ci` themselves.
+ * Zwei Loecher, beide benannt und keines geschlossen:
+ *
+ * - Ein `postinstall`-Skript laeuft unter `offen` mit vollem Netz. Dieselbe Luecke, die ein
+ *   Mensch eingeht, der selbst `npm ci` tippt.
+ * - Der Treffer gilt dem **fuehrenden** Kommando der Zeile, und das Profil gilt der ganzen Zeile:
+ *   `npm ci && curl …` traegt beides ins Netz. Ein vorangestelltes `cd sub && npm ci` trifft
+ *   dagegen nicht und laeuft ohne Netz — die Ungenauigkeit irrt also in beide Richtungen, nicht
+ *   nur in die sichere. Sie gewinnt nichts, was ein selbstgeschriebenes `postinstall` nicht auch
+ *   gaebe, und darum bleibt der Abgleich wie er ist; die Aussage darueber wird korrigiert, nicht
+ *   der Abgleich.
  */
 export const PAKETBEFEHLE = [
   'npm ci', 'npm install', 'npm i ', 'yarn install', 'pnpm install', 'pnpm i ',
@@ -1548,18 +1568,35 @@ const shellAusfuehren: Werkzeug = {
       return { ok: false, meldung: 'Fuer diesen Lauf ist kein Sandkasten eingerichtet — es wird nichts ausgefuehrt.' }
     }
 
-    const zeitgrenze = typeof eingabe.zeitgrenzeMs === 'number' && eingabe.zeitgrenzeMs > 0
+    // Gedeckelt, nicht bloss uebernommen: der Wert kommt aus der Modelleingabe, und ohne
+    // Obergrenze waere `STANDARD_ZEITGRENZE_MS` an dem einen Werkzeug, das Prozesse startet, eine
+    // Empfehlung statt einer Decke — ein `zeitgrenzeMs: 100000000` hielte den Lauf tagelang offen.
+    // Das ist keine Kommandopruefung: es sieht `kommando` nicht an.
+    const gewuenscht = typeof eingabe.zeitgrenzeMs === 'number' && eingabe.zeitgrenzeMs > 0
       ? eingabe.zeitgrenzeMs
       : STANDARD_ZEITGRENZE_MS
+    const zeitgrenze = Math.min(gewuenscht, MAX_ZEITGRENZE_MS)
 
     const netz = istPaketbefehl(kommando) ? 'offen' : 'zu'
     const r = await starte(kommando, ktx.sandkasten, netz, zeitgrenze)
 
+    // Vor der Fallunterscheidung berechnet, weil er in **jeden** Ausgang gehoert. Vorher hing er
+    // nur am Erfolg — und abgeschnitten wird am ehesten der fehlgeschlagene Bau, also genau der
+    // Fall, in dem das Modell sonst einen gekuerzten Fehler liest, den echten Fehler vermisst
+    // und raet.
+    const hinweis = r.abgeschnitten ? '\n(Ausgabe abgeschnitten.)' : ''
+
     // Named apart, because they mean different things to whoever reads the log: a wall-clock
     // ceiling that ran out, versus a boundary that refused. Conflating them turns a sandbox
     // rejection into a mysterious build error.
+    // In allen drei Ausgaengen steht keels Satz **vorn** und die fremde Ausgabe dahinter: eine
+    // Abhaengigkeit, die eine Zeile im Stil dieser Meldungen druckt, kann sie damit nicht
+    // vortaeuschen — sie kaeme immer danach.
     if (r.zeitueberschreitung) {
-      return { ok: false, meldung: `Abgebrochen: die Zeitgrenze von ${zeitgrenze} ms ist ueberschritten.` }
+      return {
+        ok: false,
+        meldung: `Abgebrochen: die Zeitgrenze von ${zeitgrenze} ms ist ueberschritten.\n${r.ausgabe}${hinweis}`,
+      }
     }
     // Ein Spawn-Fehler liefert ebenfalls `code: null` — ohne eigenen Zweig kaeme er als
     // "Rueckgabecode null" heraus, und ein Modell suchte den Fehler in seinem Kommando statt im
@@ -1570,18 +1607,24 @@ const shellAusfuehren: Werkzeug = {
     if (r.code !== 0) {
       return {
         ok: false,
-        meldung: `Kommando endete mit Rueckgabecode ${String(r.code)}.\n${r.ausgabe}`,
+        meldung: `Kommando endete mit Rueckgabecode ${String(r.code)}.\n${r.ausgabe}${hinweis}`,
       }
     }
 
-    const hinweis = r.abgeschnitten ? '\n(Ausgabe abgeschnitten.)' : ''
     const netzHinweis = netz === 'offen' ? '\n(Als Paketbefehl erkannt — mit Netzzugang gelaufen.)' : ''
+    const notizen = (hinweis + netzHinweis).trimStart()
     return {
       ok: true,
       // `fremd`, not `lokal`: what a build tool prints is not keel's word. A dependency can print
       // whatever it likes into that stream, and it lands in the model's context.
       quelle: 'fremd',
-      inhalt: [{ art: 'text', text: r.ausgabe + hinweis + netzHinweis }],
+      // Keels eigene Notizen in einem **eigenen** Block, nicht an die fremde Ausgabe geklebt.
+      // Sonst faelscht eine Abhaengigkeit, die "(Als Paketbefehl erkannt …)" druckt, eine Aussage
+      // ueber den Netzmodus dieses Laufs — dieselbe Faelschungsklasse, deretwegen der Stummel
+      // dieses Werkzeugs einzeilig bleiben muss (siehe Modulkopf).
+      inhalt: notizen === ''
+        ? [{ art: 'text', text: r.ausgabe }]
+        : [{ art: 'text', text: r.ausgabe }, { art: 'text', text: notizen }],
     }
   },
 }
