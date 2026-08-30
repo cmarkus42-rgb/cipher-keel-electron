@@ -81,17 +81,30 @@ Popup schliesst beim Klick daneben und mit Escape.
 (`WirkungVermerk`), was bei leerem Platz passiert (`rueckfallText`), was ein Eintrag ist
 (`erklaertext`, `empfehlung`), wofür ein Reiter da ist.
 
-**Davor bleiben — und das ist eine Einschränkung, keine Nachlässigkeit:**
+**Vorerst auf der Seite bleiben — und das ist eine aufgeschobene Frage, keine
+Entwurfsentscheidung:**
 
 - **Sperrgründe** (warum eine Option nicht wählbar ist)
 - **Warnungen** (`Warnliste`)
 - **`gewaehltHinweis`** (was an der getroffenen Wahl klemmt)
 - **übersprungene Einträge** und Fehlermeldungen
 
-`ModelleReiter.tsx` begründet das heute schon im Quelltext, und die Begründung trägt: *„the
-answer to ‚why can I not pick that' belongs on screen, not in a tooltip."* Eine Warnung hinter
-einem Knopf ist eine Warnung, die niemand liest. Hinter das ⓘ gehört, was **erklärt**; auf die
-Seite gehört, was **einschränkt**.
+> **Korrektur, gleich am 2026-08-30 nachgetragen.** Christians Anweisung lautete, *„die
+> hinweisetexte"* hinter Info-Knöpfe zu nehmen — ohne Ausnahme. Diese Liste war eine
+> **Einengung seiner Anweisung**, die ich vorgenommen und nicht als solche gekennzeichnet habe.
+> Sein Bescheid darauf: *„naja, das hab ich doch gerade explizit gefordert … aber wir können es
+> im moment auch lassen — machen eh mal ne design session und dann räumen wir das alles auf."*
+>
+> Die Frage ist damit **vertagt, nicht entschieden.** Sie gehört auf die Liste der
+> Design-Session, zusammen mit dem Rest der Einstellungsseite.
+
+Mein Argument dafür, damit die Design-Session es vorfindet statt es neu zu führen:
+`ModelleReiter.tsx` begründet die heutige Aufteilung im Quelltext — *„the answer to ‚why can I
+not pick that' belongs on screen, not in a tooltip"* —, und eine Warnung hinter einem Knopf ist
+eine Warnung, die niemand liest. Dagegen steht, dass eine Seite, auf der alles gleich laut ist,
+am Ende auch nichts mehr betont; das ist genau der Zustand, den Christian beanstandet hat
+(*„so ist es nicht ganz nachvollziehbar"*). Beide Punkte sind wahr, und die Auflösung ist
+vermutlich eine Rangfolge statt einer Grenze — dafür braucht es die Design-Session.
 
 ## 5. Was nicht gebaut wird
 
