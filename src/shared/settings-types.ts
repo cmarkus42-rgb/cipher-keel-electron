@@ -109,6 +109,21 @@ export interface SlotOptionAnsicht {
 export interface SlotAnsicht {
   id: string
   beschriftung: string
+  /**
+   * Wonach das Fenster gruppiert. Durchgereicht aus `Slot.art` (model/slots.ts), damit die
+   * Oberflaeche die Art nicht aus dem Id-Praefix ableiten muss: das Praefix ist eine
+   * Zeichenkette, die zufaellig danebensteht, die Art ist die Aussage. Genau diese Ableitung
+   * war in ModelleReiter.tsx schon einmal falsch — ihr Kommentar dort erklaert den Fall.
+   */
+  art: 'tier' | 'rolle' | 'sitzung'
+  /**
+   * Der Schluessel innerhalb der Art (`light`, `tagging`, `niveau-b`), durchgereicht aus
+   * `Slot.schluessel`. Steht hier aus demselben Grund wie `art`: ohne ihn muesste die
+   * Oberflaeche ihn aus der Id schneiden (`slice(5)`, `slice(6)`) und stuetzte damit die
+   * Wache auf ein Feld und die Entnahme auf eine Zeichenkette — zwei Fakten fuer eine
+   * Aussage, und die Zeichenkette ist die schwaechere.
+   */
+  schluessel: string
   /** Empty string means no assignment. */
   gewaehlt: string
   optionen: SlotOptionAnsicht[]
@@ -130,6 +145,52 @@ export interface SlotAnsicht {
   gewaehltHinweis: string | null
   /** German: what applies while nothing usable is assigned. */
   rueckfallText: string
+  wirkung: Wirkung
+}
+
+/**
+ * Eine waehlbare Harness-Option. Wie `SlotOptionAnsicht`, aber an einer Adapterkennung statt
+ * an einer Eintragskennung: ein Harness ist kein Registry-Eintrag (src/main/model/harness-platz.ts).
+ */
+export interface HarnessOptionAnsicht {
+  adapterId: string
+  /** Der Anzeigename des Adapters, nicht seine Kennung. */
+  name: string
+  /**
+   * Deutsch. Nicht-null heisst gesperrt und sagt warum — und der Satz kommt unveraendert vom
+   * Adapter (`nichtVerfuegbarGrund`), nicht aus einer zweiten Regel.
+   */
+  sperrgrund: string | null
+}
+
+/**
+ * Der Harness-Platz: womit eine Sitzung laeuft.
+ *
+ * Ein eigenes Feld neben `slots`, kein achter Slot. Ein Slot zielt auf einen Registry-Eintrag
+ * und wird ueber die Eignungsregeln gefiltert; dieser Platz zielt auf einen Adapter und wird
+ * ueber dessen eigene Verfuegbarkeitsauskunft gesperrt.
+ */
+export interface HarnessPlatzAnsicht {
+  id: string
+  beschriftung: string
+  /** Leer heisst: keine Wahl getroffen, das Preset entscheidet. */
+  gewaehlt: string
+  optionen: HarnessOptionAnsicht[]
+  /**
+   * Deutsch, nicht-null, wenn die getroffene Wahl klemmt: sie nennt eine Kennung, die es nicht
+   * gibt, oder einen Harness, der auf diesem Rechner nicht startbar ist. Sagt in beiden Faellen
+   * dazu, was stattdessen passiert — und das ist **kein** stiller Rueckfall.
+   */
+  gewaehltHinweis: string | null
+  /** Deutsch: was gilt, solange nichts gewaehlt ist. */
+  rueckfallText: string
+  /** Derselbe Sachverhalt in Beschriftungslaenge, fuer den leeren Eintrag im Auswahlfeld. */
+  rueckfallKurz: string
+  /**
+   * Deutsch: was der Platz tut und was ausdruecklich nicht. Gehoert hinter einen Info-Knopf —
+   * er erklaert, er schraenkt nicht ein (Entwurf §4).
+   */
+  erklaertext: string
   wirkung: Wirkung
 }
 
@@ -164,6 +225,12 @@ export interface SettingsAnsicht {
   eintraege: EintragAnsicht[]
   uebersprungen: UebersprungenAnsicht[]
   slots: SlotAnsicht[]
+  /**
+   * Womit eine Sitzung laeuft. Steht vor den Slots, weil es die groebste Wahl ist: sie
+   * entscheidet, welche der Zuordnungen darunter ueberhaupt zur Anwendung kommen — ein
+   * Kimi-Harness liest keinen Tier-Platz.
+   */
+  harnessPlatz: HarnessPlatzAnsicht
   modellTiers: { light: string; standard: string; heavy: string }
   rueckfallEndpunkte: { tagging: EndpunktAnsicht; worker: EndpunktAnsicht }
   adapter: AdapterAnsicht[]

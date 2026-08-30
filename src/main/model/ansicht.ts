@@ -19,8 +19,9 @@ import { splitShellArgs } from '../util/shell-quote'
 import { AdapterRegistry } from '../agent/registry'
 import { istSchleifenAdapter } from '../agent/agent-adapter'
 import { VORGABE_POSITIVLISTE } from '../harness/werkzeug-netz'
+import { HARNESS_PLATZ, harnessOptionen } from './harness-platz'
 import type {
-  AdapterAnsicht, EintragAnsicht, EndpunktAnsicht, GeheimnisStatus,
+  AdapterAnsicht, EintragAnsicht, EndpunktAnsicht, GeheimnisStatus, HarnessPlatzAnsicht,
   SettingsAnsicht, SlotAnsicht, SlotOptionAnsicht, WarnungAnsicht,
 } from '../../shared/settings-types'
 
@@ -168,8 +169,10 @@ function slotAnsicht(slot: Slot, eintraege: ModellEintrag[]): SlotAnsicht {
   // `sitzung:niveau-b` sagt sie ausdruecklich, dass es keinen gibt. Vor dieser Aenderung stand
   // hier hartcodiert "Es gilt der Rueckfall." — fuer einen Platz ohne Rueckfall eine falsche
   // Auskunft, und die einzige, die der Nutzer in diesem Zustand ueberhaupt zu sehen bekommt
-  // (der Renderer zeigt `rueckfallText` selbst nur bei leerem Platz, nicht bei einer
-  // vorhandenen, aber unbenutzbaren Zuordnung).
+  // (der Renderer zeigte `rueckfallText` selbst nur bei leerem Platz, nicht bei einer
+  // vorhandenen, aber unbenutzbaren Zuordnung — seit c68a51e steht er stattdessen immer
+  // hinter dem Info-Knopf, was diese Doppelung erst recht noetig macht: `gewaehltHinweis`
+  // ist in dem Zustand weiterhin das, was ungefragt auf der Seite steht).
   const rueckfall = rueckfallText(slot)
 
   // An assignment is only worth warning about if it actually holds. Two ways it does not:
@@ -197,6 +200,8 @@ function slotAnsicht(slot: Slot, eintraege: ModellEintrag[]): SlotAnsicht {
   return {
     id: slot.id,
     beschriftung: slot.beschriftung,
+    art: slot.art,
+    schluessel: slot.schluessel,
     gewaehlt: gewaehlt ?? '',
     optionen,
     warnungen: warnListe,
@@ -215,12 +220,64 @@ function slotAnsicht(slot: Slot, eintraege: ModellEintrag[]): SlotAnsicht {
  */
 const BERECHTIGUNGS_FLAGGE = '--dangerously-skip-permissions'
 
-function adapterAnsichten(): AdapterAnsicht[] {
-  // The registry needs a config reader; the view model only reads names and parameters,
-  // so a reader that answers from the same config is enough.
-  const registry = new AdapterRegistry({
+/**
+ * The registry needs a config reader; the view model only reads names, parameters and each
+ * adapter's own availability verdict, so a reader that answers from the same config is enough.
+ * Built once per use and by one function, so the two consumers in this module (the adapter tab
+ * and the harness slot) cannot end up looking at differently-constructed registries.
+ */
+function registryFuerAnsicht(): AdapterRegistry {
+  return new AdapterRegistry({
     getStartArgs: (id: string) => splitShellArgs(configStore.get('agent').startArgs[id] ?? ''),
   })
+}
+
+/**
+ * Der Harness-Platz, so wie ihn das Settings-Fenster zeigt.
+ *
+ * Alles, was hier ein Mensch liest, entsteht im Hauptprozess: die Beschriftung und die
+ * Erklaerung aus `HARNESS_PLATZ`, der Sperrgrund je Option unveraendert vom Adapter. Das Fenster
+ * bekommt fertigen deutschen Text und keine Regel — dieselbe Haltung wie bei den Slots.
+ *
+ * Der Hinweis zu einer klemmenden Wahl nennt **keinen** Rueckfall, und das ist der Unterschied
+ * zu `slotAnsicht`: ein nicht startbarer Harness laesst eine Sitzung nicht auf das Preset
+ * zurueckfallen, sondern benannt scheitern (`isAvailable()`-Riegel in SESSION_CREATE). Ein
+ * Rueckfalltext an dieser Stelle waere eine falsche Auskunft ueber etwas, das nie passiert.
+ */
+function harnessPlatzAnsicht(): HarnessPlatzAnsicht {
+  const gewaehlt = configStore.get('agent').harness ?? ''
+  const optionen = harnessOptionen(registryFuerAnsicht())
+
+  let gewaehltHinweis: string | null = null
+  if (gewaehlt) {
+    const option = optionen.find(o => o.adapterId === gewaehlt)
+    if (!option) {
+      gewaehltHinweis =
+        `Die Wahl nennt den Harness '${gewaehlt}', den es in dieser App nicht gibt. Solange ` +
+        'das so steht, scheitert jeder Sitzungsstart auf einem fremden CLI benannt.'
+    } else if (option.sperrgrund) {
+      gewaehltHinweis =
+        `Dieser Harness ist auf diesem Rechner nicht startbar. ${option.sperrgrund} Eine ` +
+        'Sitzung, die ihn starten soll, scheitert benannt — sie fällt nicht auf das Preset ' +
+        'zurück.'
+    }
+  }
+
+  return {
+    id: HARNESS_PLATZ.id,
+    beschriftung: HARNESS_PLATZ.beschriftung,
+    gewaehlt,
+    optionen,
+    gewaehltHinweis,
+    rueckfallText: HARNESS_PLATZ.rueckfallText,
+    rueckfallKurz: HARNESS_PLATZ.rueckfallKurz,
+    erklaertext: HARNESS_PLATZ.erklaertext,
+    wirkung: HARNESS_PLATZ.wirkung,
+  }
+}
+
+function adapterAnsichten(): AdapterAnsicht[] {
+  const registry = registryFuerAnsicht()
   const startArgs = configStore.get('agent').startArgs
 
   return registry.listIds().map(id => {
@@ -343,6 +400,7 @@ export async function baueAnsicht(quellen: GeheimnisQuellen = {}): Promise<Setti
       fehler: u.fehler,
     })),
     slots: SLOTS.map(s => slotAnsicht(s, eintraege)),
+    harnessPlatz: harnessPlatzAnsicht(),
     modellTiers: { ...configStore.get('agent').modelTiers },
     rueckfallEndpunkte: {
       tagging: endpunktAnsicht(llm.tagging),

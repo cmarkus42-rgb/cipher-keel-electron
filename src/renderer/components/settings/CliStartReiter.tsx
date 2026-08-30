@@ -6,7 +6,8 @@
  * parameter is computed in main from the adapter's own appGesteuerteParameter.
  */
 import type { SettingsAnsicht, Schreiber } from '../../../shared/settings-types'
-import { WirkungVermerk } from './WirkungVermerk'
+import { wirkungText } from './WirkungVermerk'
+import { InfoKnopf } from './InfoKnopf'
 import { Warnliste } from './Warnliste'
 
 export function CliStartReiter({
@@ -28,7 +29,11 @@ export function CliStartReiter({
           <div style={styles.kopf}>
             <span style={styles.name}>{a.name}</span>
             <span style={styles.kennung}>{a.id}</span>
-            <WirkungVermerk wirkung="naechste-session" />
+            <InfoKnopf
+              id={`cli:${a.id}`}
+              beschriftung={a.name}
+              text={wirkungText('naechste-session')}
+            />
           </div>
           {/* Keyed on the value: see ModelleReiter -- an uncontrolled input would keep
               showing what it was mounted with after a write returns a fresh view. */}

@@ -33,4 +33,26 @@ describe('agent config defaults', () => {
     expect(configStore.getAll().agent.startArgs['claude-code'])
       .toBe('--dangerously-skip-permissions')
   })
+
+  it('laesst den Harness-Platz leer — die Vorgabe ist „das Preset entscheidet"', async () => {
+    // Leer heisst genau das bisherige Verhalten: SESSION_CREATE loest die Laufzeit des Presets
+    // auf und uebersteuert nichts. Eine Vorgabe mit Inhalt waere eine Verhaltensaenderung fuer
+    // jede bestehende Installation.
+    vi.doMock('electron', () => ({ app: { getPath: () => tmpDir } }))
+    const { configStore } = await import('../../src/main/config/config-store')
+    expect(configStore.getAll().agent.harness).toBe('')
+  })
+
+  it('legt den Harness-Platz in einer aelteren Datei ohne Migration nach', async () => {
+    // deepMerge legt einen fehlenden Schluessel aus den Vorgaben nach, und '' ist genau der
+    // Zustand „nichts gewaehlt", den eine Datei von vor dieser Aenderung meint — dieselbe
+    // Begruendung wie bei zuordnung.sitzungen.
+    fs.writeFileSync(
+      path.join(tmpDir, 'cipher-keel-config.json'),
+      JSON.stringify({ agent: { startArgs: { 'claude-code': '' } } }),
+    )
+    vi.doMock('electron', () => ({ app: { getPath: () => tmpDir } }))
+    const { configStore } = await import('../../src/main/config/config-store')
+    expect(configStore.getAll().agent.harness).toBe('')
+  })
 })

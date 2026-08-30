@@ -115,6 +115,7 @@ import { normalizeToP1Format } from './p1/normalizer'
 import { getEntityDefinition, getEntityRahmen } from './preset/registry'
 import { resolveModel, tierAus } from './session/model-resolver'
 import { cliHandleFuerTier, eintragFuerSitzung } from './model/registry'
+import { loeseHarnessAuf } from './model/harness-platz'
 import { getGlobalRules } from './preset/global-rules'
 import { getCapabilityPackages } from './preset/capabilities'
 import { CapabilityNiveau } from './preset/niveau'
@@ -237,9 +238,24 @@ export function registerIpcHandlers(services: AppServices): void {
 
       // An unknown runtime throws rather than falling back — a silent fallback would
       // start a Claude session for an entity that asked for something else.
+      //
+      // Seit dem Harness-Platz (model/harness-platz.ts) steht `loeseHarnessAuf` davor, und mit
+      // ihm die wichtigste Regel des Entwurfs: **der Platz uebersteuert nur dann, wenn die
+      // Laufzeit des Presets ohnehin auf einen CLI-Adapter zeigt.** Ein Preset, das keels
+      // eigene Schleife faehrt, ist eine Niveau-B-Zelle und kein fremder Prozess in einem Pane;
+      // wuerde der Platz auch die uebersteuern, machte die Wahl „Kimi" jede Niveau-B-Gitterzelle
+      // kaputt. Der Platz waehlt zwischen fremden CLIs, nicht zwischen Sitzungsarten.
+      //
+      // Leerer Platz heisst „das Preset entscheidet", also genau das Verhalten von vorher; die
+      // Laufzeitaufloesung selbst ist unveraendert und wird nicht umgangen, auch nicht ihr
+      // Zweig „gueltig, aber Adapter nicht gebaut". Der `isAvailable()`-Riegel gleich darunter
+      // gilt fuer den uebersteuerten Adapter genauso — ein nicht installiertes CLI scheitert
+      // dort benannt, es braucht keinen neuen Fehlerpfad.
       let adapter
       try {
-        adapter = adapterRegistry.getForRuntime(rahmen.runtime)
+        adapter = loeseHarnessAuf(
+          adapterRegistry, rahmen.runtime, configStore.get('agent').harness,
+        )
       } catch (err) {
         return { id: null, name: null, error: (err as Error).message }
       }

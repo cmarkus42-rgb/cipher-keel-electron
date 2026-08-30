@@ -5,7 +5,8 @@
  * (tts-piper.ts). Showing them side by side without saying so would be a lie by layout.
  */
 import type { SettingsAnsicht, Schreiber } from '../../../shared/settings-types'
-import { WirkungVermerk } from './WirkungVermerk'
+import { wirkungText } from './WirkungVermerk'
+import { InfoKnopf } from './InfoKnopf'
 
 export function SprachausgabeReiter({
   ansicht,
@@ -19,21 +20,44 @@ export function SprachausgabeReiter({
       <h2 style={styles.ueberschrift}>Sprachausgabe</h2>
 
       <div style={styles.block}>
-        <label style={styles.zeile}>
-          <input
-            type="checkbox"
-            checked={ansicht.sprachausgabe.aktiv}
-            onChange={e => schreibe('settings:einfachfeld-setzen', 'sprachausgabe:aktiv', e.target.checked)}
+        {/*
+          Der Info-Knopf steht **neben** dem label, nicht darin.
+
+          Nicht, weil ein Klick sonst das Kaestchen umschaltete — das tut er nicht: die
+          Aktivierung eines label laesst interaktive Nachkommen ausdruecklich aus, und ein
+          `button` ist interaktiver Inhalt. Sondern weil der barrierefreie Name des Kaestchens
+          aus dem Inhalt seines label berechnet wird: ein Knopf darin steuerte sein eigenes
+          `aria-label` dazu bei, und das Kaestchen hiesse fuer eine Vorlesehilfe
+          „Sprachausgabe aktiv Erläuterung zu Sprachausgabe aktiv".
+
+          Der Vermerk stand hier vorher im label. Als reiner Text war das richtig — er *gehoert*
+          zur Beschriftung. Als eigenes Bedienelement gehoert er daneben.
+        */}
+        <div style={styles.zeile}>
+          <label style={styles.zeile}>
+            <input
+              type="checkbox"
+              checked={ansicht.sprachausgabe.aktiv}
+              onChange={e => schreibe('settings:einfachfeld-setzen', 'sprachausgabe:aktiv', e.target.checked)}
+            />
+            <span style={styles.name}>Sprachausgabe aktiv</span>
+          </label>
+          <InfoKnopf
+            id="sprachausgabe:aktiv"
+            beschriftung="Sprachausgabe aktiv"
+            text={wirkungText('neustart')}
           />
-          <span style={styles.name}>Sprachausgabe aktiv</span>
-          <WirkungVermerk wirkung="neustart" />
-        </label>
+        </div>
       </div>
 
       <div style={styles.block}>
         <div style={styles.kopf}>
           <span style={styles.name}>Stimme</span>
-          <WirkungVermerk wirkung="sofort" />
+          <InfoKnopf
+            id="sprachausgabe:stimme"
+            beschriftung="Stimme"
+            text={wirkungText('sofort')}
+          />
         </div>
         <input
           key={ansicht.sprachausgabe.stimme}

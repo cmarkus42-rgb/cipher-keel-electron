@@ -61,6 +61,25 @@ export interface CipherKeelConfig {
      * survive model releases. An empty value means "let the harness decide".
      */
     modelTiers: { light: string; standard: string; heavy: string }
+    /**
+     * Der Harness-Platz: die Kennung des CLI-Adapters, der die Laufzeit des Presets
+     * uebersteuert. Leer ist die Vorgabe und heisst „das Preset entscheidet" — also genau das
+     * Verhalten von vor dieser Einstellung.
+     *
+     * Steht hier und nicht unter `modelle.zuordnung`, obwohl er im Stil einer Zuordnung
+     * geschrieben und gelesen wird: eine Zuordnung dort zielt auf einen Registry-Eintrag, ein
+     * Modell. Ein Harness ist ein Adapter, und `agent` ist der Block, der Adapter beschreibt
+     * (siehe `startArgs`, ebenfalls je Adapterkennung). Die Begruendung im Langen steht in
+     * model/harness-platz.ts.
+     *
+     * Uebersteuert wird **nur**, wenn die Laufzeit des Presets ohnehin auf einen CLI-Adapter
+     * zeigt; ein Preset, das keels eigene Schleife faehrt, bleibt unangetastet.
+     *
+     * Kein Migrationszweig noetig: `deepMerge` legt den fehlenden Schluessel aus den Vorgaben
+     * nach, und '' ist genau der Zustand „nichts gewaehlt", den eine aeltere Datei meint —
+     * dieselbe Begruendung wie bei `zuordnung.sitzungen`.
+     */
+    harness: string
   }
   voice: {
     enabled: boolean
@@ -145,6 +164,8 @@ const defaults: CipherKeelConfig = {
     // The strength gradient the presets already express: heavy where errors multiply
     // (Systems Engineer, Architect), standard elsewhere. Editable per CK-NFR-012.
     modelTiers: { light: 'haiku', standard: 'sonnet', heavy: 'opus' },
+    // Leer ausgeliefert, und das ist der Punkt: die Vorgabe ist „keine Aenderung".
+    harness: '',
   },
   voice: {
     enabled: true,

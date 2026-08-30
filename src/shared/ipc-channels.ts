@@ -166,6 +166,12 @@ export const SETTINGS_EINTRAG_LOESCHEN = 'settings:eintrag-loeschen' as const
 export const SETTINGS_GEHEIMNIS_SETZEN = 'settings:geheimnis-setzen' as const
 export const SETTINGS_GEHEIMNIS_LOESCHEN = 'settings:geheimnis-loeschen' as const
 export const SETTINGS_STARTARGS_SETZEN = 'settings:startargs-setzen' as const
+/**
+ * Der Harness-Platz: welches fremde CLI eine Sitzung faehrt. Im Stil von
+ * SETTINGS_ZUORDNUNG_SETZEN, aber mit einer Adapterkennung statt einer Eintragskennung —
+ * ein Harness ist kein Registry-Eintrag. Leerer Wert setzt zurueck auf "das Preset entscheidet".
+ */
+export const SETTINGS_HARNESS_SETZEN = 'settings:harness-setzen' as const
 export const SETTINGS_EINFACHFELD_SETZEN = 'settings:einfachfeld-setzen' as const
 export const SETTINGS_RUECKFALL_ENDPUNKT_SETZEN = 'settings:rueckfall-endpunkt-setzen' as const
 
@@ -297,6 +303,7 @@ export type RendererToMainChannel =
   | typeof SETTINGS_GEHEIMNIS_SETZEN
   | typeof SETTINGS_GEHEIMNIS_LOESCHEN
   | typeof SETTINGS_STARTARGS_SETZEN
+  | typeof SETTINGS_HARNESS_SETZEN
   | typeof SETTINGS_EINFACHFELD_SETZEN
   | typeof SETTINGS_RUECKFALL_ENDPUNKT_SETZEN
   | typeof APP_BEFORE_QUIT
