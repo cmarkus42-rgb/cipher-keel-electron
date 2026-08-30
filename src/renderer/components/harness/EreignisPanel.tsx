@@ -18,6 +18,7 @@ export const FARBE: Record<string, string> = {
   'tool.completed': '#73daca',
   'tool.failed': '#f7768e',
   'tool.schema_loaded': '#bb9af7',
+  'tool.entschieden': '#e0af68',
   'skill.geladen': '#c0caf5',
   'budget.warned': '#ff9e64',
   'netz.ausgehend': '#f7768e',
@@ -43,6 +44,12 @@ export function kurzfassung(e: HarnessEreignis): string {
       return `${String(n.name)}: ${String(n.meldung)}`
     case 'tool.schema_loaded':
       return String(n.name)
+    case 'tool.entschieden':
+      // Ja/Nein zuerst: das ist die Frage, die ein Mensch an diese Zeile hat. Der Grund steht
+      // dahinter, weil er nur bei einem Nein etwas aussagt.
+      return n.erlaubt === true
+        ? `${String(n.name)} erlaubt`
+        : `${String(n.name)} ABGELEHNT: ${String(n.grund)}`
     case 'skill.geladen':
       // Der Name genuegt, aber die Laenge gehoert dazu: bei M7 will man auf einen Blick sehen,
       // ob ein Rumpf ueberhaupt Substanz hatte oder nur eine Ueberschrift war.

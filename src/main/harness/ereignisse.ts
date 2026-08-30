@@ -23,6 +23,16 @@ export const EREIGNIS_ARTEN = [
   'tool.completed',
   'tool.failed',
   'tool.schema_loaded',
+  /**
+   * Nutzlast `{aufrufId, name, erlaubt, grund}`. Die Entscheidung zwischen Ankuendigung und
+   * Wirkung, geschrieben fuer jedes wirkende Werkzeug (tor.ts).
+   *
+   * Eigenes Ereignis und kein Feld an `tool.intent`: der Intent wird geschrieben, *bevor*
+   * entschieden ist — nachtraeglich ein Feld hineinzuschreiben hiesse, ein Ereignis zu aendern,
+   * das schon steht. Ein abgelehnter Aufruf war vorher nur an einer ausbleibenden Wirkung zu
+   * erkennen, also gar nicht.
+   */
+  'tool.entschieden',
   // Nutzlast `{name, text}`. Eigenes Ereignis statt eines gewoehnlichen Werkzeugergebnisses, damit
   // im Protokoll sichtbar bleibt, dass eine Faehigkeit tatsaechlich geladen wurde (Spec 5.2, M7).
   'skill.geladen',
