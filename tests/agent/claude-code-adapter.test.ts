@@ -251,5 +251,74 @@ describe('ClaudeCodeAdapter.postLaunchInjection', () => {
 
       expect(() => undo()).not.toThrow()
     })
+
+    // Fixrunde zu 4358cac, Befund 2: bis dahin gab die Closure `void` zurueck, und der
+    // Aufrufer behauptete die Ruecknahme deshalb unbedingt — auch dort, wo sie still
+    // ausgestiegen war. Der Rueckgabewert bedeutet genau einen Satz:
+    // "settings.local.json traegt keinen Eintrag aus diesem Versuch mehr."
+    describe('was die Closure meldet (Befund 2 der Fixrunde zu 4358cac)', () => {
+      it('meldet true, wenn der Vorzustand wiederhergestellt wurde', async () => {
+        const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
+        const undo = await adapter.postLaunchInjection(ctx)
+
+        expect(undo()).toBe(true)
+        expect(
+          JSON.parse(fs.readFileSync(settingsPathFor(projectDir), 'utf-8')).mcpServers['cipher-keel'],
+        ).toBeUndefined()
+      })
+
+      it('meldet true, wenn Pfad 1 nie geschrieben hat — dann ist die Aussage trivial wahr', async () => {
+        // projectPath zeigt auf eine Datei, nicht auf ein Verzeichnis: mkdirSync wirft,
+        // Pfad 1 steigt in seinen catch aus, undoSettingsWrite bleibt null.
+        const dateiStattVerzeichnis = path.join(projectDir, 'kein-verzeichnis')
+        fs.writeFileSync(dateiStattVerzeichnis, 'x', 'utf-8')
+
+        const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
+        const undo = await adapter.postLaunchInjection({ ...ctx, projectPath: dateiStattVerzeichnis })
+
+        expect(undo()).toBe(true)
+      })
+
+      it('meldet true, wenn die Datei zur Ruecknahme gar nicht mehr existiert', async () => {
+        // ENOENT ist der eine Lesefehler, bei dem die Aussage beweisbar stimmt: eine Datei,
+        // die es nicht gibt, traegt keinen Eintrag. Alles andere ist unten false.
+        const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
+        const undo = await adapter.postLaunchInjection(ctx)
+
+        fs.rmSync(path.join(projectDir, '.claude'), { recursive: true, force: true })
+
+        expect(undo()).toBe(true)
+      })
+
+      it('meldet false und warnt, wenn die Datei nicht mehr lesbar ist', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+          const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
+          const undo = await adapter.postLaunchInjection(ctx)
+
+          fs.writeFileSync(settingsPathFor(projectDir), '{ kaputt', 'utf-8')
+
+          expect(undo()).toBe(false)
+          expect(warn).toHaveBeenCalled()
+        } finally {
+          warn.mockRestore()
+        }
+      })
+
+      it('meldet false und warnt, wenn mcpServers verschwunden oder kein Objekt ist', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+          const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
+          const undo = await adapter.postLaunchInjection(ctx)
+
+          fs.writeFileSync(settingsPathFor(projectDir), JSON.stringify({ mcpServers: 'kaputt' }), 'utf-8')
+
+          expect(undo()).toBe(false)
+          expect(warn).toHaveBeenCalled()
+        } finally {
+          warn.mockRestore()
+        }
+      })
+    })
   })
 })

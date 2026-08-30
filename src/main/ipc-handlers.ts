@@ -403,7 +403,9 @@ export function registerIpcHandlers(services: AppServices): void {
       let mcpHinweis: string | null = null
       // Set only once postLaunchInjection has resolved without throwing — see the doc
       // comment on its call below for what a non-null value does and does not guarantee.
-      let undoInjection: (() => void) | null = null
+      // Non-null says "there is something to take back", never "taking it back worked":
+      // that second question is what the closure's boolean answers.
+      let undoInjection: (() => boolean) | null = null
       if (services.mcpHttpServer && adapter.postLaunchInjection) {
         try {
           undoInjection = await adapter.postLaunchInjection({
@@ -445,9 +447,14 @@ export function registerIpcHandlers(services: AppServices): void {
       try {
         sessionId = await services.tmux.createSession(name, { ...opts, cwd, command })
       } catch (err) {
+        // Two outcomes, two sentences. Until the follow-up review of 4358cac this text hung
+        // on "there was a closure" alone and claimed the rollback unconditionally — also
+        // where the closure had thrown, and where it had bailed out without doing anything.
+        // A false all-clear about a credential is worse than no note at all.
+        let zurueckgenommen = false
         if (undoInjection) {
           try {
-            undoInjection()
+            zurueckgenommen = undoInjection()
           } catch (undoErr) {
             console.warn(
               '[ipc] rollback of MCP settings.local.json after failed createSession also failed:',
@@ -456,11 +463,23 @@ export function registerIpcHandlers(services: AppServices): void {
           }
         }
         const tmuxMsg = err instanceof Error ? err.message : String(err)
-        const residualNote = undoInjection
-          ? ' Der lokale MCP-Eintrag in settings.local.json wurde zurueckgenommen; ein ' +
+        let residualNote = ''
+        if (undoInjection && zurueckgenommen) {
+          // The CLI entry (path 2) stays put by design — see postLaunchInjection's doc
+          // comment. An app restart does not remove it; it rotates the key and thereby
+          // makes the entry worthless, which is not the same thing and reads differently
+          // to whoever goes looking for it.
+          residualNote =
+            ' Der lokale MCP-Eintrag in settings.local.json wurde zurueckgenommen; ein ' +
             'ueber die claude-CLI registrierter Eintrag (falls geschrieben) kann bestehen ' +
-            'bleiben, bis er ueberschrieben wird oder die App neu startet.'
-          : ''
+            'bleiben, bis er ueberschrieben wird — ein App-Neustart entfernt ihn nicht, ' +
+            'macht ihn aber wertlos, weil der Schluessel bei jedem App-Start wechselt.'
+        } else if (undoInjection) {
+          residualNote =
+            ' Achtung: der lokale MCP-Eintrag in settings.local.json konnte nicht ' +
+            'zurueckgenommen werden — dort kann ein gueltiger Zugangsschluessel liegen ' +
+            'bleiben.'
+        }
         throw new Error(tmuxMsg + residualNote)
       }
       services.tmux.watchSession(name, name)

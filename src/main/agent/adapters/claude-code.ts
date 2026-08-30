@@ -102,26 +102,60 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
    * Claude Code does not read settings from it at all. It was a secret written to disk for
    * no reader — removed outright, not "fixed", because there was nothing to fix it into.
    *
-   * Return value (added for the I-1 follow-up, security review 2026-08-30): moving this call
-   * ahead of `tmux.createSession` closed the race but opened a narrower gap the review
-   * caught — if `createSession` now fails *after* this succeeds, a live bearer is left behind
-   * for a session that never came to exist. The returned closure undoes exactly what path 1
-   * wrote, and only that: it restores `settings.local.json` to whatever it held immediately
-   * before this call (deletes the `cipher-keel` entry if there was none, restores the prior
-   * entry if there was one) — never a blind delete, because this method merges into a file
-   * that may already carry another session's still-valid registration for the same project
-   * (one key for the whole app instance, see B5 — so a second session in the same project
-   * would otherwise be "restoring" a value that is, byte for byte, what a still-running first
-   * session also depends on). Path 2 is deliberately NOT undone: reversing a `claude mcp`
-   * CLI registration would mean either parsing `~/.claude.json` ourselves (a format this file
-   * intentionally does not touch directly, see path 2 above) or running `claude mcp remove`
-   * again — which would remove the one local entry for this project outright, the exact same
-   * collision risk path 1's undo avoids, since another session in the same project may depend
-   * on it. That residual is named to the caller instead (ipc-handlers.ts surfaces it in the
-   * thrown error's message) — it is self-limiting even so: rewritten by the next successful
-   * injection for this project, and moot entirely once the app restarts (B2's key rotates).
+   * Return value (added for the I-1 follow-up, security review 2026-08-30; widened from
+   * `void` to `boolean` in the follow-up review of 4358cac): moving this call ahead of
+   * `tmux.createSession` closed the race but opened a narrower gap the review caught — if
+   * `createSession` now fails *after* this succeeds, a live bearer is left behind for a
+   * session that never came to exist. The returned closure undoes exactly what path 1 wrote,
+   * and only that: it brings the `cipher-keel` ENTRY back to the state it had before this
+   * call (deletes it if there was none, restores the prior value if there was one) — never a
+   * blind delete.
+   *
+   * The entry, not the file. Three cases where the file does not return to its prior state:
+   * it did not exist before (a `.claude/` directory and a `settings.local.json` holding
+   * `{"mcpServers": {}}` stay behind); it held broken JSON (the injection write already
+   * destroyed that content, and no rollback can bring it back); `mcpServers` was present but
+   * not an object (replaced by `{}`, and `{}` is what stays). None of the three leaves a
+   * bearer behind — which is the property that matters — but the promise this closure makes
+   * is about the entry.
+   *
+   * Why it reports a `boolean`: a rollback that quietly did nothing used to reach the user as
+   * a rollback that worked. The return value means exactly one sentence and nothing wider:
+   * **"settings.local.json traegt keinen Eintrag aus diesem Versuch mehr."** `true` when the
+   * prior state was restored, when path 1 never wrote at all (then the sentence is trivially
+   * true), or when the file is gone by the time the rollback runs. `false`, with a
+   * `console.warn` naming the reason, when the file is no longer readable or no longer
+   * carries an `mcpServers` object — in those cases the entry may still be sitting there and
+   * nobody knows. A throwing `writeFileSync` propagates; the caller treats a throw as `false`.
+   *
+   * Why restore rather than delete: one bearer key is minted per app start and shared by
+   * every session of a project (B5), so the entry this call overwrote may be a sibling's,
+   * byte for byte. A blind delete would hit a sibling that has been injected but whose
+   * `claude` process has NOT yet read the config (a concurrent `SESSION_CREATE`), and any
+   * later restart of `claude` in an already-open pane. It would NOT hit an already-running
+   * session: that process read its MCP config once, at its own start, and does not reload it —
+   * the same fact the I-1 note above rests on.
+   *
+   * Path 2 is deliberately NOT undone, and the reason is not "a still-running sibling hangs
+   * on the entry" — by the fact just stated, it does not:
+   *   1. `claude mcp remove` can only delete, never restore. That is the actual difference
+   *      between the two paths: path 1 knows the prior value, path 2 does not.
+   *   2. The window it would damage is the narrow one named above (injected-but-not-yet-read
+   *      siblings, later `claude` restarts in the same pane), not running sessions.
+   *   3. From a synchronous closure it is not executable anyway: an external CLI call with a
+   *      seconds-long runtime and its own failure rate.
+   * Honestly alongside, because it otherwise goes unsaid: the SUCCESS path already runs
+   * `claude mcp remove -s local cipher-keel` on every single injection (below) and takes the
+   * very same collision — the difference is that there an equivalent entry follows
+   * immediately, while a rollback-remove would leave nothing behind.
+   *
+   * That residual is named to the caller instead (ipc-handlers.ts surfaces it in the thrown
+   * error's message) — it is self-limiting even so: rewritten by the next successful
+   * injection for this project, and moot once the app restarts. Moot, not gone: an app
+   * restart does not remove the entry, it rotates the key (B2) and thereby makes the entry
+   * worthless.
    */
-  async postLaunchInjection(ctx: AdapterContext): Promise<() => void> {
+  async postLaunchInjection(ctx: AdapterContext): Promise<() => boolean> {
     const mcpServerConfig = {
       type: 'http',
       url: ctx.mcpUrl,
@@ -130,7 +164,7 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
 
     // Path 1: Direct write to local settings.local.json — tracked so undoSettingsWrite can
     // put back exactly what was here before, not just delete what this call added.
-    let undoSettingsWrite: (() => void) | null = null
+    let undoSettingsWrite: (() => boolean) | null = null
     try {
       const claudeDir = path.join(ctx.projectPath, '.claude')
       const localSettingsPath = path.join(claudeDir, 'settings.local.json')
@@ -158,21 +192,43 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
         // Re-read rather than reuse the `settings` object above: something else may have
         // written to this file between the write and the undo (however unlikely in the
         // narrow window this covers) — undoing against a stale in-memory copy could clobber
-        // that change. A missing/unreadable file means there is nothing left to undo.
+        // that change.
         let current: Record<string, unknown>
         try {
           current = JSON.parse(fs.readFileSync(localSettingsPath, 'utf-8'))
-        } catch {
-          return
+        } catch (err) {
+          // ENOENT is the one read failure where the promised sentence is provably true: a
+          // file that does not exist carries no entry from this call. Every other failure —
+          // unreadable file, broken JSON, and broken JSON is the dangerous one, because a
+          // half-written file can still hold the bearer verbatim — leaves the entry possibly
+          // in place, and until this fix round it left with a bare `return` that the caller
+          // then reported as a successful rollback.
+          if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return true
+          console.warn(
+            '[ClaudeCodeAdapter] rollback could not read settings.local.json — the ' +
+            'cipher-keel entry may still be there:',
+            err,
+          )
+          return false
         }
-        if (!current.mcpServers || typeof current.mcpServers !== 'object') return
+        if (!current.mcpServers || typeof current.mcpServers !== 'object') {
+          // The file is readable and does not have the shape this rollback edits. Something
+          // else rewrote it; whatever is in there now, this call cannot say the entry is gone.
+          console.warn(
+            '[ClaudeCodeAdapter] rollback found no mcpServers object in settings.local.json — ' +
+            'leaving the file untouched; the cipher-keel entry may still be there',
+          )
+          return false
+        }
         const currentServers = current.mcpServers as Record<string, unknown>
         if (hadEntryBefore) {
           currentServers['cipher-keel'] = previousEntry
         } else {
           delete currentServers['cipher-keel']
         }
+        // Throws propagate to the caller, which treats a throw exactly like `false`.
         fs.writeFileSync(localSettingsPath, JSON.stringify(current, null, 2), 'utf-8')
+        return true
       }
     } catch (err) {
       console.warn('[ClaudeCodeAdapter] Local settings.local.json write failed:', err)
@@ -194,7 +250,10 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
     }
 
     return () => {
-      if (undoSettingsWrite) undoSettingsWrite()
+      // No path-1 write happened at all (its own catch fired) — then the promised sentence
+      // holds trivially: this call left no entry behind to take back.
+      if (!undoSettingsWrite) return true
+      return undoSettingsWrite()
     }
   }
 

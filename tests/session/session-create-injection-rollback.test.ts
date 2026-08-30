@@ -34,7 +34,8 @@ describe('session:create — rolling back a successful injection when createSess
     vi.resetModules()
     userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keel-userdata-'))
     projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keel-project-'))
-    undoSpy = vi.fn()
+    // true heisst genau: settings.local.json traegt keinen Eintrag aus diesem Versuch mehr.
+    undoSpy = vi.fn(() => true)
   })
 
   afterEach(() => {
@@ -44,7 +45,7 @@ describe('session:create — rolling back a successful injection when createSess
     fs.rmSync(projectDir, { recursive: true, force: true })
   })
 
-  async function loadHandler(): Promise<SessionCreateHandler> {
+  async function loadHandler(undo: unknown = undoSpy): Promise<SessionCreateHandler> {
     let registeredHandler: SessionCreateHandler | undefined
 
     vi.doMock('electron', () => ({
@@ -73,7 +74,7 @@ describe('session:create — rolling back a successful injection when createSess
             buildLaunchCommand: () => ({ cmd: 'claude', args: [] }),
             // The one call this whole file is about: succeeds, and hands back an undo
             // closure the handler must call when createSession subsequently fails.
-            postLaunchInjection: vi.fn().mockResolvedValue(undoSpy),
+            postLaunchInjection: vi.fn().mockResolvedValue(undo),
           }
         }
       },
@@ -118,6 +119,35 @@ describe('session:create — rolling back a successful injection when createSess
     // The part path 1's rollback cannot cover — named to the caller instead of silently
     // dropped, per the review's "benenn die Tatsache" instruction.
     expect(result.error).toMatch(/claude-CLI registrierter Eintrag/)
+    expect(result.error).toMatch(/wurde zurueckgenommen/)
+  })
+
+  // Fixrunde zu 4358cac, Befund 2: der Hinweistext hing allein an "es gab eine Closure" und
+  // behauptete die Ruecknahme deshalb auch dann, wenn sie geworfen hatte oder still
+  // ausgestiegen war. Zwei Textformen statt einer — der zweite Fall ist der, in dem noch ein
+  // gueltiger Schluessel in der Datei liegen kann.
+  it('sagt es, wenn die Ruecknahme nicht geglueckt ist (Closure meldet false)', async () => {
+    const handler = await loadHandler(vi.fn(() => false))
+
+    const result = await handler({}, { entityId: 'architect', name: 'rollback-false', cwd: projectDir })
+
+    expect(result.error).toContain('tmux: no server running')
+    expect(result.error).toMatch(/konnte nicht zurueckgenommen werden/)
+    expect(result.error).not.toMatch(/wurde zurueckgenommen/)
+  })
+
+  it('sagt es ebenso, wenn die Ruecknahme geworfen hat', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const handler = await loadHandler(vi.fn(() => { throw new Error('EACCES') }))
+
+      const result = await handler({}, { entityId: 'architect', name: 'rollback-wirft', cwd: projectDir })
+
+      expect(result.error).toContain('tmux: no server running')
+      expect(result.error).toMatch(/konnte nicht zurueckgenommen werden/)
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('does NOT call the undo closure when createSession succeeds', async () => {

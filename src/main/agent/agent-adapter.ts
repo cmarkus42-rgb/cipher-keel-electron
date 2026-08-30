@@ -211,10 +211,18 @@ export interface CliSitzungsAdapter extends AgentAdapterBasis {
    * Returns an undo closure rather than void (I-1 follow-up, same review): if the caller's
    * next step (spawning the session) fails, whatever this call wrote may now be a live
    * credential with no session behind it. The closure reverts exactly what this call itself
-   * changed — never a blind wipe, since a merge-based injection may share state with an
-   * already-successful sibling session. An adapter with nothing to undo may return a no-op.
+   * changed — never a blind wipe, since a merge-based injection may share state with a
+   * sibling session that has been injected but has not yet read the config, or with a later
+   * restart of the same process in an existing pane.
+   *
+   * The closure's `boolean` (widened from `void` in the follow-up review of 4358cac) means
+   * exactly one sentence and nothing wider: **"settings.local.json traegt keinen Eintrag aus
+   * diesem Versuch mehr."** `true` also covers the trivial cases — nothing was written, or
+   * the target is gone. `false` means the closure could not establish that, and something may
+   * still be lying there; it must say why on the console. A throw counts as `false` for the
+   * caller. An adapter with nothing to undo may return a no-op that returns `true`.
    */
-  postLaunchInjection?(ctx: AdapterContext): Promise<() => void>
+  postLaunchInjection?(ctx: AdapterContext): Promise<() => boolean>
   /** Read context usage for a session. Only call if supports('status-line'). */
   getContextUsage?(sessionId: string): Promise<ContextUsage | null>
   /** Inject status reporting hook into project. Only call if supports('status-line'). */
