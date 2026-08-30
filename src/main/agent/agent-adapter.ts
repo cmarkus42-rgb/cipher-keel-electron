@@ -38,6 +38,22 @@ export interface LaunchCommand {
   args: string[]
   /** Extra env vars to set for this session */
   envOverrides?: Record<string, string>
+  /**
+   * Sentences about THIS launch that a human should see — not errors, not log lines: things
+   * the adapter decided or knows about the session it is about to hand back, which nobody
+   * else can know. `KimiCodeAdapter` uses it for the two cases its harness has and Claude
+   * Code does not: a resolved `opts.model` it deliberately does not pass on, and the trust
+   * prompt a project-local MCP server triggers.
+   *
+   * It rides on `LaunchCommand` rather than on a channel of its own because
+   * `SESSION_CREATE` (ipc-handlers.ts) already collects exactly such sentences — the tier
+   * note and the MCP note — joins them and returns them to the renderer as `hinweis`. A
+   * second channel would be a second place a session note can hide.
+   *
+   * Optional and unset by `ClaudeCodeAdapter`: it has nothing of this kind to say, and an
+   * empty array from every adapter that does not use the field would read as if it did.
+   */
+  hinweise?: readonly string[]
 }
 
 export interface LaunchOpts {
@@ -53,6 +69,17 @@ export interface LaunchOpts {
   forkFromClaudeSessionId?: string
   /** Resume the most recent conversation (--resume) */
   resume?: boolean
+  /**
+   * Resume one NAMED earlier conversation of the harness (Kimi Code: `-S <id>`; Claude
+   * Code's counterpart would be `--resume <id>`).
+   *
+   * Separate from `resume` because that one is a boolean and cannot carry an id, and
+   * separate from `forkFromClaudeSessionId` because resuming continues a conversation while
+   * forking branches it — Kimi Code has the first and no equivalent of the second.
+   * `ClaudeCodeAdapter` does not read this field: its boolean `resume` covers the only case
+   * that is wired today, and reading it there would change a launch line no caller asks for.
+   */
+  resumeSessionId?: string
   /** Model override (e.g. 'haiku', 'sonnet', 'opus') — passed as --model <id> */
   model?: string
   /**

@@ -499,7 +499,13 @@ export function registerIpcHandlers(services: AppServices): void {
       // might see it, not only in a main-process console.warn. Joined rather than picking
       // one: both are independent, both are rare, and a session can hit both at once. An
       // extra field on an already-untyped IPC result — no contract redesign.
-      const hinweis = [cliErgebnis?.hinweis, mcpHinweis]
+      // `launch.hinweise` kommt vom Adapter selbst (siehe LaunchCommand in agent-adapter.ts):
+      // Saetze ueber diesen Start, die nur er wissen kann — KimiCodeAdapter nennt darueber ein
+      // aufgeloestes Modell, das er bewusst nicht weiterreicht, und die Trust-Rueckfrage seines
+      // projektlokalen MCP-Servers. Hier eingereiht statt in einem eigenen Kanal: dieser
+      // Sammelpunkt gibt es schon, und ein zweiter waere eine zweite Stelle, an der sich ein
+      // Sitzungshinweis verstecken kann.
+      const hinweis = [cliErgebnis?.hinweis, ...(launch.hinweise ?? []), mcpHinweis]
         .filter((h): h is string => !!h)
         .join(' ') || null
       return { id: sessionId, name, error: null, hinweis }
