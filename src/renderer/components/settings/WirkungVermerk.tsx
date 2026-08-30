@@ -18,8 +18,17 @@ const TEXT: Record<Wirkung, string> = {
   'neustart': 'braucht einen Neustart der App',
 }
 
+/**
+ * Derselbe Satz ohne die Huelle, fuer die Stellen, die ihn in eigenem Umfeld setzen — im
+ * Popup eines Info-Knopfes etwa, wo der Randabstand und das Kursiv der Zeile daneben stoerten.
+ * Eine Funktion statt einer zweiten Tabelle: der Text bleibt an genau einer Stelle.
+ */
+export function wirkungText(wirkung: Wirkung): string {
+  return TEXT[wirkung]
+}
+
 export function WirkungVermerk({ wirkung }: { wirkung: Wirkung }) {
-  return <span style={style}>{TEXT[wirkung]}</span>
+  return <span style={style}>{wirkungText(wirkung)}</span>
 }
 
 const style = {
