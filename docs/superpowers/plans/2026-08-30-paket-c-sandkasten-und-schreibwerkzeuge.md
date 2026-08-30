@@ -1723,8 +1723,6 @@ import { SCHREIB_WERKZEUGE } from '../../src/main/harness/werkzeug-schreiben'
 import { DATEI_WERKZEUGE } from '../../src/main/harness/werkzeug-datei'
 import { effekteOhneEntscheidung } from '../../src/main/harness/tor'
 import { effekteOhneIntent } from '../../src/main/harness/intent-vor-effekt'
-// baueUmgebung: aus tests/harness/lauf.test.ts uebernommen — dieselbe Zusammensetzung,
-// nur mit einer anderen Registry und einer Wurzel im Wegwerf-Verzeichnis.
 import { baueUmgebung } from './lauf.test-helfer'
 
 let heim: string
@@ -1836,9 +1834,39 @@ describe('Waechter ueber einem echten Lauf', () => {
 })
 ```
 
-**Schritt vor dem Schreiben dieser Datei:** `tests/harness/lauf.test.ts` lesen, den dortigen Aufbau der `LaufUmgebung` in eine neue Datei `tests/harness/lauf.test-helfer.ts` herausziehen (als `export function baueUmgebung(...)`), und `lauf.test.ts` auf den Helfer umstellen. Die bestehenden Tests dort müssen danach unverändert grün sein — das ist die Probe, dass der Auszug nichts verändert hat.
+**Schritt vor dem Schreiben dieser Datei — und er ist genau festgelegt, damit niemand raten muss.**
 
-Run nach dem Auszug: `npx vitest run tests/harness/lauf.test.ts` → **muss PASS sein**, bevor es weitergeht.
+`tests/harness/lauf.test.ts:29` hat heute `umgebungMit(antworten, gesendet)`. Sie nagelt zwei Dinge fest, die dieser Test variieren muss: `wurzel: '/tmp'` (Zeile 36) und `registry: new WerkzeugRegistry([])` (Zeile 38). Ausserdem hängen `EINTRAG` (Zeile 11) und `AUFTRAG` (Zeile 23) daneben.
+
+Zu tun:
+
+1. Neue Datei `tests/harness/lauf.test-helfer.ts`. Dorthin wandern **unverändert** `EINTRAG`, `AUFTRAG`, `antwort()`, `antwortLeer()` und der Rumpf von `umgebungMit`, letzterer erweitert um zwei optionale Felder:
+
+```ts
+export function baueUmgebung(opts: {
+  antworten: ModelAntwort[]
+  gesendet?: PraefixText[]
+  /** Vorgabe '/tmp', wie bisher. */
+  wurzel?: string
+  /** Vorgabe: dieselbe wie wurzel, wie bisher. */
+  heim?: string
+  /** Vorgabe: leer, wie bisher. */
+  registry?: WerkzeugRegistry
+  sandkasten?: SandkastenKontext
+}): LaufUmgebung
+```
+
+2. In `lauf.test.ts` bleibt `umgebungMit` als **dünne Hülle** stehen, damit keine der 359 Zeilen dort umgeschrieben werden muss:
+
+```ts
+function umgebungMit(antworten: ModelAntwort[], gesendet: PraefixText[] = []) {
+  return baueUmgebung({ antworten, gesendet })
+}
+```
+
+3. `npx vitest run tests/harness/lauf.test.ts` → **muss PASS sein, unverändert**, bevor irgendetwas anderes passiert. Das ist die Probe, dass der Auszug nichts verschoben hat. Schlägt auch nur ein Test dort fehl, ist der Auszug falsch — nicht der Test.
+
+**Warum die leere Registry der Vorgabewert bleiben muss:** Task 8 gibt Läufen mit wirkenden Werkzeugen eine Git-Vorbedingung. `lauf.test.ts` fährt über `/tmp` und würde daran scheitern — es scheitert nur deshalb nicht, weil seine Registry leer ist und die Bedingung gar nicht greift. Wer hier eine nicht-leere Vorgabe einsetzt, bricht Task 8 an einer Stelle, die niemand mit Task 8 in Verbindung bringt.
 
 - [ ] **Step 2: Run test to verify it fails**
 
