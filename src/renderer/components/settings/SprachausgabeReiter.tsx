@@ -21,9 +21,17 @@ export function SprachausgabeReiter({
 
       <div style={styles.block}>
         {/*
-          Der Info-Knopf steht **neben** dem label, nicht darin: ein `button` innerhalb eines
-          `label` schaltet beim Klick das Kontrollkaestchen um. Der Vermerk stand hier vorher
-          im label — als reiner Text harmlos, als Knopf waere er es nicht.
+          Der Info-Knopf steht **neben** dem label, nicht darin.
+
+          Nicht, weil ein Klick sonst das Kaestchen umschaltete — das tut er nicht: die
+          Aktivierung eines label laesst interaktive Nachkommen ausdruecklich aus, und ein
+          `button` ist interaktiver Inhalt. Sondern weil der barrierefreie Name des Kaestchens
+          aus dem Inhalt seines label berechnet wird: ein Knopf darin steuerte sein eigenes
+          `aria-label` dazu bei, und das Kaestchen hiesse fuer eine Vorlesehilfe
+          „Sprachausgabe aktiv Erläuterung zu Sprachausgabe aktiv".
+
+          Der Vermerk stand hier vorher im label. Als reiner Text war das richtig — er *gehoert*
+          zur Beschriftung. Als eigenes Bedienelement gehoert er daneben.
         */}
         <div style={styles.zeile}>
           <label style={styles.zeile}>

@@ -103,8 +103,12 @@ describe('Wirkungsvermerk — die Ausnahmslosigkeit als Sachverhalt', () => {
   })
 
   it('ein Knopf in einer Beschriftungszeile sitzt nicht in deren label', () => {
-    // Ein `button` innerhalb eines `label` schaltet beim Klick das Kontrollkaestchen um.
-    // In SprachausgabeReiter stand der Vermerk genau dort; der Knopf muss daneben.
+    // Der barrierefreie Name eines Kontrollkaestchens wird aus dem Inhalt seines `label`
+    // berechnet. Ein Knopf darin steuerte sein eigenes `aria-label` bei, und das Kaestchen
+    // hiesse „Sprachausgabe aktiv Erläuterung zu Sprachausgabe aktiv".
+    //
+    // Nicht der Grund, obwohl er naheliegt: dass der Klick das Kaestchen umschaltete. Die
+    // Aktivierung eines `label` laesst interaktive Nachkommen aus, ein `button` ist einer.
     const quelle = readFileSync(join(verzeichnis, 'SprachausgabeReiter.tsx'), 'utf8')
     expect(quelle).toContain('InfoKnopf')
     const label = quelle.slice(quelle.indexOf('<label'), quelle.indexOf('</label>'))
