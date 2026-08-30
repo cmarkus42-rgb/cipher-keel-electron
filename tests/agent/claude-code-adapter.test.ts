@@ -336,7 +336,12 @@ describe('ClaudeCodeAdapter schreibt die Entitaets-Prompt-Datei', () => {
 
   it('schreibt Byte fuer Byte dasselbe wie writeEntityPromptFile, an denselben Pfad', async () => {
     const { writeEntityPromptFile } = await import('../../src/main/session/prompt-file')
-    const prompt = '# Entitaet\n\nEin Prompt mit Umlauten (a-Umlaut: ä), einem Dollar,\n' +
+    // Das Fixture traegt absichtlich ein echtes Mehrbyte-Zeichen, obwohl Kommentare und
+    // Bezeichner in diesem Quelltext sonst ae/oe/ue schreiben: der Byte-Vergleich unten
+    // pruefte ohne eines von beiden nichts, was ueber ASCII hinausgeht, und eine
+    // Normalisierung auf einem der beiden Schreibwege fiele genau hier auf und sonst
+    // nirgends. Kein Verstoss gegen die Konvention, sondern ihr Grenzfall.
+    const prompt = '# Entitaet\n\nEin Prompt mit Umlaut (ä), einem Dollar,\n' +
       'einem CRLF-Rest\r\nund einem Abschluss ohne Zeilenumbruch.'
 
     const vorher = path.join(tmp, 'vorher')

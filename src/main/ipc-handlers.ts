@@ -428,8 +428,9 @@ export function registerIpcHandlers(services: AppServices): void {
             mcpUrl: services.mcpHttpServer.url,
             mcpApiKey: services.mcpHttpServer.apiKey,
             // Not a live session id — see the doc comment on AdapterContext.sessionId. This
-            // runs before tmux.createSession would hand us one, and the sole implementation
-            // does not read this field anyway.
+            // runs before tmux.createSession would hand us one, and neither implementation
+            // reads this field anyway ("the sole implementation" until KimiCodeAdapter
+            // arrived on 2026-08-30 — the count went stale, the statement did not).
             sessionId: name,
           })
           // Erst jetzt, weil der Satz von der geschriebenen Konfiguration handelt und nicht
