@@ -394,6 +394,25 @@ Commit aufgesetzt, das gehört in den Aufbauschritt.
 zerschreiben; wiederherstellbar ist, was committet war. Das ist der Preis der Entscheidung aus
 Christians Antwort 2, und er wird hier benannt, nicht weggeredet.
 
+### Die Reichweite ist grösser, als dieser Abschnitt zuerst nahelegte
+
+Der Satz oben sagt „ein Lauf, dessen Registry ein wirkendes Werkzeug enthält" — und liest sich, als
+beträfe das manche Läufe. **Seit der Verdrahtung (Task 9) betrifft es alle.** `baueWerkzeugRegistry()`
+ist die einzige Registry der App und trägt die drei wirkenden Werkzeuge immer; die Bedingung ist
+damit unbedingt. Praktisch heisst das: **keel startet über keinem Verzeichnis mehr, das kein
+Git-Repo mit sauberem Arbeitsbaum ist** — auch nicht für eine rein lesende Aufgabe.
+
+Das ist spec-konform und war nicht beabsichtigt. Beim Review von Task 9 gefunden. Wer es ändern
+will, hat drei Wege, und keiner davon ist in diesem Paket gebaut:
+
+1. Die Registry je Lauf zuschneiden, statt eine für alle zu bauen — dann tragen lesende Aufgaben
+   die wirkenden Werkzeuge gar nicht erst.
+2. Die Bedingung an das Preset hängen statt an die Registry.
+3. Sie so lassen: ein Projektverzeichnis ohne Git ist für keel ohnehin ein Sonderfall.
+
+**Die Entscheidung gehört Christian**, weil sie seinen Alltag ändert und nicht bloss eine
+Innenkante berührt.
+
 ---
 
 ## 8. Single-Writer
