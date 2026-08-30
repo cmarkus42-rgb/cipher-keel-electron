@@ -45,8 +45,8 @@ describe('profilText — Grundgeruest', () => {
   it('erlaubt Schreiben in der Wurzel', () => {
     expect(p).toContain('(allow file-write* (subpath "/Users/x/projekt"))')
   })
-  it('verbietet Schreiben in .git', () => {
-    expect(p).toContain('(deny file-write* (subpath "/Users/x/projekt/.git"))')
+  it('verbietet Schreiben in .git, in jeder Tiefe', () => {
+    expect(p).toContain('(deny file-write* (regex #"^/Users/x/projekt/(.*/)?\\.git(/|$)"))')
   })
   it('erlaubt jeden mitgegebenen Zwischenspeicher', () => {
     expect(p).toContain('(allow file-write* (subpath "/Users/x/.npm"))')
@@ -107,8 +107,9 @@ describe('profilText — die Verbote der Pfadwache, gespiegelt', () => {
       '(deny file-read* file-write* (subpath "/Users/x/Library/Application Support/cipher-keel"))',
     )
   })
-  it('sperrt ~/.cipher-* beidseitig', () => {
-    expect(alles).toContain('(deny file-read* file-write* (regex #"^/Users/x/\\.cipher-"))')
+  it('sperrt ~/.cipher-* beidseitig, in jeder Tiefe', () => {
+    // Die Tiefe ist der Punkt: pfadwache prueft den Basename unter dem ganzen Heim-Teilbaum.
+    expect(alles).toContain('(deny file-read* file-write* (regex #"^/Users/x/(.*/)?\\.cipher-"))')
   })
   it('sperrt .env unter der Wurzel, in jeder Tiefe', () => {
     expect(alles).toContain('#"^/Users/x/projekt/(.*/)?\\.env(\\..*)?$"')
@@ -119,8 +120,8 @@ describe('profilText — die Verbote der Pfadwache, gespiegelt', () => {
   it('sperrt Schluesselendungen unter der Wurzel', () => {
     expect(alles).toContain('#"^/Users/x/projekt/(.*/)?[^/]*\\.(pem|key|p12|keystore|jks)$"')
   })
-  it('sperrt Shell-Startdateien im Heim', () => {
-    expect(alles).toContain('#"^/Users/x/\\.(zshrc|zprofile|zshenv|bashrc|bash_profile|profile)$"')
+  it('sperrt Shell-Startdateien im Heim, in jeder Tiefe', () => {
+    expect(alles).toContain('#"^/Users/x/(.*/)?\\.(zshrc|zprofile|zshenv|bashrc|bash_profile|profile)$"')
   })
 })
 
