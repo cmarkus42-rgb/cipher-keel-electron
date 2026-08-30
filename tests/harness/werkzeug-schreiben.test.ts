@@ -82,6 +82,7 @@ describe('datei_schreiben', () => {
 
   it('nennt seine Quelle als lokal', async () => {
     const r = await schreiben.ausfuehren({ pfad: 'a.ts', inhalt: 'x' }, ktx)
+    expect(r.ok).toBe(true)
     if (r.ok) expect(r.quelle).toBe('lokal')
   })
 })

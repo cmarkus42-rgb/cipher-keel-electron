@@ -245,6 +245,10 @@ describe('projiziere: die Herkunft', () => {
     expect(block(undefined)).not.toHaveProperty('quelle')
   })
 
+  it('reicht fremd durch — die Herkunft der Shell-Ausgabe darf nicht stumm wegfallen', () => {
+    expect(block('fremd')).toMatchObject({ art: 'werkzeug-ergebnis', quelle: 'fremd' })
+  })
+
   it('laesst einen unbekannten Wert weg, statt ihn zu lokal zu machen', () => {
     // 'lokal' ist die gefaehrlichere der beiden Deutungen: „aus dieser Maschine" ist genau die
     // Zusage, die ein fremdbestimmter Inhalt nicht bekommen darf.

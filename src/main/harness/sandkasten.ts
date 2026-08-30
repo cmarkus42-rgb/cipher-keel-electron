@@ -149,6 +149,27 @@ export interface SandkastenLauf {
   zeitueberschreitung: boolean
 }
 
+/**
+ * The commands that get the `offen` network profile. Adjustable surface (CK-NFR-012).
+ *
+ * This is NOT a positive list of what may run — every command runs, only without network if it
+ * does not match here. If the match is wrong, the failure case is a failing build, never an open
+ * channel: it errs fail-closed, and that is exactly why it is allowed to be imprecise.
+ *
+ * What it does not close, and the tool text says so too: a `postinstall` script runs with full
+ * network under `offen`. That is the same gap a human takes on when typing `npm ci` themselves.
+ */
+export const PAKETBEFEHLE = [
+  'npm ci', 'npm install', 'npm i ', 'yarn install', 'pnpm install', 'pnpm i ',
+  'flutter pub get', 'dart pub get', 'pip install', 'pip3 install',
+  'cargo fetch', 'go mod download', 'bundle install',
+]
+
+export function istPaketbefehl(kommando: string): boolean {
+  const k = kommando.trim()
+  return PAKETBEFEHLE.some(p => k === p.trim() || k.startsWith(p))
+}
+
 export function starte(
   kommando: string,
   ktx: SandkastenKontext,

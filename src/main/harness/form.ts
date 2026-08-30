@@ -17,8 +17,13 @@
  * und nicht spaeter: nachtraeglich hiesse, das Schema zu aendern und jedes persistierte Protokoll
  * neu zu deuten — und die Deutung waere ein Raten darueber, was ein Werkzeugname vor Monaten
  * bedeutet hat.
+ *
+ * `fremd` heisst: auf dieser Maschine erzeugt, aber von Code, den wir nicht kontrollieren — die
+ * Ausgabe eines Build-Werkzeugs. Ein eigener Wert und kein `netz`, weil ein Protokolleintrag sonst
+ * behauptete, ein `npm ci` sei von einer Gegenstelle gekommen; und kein `lokal`, weil das
+ * verschwiege, dass ein Paket in diesen Text schreiben kann und er im Modellkontext landet.
  */
-export type WerkzeugQuelle = 'netz' | 'lokal'
+export type WerkzeugQuelle = 'netz' | 'lokal' | 'fremd'
 
 export type Block =
   | { art: 'text';              text: string }

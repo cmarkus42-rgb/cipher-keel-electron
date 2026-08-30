@@ -15,7 +15,7 @@ import type { Block, Nachricht, WerkzeugQuelle } from './form'
  * gefaehrlichere der beiden Deutungen.
  */
 function quelleAus(wert: unknown): { quelle?: WerkzeugQuelle } {
-  return wert === 'netz' || wert === 'lokal' ? { quelle: wert } : {}
+  return wert === 'netz' || wert === 'lokal' || wert === 'fremd' ? { quelle: wert } : {}
 }
 
 const UNBEKANNT =
