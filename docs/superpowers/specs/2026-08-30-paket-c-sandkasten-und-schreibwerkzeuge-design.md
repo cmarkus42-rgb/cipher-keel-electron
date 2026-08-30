@@ -310,10 +310,26 @@ too far should find out, not die."*
 `fuehreAus` — die Kette künstlich auch über sie zu legen hiesse, jedem Lesevorgang ein Ereignis zu
 spendieren, dessen Antwort immer „ja" ist. Das Protokoll würde länger und nicht wahrer.
 
-**Dass das Tor bei `shell_ausfuehren` heute immer ja sagt, ist keine Attrappe** — der Unterschied
-zu `intent-vor-effekt.ts` liegt darin, dass es bei den beiden anderen Werkzeugen wirklich ablehnt
-und die Ablehnung schreibt. Eine Stelle, die für zwei von drei Eingängen nein sagen kann, ist ein
-Tor; eine, die für keinen kann, war der Befund.
+**Was das Tor heute wirklich beiträgt — und es ist weniger, als dieser Abschnitt zuerst nahelegte.**
+Beim Bau von Task 7 gemessen und vom Review unabhängig bestätigt: **das Tor verhindert nie einen
+Effekt allein.** Jeder seiner Ablehnungszweige ist stromabwärts byte-gleich gespiegelt —
+Pfadablehnungen von `werkzeug-schreiben.ts` (das die Pfadwache absichtlich selbst noch einmal
+fragt, §6), fehlende Felder von denselben Stellen, und `shell_ausfuehren` lässt es ohnehin immer
+durch. Nimmt man den Abbruch im Tor heraus, sieht das Protokoll identisch aus.
+
+Sein Beitrag ist damit **der Eintrag `tool.entschieden`**: der prüfbare Nachweis, dass entschieden
+wurde und warum. Das ist kein kleiner Beitrag — eine Ablehnung war vorher nur an einem
+ausbleibenden Effekt zu erkennen, also gar nicht —, aber es ist ein anderer als „es hält die
+Wirkung auf".
+
+**Tragend wird es in dem Moment, in dem ein wirkendes Werkzeug nicht selbst nachprüft.** Genau
+diese Lage stellt der Test mit einem vertrauenden Werkzeug her, und nur dort beisst die
+Mutationsprobe. Das ist zugleich die Warnung an den nächsten Bau: wer ein viertes wirkendes
+Werkzeug ohne eigene Prüfung hinzufügt, verlässt sich auf das Tor — und dann muss es halten.
+
+**Ein Nebenbefund derselben Messung:** zwei Schutzmechanismen, die dieselbe Meldung ausgeben,
+machen einander unprüfbar. Die erste Fassung der Probe hätte das Tor bestätigt, ohne etwas zu
+zeigen.
 
 ---
 
