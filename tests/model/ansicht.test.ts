@@ -332,4 +332,57 @@ describe('Ansichtsmodell', () => {
     const w = a.adapter.find(x => x.id === 'claude-code')!.warnungen
     expect(w.map(x => x.code)).toEqual(['unlesbare-parameter'])
   })
+
+  // Der Harness-Platz steht neben den Slots, nicht darin, und kommt deshalb als eigenes Feld
+  // im Ansichtsmodell an. Alles, was ein Mensch liest, entsteht hier im Hauptprozess: das
+  // Fenster bekommt fertigen deutschen Text und keine Regel.
+  describe('Harness-Platz', () => {
+    it('ist leer vorbelegt und sagt, dass dann das Preset entscheidet', async () => {
+      const a = await ansichtMit(null)
+      expect(a.harnessPlatz.gewaehlt).toBe('')
+      expect(a.harnessPlatz.rueckfallText).toContain('Preset')
+      expect(a.harnessPlatz.gewaehltHinweis).toBeNull()
+    })
+
+    it('bietet die fremden CLIs an, nicht die eigene Schleife', async () => {
+      const a = await ansichtMit(null)
+      const ids = a.harnessPlatz.optionen.map(o => o.adapterId)
+      expect(ids).toContain('claude-code')
+      expect(ids).toContain('kimi-code')
+      expect(ids).not.toContain('keel-harness')
+    })
+
+    it('wirkt auf die naechste Sitzung', async () => {
+      const a = await ansichtMit(null)
+      expect(a.harnessPlatz.wirkung).toBe('naechste-session')
+    })
+
+    it('erklaert, dass eine Zelle der eigenen Schleife unangetastet bleibt', async () => {
+      const a = await ansichtMit(null)
+      expect(a.harnessPlatz.erklaertext).toContain('Niveau-B')
+    })
+
+    it('gibt die getroffene Wahl zurueck', async () => {
+      const a = await ansichtMit({ agent: { harness: 'kimi-code' } })
+      expect(a.harnessPlatz.gewaehlt).toBe('kimi-code')
+    })
+
+    it('sagt bei einer Wahl, die es nicht gibt, was stattdessen passiert', async () => {
+      const a = await ansichtMit({ agent: { harness: 'erfunden' } })
+      expect(a.harnessPlatz.gewaehltHinweis).toContain('erfunden')
+    })
+
+    it('haengt den Hinweis zu einer gesperrten Wahl an deren Sperrgrund', async () => {
+      // Ob `kimi` auf dieser Maschine im Pfad liegt, ist eine Aussage ueber den Rechner und
+      // keine Grundlage fuer eine Zusicherung. Geprueft wird deshalb der Zusammenhang: gesperrte
+      // Option und Hinweis treten gemeinsam auf oder gar nicht.
+      const a = await ansichtMit({ agent: { harness: 'kimi-code' } })
+      const option = a.harnessPlatz.optionen.find(o => o.adapterId === 'kimi-code')!
+      if (option.sperrgrund) {
+        expect(a.harnessPlatz.gewaehltHinweis).toContain(option.sperrgrund)
+      } else {
+        expect(a.harnessPlatz.gewaehltHinweis).toBeNull()
+      }
+    })
+  })
 })

@@ -19,6 +19,7 @@ import { configStore, type LlmEndpoint, type CipherKeelConfig } from '../config/
 import { baueAnsicht } from '../model/ansicht'
 import { normaliseEintrag } from '../model/entry'
 import { slotFuerId, type Rolle, type Tier, type Sitzungsschluessel, type Slot } from '../model/slots'
+import { pruefeHarnessWahl } from '../model/harness-platz'
 import { storeInKeychain, keychainService } from '../worker/api-keys'
 import { normaliseEndpoint, type RawEndpoint } from '../worker/model-client'
 import { execFileAsync } from '../util/exec-util'
@@ -29,7 +30,7 @@ import {
   SETTINGS_ANSICHT, SETTINGS_ZUORDNUNG_SETZEN, SETTINGS_EINTRAG_SPEICHERN,
   SETTINGS_EINTRAG_LOESCHEN, SETTINGS_GEHEIMNIS_SETZEN, SETTINGS_GEHEIMNIS_LOESCHEN,
   SETTINGS_STARTARGS_SETZEN, SETTINGS_EINFACHFELD_SETZEN,
-  SETTINGS_RUECKFALL_ENDPUNKT_SETZEN,
+  SETTINGS_RUECKFALL_ENDPUNKT_SETZEN, SETTINGS_HARNESS_SETZEN,
 } from '../../shared/ipc-channels'
 
 /** Every writer funnels through this: validate, mutate, hand back the whole picture. */
@@ -115,6 +116,22 @@ export function registerSettingsHandlers(): void {
         ...modelle,
         zuordnung: zuordnungMitPlatz(modelle.zuordnung, slot, eintragId),
       })
+    })
+  )
+
+  /**
+   * Der Harness-Platz. Derselbe Zuschnitt wie SETTINGS_ZUORDNUNG_SETZEN eine Zeile darueber,
+   * nur ohne Platzkennung: es gibt genau einen Harness-Platz, und was er annimmt, weiss
+   * `pruefeHarnessWahl` (model/harness-platz.ts) — dieselbe Pruefung, die auch beim
+   * Sitzungsstart laeuft, statt einer zweiten hier. Leerer Wert setzt zurueck auf „das Preset
+   * entscheidet".
+   */
+  ipcMain.handle(SETTINGS_HARNESS_SETZEN, async (_e, adapterId: string) =>
+    mitAnsicht(() => {
+      const registry = new AdapterRegistry({ getStartArgs: () => [] })
+      const geprueft = pruefeHarnessWahl(registry, adapterId)
+      const agent = configStore.get('agent')
+      configStore.set('agent', { ...agent, harness: geprueft })
     })
   )
 

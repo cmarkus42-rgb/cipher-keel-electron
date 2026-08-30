@@ -133,6 +133,50 @@ export interface SlotAnsicht {
   wirkung: Wirkung
 }
 
+/**
+ * Eine waehlbare Harness-Option. Wie `SlotOptionAnsicht`, aber an einer Adapterkennung statt
+ * an einer Eintragskennung: ein Harness ist kein Registry-Eintrag (src/main/model/harness-platz.ts).
+ */
+export interface HarnessOptionAnsicht {
+  adapterId: string
+  /** Der Anzeigename des Adapters, nicht seine Kennung. */
+  name: string
+  /**
+   * Deutsch. Nicht-null heisst gesperrt und sagt warum — und der Satz kommt unveraendert vom
+   * Adapter (`nichtVerfuegbarGrund`), nicht aus einer zweiten Regel.
+   */
+  sperrgrund: string | null
+}
+
+/**
+ * Der Harness-Platz: womit eine Sitzung laeuft.
+ *
+ * Ein eigenes Feld neben `slots`, kein achter Slot. Ein Slot zielt auf einen Registry-Eintrag
+ * und wird ueber die Eignungsregeln gefiltert; dieser Platz zielt auf einen Adapter und wird
+ * ueber dessen eigene Verfuegbarkeitsauskunft gesperrt.
+ */
+export interface HarnessPlatzAnsicht {
+  id: string
+  beschriftung: string
+  /** Leer heisst: keine Wahl getroffen, das Preset entscheidet. */
+  gewaehlt: string
+  optionen: HarnessOptionAnsicht[]
+  /**
+   * Deutsch, nicht-null, wenn die getroffene Wahl klemmt: sie nennt eine Kennung, die es nicht
+   * gibt, oder einen Harness, der auf diesem Rechner nicht startbar ist. Sagt in beiden Faellen
+   * dazu, was stattdessen passiert — und das ist **kein** stiller Rueckfall.
+   */
+  gewaehltHinweis: string | null
+  /** Deutsch: was gilt, solange nichts gewaehlt ist. */
+  rueckfallText: string
+  /**
+   * Deutsch: was der Platz tut und was ausdruecklich nicht. Gehoert hinter einen Info-Knopf —
+   * er erklaert, er schraenkt nicht ein (Entwurf §4).
+   */
+  erklaertext: string
+  wirkung: Wirkung
+}
+
 export interface EndpunktAnsicht {
   kind: 'ollama' | 'openai-compatible'
   host: string
@@ -164,6 +208,12 @@ export interface SettingsAnsicht {
   eintraege: EintragAnsicht[]
   uebersprungen: UebersprungenAnsicht[]
   slots: SlotAnsicht[]
+  /**
+   * Womit eine Sitzung laeuft. Steht vor den Slots, weil es die groebste Wahl ist: sie
+   * entscheidet, welche der Zuordnungen darunter ueberhaupt zur Anwendung kommen — ein
+   * Kimi-Harness liest keinen Tier-Platz.
+   */
+  harnessPlatz: HarnessPlatzAnsicht
   modellTiers: { light: string; standard: string; heavy: string }
   rueckfallEndpunkte: { tagging: EndpunktAnsicht; worker: EndpunktAnsicht }
   adapter: AdapterAnsicht[]
