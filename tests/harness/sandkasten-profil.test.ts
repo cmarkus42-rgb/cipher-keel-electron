@@ -78,6 +78,30 @@ describe('Waechter: jedes Leseverbot ist auch ein Schreibverbot', () => {
   })
 })
 
+describe('Waechter: kein Verbot steht vor einer Erlaubnis', () => {
+  // Der teuerste Fund dieser Strecke. SBPL entscheidet nach der **zuletzt** passenden Regel:
+  // ein `(deny ... .env)` vor `(allow file-write* (subpath <wurzel>))` ist wirkungslos, und im
+  // Profiltext sieht es trotzdem nach Schutz aus. Gemessen mit zwei Profilen, die sich nur in
+  // der Reihenfolge dieser zwei Zeilen unterschieden: davor gelang `echo > .env`, danach kam
+  // 'Operation not permitted'.
+  //
+  // Dieser Waechter ist der einzige Texttest, der das faengt — alle anderen pruefen, ob eine
+  // Zeile *da* ist, und da war sie.
+  it('jede allow-Zeile steht vor jeder deny-Zeile', () => {
+    const zeilen = profilText(ktx, 'offen').split('\n').map(z => z.trim())
+    const istDeny = (z: string): boolean => z.startsWith('(deny') && z !== '(deny default)'
+    const letzteErlaubnis = zeilen.findLastIndex(z => z.startsWith('(allow'))
+    const erstesVerbot = zeilen.findIndex(istDeny)
+    expect(erstesVerbot).toBeGreaterThan(-1)
+    expect(letzteErlaubnis).toBeGreaterThan(-1)
+    expect(
+      erstesVerbot,
+      `Verbot in Zeile ${erstesVerbot} steht vor Erlaubnis in Zeile ${letzteErlaubnis} — ` +
+      `SBPL nimmt die letzte passende Regel, das Verbot waere wirkungslos.`,
+    ).toBeGreaterThan(letzteErlaubnis)
+  })
+})
+
 describe('Waechter: jedes Verbot ist verankert', () => {
   // Ein globales deny auf *.pem sperrt /etc/ssl/cert.pem und bricht jedes TLS im Kindprozess —
   // also ausgerechnet npm ci.

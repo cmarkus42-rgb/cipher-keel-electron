@@ -73,12 +73,36 @@ export function profilText(ktx: SandkastenKontext, netz: NetzModus): string {
     zeilen.push('(allow network-outbound)', '(allow network-bind)', '')
   }
 
+  // ALLE Erlaubnisse zuerst, ALLE Verbote zuletzt. Das ist die tragende Regel dieser Funktion,
+  // und sie ist am 2026-08-30 gegen echtes sandbox-exec gemessen worden: **SBPL entscheidet nach
+  // der zuletzt passenden Regel**, nicht nach der ersten und nicht "deny gewinnt". Gemessen mit
+  // zwei Profilen, die sich nur in der Reihenfolge zweier Zeilen unterschieden:
+  //
+  //   deny .env  VOR  allow write <wurzel>  ->  echo zerstoert > .env  gelingt
+  //   deny .env  NACH allow write <wurzel>  ->  Operation not permitted, Inhalt unveraendert
+  //
+  // Ein Verbot vor einer umfassenderen Erlaubnis ist also wirkungslos — es sieht im Profiltext
+  // aus wie Schutz und ist keiner. Genau deshalb reicht eine Textpruefung ueber diesem Profil
+  // nicht: die Reihenfolge ist die Aussage, nicht das Vorhandensein der Zeile.
   zeilen.push(
-    '; Lesen: grundsaetzlich ja …',
+    '; Lesen: grundsaetzlich ja — die Verbote stehen unten und ueberstimmen das.',
     '(allow file-read*)',
     '',
-    '; … ausser den Verboten der Pfadwache. Beidseitig, nie nur lesend: ein deny auf file-read*',
-    '; allein laesst das Ueberschreiben zu, und dann ist das Geheimnis vertraulich und zerstoerbar.',
+    '; Schreibziele: die Wurzel und die Zwischenspeicher der Toolchains.',
+    `(allow file-write* (subpath "${w}"))`,
+    `(allow file-write* (subpath "${sbplLiteral(ktx.tmpdir)}"))`,
+  )
+
+  for (const z of ktx.zwischenspeicher) {
+    zeilen.push(`(allow file-write* (subpath "${sbplLiteral(z)}"))`)
+  }
+
+  zeilen.push(
+    '(allow file-write-data (literal "/dev/null"))',
+    '',
+    '; Ab hier nur noch Verbote, und keine Erlaubnis darf ihnen folgen. Beidseitig, nie nur',
+    '; lesend: ein deny auf file-read* allein laesst das Ueberschreiben zu, und dann ist das',
+    '; Geheimnis vertraulich und zerstoerbar.',
     `(deny file-read* file-write* (subpath "${sbplLiteral(ktx.heim)}/.ssh"))`,
     `(deny file-read* file-write* (subpath "${sbplLiteral(ktx.userDataPfad)}"))`,
     // `(.*/)?` in jeder dieser Regeln, und das ist keine Kosmetik: pfadwache prueft den
@@ -92,24 +116,92 @@ export function profilText(ktx: SandkastenKontext, netz: NetzModus): string {
     // Anchored to the root, never global: a global deny on *.pem locks /etc/ssl/cert.pem and
     // breaks TLS in the child — that is, `npm ci` itself.
     `(deny file-read* file-write* (regex #"^${wRe}/(.*/)?[^/]*\\.(pem|key|p12|keystore|jks)$"))`,
-    '',
-    '; Schreiben: die Wurzel — und die Verwaltung des Rueckwegs ausdruecklich nicht. Ein',
-    '; `git reset --hard` naehme genau den Rueckweg weg, auf dem die Startvorbedingung beruht.',
-    `(allow file-write* (subpath "${w}"))`,
     // Jedes `.git`-Segment in jeder Tiefe, nicht bloss `<wurzel>/.git`: pfadwache verwirft einen
     // Pfad, sobald *irgendein* Segment `.git` heisst (pfadwache.ts:101). Ein Submodul oder ein
     // eingebettetes Repo unter `vendor/` waere sonst beschreibbar, waehrend die Wache es
-    // verweigert — und die Rueckwegzusage gilt dann nur fuer das oberste Repo.
+    // verweigert — und die Rueckwegzusage gilt dann nur fuer das oberste Repo. Ein
+    // `git reset --hard` naehme ausserdem genau den Rueckweg weg, auf dem die
+    // Startvorbedingung beruht.
     `(deny file-write* (regex #"^${wRe}/(.*/)?\\.git(/|$)"))`,
     '',
-    '; Schreibziele ausserhalb der Wurzel: die Zwischenspeicher der Toolchains.',
-    `(allow file-write* (subpath "${sbplLiteral(ktx.tmpdir)}"))`,
   )
-
-  for (const z of ktx.zwischenspeicher) {
-    zeilen.push(`(allow file-write* (subpath "${sbplLiteral(z)}"))`)
-  }
-
-  zeilen.push('', '(allow file-write-data (literal "/dev/null"))', '')
   return zeilen.join('\n')
+}
+
+import { spawn } from 'node:child_process'
+import { getEnhancedPath } from '../util/exec-util'
+
+/** Wall-clock ceiling for one command. Adjustable surface (CK-NFR-012). */
+export const STANDARD_ZEITGRENZE_MS = 120_000
+
+/**
+ * Output cap. Not comfort: the output goes into the model context. An `npm ci` with 4 MB of
+ * output blows a local 27B model's window in a single turn, and then the test track measures who
+ * guessed `--silent`.
+ */
+export const MAX_AUSGABE_BYTES = 64 * 1024
+
+export interface SandkastenLauf {
+  /** stdout and stderr, interleaved in arrival order, capped at MAX_AUSGABE_BYTES. */
+  ausgabe: string
+  code: number | null
+  abgeschnitten: boolean
+  zeitueberschreitung: boolean
+}
+
+export function starte(
+  kommando: string,
+  ktx: SandkastenKontext,
+  netz: NetzModus,
+  zeitgrenzeMs: number = STANDARD_ZEITGRENZE_MS,
+): Promise<SandkastenLauf> {
+  const profil = profilText(ktx, netz)
+  return new Promise((aufloesen) => {
+    // A minimal environment, not process.env: the main process carries API keys, and a child that
+    // inherits them can write them into the project tree. PATH is passed explicitly rather than
+    // relied upon — a macOS GUI app does not inherit the shell PATH (see exec-util.ts), so without
+    // this `npm` is simply not found.
+    const kind = spawn(
+      '/usr/bin/sandbox-exec',
+      ['-p', profil, '/bin/sh', '-c', kommando],
+      {
+        cwd: ktx.wurzel,
+        env: {
+          PATH: getEnhancedPath(),
+          HOME: ktx.heim,
+          TMPDIR: ktx.tmpdir,
+          LANG: process.env.LANG ?? 'en_US.UTF-8',
+        },
+      },
+    )
+
+    let ausgabe = ''
+    let abgeschnitten = false
+    let zeitueberschreitung = false
+
+    const sammle = (stueck: Buffer): void => {
+      if (abgeschnitten) return
+      ausgabe += stueck.toString('utf-8')
+      if (ausgabe.length > MAX_AUSGABE_BYTES) {
+        ausgabe = ausgabe.slice(0, MAX_AUSGABE_BYTES)
+        abgeschnitten = true
+      }
+    }
+    kind.stdout.on('data', sammle)
+    kind.stderr.on('data', sammle)
+
+    const wecker = setTimeout(() => {
+      zeitueberschreitung = true
+      kind.kill('SIGKILL')
+    }, zeitgrenzeMs)
+
+    kind.on('error', (err) => {
+      clearTimeout(wecker)
+      aufloesen({ ausgabe: String(err), code: null, abgeschnitten, zeitueberschreitung })
+    })
+    kind.on('close', (code) => {
+      clearTimeout(wecker)
+      aufloesen({ ausgabe, code, abgeschnitten, zeitueberschreitung })
+    })
+  })
 }
