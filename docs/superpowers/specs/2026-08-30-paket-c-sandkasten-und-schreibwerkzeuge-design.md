@@ -337,6 +337,8 @@ Werkzeug hätte dieselbe Wirkung ohne dieselbe Grenze.
 Kommando, Arbeitsverzeichnis ist die Laufwurzel. Läuft über `sandkasten.starte`. Rückgabe:
 Ausgabe (gedeckelt), Rückgabecode, und bei Zeitüberschreitung eine benannte Ablehnung.
 
+**Die Herkunft der Ausgabe bekommt einen dritten Wert.** `WerkzeugQuelle` (`form.ts:21`) kennt heute `'netz' | 'lokal'`, und beides wäre hier eine falsche Auskunft: `netz` heisst laut eigenem Kommentar *„von einer Gegenstelle, die niemand von uns kontrolliert"* — ein `npm ci` kommt von keiner Gegenstelle; `lokal` heisst *„aus dieser Maschine"* und verschwiege, dass ein Paket in diesen Text schreiben kann und er im Modellkontext landet. Also `'fremd'` daneben. Beim Planen nachgeprüft: kein Produktionszweig verzweigt über den Wert, der Zusatz ist additiv, alte Protokolle behalten ihre Bedeutung. **Und er braucht zwei Stellen** — `quelleAus` in `projektion.ts:18` lässt unbekannte Werte *stumm* wegfallen, ein `'fremd'` ohne Anpassung dort verschwände lautlos aus dem Verlauf.
+
 **Der Stummel im stabilen Präfix ist einzeilig**, und das ist keine Kosmetik: `faehigkeiten.ts`
 warnt bereits namentlich davor, dass ein mehrzeiliger Beschreibungstext einen erfundenen
 `shell_ausfuehren`-Eintrag in den Präfix schmuggeln kann, der von keels eigener Liste nicht zu
