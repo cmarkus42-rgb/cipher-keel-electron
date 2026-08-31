@@ -231,8 +231,8 @@ describe('baueSammler — Kodierung und Deckel', () => {
     // Mitten in den zwei Bytes des 'ü' getrennt. Vorher wurde jedes Stueck einzeln dekodiert und
     // aus dem einen Zeichen wurden zwei U+FFFD.
     const schnitt = Buffer.from('Pr', 'utf-8').length + 1
-    s.nimm(bytes.subarray(0, schnitt))
-    s.nimm(bytes.subarray(schnitt))
+    s.nimm(bytes.subarray(0, schnitt), 'aus')
+    s.nimm(bytes.subarray(schnitt), 'aus')
     expect(s.text()).toBe('Prüfung fehlgeschlagen')
     expect(s.text()).not.toContain('�')
   })
@@ -243,11 +243,11 @@ describe('baueSammler — Kodierung und Deckel', () => {
     for (let i = 2; i < 5; i++) {
       // Jede der drei moeglichen Trennstellen innerhalb der vier Bytes des Zeichens.
       const t = baueSammler(1024)
-      t.nimm(bytes.subarray(0, i))
-      t.nimm(bytes.subarray(i))
+      t.nimm(bytes.subarray(0, i), 'aus')
+      t.nimm(bytes.subarray(i), 'aus')
       expect(t.text(), `Trennung nach Byte ${i}`).toBe('a🔧b')
     }
-    s.nimm(bytes)
+    s.nimm(bytes, 'aus')
     expect(s.text()).toBe('a🔧b')
   })
 
@@ -255,7 +255,7 @@ describe('baueSammler — Kodierung und Deckel', () => {
     // 40 Umlaute sind 80 Bytes und 40 UTF-16-Einheiten. Mit `ausgabe.length` als Mass waeren bei
     // einem Deckel von 50 alle 40 durchgegangen — also 80 Bytes bei einer Grenze von 50.
     const s = baueSammler(50)
-    s.nimm(Buffer.from('ä'.repeat(40), 'utf-8'))
+    s.nimm(Buffer.from('ä'.repeat(40), 'utf-8'), 'aus')
     expect(s.abgeschnitten()).toBe(true)
     expect(Buffer.byteLength(s.text(), 'utf-8')).toBeLessThanOrEqual(50)
   })
@@ -264,23 +264,38 @@ describe('baueSammler — Kodierung und Deckel', () => {
     // Deckel 51, Zeichen zwei Bytes breit: der Schnitt faellt zwischen die beiden Bytes des
     // 26. Zeichens und muss um eines zurueckgehen.
     const s = baueSammler(51)
-    s.nimm(Buffer.from('ä'.repeat(40), 'utf-8'))
+    s.nimm(Buffer.from('ä'.repeat(40), 'utf-8'), 'aus')
     expect(s.text()).not.toContain('�')
     expect(s.text()).toBe('ä'.repeat(25))
   })
 
   it('nimmt nach dem Kappen nichts mehr an', () => {
     const s = baueSammler(4)
-    s.nimm(Buffer.from('aaaaaaaa', 'utf-8'))
-    s.nimm(Buffer.from('SPAETER', 'utf-8'))
+    s.nimm(Buffer.from('aaaaaaaa', 'utf-8'), 'aus')
+    s.nimm(Buffer.from('SPAETER', 'utf-8'), 'aus')
     expect(s.text()).toBe('aaaa')
     expect(s.text()).not.toContain('SPAETER')
   })
 
   it('laesst eine unvollstaendige Folge am Ende lieber weg, als sie zu erfinden', () => {
     const s = baueSammler(1024)
-    s.nimm(Buffer.from([0x61, 0xc3]))
+    s.nimm(Buffer.from([0x61, 0xc3]), 'aus')
     expect(s.text()).toBe('a')
+  })
+
+  it('haelt Umlaute korrekt, wenn die beiden Haelften auf verschiedenen Stroemen ankommen', () => {
+    // 'ü' ist zwei Bytes (0xC3 0xBC). Die erste Haelfte trifft auf stdout ein, dazwischen ein
+    // vollstaendiges Zeichen auf stderr, dann die zweite Haelfte wieder auf stdout. Mit einem
+    // einzigen, geteilten Dekoder wuerde stderrs 'X' die auf stdout gehaltene 0xC3 vervollstaendigen
+    // (und umgekehrt die stdout-Fortsetzung mit dem stderr-Dekoderzustand kollidieren) — beide
+    // Texte kaemen mangled zurueck. Mit einem Dekoder je Strom bleibt jede Haelfte bei ihrem Strom,
+    // und das Interleaving in Ankunftsreihenfolge bleibt trotzdem erhalten.
+    const s = baueSammler(1024)
+    s.nimm(Buffer.from([0x41, 0xc3]), 'aus')      // stdout: "A" + erste Haelfte von 'ü'
+    s.nimm(Buffer.from('X', 'utf-8'), 'fehler')   // stderr: vollstaendiges Zeichen dazwischen
+    s.nimm(Buffer.from([0xbc, 0x42]), 'aus')      // stdout: zweite Haelfte von 'ü' + "B"
+    expect(s.text()).toBe('AXüB')
+    expect(s.text()).not.toContain('�')
   })
 })
 

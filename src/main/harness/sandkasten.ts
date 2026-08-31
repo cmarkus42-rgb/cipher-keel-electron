@@ -250,8 +250,10 @@ export const MAX_AUSGABE_BYTES = 64 * 1024
  * einem U+FFFD gemacht (`decoder.end()` wird nie gerufen). Ein fehlendes Zeichen ist ehrlicher
  * als ein erfundenes.
  */
+export type SammlerStrom = 'aus' | 'fehler'
+
 export interface AusgabeSammler {
-  nimm(stueck: Buffer): void
+  nimm(stueck: Buffer, strom: SammlerStrom): void
   text(): string
   abgeschnitten(): boolean
 }
@@ -272,12 +274,19 @@ export function schneideAufBytes(text: string, maxBytes: number): string {
 }
 
 export function baueSammler(maxBytes: number = MAX_AUSGABE_BYTES): AusgabeSammler {
-  const dekoder = new StringDecoder('utf8')
+  // Ein Dekoder pro Strom, nicht einer fuer beide: ein `StringDecoder` haelt die angefangenen
+  // Bytes einer unvollstaendigen Folge bis zum naechsten `write()` zurueck, und dieser Zustand
+  // gehoert dem Strom, nicht dem Sammler. Geteilt haetten sich stdout und stderr sonst gegenseitig
+  // ihre Haelften geliehen, sobald ein `data`-Ereignis des einen Stroms zwischen den beiden
+  // Haelften einer Mehrbyte-Folge des anderen eintrifft.
+  const dekoderAus = new StringDecoder('utf8')
+  const dekoderFehler = new StringDecoder('utf8')
   let text = ''
   let gekappt = false
   return {
-    nimm(stueck: Buffer): void {
+    nimm(stueck: Buffer, strom: SammlerStrom): void {
       if (gekappt) return
+      const dekoder = strom === 'aus' ? dekoderAus : dekoderFehler
       text += dekoder.write(stueck)
       if (Buffer.byteLength(text, 'utf-8') > maxBytes) {
         text = schneideAufBytes(text, maxBytes)
@@ -370,13 +379,16 @@ export function starte(
 
     let zeitueberschreitung = false
 
-    // Ein Sammler fuer beide Pipes, damit die Reihenfolge des Eintreffens erhalten bleibt. Dass
-    // er den Dekoderzustand teilt, ist dabei kein Problem: stdout und stderr sind jeweils in sich
-    // vollstaendig, und eine Folge, die ueber die Grenze zwischen den beiden Stroemen liefe, gibt
-    // es nicht.
+    // Ein Sammler fuer beide Pipes, damit die Reihenfolge des Eintreffens erhalten bleibt — das
+    // Interleaving in Ankunftsreihenfolge ist Absicht und in `SandkastenLauf.ausgabe` dokumentiert.
+    // Geteilt werden dabei nur der Bytedeckel und der eine `text`: `baueSammler` haelt fuer `aus`
+    // und `fehler` je einen eigenen `StringDecoder`, denn dessen zurueckgehaltene Bytes einer
+    // unvollstaendigen Folge gehoeren dem einzelnen Strom. Ein gemeinsamer Dekoder wuerde eine
+    // Folge, deren erste Haelfte auf der einen Pipe endet, mit der naechsten Haelfte vervollstaendigen,
+    // die auf der *anderen* Pipe eintrifft — und beide Texte waeren verstuemmelt, nicht nur einer.
     const sammler = baueSammler(MAX_AUSGABE_BYTES)
-    kind.stdout.on('data', (stueck: Buffer) => sammler.nimm(stueck))
-    kind.stderr.on('data', (stueck: Buffer) => sammler.nimm(stueck))
+    kind.stdout.on('data', (stueck: Buffer) => sammler.nimm(stueck, 'aus'))
+    kind.stderr.on('data', (stueck: Buffer) => sammler.nimm(stueck, 'fehler'))
 
     const wecker = setTimeout(() => {
       zeitueberschreitung = true
