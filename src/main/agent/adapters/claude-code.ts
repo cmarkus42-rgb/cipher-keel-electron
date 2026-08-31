@@ -4,10 +4,11 @@
  * Encapsulates all Claude Code CLI specifics:
  * - Launch via `claude`, with free-text start parameters from agent.startArgs (see
  *   AgentConfigReader below) prepended to the flags this adapter builds itself
- * - MCP injection via a direct `settings.local.json` write — EIN Weg, seit Paket D. Zwei
- *   weitere standen hier einmal (`claude mcp add-json`, und davor ein Schreibvorgang nach
- *   `~/.claude/projects/<hash>/settings.json`); beide wurden ersatzlos entfernt, nicht
- *   repariert. Siehe den Doc-Kommentar an postLaunchInjection.
+ * - MCP injection ueber ZWEI Wege, und nur einer davon traegt: `claude mcp add-json` ist der
+ *   Weg, ueber den eine Sitzung die Werkzeuge wirklich bekommt (2026-08-31 gemessen), der
+ *   `settings.local.json`-Schreibvorgang ist der, der eine Ruecknahme moeglich macht. Ein
+ *   dritter (`~/.claude/projects/<hash>/settings.json`) wurde ersatzlos entfernt. Siehe den
+ *   Doc-Kommentar an postLaunchInjection fuer die Messung, die das entschieden hat.
  * - StatusLine hook for context usage reporting
  * - CLAUDE.md as project marker
  *
@@ -29,9 +30,7 @@ import type {
 } from '../agent-adapter'
 import type { AdapterFeature, AdapterCapabilities } from '../../../shared/types'
 import { CapabilityNiveau } from '../../preset/niveau'
-// `runCommand` stand hier fuer den zweiten Einspritzungsweg (`claude mcp add-json`), den
-// Paket D ersatzlos gestrichen hat. Dieser Adapter ruft seither keinen externen Befehl mehr.
-import { isCommandOnPath } from '../../util/exec-util'
+import { runCommand, isCommandOnPath } from '../../util/exec-util'
 import { formatShellCommand } from '../../util/shell-quote'
 import { describeMissingTool } from '../../util/missing-tool'
 import { writeEntityPromptFile } from '../../session/prompt-file'
@@ -105,14 +104,18 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
    * `McpEinspritzungsBeschreibung` fuer den Grund, warum das am Adapter haengt und nicht in
    * SESSION_CREATE, wo der Dateiname einmal fest eingetragen war.
    *
-   * `nichtZuruecknehmbarerRest` bleibt seit Paket D **leer**, und das ist eine Aussage: es gab
-   * hier einen zweiten Weg (`claude mcp add-json`), den `claude mcp remove` nur loeschen und
-   * nie wiederherstellen konnte — dieser Rest musste dem Menschen genannt werden. Den Weg gibt
-   * es nicht mehr, also gibt es den Rest nicht mehr, und ein Feld, das trotzdem etwas nennte,
-   * waere eine Warnung vor nichts.
+   * `nichtZuruecknehmbarerRest` nennt weiterhin den CLI-Weg: `claude mcp remove` kann nur
+   * loeschen, nie den Vorzustand herstellen. Was der Satz seit Paket D NICHT mehr sagt, ist,
+   * der Rest sei gefaehrlich — es bleibt ein Eintrag mit einem Startbefehl stehen, kein
+   * Schluessel. Wertlos wird er, sobald die App neu startet, weil der Socketpfad dann ein
+   * anderer ist.
    */
   readonly mcpEinspritzung: McpEinspritzungsBeschreibung = {
-    ort: '.claude/settings.local.json',
+    ort: '~/.claude.json (ueber die claude-CLI) und .claude/settings.local.json',
+    nichtZuruecknehmbarerRest:
+      'der ueber die claude-CLI registrierte Eintrag bleibt bestehen, bis er ueberschrieben ' +
+      'wird — ein App-Neustart entfernt ihn nicht, macht ihn aber wertlos, weil der ' +
+      'Socketpfad bei jedem App-Start ein anderer ist',
   }
 
   /**
@@ -125,23 +128,43 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
    * sometimes win (security review finding I-1, 2026-08-30). Nothing here needs a live
    * session — `ctx.sessionId` is not read below at all.
    *
-   * **Ein Weg, nicht mehr zwei** (Paket D): der direkte Schreibvorgang nach
-   * `<project>/.claude/settings.local.json`, die Datei, aus der Claude Code die
-   * projektlokale MCP-Konfiguration wirklich liest.
+   * **Zwei Wege, und am 2026-08-31 ist zum ersten Mal gemessen, WELCHER von beiden traegt:**
    *
-   * Zwei weitere Wege standen hier einmal und stehen es nicht mehr, beide aus demselben
-   * Grund — ein Geheimnis an einen Ort schreiben, der es nicht braucht:
-   * - `claude mcp add-json` (bis Paket D): die Serverkonfiguration ging als
-   *   Kommandozeilenargument mit, also in die Prozesstabelle, und Claude Code schrieb sie
-   *   zusaetzlich in `~/.claude.json`. Solange sie einen Bearer trug, war das ein dritter
-   *   Ort — und der einzige, den keine Ruecknahme erreichen konnte.
-   * - `~/.claude/projects/<hash>/settings.json` (bis zum Sicherheitsreview 2026-08-30): dort
-   *   liegen Sitzungsmitschriften, Claude Code liest von da gar keine Einstellungen. Ein
-   *   Geheimnis auf Platte ohne jeden Leser.
+   * 1. Ein direkter Schreibvorgang nach `<project>/.claude/settings.local.json`.
+   * 2. `claude mcp add-json -s local` — die CLI schreibt nach `~/.claude.json`, unter
+   *    `projects.<cwd>.mcpServers`.
+   *
+   * Dieser Kommentar behauptete bis Paket D, (1) sei "the path Claude Code actually reads a
+   * project's local MCP config from". **Das ist falsch.** Paket D hat (2) zunaechst gestrichen
+   * — der Weg reichte die Konfiguration als Kommandozeilenargument weiter, also in die
+   * Prozesstabelle, was mit einem Bearer darin ein echter Mangel war — und der Beweislauf in
+   * der echten App zeigte danach: `claude mcp list` kennt `cipher-keel` nicht mehr, `/mcp` im
+   * Pane listet ihn nicht. Mit (2) allein: `✔ Connected`.
+   *
+   * Der Irrtum konnte so lange stehen, weil nie einer der beiden Wege allein lief. Beide
+   * zusammen ergaben eine funktionierende Sitzung, und die Messung von Paket B ("`/mcp` zeigt
+   * 10 tools") konnte zwischen ihnen nicht unterscheiden. Erst das Wegnehmen hat es getrennt.
+   *
+   * (1) bleibt trotzdem stehen, und zwar aus einem Grund: die Ruecknahme haengt daran. `claude
+   * mcp remove` kann nur loeschen, nie den Vorzustand herstellen; (1) kennt ihn. Ein
+   * Fehlstart hinterlaesst damit nichts, was ein Mensch spaeter suchen muesste. Was (1) NICHT
+   * mehr behauptet: dass eine Sitzung ohne (2) die Werkzeuge haette.
+   *
+   * Ein dritter Weg stand hier bis zum Sicherheitsreview 2026-08-30
+   * (`~/.claude/projects/<hash>/settings.json`): dort liegen Sitzungsmitschriften, Claude Code
+   * liest von da gar keine Einstellungen. Ein Geheimnis auf Platte ohne jeden Leser, ersatzlos
+   * gestrichen.
+   *
+   * **Warum `.mcp.json` nicht die Antwort ist**, obwohl Claude Code es liest (2026-08-31
+   * gemessen): es kommt als `⏸ Pending approval` herein und braucht eine interaktive
+   * Zustimmung — genau der Dialog, vor dem `KimiCodeAdapter.vertrauensHinweis` warnt. Eine
+   * Sitzung, die keel automatisch startet, haette die Werkzeuge dann erst nach einem Klick.
    *
    * Seit Paket D ist ohnehin kein Geheimnis mehr im Spiel: der Eintrag nennt einen
-   * Startbefehl fuer die stdio-Bruecke (`ctx.mcpBruecke`), keinen Bearer. Was diese Funktion
-   * offenlegt, ist ein Pfad — und wer den erreichen darf, entscheidet das Sandkastenprofil.
+   * Startbefehl fuer die stdio-Bruecke (`ctx.mcpBruecke`), keinen Bearer. Damit ist der
+   * Einwand gegen (2) — die Prozesstabelle, `~/.claude.json` — gegenstandslos geworden, und
+   * genau deshalb darf der Weg bleiben. Was diese Funktion offenlegt, ist ein Pfad; wer den
+   * erreichen darf, entscheidet das Sandkastenprofil.
    *
    * Return value (added for the I-1 follow-up, security review 2026-08-30; widened from
    * `void` to `boolean` in the follow-up review of 4358cac): moving this call ahead of
@@ -277,16 +300,23 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
       console.warn('[ClaudeCodeAdapter] Local settings.local.json write failed:', err)
     }
 
-    // Es gab hier bis Paket D einen zweiten Weg: `claude mcp remove` gefolgt von
-    // `claude mcp add-json`, mit der Serverkonfiguration als KOMMANDOZEILENARGUMENT. Solange
-    // diese Konfiguration einen Bearer trug, stand er damit in `ps`, sichtbar fuer jeden
-    // Prozess desselben Nutzers — ein dritter Ort neben den beiden Dateien, und der einzige,
-    // den keine Ruecknahme je erreichen konnte.
-    //
-    // Er faellt ersatzlos, und das macht die Einspritzung nicht aermer, sondern ehrlicher:
-    // es gibt jetzt genau einen Weg, und der ist vollstaendig zuruecknehmbar. Der lange
-    // Absatz oben ueber "Pfad 2 wird bewusst NICHT zurueckgenommen" ist damit gegenstandslos
-    // und steht nicht mehr da.
+    // Pfad 2: die CLI. **Das ist der Weg, der traegt** — siehe den Doc-Kommentar oben fuer
+    // die Messung, die das entschieden hat. Nicht zurueckgenommen (`claude mcp remove` kann
+    // nur loeschen, nie den Vorzustand herstellen), und das ist seit Paket D folgenlos: was
+    // hier uebergeben wird, ist ein Startbefehl und kein Geheimnis.
+    try {
+      const serverJson = JSON.stringify(mcpServerConfig)
+
+      await runCommand('claude', [
+        'mcp', 'remove', '-s', 'local', 'cipher-keel',
+      ], { cwd: ctx.projectPath, timeout: 10_000 }).catch(() => {})
+
+      await runCommand('claude', [
+        'mcp', 'add-json', '-s', 'local', 'cipher-keel', serverJson,
+      ], { cwd: ctx.projectPath, timeout: 15_000 })
+    } catch (err) {
+      console.warn('[ClaudeCodeAdapter] CLI MCP registration failed:', err)
+    }
 
     return () => {
       // No path-1 write happened at all (its own catch fired) — then the promised sentence

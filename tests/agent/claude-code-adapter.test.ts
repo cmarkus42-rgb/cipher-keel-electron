@@ -139,15 +139,25 @@ describe('ClaudeCodeAdapter.postLaunchInjection', () => {
     expect(written.mcpServers['cipher-keel'].command).toBe(ctx.mcpBruecke.command)
   })
 
-  // Paket D: der zweite Weg ist weg. Er reichte die Serverkonfiguration als
-  // Kommandozeilenargument an `claude mcp add-json` — also in die Prozesstabelle, sichtbar
-  // fuer jeden Prozess desselben Nutzers, und als einziger Weg nicht zuruecknehmbar. Dieser
-  // Test hat ihn frueher belegt; jetzt haelt er fest, dass es ihn nicht mehr gibt.
-  it('ruft die claude-CLI nicht mehr — der zweite Weg ist ersatzlos weg', async () => {
+  // **Der Weg, der traegt.** Am 2026-08-31 im Beweislauf gemessen: OHNE diesen Aufruf kennt
+  // `claude mcp list` den Server nicht und `/mcp` im Pane listet ihn nicht — der
+  // settings.local.json-Schreibvorgang allein reicht NICHT, obwohl der Doc-Kommentar das bis
+  // dahin behauptete. Paket D hatte diesen Weg zwischenzeitlich gestrichen; der echte Lauf
+  // hat es gefunden, keine Testsuite. Deshalb steht hier jetzt eine Zusicherung und keine
+  // Beobachtung.
+  it('registriert ueber die claude-CLI — ohne das erreicht keine Sitzung die Werkzeuge', async () => {
     const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
     await adapter.postLaunchInjection(ctx)
 
-    expect(vi.mocked(runCommand)).not.toHaveBeenCalled()
+    const calls = vi.mocked(runCommand).mock.calls
+    expect(calls.some(([cmd, args]) => cmd === 'claude' && args?.[0] === 'mcp' && args?.[1] === 'remove')).toBe(true)
+    const addCall = calls.find(([cmd, args]) => cmd === 'claude' && args?.[1] === 'add-json')
+    expect(addCall).toBeDefined()
+    const serverJson = JSON.parse(addCall![1]![5] as string)
+    // Ein stdio-Eintrag, und kein Geheimnis darin — der Einwand gegen diesen Weg war die
+    // Prozesstabelle, und der faellt mit dem Bearer weg.
+    expect(serverJson).toEqual(ctx.mcpBruecke)
+    expect(addCall![1]![5]).not.toMatch(/Bearer|Authorization/)
   })
 
   it('does not write anything under ~/.claude/projects (I-2 — the removed third path)', async () => {
@@ -165,10 +175,10 @@ describe('ClaudeCodeAdapter.postLaunchInjection', () => {
     expect(after).toEqual(before)
   })
 
-  it('schreibt auch dann, wenn die claude-CLI gar nicht da waere', async () => {
-    // Frueher belegte dieser Test, dass ein Fehlschlag von Pfad 2 den Pfad 1 nicht mitreisst.
-    // Pfad 2 gibt es nicht mehr, aber die Zusage bleibt pruefenswert: die Einspritzung haengt
-    // an keinem externen Befehl.
+  it('schreibt auch dann die Datei, wenn die claude-CLI scheitert', async () => {
+    // Ein Fehlschlag von Pfad 2 reisst Pfad 1 nicht mit. Seit dem Beweislauf vom 2026-08-31
+    // heisst das nicht mehr "die Sitzung hat trotzdem ihre Werkzeuge" — sie hat sie dann
+    // NICHT. Es heisst nur: der Rueckweg bleibt, und die Datei ist nicht halb geschrieben.
     vi.mocked(runCommand).mockRejectedValue(new Error('claude: command not found'))
     const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
 
@@ -366,10 +376,12 @@ describe('ClaudeCodeAdapter schreibt die Entitaets-Prompt-Datei', () => {
 
   it('nennt den Ort seiner MCP-Einspritzung, statt ihn dem Aufrufer zu ueberlassen', () => {
     const a = new ClaudeCodeAdapter({ getStartArgs: () => [] })
-    expect(a.mcpEinspritzung?.ort).toBe('.claude/settings.local.json')
-    // Seit Paket D gibt es keinen Rest mehr: der zweite Weg (`claude mcp add-json`) ist weg,
-    // und damit auch das, was keine Ruecknahme erreichte. Ein Feld, das trotzdem etwas
-    // naennte, waere eine Warnung vor nichts.
-    expect(a.mcpEinspritzung?.nichtZuruecknehmbarerRest).toBeUndefined()
+    // Der Ort nennt seit Paket D BEIDE Wege, und den tragenden zuerst: ein Mensch, der
+    // nachsehen will, warum seine Sitzung die Werkzeuge hat oder nicht hat, sucht in
+    // ~/.claude.json und nicht in der Projektdatei.
+    expect(a.mcpEinspritzung?.ort).toContain('~/.claude.json')
+    expect(a.mcpEinspritzung?.nichtZuruecknehmbarerRest).toMatch(/claude-CLI/)
+    // Was der Satz NICHT mehr sagt: der Rest sei ein Schluessel.
+    expect(a.mcpEinspritzung?.nichtZuruecknehmbarerRest).not.toMatch(/Schluessel wechselt/)
   })
 })

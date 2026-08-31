@@ -149,17 +149,20 @@ describe('session:create — echter Adapter, echter Handler: kein Rueckstand nac
     expect(dateiText()).not.toContain(BOOT_SOCK)
   })
 
-  it('nennt die gelungene Ruecknahme und keinen Rest mehr — Pfad 2 gibt es nicht', async () => {
-    // Bis Paket D stand hier ein Satz ueber den Rueckstand, den `claude mcp add-json`
-    // hinterlassen konnte und den keine Ruecknahme erreichte. Der Weg ist weg, also der
-    // Rueckstand auch. Der Test dreht sich mit: er haelt jetzt fest, dass die Meldung die
-    // Ruecknahme benennt und NICHT mehr vor etwas warnt, das es nicht gibt.
+  it('nennt die gelungene Ruecknahme UND den Rest, den der CLI-Weg hinterlaesst', async () => {
+    // Der CLI-Weg (`claude mcp add-json`) ist der, ueber den eine Sitzung die Werkzeuge
+    // ueberhaupt bekommt (2026-08-31 im Beweislauf gemessen), und `claude mcp remove` kann
+    // nur loeschen statt den Vorzustand herzustellen. Der Rest bleibt also — und seit Paket D
+    // ist er ein Eintrag mit einem Startbefehl und kein Schluessel. Beide Haelften gehoeren
+    // in die Meldung: was zurueckgenommen wurde, und was stehenbleibt.
     const handler = await ladeHandler(tmuxDerVerbindetUndScheitert())
 
     const result = await handler({}, { entityId: 'architect', name: 'echt-rollback-4', cwd: projectDir })
 
     expect(result.error).toContain('tmux: create-session failed')
     expect(result.error).toContain('zurueckgenommen')
-    expect(result.error).not.toMatch(/claude-CLI/)
+    expect(result.error).toMatch(/claude-CLI/)
+    // Kein Wort mehr ueber einen wechselnden Schluessel — es gibt keinen.
+    expect(result.error).not.toMatch(/Schluessel/)
   })
 })
