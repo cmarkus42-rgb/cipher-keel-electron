@@ -11,6 +11,7 @@ const ktx: SandkastenKontext = {
   userDataPfad: '/Users/x/Library/Application Support/cipher-keel',
   zwischenspeicher: ['/Users/x/.npm', '/Users/x/.pub-cache'],
   tmpdir: '/private/var/folders/tmp',
+  flutterWurzel: null,
 }
 
 describe('sbplLiteral', () => {
@@ -73,34 +74,97 @@ describe('profilText — Grundgeruest', () => {
   })
 })
 
-describe('profilText — Netzmodus', () => {
-  it('zu: kein allow network', () => {
-    expect(profilText(ktx, 'zu')).not.toContain('allow network')
+describe('profilText — Netzmodus (Paket D)', () => {
+  // `zu` heisst seit Paket D "nur die eigene Maschine" und nicht mehr "kein Netz". Das ist der
+  // Preis dafuer, dass ein Lauf seine eigenen Tests fahren kann: der Dart-Testrunner oeffnet
+  // einen Server-Socket auf 127.0.0.1, und `flutter test` ist kein Paketbefehl, laeuft also
+  // unter `zu`.
+  it('zu: Loopback in allen drei Richtungen', () => {
+    const p = profilText(ktx, 'zu')
+    expect(p).toContain('(allow network-bind     (local  ip "localhost:*"))')
+    expect(p).toContain('(allow network-inbound  (local  ip "localhost:*"))')
+    expect(p).toContain('(allow network-outbound (remote ip "localhost:*"))')
   })
-  it('offen: network-outbound und network-bind', () => {
+
+  it('zu: nichts ausserhalb von localhost', () => {
+    const p = profilText(ktx, 'zu')
+    expect(p).not.toContain('"*:*"')
+  })
+
+  it('offen: dieselben drei Richtungen, ohne Zielbeschraenkung', () => {
     const p = profilText(ktx, 'offen')
-    expect(p).toContain('(allow network-outbound)')
-    expect(p).toContain('(allow network-bind)')
+    expect(p).toContain('(allow network-bind     (local  ip "*:*"))')
+    expect(p).toContain('(allow network-inbound  (local  ip "*:*"))')
+    expect(p).toContain('(allow network-outbound (remote ip "*:*"))')
   })
 
-  // `offen` heisst "darf ins Netz", nicht "darf an diese Maschine": Paket B legt einen gueltigen
-  // MCP-Bearer in den Projektbaum und lauscht auf 127.0.0.1. Ohne diese Zeile hat jeder
-  // Paketbefehl keels eigene Werkzeuge in Reichweite.
-  it('offen: verbietet trotzdem localhost', () => {
-    expect(profilText(ktx, 'offen')).toContain('(deny network-outbound (remote ip "localhost:*"))')
+  // `network-bind` allein reicht nicht: am 2026-08-31 gemessen, `listen(2)` scheitert mit
+  // `Operation not permitted` selbst bei ungefiltertem `(allow network-bind)`. Ohne
+  // `network-inbound` laeuft kein Testrunner — und das galt auch fuer den `offen`-Modus, wie
+  // er bis Paket D dastand. Die Zeile war nie richtig, nur nie benutzt.
+  it('nennt in jedem Modus network-inbound, nicht nur network-bind', () => {
+    for (const netz of ['zu', 'offen'] as const) {
+      expect(profilText(ktx, netz)).toContain('network-inbound')
+    }
   })
 
-  // Die Stellung ist Teil der Aussage: das Verbot muss hinter `(allow network-outbound)` stehen,
-  // sonst haengt seine Wirkung an einer Eigenschaft des ungefilterten Gegenparts statt an der
-  // Ordnung, die dieses Profil sonst ueberall traegt.
-  it('offen: das localhost-Verbot steht hinter der Netz-Erlaubnis', () => {
-    const p = profilText(ktx, 'offen')
-    expect(p.indexOf('(deny network-outbound'))
-      .toBeGreaterThan(p.indexOf('(allow network-outbound)'))
+  // DIE tragende Zeile dieses Blocks. Keine Netz-Erlaubnis nennt einen Pfad, also bleiben
+  // Unix-Sockets unter `(deny default)` — und das ist die ganze Grenze zwischen einem
+  // gesandkasteten Kind und keels eigenem MCP-Server, der seit Paket D auf einem Socket
+  // unter userData lauscht. Am 2026-08-31 gemessen:
+  //   (allow network-outbound (remote ip "*:*"))  ->  nc -U <sock>  =  rc 1
+  //   (allow network-outbound)  [ungefiltert]     ->  nc -U <sock>  =  rc 0
+  it('erlaubt in keinem Modus Unix-Sockets — weder gefiltert noch ungefiltert', () => {
+    for (const netz of ['zu', 'offen'] as const) {
+      const p = profilText(ktx, netz)
+      // Ungefiltert waere die Katastrophe: `(allow network-outbound)` allein gewaehrt sie.
+      expect(p).not.toMatch(/\(allow network-outbound\)/)
+      expect(p).not.toMatch(/\(allow network-inbound\)/)
+      expect(p).not.toMatch(/\(allow network-bind\)/)
+      // Und keine pfadgefilterte Netzregel, in keiner Richtung.
+      expect(p).not.toMatch(/network-(outbound|inbound|bind)\s+\((literal|subpath|regex)/)
+    }
   })
 
-  it('zu: kein Netzverbot noetig, es gibt keine Netz-Erlaubnis', () => {
-    expect(profilText(ktx, 'zu')).not.toContain('network-outbound')
+  // Die Zeile, die Paket D ersatzlos gestrichen hat: sie schuetzte keels MCP-Server auf
+  // 127.0.0.1 und haette genau das verboten, was `flutter test` braucht. Der Server lauscht
+  // dort nicht mehr.
+  it('braucht das alte localhost-Verbot nicht mehr', () => {
+    expect(profilText(ktx, 'offen')).not.toContain('(deny network-outbound (remote ip "localhost:*"))')
+  })
+})
+
+describe('profilText — Signal an Kinder (Paket D)', () => {
+  // Ohne `(target children)` besteht `flutter test` und HAENGT danach 2:29 min bis zur
+  // Wanduhr, statt in 1 Sekunde mit rc=0 zurueckzukommen (2026-08-31 gemessen). Das betrifft
+  // jeden Testrunner mit einem Kindprozess. Ein Haenger ist schlimmer als ein Fehlschlag.
+  it('erlaubt Signale an Kinder, nicht nur an sich selbst', () => {
+    expect(profilText(ktx, 'zu')).toContain('(allow signal (target self) (target children))')
+  })
+})
+
+describe('profilText — Flutter-Zwischenspeicher (Paket D)', () => {
+  const mitFlutter = { ...ktx, flutterWurzel: '/opt/homebrew/share/flutter' }
+
+  it('gibt vier Namen frei, nie den Baum', () => {
+    const p = profilText(mitFlutter, 'zu')
+    expect(p).toContain('(allow file-write* (literal "/opt/homebrew/share/flutter/bin/cache/engine.stamp"))')
+    expect(p).toContain('(allow file-write* (literal "/opt/homebrew/share/flutter/bin/cache/engine.realm"))')
+    expect(p).toContain('(allow file-write* (literal "/opt/homebrew/share/flutter/bin/cache/lockfile"))')
+    // Das pid-Muster als Regex, mit ZWEI Rueckstrichen je entwertetem Punkt — vier machten die
+    // Regel still unwirksam (Paket C, gemessen).
+    expect(p).toContain('engine\\.stamp\\.tmp\\.')
+  })
+
+  it('gibt den Baum unter bin/cache NICHT frei', () => {
+    // Dort liegen dart-sdk/bin/dart und ausfuehrbare Bibliotheken, die der Mensch danach in
+    // seiner eigenen Sitzung aufruft — ohne Sandkasten. Exakt das `.gradle`-Muster.
+    const p = profilText(mitFlutter, 'zu')
+    expect(p).not.toContain('(allow file-write* (subpath "/opt/homebrew/share/flutter')
+  })
+
+  it('schweigt ueber Flutter, wenn keines da ist', () => {
+    expect(profilText(ktx, 'zu')).not.toContain('bin/cache')
   })
 })
 
@@ -196,9 +260,14 @@ describe('STANDARD_ZWISCHENSPEICHER', () => {
   // auch `.ssh`, waere gruen durchgegangen. Erst `toEqual` macht den Satz pruefbar. Wer hier
   // etwas hinzufuegt, aendert diese Zeile mit und begruendet es im Kopf von sandkasten.ts und in
   // docs/anpassbare-flaechen.md.
+  //
+  // Paket D hat genau das getan: `.dart` und `.flutter` raus (existieren auf dieser Maschine
+  // nicht — abgeschrieben statt gemessen), `.dart-tool` rein (was `flutter test` wirklich
+  // beschreibt). Dieser Waechter hat die Aenderung eingefordert, statt sie durchzulassen — er
+  // ist damit die Zeile, die sich bewaehrt hat.
   it('traegt genau diese Eintraege', () => {
     expect(STANDARD_ZWISCHENSPEICHER).toEqual([
-      '.npm', '.pub-cache', '.dart', '.flutter', '.cargo/registry',
+      '.npm', '.pub-cache', '.dart-tool', '.cargo/registry',
       '.gradle/caches', '.gradle/wrapper',
     ])
   })

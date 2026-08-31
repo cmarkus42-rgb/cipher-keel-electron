@@ -21,12 +21,13 @@
 import { app } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { homedir, tmpdir } from 'node:os'
-import { realpathSync } from 'node:fs'
-import { join } from 'node:path'
+import { realpathSync, existsSync } from 'node:fs'
+import { join, dirname } from 'node:path'
 import { HARNESS_EREIGNIS } from '../shared/ipc-channels'
 import type { HarnessAntwort, HarnessEreignis, LaufAnzeige } from '../shared/harness-types'
 import { broadcast } from './event-bus'
 import { resolveBetterSqliteBinding } from './graph/native-binding'
+import { pfadZumBefehl } from './util/exec-util'
 import { eintragFuerRolle, eintragNachId } from './model/registry'
 import { laeuferKannArt, sperrgrund } from './model/eignung'
 import { slotFuerId } from './model/slots'
@@ -161,7 +162,35 @@ export function baueSandkastenKontext(wurzel: string): SandkastenKontext {
     userDataPfad: aufgeloest(app.getPath('userData')),
     zwischenspeicher: STANDARD_ZWISCHENSPEICHER.map(p => aufgeloest(join(heim, p))),
     tmpdir: aufgeloest(tmpdir()),
+    flutterWurzel: flutterWurzel(),
   }
+}
+
+/**
+ * `$FLUTTER_ROOT`, aufgeloest — oder `null`.
+ *
+ * Gemessen statt geraten, und das ist hier der ganze Punkt: `null` heisst "kein Flutter, keine
+ * Regel". Ein Vorgabepfad gaebe eine Schreiberlaubnis auf ein Verzeichnis, von dem niemand
+ * weiss, ob und was darin liegt — derselbe Fehler, den `STANDARD_ZWISCHENSPEICHER` mit `.dart`
+ * und `.flutter` zweimal gemacht hat.
+ *
+ * Zwei Quellen, in dieser Reihenfolge: die Umgebungsvariable, falls jemand sie gesetzt hat, und
+ * sonst der Ort, an den `which flutter` zeigt. Auf dieser Maschine ist das
+ * `/opt/homebrew/share/flutter` (das `flutter` in `/opt/homebrew/bin` ist ein Symlink dorthin),
+ * und `realpathSync` findet von dort die Wurzel: `<wurzel>/bin/flutter` -> zwei Ebenen hoch.
+ */
+function flutterWurzel(): string | null {
+  const ausUmgebung = process.env.FLUTTER_ROOT
+  if (ausUmgebung) {
+    const p = aufgeloest(ausUmgebung)
+    return existsSync(join(p, 'bin', 'cache')) || existsSync(join(p, 'bin')) ? p : null
+  }
+  const binaer = pfadZumBefehl('flutter')
+  if (!binaer) return null
+  // `<wurzel>/bin/flutter` — zwei Ebenen hoch ist die Wurzel. Wenn dort kein `bin` liegt, ist
+  // die Annahme falsch, und dann lieber keine Regel als eine auf einem geratenen Verzeichnis.
+  const wurzel = dirname(dirname(aufgeloest(binaer)))
+  return existsSync(join(wurzel, 'bin')) ? wurzel : null
 }
 
 export function fehler(err: unknown): HarnessAntwort<never> {

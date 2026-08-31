@@ -46,7 +46,34 @@ export interface SandkastenKontext extends WacheKontext {
   /** Absolute write targets outside the root: toolchain caches. Adjustable surface, CK-NFR-012. */
   zwischenspeicher: string[]
   tmpdir: string
+  /**
+   * `$FLUTTER_ROOT`, aufgeloest — oder `null`, wenn auf dieser Maschine kein Flutter liegt.
+   *
+   * `null` heisst "keine Regel", nicht "Vorgabepfad": eine geratene Wurzel gaebe eine
+   * Schreiberlaubnis auf ein Verzeichnis, von dem niemand weiss, was darin liegt. Genau
+   * diesen Fehler hat `STANDARD_ZWISCHENSPEICHER` zweimal gemacht (siehe dort).
+   */
+  flutterWurzel: string | null
 }
+
+/**
+ * Die vier Dateien unter `$FLUTTER_ROOT/bin/cache`, die `flutter test` beschreiben muss.
+ *
+ * **Vier Namen, nicht der Baum** — und das ist derselbe Schnitt wie bei `.gradle` und `.cargo`
+ * (siehe STANDARD_ZWISCHENSPEICHER): unter `bin/cache` liegen `dart-sdk/bin/dart` und
+ * ausfuehrbare Bibliotheken, die der Mensch danach in seiner eigenen Sitzung aufruft, ohne
+ * Sandkasten. Ein Lauf, der dort schreiben darf, hat Codeausfuehrung auf dem Rechner *nach*
+ * seinem Ende.
+ *
+ * `engine.stamp.tmp.<pid>` ist ein Muster und braucht deshalb eine Regex-Regel; die uebrigen
+ * drei sind Literale. Am 2026-08-31 gegen einen echten `flutter test`-Lauf gemessen, nicht
+ * aus der Doku abgeschrieben.
+ *
+ * Und: `flutter precache` gehoert in den Aufbau einer Teststrecke. Ohne die vorgeladenen
+ * Engine-Artefakte **haengt** der erste Lauf beim Nachladen bis zur Wanduhr, statt zu
+ * scheitern — und ein Haenger ist schlimmer als ein Fehlschlag.
+ */
+export const FLUTTER_CACHE_DATEIEN = ['engine.stamp', 'engine.realm', 'lockfile']
 
 export type NetzModus = 'zu' | 'offen'
 
@@ -61,7 +88,13 @@ export type NetzModus = 'zu' | 'offen'
 export const STANDARD_ZWISCHENSPEICHER = [
   // `.cargo/registry` und nicht `.cargo`: unter `.cargo/bin` liegen Binaries, die der Mensch
   // spaeter selbst aufruft, und `.cargo/config.toml` kann einen eigenen Linker vorgeben.
-  '.npm', '.pub-cache', '.dart', '.flutter', '.cargo/registry',
+  // `.dart-tool` und NICHT `.dart`/`.flutter`: die beiden standen hier bis Paket D und
+  // existieren auf dieser Maschine gar nicht — sie waren aus der Doku abgeschrieben statt
+  // gemessen. `.dart-tool` ist das, was `flutter test` wirklich beschreibt (2026-08-31,
+  // gegen einen echten Lauf). Eine Liste wie diese wird gemessen, nicht abgeschrieben; ein
+  // Eintrag zuviel ist ein Loch, und ein Eintrag, den es nicht gibt, ist eine Zusage, die
+  // niemand je gepruft hat.
+  '.npm', '.pub-cache', '.dart-tool', '.cargo/registry',
   // `.gradle/caches` und `.gradle/wrapper` und nicht `.gradle`: unter `~/.gradle/init.d/` fuehrt
   // Gradle **jede** `*.gradle` bei jedem spaeteren Aufruf aus, in der Sitzung des Menschen und
   // ohne Sandkasten. Ein Lauf, der dort eine Datei ablegt, hat damit Codeausfuehrung auf dem
@@ -115,15 +148,59 @@ export function profilText(ktx: SandkastenKontext, netz: NetzModus): string {
     '',
     '; Prozesse duerfen starten — sonst laeuft kein Build-Werkzeug',
     '(allow process-exec* process-fork)',
-    '(allow signal (target self))',
+    // `(target children)` und nicht nur `(target self)`: sobald ein Werkzeug seinen eigenen
+    // Kindprozess beendet — und das tut jeder Testrunner, der Testprozesse verwaltet —,
+    // HAENGT es ohne diese Erlaubnis bis zur Wanduhr, statt zu scheitern. Am 2026-08-31
+    // gemessen: `flutter test` mit `(target self)` allein 2:29 min bis zum Zeitablauf, mit
+    // `(target children)` 1 Sekunde und `rc=0`. Das betrifft nicht Dart, sondern jeden
+    // Runner mit einem Kindprozess — und ein Haenger ist schlimmer als ein Fehlschlag.
+    '(allow signal (target self) (target children))',
     '(allow sysctl-read)',
     '(allow mach-lookup)',
     '',
   ]
 
-  if (netz === 'offen') {
-    zeilen.push('(allow network-outbound)', '(allow network-bind)', '')
-  }
+  // NETZ — drei Zeilen, und jede davon traegt eine eigene Aussage.
+  //
+  // 1. `network-bind` ALLEIN REICHT NICHT. Am 2026-08-31 gemessen: `listen(2)` scheitert mit
+  //    `Operation not permitted` selbst bei ungefiltertem `(allow network-bind)`; es braucht
+  //    `network-inbound`. Der Dart-Testrunner oeffnet einen Server-Socket auf 127.0.0.1 —
+  //    ohne diese zweite Zeile laeuft `flutter test` im Sandkasten nicht, und das galt auch
+  //    fuer den `offen`-Modus, wie er bis Paket D dastand. Die Zeile war also nie richtig,
+  //    nur nie benutzt.
+  // 2. `zu` heisst seit Paket D "nur die eigene Maschine", nicht "kein Netz". Das ist der
+  //    Preis dafuer, dass ein Lauf seine eigenen Tests fahren kann — und der Preis ist real:
+  //    das Kind erreicht jeden lokal lauschenden Dienst. Auf dieser Maschine am 2026-08-31
+  //    unter anderem Ollama (11433), ein llama-server (8766), `adb` (5037) und mehrere
+  //    Python-Dienste. Das ist Datenpreisgabe, KEIN Ausbruch: der Ausbruch lief ueber keels
+  //    eigenen MCP-Server, weil eine ueber `keel_zelle_beauftragen` beauftragte Zelle OHNE
+  //    Sandkasten laeuft — und der Server ist deshalb in Paket D auf einen Unix-Socket
+  //    umgezogen (graph/mcp-http-server.ts, Modulkopf).
+  // 3. **KEINE dieser Zeilen nennt einen Pfad, also bleiben Unix-Sockets unter
+  //    `(deny default)`.** Das ist die ganze Grenze zu keels Werkzeugen, und sie haengt an
+  //    der FORM der Erlaubnis, nicht an einer Verbotszeile, die jeden Pfad kennen muesste.
+  //    Am 2026-08-31 in beide Richtungen gemessen:
+  //
+  //      (allow network-outbound (remote ip "*:*"))          ->  nc -U <sock>  =  rc 1
+  //      (allow network-outbound)  [ungefiltert]             ->  nc -U <sock>  =  rc 0
+  //      (deny file-read* file-write* (subpath <dir>))       ->  nc -U <sock>  =  rc 0  (!)
+  //
+  //    Die dritte Zeile ist der Grund, warum die Grenze hier steht und nicht im Dateiblock
+  //    unten: Seatbelt vermittelt einen Socket-Connect als NETZ-, nicht als Dateioperation.
+  //    Ein `deny` auf dem Verzeichnis, in dem der Socket liegt, haelt ihn nicht auf.
+  //
+  // Was das kostet, damit es nicht unausgesprochen bleibt: ein Werkzeug, das einen
+  // Unix-Socket braucht (Docker ueber `/var/run/docker.sock`, ein Gradle- oder
+  // Sprachserver-Daemon), scheitert jetzt auch unter `offen`. Es scheitert LAUT
+  // (`Operation not permitted`), nicht als Haenger — und wer diese Zeilen erweitert, um so
+  // ein Werkzeug zu bedienen, oeffnet damit denselben Weg zu keels MCP-Server wieder.
+  const ziel = netz === 'offen' ? '*:*' : 'localhost:*'
+  zeilen.push(
+    `(allow network-bind     (local  ip "${ziel}"))`,
+    `(allow network-inbound  (local  ip "${ziel}"))`,
+    `(allow network-outbound (remote ip "${ziel}"))`,
+    '',
+  )
 
   // ALLE Erlaubnisse zuerst, ALLE Verbote zuletzt. Das ist die tragende Regel dieser Funktion,
   // und sie ist am 2026-08-30 gegen echtes sandbox-exec gemessen worden: **SBPL entscheidet nach
@@ -147,6 +224,22 @@ export function profilText(ktx: SandkastenKontext, netz: NetzModus): string {
 
   for (const z of ktx.zwischenspeicher) {
     zeilen.push(`(allow file-write* (subpath "${sbplLiteral(z)}"))`)
+  }
+
+  // Die vier Dateien unter `$FLUTTER_ROOT/bin/cache` — siehe FLUTTER_CACHE_DATEIEN fuer den
+  // Grund, warum es Namen sind und kein `subpath`. Ohne Flutter auf der Maschine steht hier
+  // nichts: `null` heisst "keine Regel", nicht "Vorgabepfad".
+  if (ktx.flutterWurzel !== null) {
+    const cache = `${ktx.flutterWurzel}/bin/cache`
+    for (const name of FLUTTER_CACHE_DATEIEN) {
+      zeilen.push(`(allow file-write* (literal "${sbplLiteral(`${cache}/${name}`)}"))`)
+    }
+    // `engine.stamp.tmp.<pid>` ist ein Muster, kein Name. Ueber sbplRegex und nie von Hand:
+    // im `#"…"`-Literal IST `\\` der Rueckstrich, und vier machen die Regel still unwirksam
+    // (Paket C, gemessen mit einem Verzeichnis `b\c`).
+    zeilen.push(
+      `(allow file-write* (regex #"^${sbplRegex(`${cache}/engine.stamp.tmp.`)}[0-9]+$"))`,
+    )
   }
 
   zeilen.push(
@@ -177,32 +270,22 @@ export function profilText(ktx: SandkastenKontext, netz: NetzModus): string {
     `(deny file-write* (regex #"^${wRe}/(.*/)?\\.git(/|$)"))`,
   )
 
-  if (netz === 'offen') {
-    // Der Modus `offen` heisst "darf ins Netz", nicht "darf an diese Maschine". Paket B legt
-    // einen gueltigen MCP-Bearer **in den Projektbaum** (`.claude/settings.local.json` bzw.
-    // `.kimi-code/mcp.json`) und lauscht auf 127.0.0.1; ein Kindprozess, der den Baum lesen und
-    // localhost erreichen kann, hat keels eigene Werkzeuge in der Hand. Unter einem Paketbefehl
-    // war das bis zum 2026-08-30 der Fall.
-    //
-    // Am 2026-08-30 gegen echtes sandbox-exec gemessen, gegen einen http.createServer auf
-    // 127.0.0.1 und in beide Richtungen:
-    //
-    //   offen ohne diese Zeile  ->  curl http://127.0.0.1:<port>  =  200
-    //   offen mit  dieser Zeile ->  curl http://127.0.0.1:<port>  =  000
-    //   offen mit  dieser Zeile ->  curl https://example.com      =  200  (Netz bleibt offen)
-    //   offen mit  dieser Zeile ->  nc -U <sock> im Projekt       =  rc 0 (Unix-Sockets bleiben)
-    //
-    // Die Zeile steht bei den uebrigen Verboten und nicht im `offen`-Zweig oben, weil dieses
-    // Profil die Ordnung "alle Erlaubnisse zuerst, alle Verbote zuletzt" traegt. Nachgemessen
-    // gilt fuer *diese* Regel beides — sie sperrt localhost auch vor `(allow network-outbound)`
-    // stehend —, aber das ist eine Eigenschaft des ungefilterten Gegenparts und keine, auf die
-    // sich die naechste Zeile verlassen soll.
-    zeilen.push('(deny network-outbound (remote ip "localhost:*"))')
-  }
-
+  // Hier stand bis Paket D `(deny network-outbound (remote ip "localhost:*"))`. Die Zeile
+  // schuetzte keels MCP-Server auf 127.0.0.1 vor einem Kindprozess unter `offen`, und sie tat
+  // das nachweislich — am 2026-08-30 gemessen:
+  //
+  //   offen ohne diese Zeile  ->  curl http://127.0.0.1:<port>  =  200
+  //   offen mit  dieser Zeile ->  curl http://127.0.0.1:<port>  =  000
+  //   offen mit  dieser Zeile ->  curl https://example.com      =  200  (Netz blieb offen)
+  //
+  // Sie faellt ersatzlos, weil der Server dort nicht mehr lauscht (Paket D) und weil sie
+  // genau das verboten haette, was `flutter test` braucht. Die Messreihe bleibt hier stehen:
+  // wer localhost je wieder zumachen will, muss sie nicht ein zweites Mal erkaufen.
+  //
   // Kein CIDR-Filter: Seatbelt kann `100.64/10` nicht ausdruecken, das Tailnet (MS-01, VPS, DGX)
   // bleibt unter `offen` also erreichbar. Deshalb ist die Vorgabe `zu` und nicht "offen ausser
-  // innen" — benannt, nicht geschlossen.
+  // innen" — benannt, nicht geschlossen. Seit Paket D erreicht auch `zu` die eigene Maschine;
+  // was `zu` weiterhin verwehrt, ist alles ausserhalb von localhost, also auch das Tailnet.
   zeilen.push('')
   return zeilen.join('\n')
 }

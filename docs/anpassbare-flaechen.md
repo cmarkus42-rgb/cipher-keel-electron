@@ -508,6 +508,31 @@ nicht erreicht.
 Alle fünf stehen in `src/main/harness/sandkasten.ts`; die Liste ist gegen
 `grep -n "^export const [A-Z_]*" src/main/harness/sandkasten.ts` abgeglichen und vollständig.
 
+### Nachtrag Paket D (2026-08-31) — zwei Flächen dazu, drei Regeln geändert
+
+- **`FLUTTER_CACHE_DATEIEN`** (neu, `sandkasten.ts`): die drei Namen unter
+  `$FLUTTER_ROOT/bin/cache`, die `flutter test` beschreiben muss, plus eine Regex für
+  `engine.stamp.tmp.<pid>`. **Namen, nie der Baum** — unter `bin/cache` liegen
+  `dart-sdk/bin/dart` und ausführbare Bibliotheken, die der Mensch danach ohne Sandkasten
+  aufruft. Exakt das `.gradle`-Muster, das schon einmal korrigiert wurde.
+- **`SandkastenKontext.flutterWurzel`** (neu): `$FLUTTER_ROOT` oder der Ort, auf den
+  `which flutter` zeigt — sonst `null`. **`null` heißt „keine Regel", nicht „Vorgabepfad".**
+  Ein geratener Pfad gäbe eine Schreiberlaubnis auf ein Verzeichnis, von dem niemand weiß,
+  was darin liegt.
+- **`STANDARD_ZWISCHENSPEICHER`**: `.dart` und `.flutter` **raus** (existieren auf dieser
+  Maschine nicht — abgeschrieben statt gemessen), `.dart-tool` **rein**.
+- **Die Netzregeln**: `zu` heißt jetzt „nur die eigene Maschine", nicht „kein Netz"; `offen`
+  heißt „alles". Beide Modi erlauben **keine Unix-Sockets** — daran hängt die Grenze zu keels
+  eigenem MCP-Server (siehe die Stand-Zeile ganz oben). Gemessen: `listen(2)` braucht
+  `network-inbound`; mit `(allow network-bind)` allein scheitert es, auch ungefiltert.
+- **`(allow signal (target self) (target children))`**: ohne `children` **hängt** jeder
+  Testrunner, der einen Kindprozess beendet, bis zur Wanduhr — gemessen 2:29 min statt 1 s.
+
+**Was beim Aufsetzen einer Flutter-Teststrecke dazugehört und in keinem Code steht:**
+`flutter precache`. Ohne die vorgeladenen Engine-Artefakte **hängt** der erste Lauf im
+Sandkasten beim Nachladen, statt zu scheitern — und ein Hänger ist schlimmer als ein
+Fehlschlag.
+
 | Fläche | Herkunft | Wirkung | In der App sichtbar | Editierbar |
 |---|---|---|---|---|
 | **`STANDARD_ZWISCHENSPEICHER`** (`.npm`, `.pub-cache`, `.dart`, `.flutter`, `.cargo/registry`, `.gradle/caches`, `.gradle/wrapper`) | `src/main/harness/sandkasten.ts`; heimrelativ notiert, zu absoluten Pfaden aufgelöst in `baueSandkastenKontext` (`harness-sitzung.ts`) | Schreibziele **außerhalb** der Wurzel. Warum es sie gibt: `flutter pub get` schreibt nach `~/.pub-cache`, `npm ci` nach `~/.npm` — nur die Wurzel freizugeben hieße, dass jede Installation scheitert. **Die weichste Stelle des ganzen Sandkastens:** jeder Eintrag ist ein Loch. Sie steht darum an genau einer Stelle, sichtbar, und wächst nicht stillschweigend — festgenagelt mit `toEqual` in `tests/harness/sandkasten-profil.test.ts`, damit dieser Satz prüfbar ist und nicht bloß dasteht. **Am 2026-08-30 verengt:** die Liste trug ursprünglich `.gradle`, und dieser eine Eintrag war der Art nach kein Zwischenspeicher, sondern eine Ausführungsfläche — Gradle führt jede `*.gradle` unter `~/.gradle/init.d/` bei **jedem** späteren Aufruf aus, in der Sitzung des Menschen und ohne Sandkasten. Ein Lauf, der dort eine Datei ablegt, hätte damit Codeausführung auf dem Rechner *nach* seinem Ende. `.cargo` war aus demselben Grund schon auf `.cargo/registry` verengt worden; bei `.gradle` war dieselbe Verengung vergessen worden. Wermutstropfen, der dazugehört: sobald Flutter installiert ist, braucht es zusätzlich `$FLUTTER_ROOT/bin/cache` — Flutter schreibt in die eigene Installation, und die liegt nicht unter `~/.flutter` | nein | nein — Konstante im Quelltext, Neubau nötig |
