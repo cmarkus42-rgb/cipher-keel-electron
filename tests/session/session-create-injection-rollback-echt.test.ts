@@ -6,17 +6,23 @@
  * *isoliert*. Zwischen beiden lag bis zur Fixrunde zu 4358cac niemand: kein Test spannte
  * echten Handler und echten Adapter zusammen und sah nach, was danach wirklich in der Datei
  * steht. Genau das macht diese Datei — Behauptung gegen Dateiinhalt, nicht gegen einen Spy:
- * **nach einem gescheiterten Sitzungsstart liegt kein Bearer mehr in settings.local.json.**
+ * **nach einem gescheiterten Sitzungsstart liegt kein Eintrag mehr in settings.local.json.**
+ *
+ * Seit Paket D ist der Eintrag kein Geheimnis mehr, sondern ein Startbefehl fuer die
+ * stdio-Bruecke; ein Rueckstand ist damit Unordnung statt Offenlegung. Die Zusage bleibt
+ * dieselbe und wird weiter geprueft — sie war nie nur eine ueber Vertraulichkeit, sondern
+ * eine darueber, dass eine Sitzung, die es nie gab, auch nichts hinterlaesst.
  *
  * Zwei Scheiterstellen, nicht eine — die zweite ist der Befund, um den es geht:
  *   - tmux.createSession wirft (das schon abgedeckte Fenster)
  *   - tmux.connect wirft (kein tmux-Server, tmux nicht installiert — der wahrscheinlichste
  *     tmux-Fehler ueberhaupt). Der lag bis zu dieser Runde ausserhalb jeder Ruecknahme.
  *
- * `runCommand` ist hier zwingend gemockt: `claude` ist auf Entwicklermaschinen installiert,
- * und ein Test, der Pfad 2 wirklich laufen liesse, schriebe in die echte Nutzerkonfiguration
- * unter ~/.claude.json. `isCommandOnPath` ebenso, damit der isAvailable()-Gate im Handler
- * nicht davon abhaengt, ob auf dieser Maschine ein `claude` liegt.
+ * `runCommand` bleibt gemockt, obwohl der Adapter es seit Paket D nicht mehr ruft: der Mock
+ * kostet nichts und faengt eine Rueckkehr von Pfad 2 ab, bevor sie in die echte
+ * Nutzerkonfiguration unter ~/.claude.json schreibt. `isCommandOnPath` ebenso, damit der
+ * isAvailable()-Gate im Handler nicht davon abhaengt, ob auf dieser Maschine ein `claude`
+ * liegt.
  */
 
 import * as fs from 'fs'
@@ -33,14 +39,15 @@ vi.mock('../../src/main/util/exec-util', async (importOriginal) => {
   }
 })
 
-const BOOT_KEY = 'test-boot-key-der-nicht-liegenbleiben-darf'
+/** Der Socketpfad dieses App-Starts — das, was nach einem Fehlstart nicht liegenbleiben darf. */
+const BOOT_SOCK = '/tmp/keel-test-sock-der-nicht-liegenbleiben-darf.sock'
 
 type SessionCreateHandler = (
   event: unknown,
   opts: { name?: string; entityId?: string; cwd?: string },
 ) => Promise<{ id: string | null; name: string | null; error: string | null }>
 
-describe('session:create — echter Adapter, echter Handler: kein Bearer nach gescheitertem Start', () => {
+describe('session:create — echter Adapter, echter Handler: kein Rueckstand nach gescheitertem Start', () => {
   let userDataDir: string
   let projectDir: string
 
@@ -81,7 +88,14 @@ describe('session:create — echter Adapter, echter Handler: kein Bearer nach ge
     const { registerIpcHandlers } = await import('../../src/main/ipc-handlers')
     registerIpcHandlers({
       tmux,
-      mcpHttpServer: { url: 'http://127.0.0.1:54321/mcp', apiKey: BOOT_KEY },
+      mcpHttpServer: {
+        sockelPfad: BOOT_SOCK,
+        brueckenBefehl: {
+          command: '/pfad/zu/electron',
+          args: ['/pfad/zu/resources/mcp-bridge.mjs', BOOT_SOCK],
+          env: { ELECTRON_RUN_AS_NODE: '1' },
+        },
+      },
     } as never)
 
     expect(registeredHandler).toBeDefined()
@@ -104,16 +118,16 @@ describe('session:create — echter Adapter, echter Handler: kein Bearer nach ge
     watchSession: vi.fn(),
   })
 
-  it('laesst nach gescheitertem createSession keinen Bearer in settings.local.json zurueck', async () => {
+  it('laesst nach gescheitertem createSession keinen Eintrag in settings.local.json zurueck', async () => {
     const handler = await ladeHandler(tmuxDerVerbindetUndScheitert())
 
     const result = await handler({}, { entityId: 'architect', name: 'echt-rollback-1', cwd: projectDir })
 
     expect(result.id).toBeNull()
-    expect(dateiText()).not.toContain(BOOT_KEY)
+    expect(dateiText()).not.toContain(BOOT_SOCK)
   })
 
-  it('laesst nach geworfenem tmux.connect keinen Bearer in settings.local.json zurueck', async () => {
+  it('laesst nach geworfenem tmux.connect keinen Eintrag in settings.local.json zurueck', async () => {
     const tmux = tmuxOhneServer()
     const handler = await ladeHandler(tmux)
 
@@ -121,10 +135,10 @@ describe('session:create — echter Adapter, echter Handler: kein Bearer nach ge
 
     expect(result.id).toBeNull()
     expect(tmux.createSession).not.toHaveBeenCalled()
-    expect(dateiText()).not.toContain(BOOT_KEY)
+    expect(dateiText()).not.toContain(BOOT_SOCK)
   })
 
-  it('laesst auch dann keinen Bearer liegen, wenn die Datei vorher kaputtes JSON enthielt', async () => {
+  it('laesst auch dann keinen Eintrag liegen, wenn die Datei vorher kaputtes JSON enthielt', async () => {
     fs.mkdirSync(path.join(projectDir, '.claude'), { recursive: true })
     fs.writeFileSync(settingsPath(), '{ das ist kein JSON', 'utf-8')
 
@@ -132,15 +146,20 @@ describe('session:create — echter Adapter, echter Handler: kein Bearer nach ge
 
     await handler({}, { entityId: 'architect', name: 'echt-rollback-3', cwd: projectDir })
 
-    expect(dateiText()).not.toContain(BOOT_KEY)
+    expect(dateiText()).not.toContain(BOOT_SOCK)
   })
 
-  it('benennt den Rest, den Pfad 2 hinterlassen haben kann, in der Fehlermeldung', async () => {
+  it('nennt die gelungene Ruecknahme und keinen Rest mehr — Pfad 2 gibt es nicht', async () => {
+    // Bis Paket D stand hier ein Satz ueber den Rueckstand, den `claude mcp add-json`
+    // hinterlassen konnte und den keine Ruecknahme erreichte. Der Weg ist weg, also der
+    // Rueckstand auch. Der Test dreht sich mit: er haelt jetzt fest, dass die Meldung die
+    // Ruecknahme benennt und NICHT mehr vor etwas warnt, das es nicht gibt.
     const handler = await ladeHandler(tmuxDerVerbindetUndScheitert())
 
     const result = await handler({}, { entityId: 'architect', name: 'echt-rollback-4', cwd: projectDir })
 
     expect(result.error).toContain('tmux: create-session failed')
-    expect(result.error).toMatch(/claude-CLI registrierter Eintrag/)
+    expect(result.error).toContain('zurueckgenommen')
+    expect(result.error).not.toMatch(/claude-CLI/)
   })
 })

@@ -17,6 +17,7 @@ interface PkgJson {
     productName: string
     directories?: { output?: string; buildResources?: string }
     files?: string[]
+    asarUnpack?: string[]
     mac: { target: MacTarget[]; category: string; icon?: string }
     dmg?: unknown
   }
@@ -40,12 +41,30 @@ describe('electron-builder configuration', () => {
     // dist/renderer — see electron.vite.config.ts) rather than 'dist/**', which also
     // swept in a stray dist/test/tsconfig.test.tsbuildinfo and a stale
     // dist/builder-debug.yml left over from a build-machine run.
+    // `resources/**` kam mit Paket D dazu: dort liegt die stdio-Bruecke zum MCP-Socket,
+    // und ohne sie im Paket haette eine gestartete Sitzung die zehn Werkzeuge nicht.
     expect(pkg.build.files).toEqual([
       'dist/main/**',
       'dist/preload/**',
       'dist/renderer/**',
+      'resources/**',
       'package.json',
     ])
+  })
+
+  it('packt die MCP-Bruecke aus dem asar-Archiv heraus', () => {
+    // Paket D. Die Bruecke wird von einem FREMDEN Prozess gestartet — dem CLI-Harness —,
+    // und der hat keine asar-Kenntnis: er bekommt einen Pfad und ruft `spawn`. Laege die
+    // Datei nur im Archiv, faende er sie nicht, und der Fehler kaeme erst im gepackten
+    // Programm zum Vorschein, nie in der Entwicklung. `brueckenPfad` (mcp-http-server.ts)
+    // schreibt den Pfad auf `app.asar.unpacked` um und rechnet damit, dass hier etwas liegt.
+    expect(pkg.build.asarUnpack).toEqual(['resources/**'])
+  })
+
+  it('hat die Bruecke wirklich auf der Platte, nicht nur in der Konfiguration', () => {
+    // Eine Allowlist, die auf eine fehlende Datei zeigt, ist stumm: electron-builder packt
+    // dann nichts und sagt nichts. Der Fehler faellt erst im gestarteten Programm auf.
+    expect(existsSync(join(process.cwd(), 'resources', 'mcp-bridge.mjs'))).toBe(true)
   })
 
   it('covers the declared entry point with the files allowlist', () => {

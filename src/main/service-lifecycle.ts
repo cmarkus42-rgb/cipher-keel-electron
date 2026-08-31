@@ -41,6 +41,7 @@ import { openGraphDb } from './graph/db'
 import { resolveBetterSqliteBinding } from './graph/native-binding'
 import { GraphMcpServer } from './graph/mcp-server'
 import { startMcpHttpServer } from './graph/mcp-http-server'
+import { entferneLeiche } from './graph/mcp-socket-pfad'
 import { GraphWriter } from './graph/writer'
 import { harnessDb } from './harness-sitzung'
 import { lesen } from './harness'
@@ -164,11 +165,18 @@ export function shutdownServices(services: AppServices): void {
   // Stops accepting new connections; existing ones drain on their own. Fire-and-forget
   // like tmux.disconnect() above — the app is quitting either way, and a session whose
   // tmux pane survives this (tmux is a separate daemon, unaffected by any of this
-  // function) already carries the stale address/key that goes with app-restart in
-  // general, not with this specific close() call. See the doc comment on
-  // mcp-http-server.ts for that limitation.
+  // function) already carries den veralteten Socketpfad, der zu einem App-Neustart gehoert
+  // und nicht zu diesem close(). See the doc comment on mcp-http-server.ts for that
+  // limitation.
   try {
     services.mcpHttpServer?.server.close()
+    // `close()` entfernt die Socketdatei NICHT — sie bliebe unter userData liegen, und beim
+    // naechsten Start kaeme eine weitere dazu. Der neue Start kaeme damit klar (jeder Name
+    // ist frisch, und entferneLeiche raeumt einen Namensgleichen weg), aber Muell bleibt
+    // Muell. Nach dem close(), nicht davor: ein Loeschen unter dem noch offenen Server
+    // wuerde bestehende Verbindungen nicht beenden, aber den Pfad fuer eine ordentliche
+    // Nachpruefung unbrauchbar machen.
+    if (services.mcpHttpServer) entferneLeiche(services.mcpHttpServer.sockelPfad)
   } catch (err) {
     console.warn('[service-lifecycle] mcpHttpServer.close() failed:', err)
   }
@@ -223,7 +231,7 @@ async function runInit(
   void initVoice(services, ctx)
 
   initGraph(services, ctx)
-  await initMcp(services)
+  await initMcp(services, ctx)
   initNotes(services, ctx)
 
   broadcast(APP_READY, { timestamp: Date.now() })
@@ -360,15 +368,22 @@ function initGraph(services: AppServices, ctx: ServiceInitContext): void {
  * degraded graph (services.graphMcpServer stays null) means there is nothing to serve, so
  * 'mcp' is reported degraded too rather than starting a server with no tools behind it.
  */
-async function initMcp(services: AppServices): Promise<void> {
+async function initMcp(services: AppServices, ctx: ServiceInitContext): Promise<void> {
   if (!services.graphMcpServer) {
     setStatus('mcp', 'degraded', 'graph unavailable: kein GraphMcpServer zum Bedienen')
     return
   }
   try {
-    services.mcpHttpServer = await startMcpHttpServer(services.graphMcpServer)
+    services.mcpHttpServer = await startMcpHttpServer(
+      services.graphMcpServer,
+      ctx.userDataPath,
+      ctx.appPath,
+    )
     setStatus('mcp', 'ready', null)
-    console.log(`[service-lifecycle] MCP HTTP server listening on ${services.mcpHttpServer.url}`)
+    // Der Pfad statt der URL (Paket D). Ein zu langer Pfad wirft schon in sockelPfad und
+    // landet im catch unten — `mcp` ist dann `degraded`, die App laeuft weiter, nur ohne die
+    // zehn Werkzeuge. Genau wie beim degradierten Graphen: laut scheitern, nicht warten.
+    console.log(`[service-lifecycle] MCP server listening on ${services.mcpHttpServer.sockelPfad}`)
   } catch (err) {
     services.mcpHttpServer = null
     setStatus('mcp', 'degraded', reasonOf(err))

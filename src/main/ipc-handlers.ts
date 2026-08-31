@@ -401,10 +401,13 @@ export function registerIpcHandlers(services: AppServices): void {
       // Ahead of the injection below, not between it and createSession, where it stood until
       // the follow-up review of 4358cac: connect() is the likeliest tmux failure there is (no
       // tmux server running, tmux not installed), and from between the two it would have
-      // thrown past every rollback path — a live bearer left in settings.local.json with no
-      // note to the user that it is there. Ordered this way, no key is written at all while
-      // tmux is unreachable: the gap closes constructively instead of through a second undo
-      // path. The rollback around createSession below still covers the window that remains.
+      // thrown past every rollback path — ein verwaister Eintrag in settings.local.json mit
+      // no note to the user that it is there. (Bis Paket D war dieser Eintrag ein lebender
+      // Bearer; seither ist er ein Startbefehl, und damit ist der Rueckstand Unordnung statt
+      // Offenlegung — der Grund fuer diese Reihenfolge bleibt derselbe.) Ordered this way,
+      // nothing is written at all while tmux is unreachable: the gap closes constructively
+      // instead of through a second undo path. The rollback around createSession below still
+      // covers the window that remains.
       if (!services.tmux.isConnected()) {
         await services.tmux.connect()
       }
@@ -417,8 +420,11 @@ export function registerIpcHandlers(services: AppServices): void {
       // process roughly 500ms after the pane opens, and `claude` reads its MCP config once,
       // at its own start (that "once" is inferred, not measured — the doc comment on
       // postLaunchInjection says what it rests on and what does not depend on it). The
-      // `settings.local.json` write usually wins that race by luck of
-      // timing; the `claude mcp add-json` CLI round-trip (up to 25s) reliably loses it.
+      // `settings.local.json` write usually wins that race by luck of timing; der zweite Weg
+      // von damals, ein `claude mcp add-json`-Umlauf von bis zu 25s, verlor sie zuverlaessig.
+      // (Diesen zweiten Weg gibt es seit Paket D nicht mehr — der Grund fuer die Reihenfolge
+      // hier bleibt trotzdem gueltig, weil auch ein Dateischreibvorgang das Rennen verlieren
+      // kann und "meistens gewinnen" keine Zusage ist.)
       // Running injection first removes the race rather than narrowing it: nothing below
       // depends on the tmux session existing yet. postLaunchInjection is optional on
       // CliSitzungsAdapter and absent entirely from SchleifenSitzungsAdapter (this branch
@@ -441,8 +447,7 @@ export function registerIpcHandlers(services: AppServices): void {
         try {
           undoInjection = await adapter.postLaunchInjection({
             projectPath: cwd,
-            mcpUrl: services.mcpHttpServer.url,
-            mcpApiKey: services.mcpHttpServer.apiKey,
+            mcpBruecke: services.mcpHttpServer.brueckenBefehl,
             // Not a live session id — see the doc comment on AdapterContext.sessionId. This
             // runs before tmux.createSession would hand us one, and neither implementation
             // reads this field anyway ("the sole implementation" until KimiCodeAdapter
@@ -473,17 +478,19 @@ export function registerIpcHandlers(services: AppServices): void {
 
       // I-1 follow-up (security review, 2026-08-30): moving postLaunchInjection ahead of
       // createSession closed the race against the CLI's own config read, but opened a
-      // narrower gap — if createSession now fails, a live bearer key can be left behind in
+      // narrower gap — if createSession now fails, an entry can be left behind in
       // settings.local.json for a session that never came to exist. The order is
       // connect -> injection -> createSession (see the connect block above for why connect
       // moved out from between the last two), so this rollback covers exactly the
       // createSession window that is left. `undoInjection` (see its doc comment on
-      // ClaudeCodeAdapter.postLaunchInjection) reverts exactly what path 1 wrote, never a
-      // blind wipe, and REPORTS whether it got there — the residual note below distinguishes
-      // the two outcomes instead of claiming the good one unconditionally. Path 2 (the
-      // `claude mcp add-json` CLI registration) is NOT undone — same reasoning as there — so
-      // its residual is named in the thrown message instead of silently left for the outer
-      // catch's generic error text to hide.
+      // ClaudeCodeAdapter.postLaunchInjection) reverts exactly what the injection wrote,
+      // never a blind wipe, and REPORTS whether it got there — the residual note below
+      // distinguishes the two outcomes instead of claiming the good one unconditionally.
+      //
+      // Seit Paket D deckt die Ruecknahme ALLES ab, was eingespritzt wurde. Bis dahin gab es
+      // einen zweiten, nicht zurueckzunehmenden Weg (`claude mcp add-json`), dessen Rueckstand
+      // hier eigens in die geworfene Meldung geschrieben werden musste; den Weg gibt es nicht
+      // mehr, und damit auch den Rueckstand nicht.
       let sessionId: string
       try {
         sessionId = await services.tmux.createSession(name, { ...opts, cwd, command })

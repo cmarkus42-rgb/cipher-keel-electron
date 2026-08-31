@@ -5,6 +5,7 @@ import * as os from 'os'
 import { ClaudeCodeAdapter } from '../../src/main/agent/adapters/claude-code'
 import { AdapterRegistry } from '../../src/main/agent/registry'
 import { istSchleifenAdapter } from '../../src/main/agent/agent-adapter'
+import type { BrueckenBefehl } from '../../src/main/graph/mcp-http-server'
 import { runCommand } from '../../src/main/util/exec-util'
 
 // Partial mock, same pattern used elsewhere in this repo (e.g. tests/service-lifecycle.test.ts):
@@ -84,15 +85,18 @@ describe('AdapterRegistry config wiring', () => {
 // Claude Code never reads settings from that directory (it holds session transcripts only).
 describe('ClaudeCodeAdapter.postLaunchInjection', () => {
   let projectDir: string
-  let ctx: { projectPath: string; mcpUrl: string; mcpApiKey: string; sessionId: string }
+  let ctx: { projectPath: string; mcpBruecke: BrueckenBefehl; sessionId: string }
 
   beforeEach(() => {
     vi.mocked(runCommand).mockClear().mockResolvedValue('')
     projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keel-inject-'))
     ctx = {
       projectPath: projectDir,
-      mcpUrl: 'http://127.0.0.1:54321/mcp',
-      mcpApiKey: 'test-key-1234',
+      mcpBruecke: {
+        command: '/pfad/zu/electron',
+        args: ['/pfad/zu/resources/mcp-bridge.mjs', '/pfad/zu/userData/mcp-abcd1234.sock'],
+        env: { ELECTRON_RUN_AS_NODE: '1' },
+      },
       sessionId: 'probe-session',
     }
   })
@@ -101,7 +105,7 @@ describe('ClaudeCodeAdapter.postLaunchInjection', () => {
     fs.rmSync(projectDir, { recursive: true, force: true })
   })
 
-  it('writes the project-local settings.local.json with the real url and key', async () => {
+  it('schreibt einen stdio-Eintrag ohne jedes Geheimnis', async () => {
     const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
     await adapter.postLaunchInjection(ctx)
 
@@ -109,10 +113,12 @@ describe('ClaudeCodeAdapter.postLaunchInjection', () => {
       fs.readFileSync(path.join(projectDir, '.claude', 'settings.local.json'), 'utf-8'),
     )
     expect(written.mcpServers['cipher-keel']).toEqual({
-      type: 'http',
-      url: ctx.mcpUrl,
-      headers: { Authorization: `Bearer ${ctx.mcpApiKey}` },
+      command: '/pfad/zu/electron',
+      args: ['/pfad/zu/resources/mcp-bridge.mjs', '/pfad/zu/userData/mcp-abcd1234.sock'],
+      env: { ELECTRON_RUN_AS_NODE: '1' },
     })
+    // Paket D: in dieser Datei steht seither nichts mehr, das jemand geheim halten muesste.
+    expect(JSON.stringify(written)).not.toMatch(/Bearer|Authorization/)
   })
 
   it('merges into an existing settings.local.json instead of clobbering it', async () => {
@@ -130,20 +136,18 @@ describe('ClaudeCodeAdapter.postLaunchInjection', () => {
       fs.readFileSync(path.join(claudeDir, 'settings.local.json'), 'utf-8'),
     )
     expect(written.someOtherKey).toBe('kept')
-    expect(written.mcpServers['cipher-keel'].url).toBe(ctx.mcpUrl)
+    expect(written.mcpServers['cipher-keel'].command).toBe(ctx.mcpBruecke.command)
   })
 
-  it('registers via the claude CLI (mcp remove then mcp add-json)', async () => {
+  // Paket D: der zweite Weg ist weg. Er reichte die Serverkonfiguration als
+  // Kommandozeilenargument an `claude mcp add-json` — also in die Prozesstabelle, sichtbar
+  // fuer jeden Prozess desselben Nutzers, und als einziger Weg nicht zuruecknehmbar. Dieser
+  // Test hat ihn frueher belegt; jetzt haelt er fest, dass es ihn nicht mehr gibt.
+  it('ruft die claude-CLI nicht mehr — der zweite Weg ist ersatzlos weg', async () => {
     const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
     await adapter.postLaunchInjection(ctx)
 
-    const calls = vi.mocked(runCommand).mock.calls
-    expect(calls.some(([cmd, args]) => cmd === 'claude' && args?.[0] === 'mcp' && args?.[1] === 'remove')).toBe(true)
-    const addCall = calls.find(([cmd, args]) => cmd === 'claude' && args?.[1] === 'add-json')
-    expect(addCall).toBeDefined()
-    const addArgs = addCall![1]!
-    const serverJson = JSON.parse(addArgs[5] as string)
-    expect(serverJson.headers.Authorization).toBe(`Bearer ${ctx.mcpApiKey}`)
+    expect(vi.mocked(runCommand)).not.toHaveBeenCalled()
   })
 
   it('does not write anything under ~/.claude/projects (I-2 — the removed third path)', async () => {
@@ -161,7 +165,10 @@ describe('ClaudeCodeAdapter.postLaunchInjection', () => {
     expect(after).toEqual(before)
   })
 
-  it('tolerates a failed CLI registration without throwing (path 1 already succeeded)', async () => {
+  it('schreibt auch dann, wenn die claude-CLI gar nicht da waere', async () => {
+    // Frueher belegte dieser Test, dass ein Fehlschlag von Pfad 2 den Pfad 1 nicht mitreisst.
+    // Pfad 2 gibt es nicht mehr, aber die Zusage bleibt pruefenswert: die Einspritzung haengt
+    // an keinem externen Befehl.
     vi.mocked(runCommand).mockRejectedValue(new Error('claude: command not found'))
     const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
 
@@ -170,7 +177,7 @@ describe('ClaudeCodeAdapter.postLaunchInjection', () => {
     const written = JSON.parse(
       fs.readFileSync(path.join(projectDir, '.claude', 'settings.local.json'), 'utf-8'),
     )
-    expect(written.mcpServers['cipher-keel'].url).toBe(ctx.mcpUrl)
+    expect(written.mcpServers['cipher-keel'].command).toBe(ctx.mcpBruecke.command)
   })
 
   // I-1 follow-up (security review, 2026-08-30): the undo closure this method now returns.
@@ -206,9 +213,9 @@ describe('ClaudeCodeAdapter.postLaunchInjection', () => {
       const claudeDir = path.join(projectDir, '.claude')
       fs.mkdirSync(claudeDir, { recursive: true })
       const priorEntry = {
-        type: 'http',
-        url: 'http://127.0.0.1:11111/mcp',
-        headers: { Authorization: 'Bearer prior-sessions-still-live-key' },
+        command: '/pfad/zu/electron',
+        args: ['/pfad/zu/resources/mcp-bridge.mjs', '/anderer/sock/mcp-11111111.sock'],
+        env: { ELECTRON_RUN_AS_NODE: '1' },
       }
       fs.writeFileSync(
         settingsPathFor(projectDir),
@@ -218,10 +225,12 @@ describe('ClaudeCodeAdapter.postLaunchInjection', () => {
       const adapter = new ClaudeCodeAdapter({ getStartArgs: () => [] })
       const undo = await adapter.postLaunchInjection(ctx)
 
-      // The new (failed) session's own key really did overwrite it in the meantime.
+      // Der Eintrag der neuen (gescheiterten) Sitzung hat ihn zwischenzeitlich wirklich
+      // ueberschrieben.
       expect(
-        JSON.parse(fs.readFileSync(settingsPathFor(projectDir), 'utf-8')).mcpServers['cipher-keel'].url,
-      ).toBe(ctx.mcpUrl)
+        JSON.parse(fs.readFileSync(settingsPathFor(projectDir), 'utf-8'))
+          .mcpServers['cipher-keel'].args,
+      ).toEqual(ctx.mcpBruecke.args)
 
       undo()
 
@@ -358,8 +367,9 @@ describe('ClaudeCodeAdapter schreibt die Entitaets-Prompt-Datei', () => {
   it('nennt den Ort seiner MCP-Einspritzung, statt ihn dem Aufrufer zu ueberlassen', () => {
     const a = new ClaudeCodeAdapter({ getStartArgs: () => [] })
     expect(a.mcpEinspritzung?.ort).toBe('.claude/settings.local.json')
-    // Pfad 2 (claude mcp add-json) wird nicht zurueckgenommen — der Satz darueber ist
-    // Claude-Wissen und stand bis zur Fixrunde im Handler.
-    expect(a.mcpEinspritzung?.nichtZuruecknehmbarerRest).toMatch(/claude-CLI/)
+    // Seit Paket D gibt es keinen Rest mehr: der zweite Weg (`claude mcp add-json`) ist weg,
+    // und damit auch das, was keine Ruecknahme erreichte. Ein Feld, das trotzdem etwas
+    // naennte, waere eine Warnung vor nichts.
+    expect(a.mcpEinspritzung?.nichtZuruecknehmbarerRest).toBeUndefined()
   })
 })

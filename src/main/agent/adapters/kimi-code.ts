@@ -370,9 +370,10 @@ export class KimiCodeAdapter implements CliSitzungsAdapter {
    *
    * Die Ruecknahme stellt den **Eintrag** `cipher-keel` auf seinen Vorzustand zurueck
    * (loeschen, wenn er vorher fehlte; vorherigen Wert wiederherstellen, wenn er da war) — kein
-   * blindes Loeschen: ein Bearer-Schluessel wird je App-Start einmal erzeugt und von allen
-   * Sitzungen eines Projekts geteilt, der ueberschriebene Eintrag kann also der einer
-   * Schwestersitzung sein, die eingespritzt wurde und deren Prozess noch nicht gelesen hat.
+   * blindes Loeschen: ein Socket wird je App-Start einmal geoeffnet und von allen Sitzungen
+   * eines Projekts geteilt, der ueberschriebene Eintrag kann also der einer Schwestersitzung
+   * sein, die eingespritzt wurde und deren Prozess noch nicht gelesen hat. (Bis Paket D stand
+   * hier derselbe Satz ueber einen Bearer je App-Start — er galt aus demselben Grund.)
    * Der `boolean` bedeutet den einen Satz vom Interface und nichts Weiteres: die von dieser
    * Methode geschriebene Konfiguration traegt keinen Eintrag aus diesem Versuch mehr. `true`
    * deckt auch die trivialen Faelle (nichts geschrieben, Datei nicht mehr da); `false` heisst
@@ -382,26 +383,34 @@ export class KimiCodeAdapter implements CliSitzungsAdapter {
    * vorhandene wird nicht umgestellt. Ihre Rechte hat jemand anderes gesetzt, und ein
    * Sitzungsstart ist kein guter Anlass, das zu uebergehen.
    *
-   * **Was hier bewusst in Kauf genommen wird, damit es nicht unausgesprochen bleibt:** dieser
-   * Schreibvorgang legt einen gueltigen Bearer-Schluessel in den Projektbaum des Nutzers.
+   * **Was hier bis Paket D bewusst in Kauf genommen wurde, und was davon uebrig ist.** Dieser
+   * Schreibvorgang legte einen gueltigen Bearer-Schluessel in den Projektbaum des Nutzers.
    * prompt-file.ts argumentiert in seinem Modulkopf ueber genau dieses Problem und weicht ihm
-   * aus — der Entitaets-Prompt landet deshalb unter `userData`. Hier geht das nicht: die Datei
-   * muss dort liegen, wo Kimi Code sie liest, und das ist das Projekt. Der Unterschied zu
-   * Claudes `.claude/settings.local.json` ist nicht die Art der Offenlegung, sondern ihre
-   * Bekanntheit: `.claude/` steht in vielen `.gitignore`-Dateien, `.kimi-code/` in so gut wie
-   * keiner. Ein versehentliches Einchecken ist damit wahrscheinlicher, nicht anders. Dieser
-   * Adapter aendert deshalb **nichts** an der `.gitignore` des Nutzers — ein Werkzeug, das
-   * ungefragt in die Versionskontrolle eines fremden Projekts schreibt, waere der groessere
-   * Uebergriff. Selbstbegrenzend ist die Offenlegung ohnehin: der Schluessel wechselt bei
-   * jedem App-Start (B2), ein eingecheckter Eintrag ist also spaetestens dann wertlos —
-   * wertlos, nicht weg. Ob daraus etwas folgt (ein Hinweis beim ersten Start, ein Vorschlag
-   * fuer die `.gitignore`), gehoert zu A3 und nicht hierher.
+   * aus — der Entitaets-Prompt landet deshalb unter `userData`. Hier ging das nicht: die Datei
+   * muss dort liegen, wo Kimi Code sie liest, und das ist das Projekt.
+   *
+   * Seit Paket D steht kein Geheimnis mehr darin. Der Eintrag nennt einen Startbefehl fuer die
+   * stdio-Bruecke: ein Programmpfad, ein Socketpfad, eine Umgebungsvariable. Ein eingecheckter
+   * Eintrag verraet damit nichts mehr, er zeigt nur noch auf einen Pfad, den es auf einem
+   * fremden Rechner nicht gibt — und den zu erreichen ohnehin das Sandkastenprofil entscheidet,
+   * nicht diese Datei. Der Absatz darueber, dass `.kimi-code/` in so gut wie keiner
+   * `.gitignore` steht, ist damit kein Sicherheitsargument mehr, sondern nur noch eine Frage
+   * der Ordentlichkeit. Dieser Adapter aendert weiterhin **nichts** an der `.gitignore` des
+   * Nutzers — ein Werkzeug, das ungefragt in die Versionskontrolle eines fremden Projekts
+   * schreibt, waere der groessere Uebergriff.
+   *
+   * Der Modus 0600 bleibt trotzdem, und das ist Absicht: er kostet nichts, und eine Datei mit
+   * knappen Rechten anzulegen ist die richtige Vorgabe, auch wenn gerade nichts darin steht,
+   * das sie braeuchte.
    */
   async postLaunchInjection(ctx: AdapterContext): Promise<() => boolean> {
-    const eintrag = {
-      url: ctx.mcpUrl,
-      headers: { Authorization: `Bearer ${ctx.mcpApiKey}` },
-    }
+    // Dieselbe Form wie bei Claude Code (Paket D): ein stdio-Eintrag, kein http-Eintrag mit
+    // Bearer. Ob Kimi einen stdio-MCP-Server ueberhaupt laedt, ist NICHT gemessen und wird
+    // hier nicht behauptet — am 2026-08-31 wurde gemessen, dass Kimi 0.38.0 im `-p`-Modus
+    // gar keinen projektlokalen MCP-Server laedt, weder ueber `stdio` noch ueber `http`.
+    // Der Transport ist dort also nicht die Variable, und diese Einspritzung war auch vor
+    // Paket D nie als funktionierend belegt. Benannt, nicht als erledigt verbucht.
+    const eintrag = { ...ctx.mcpBruecke }
 
     let ruecknahme: (() => boolean) | null = null
     try {
@@ -445,9 +454,11 @@ export class KimiCodeAdapter implements CliSitzungsAdapter {
         } catch (err) {
           // ENOENT ist der eine Lesefehler, bei dem der zugesagte Satz beweisbar stimmt: eine
           // Datei, die es nicht gibt, traegt keinen Eintrag. Jeder andere Fehler — unlesbar,
-          // kaputtes JSON, und kaputtes JSON ist der gefaehrliche Fall, weil eine halb
-          // geschriebene Datei den Bearer woertlich enthalten kann — laesst den Eintrag
-          // moeglicherweise liegen.
+          // kaputtes JSON — laesst den Eintrag moeglicherweise liegen. (Bis Paket D war
+          // kaputtes JSON der gefaehrlichste dieser Faelle, weil eine halb geschriebene Datei
+          // den Bearer woertlich enthalten konnte. Seit der Eintrag ein Startbefehl ist, bleibt
+          // Unordnung statt Offenlegung — die Ruecknahme sagt trotzdem dasselbe, weil ihre
+          // Zusage nie nur eine ueber Vertraulichkeit war.)
           if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return true
           console.warn(
             '[KimiCodeAdapter] Ruecknahme konnte .kimi-code/mcp.json nicht lesen — der ' +

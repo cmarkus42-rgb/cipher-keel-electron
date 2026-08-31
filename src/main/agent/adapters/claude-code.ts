@@ -4,9 +4,10 @@
  * Encapsulates all Claude Code CLI specifics:
  * - Launch via `claude`, with free-text start parameters from agent.startArgs (see
  *   AgentConfigReader below) prepended to the flags this adapter builds itself
- * - MCP injection via direct `settings.local.json` write AND `claude mcp add-json`
- *   (two paths — see postLaunchInjection's doc comment for why a third, once here, was
- *   removed rather than fixed)
+ * - MCP injection via a direct `settings.local.json` write — EIN Weg, seit Paket D. Zwei
+ *   weitere standen hier einmal (`claude mcp add-json`, und davor ein Schreibvorgang nach
+ *   `~/.claude/projects/<hash>/settings.json`); beide wurden ersatzlos entfernt, nicht
+ *   repariert. Siehe den Doc-Kommentar an postLaunchInjection.
  * - StatusLine hook for context usage reporting
  * - CLAUDE.md as project marker
  *
@@ -28,7 +29,9 @@ import type {
 } from '../agent-adapter'
 import type { AdapterFeature, AdapterCapabilities } from '../../../shared/types'
 import { CapabilityNiveau } from '../../preset/niveau'
-import { runCommand, isCommandOnPath } from '../../util/exec-util'
+// `runCommand` stand hier fuer den zweiten Einspritzungsweg (`claude mcp add-json`), den
+// Paket D ersatzlos gestrichen hat. Dieser Adapter ruft seither keinen externen Befehl mehr.
+import { isCommandOnPath } from '../../util/exec-util'
 import { formatShellCommand } from '../../util/shell-quote'
 import { describeMissingTool } from '../../util/missing-tool'
 import { writeEntityPromptFile } from '../../session/prompt-file'
@@ -98,16 +101,18 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
   }
 
   /**
-   * Both paths of postLaunchInjection in the words a user gets to see — see the doc comment
-   * there for why path 2 stays behind, and `McpEinspritzungsBeschreibung` for why this sits on
-   * the adapter instead of in SESSION_CREATE, where the filename used to be hard-coded.
+   * Der eine Ort der postLaunchInjection in den Worten, die ein Mensch zu sehen bekommt — und
+   * `McpEinspritzungsBeschreibung` fuer den Grund, warum das am Adapter haengt und nicht in
+   * SESSION_CREATE, wo der Dateiname einmal fest eingetragen war.
+   *
+   * `nichtZuruecknehmbarerRest` bleibt seit Paket D **leer**, und das ist eine Aussage: es gab
+   * hier einen zweiten Weg (`claude mcp add-json`), den `claude mcp remove` nur loeschen und
+   * nie wiederherstellen konnte — dieser Rest musste dem Menschen genannt werden. Den Weg gibt
+   * es nicht mehr, also gibt es den Rest nicht mehr, und ein Feld, das trotzdem etwas nennte,
+   * waere eine Warnung vor nichts.
    */
   readonly mcpEinspritzung: McpEinspritzungsBeschreibung = {
     ort: '.claude/settings.local.json',
-    nichtZuruecknehmbarerRest:
-      'ein ueber die claude-CLI registrierter Eintrag (falls geschrieben) kann bestehen ' +
-      'bleiben, bis er ueberschrieben wird — ein App-Neustart entfernt ihn nicht, macht ihn ' +
-      'aber wertlos, weil der Schluessel bei jedem App-Start wechselt',
   }
 
   /**
@@ -120,35 +125,41 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
    * sometimes win (security review finding I-1, 2026-08-30). Nothing here needs a live
    * session — `ctx.sessionId` is not read below at all.
    *
-   * Uses TWO paths, not three:
-   * 1. Direct write to `<project>/.claude/settings.local.json` — the path Claude Code
-   *    actually reads a project's local MCP config from.
-   * 2. `claude mcp add-json` — the CLI's own registration command. Its bearer key argument
-   *    is visible in the process table for the command's short lifetime and is persisted by
-   *    Claude Code itself into `~/.claude.json`; that disclosure is inherent to using the
-   *    CLI's own command, not something this file adds independently.
+   * **Ein Weg, nicht mehr zwei** (Paket D): der direkte Schreibvorgang nach
+   * `<project>/.claude/settings.local.json`, die Datei, aus der Claude Code die
+   * projektlokale MCP-Konfiguration wirklich liest.
    *
-   * A third path — writing `~/.claude/projects/<hash>/settings.json` — existed here until
-   * the same review found it: that directory holds session transcripts (`*.jsonl`), and
-   * Claude Code does not read settings from it at all. It was a secret written to disk for
-   * no reader — removed outright, not "fixed", because there was nothing to fix it into.
+   * Zwei weitere Wege standen hier einmal und stehen es nicht mehr, beide aus demselben
+   * Grund — ein Geheimnis an einen Ort schreiben, der es nicht braucht:
+   * - `claude mcp add-json` (bis Paket D): die Serverkonfiguration ging als
+   *   Kommandozeilenargument mit, also in die Prozesstabelle, und Claude Code schrieb sie
+   *   zusaetzlich in `~/.claude.json`. Solange sie einen Bearer trug, war das ein dritter
+   *   Ort — und der einzige, den keine Ruecknahme erreichen konnte.
+   * - `~/.claude/projects/<hash>/settings.json` (bis zum Sicherheitsreview 2026-08-30): dort
+   *   liegen Sitzungsmitschriften, Claude Code liest von da gar keine Einstellungen. Ein
+   *   Geheimnis auf Platte ohne jeden Leser.
+   *
+   * Seit Paket D ist ohnehin kein Geheimnis mehr im Spiel: der Eintrag nennt einen
+   * Startbefehl fuer die stdio-Bruecke (`ctx.mcpBruecke`), keinen Bearer. Was diese Funktion
+   * offenlegt, ist ein Pfad — und wer den erreichen darf, entscheidet das Sandkastenprofil.
    *
    * Return value (added for the I-1 follow-up, security review 2026-08-30; widened from
    * `void` to `boolean` in the follow-up review of 4358cac): moving this call ahead of
    * `tmux.createSession` closed the race but opened a narrower gap the review caught — if
-   * `createSession` now fails *after* this succeeds, a live bearer is left behind for a
-   * session that never came to exist. The returned closure undoes exactly what path 1 wrote,
+   * `createSession` now fails *after* this succeeds, an entry is left behind for a session
+   * that never came to exist. The returned closure undoes exactly what the write above did,
    * and only that: it brings the `cipher-keel` ENTRY back to the state it had before this
    * call (deletes it if there was none, restores the prior value if there was one) — never a
-   * blind delete.
+   * blind delete. Seit Paket D deckt die Ruecknahme damit ALLES ab, was diese Funktion
+   * geschrieben hat; solange es Pfad 2 gab, konnte sie das nicht behaupten.
    *
    * The entry, not the file. Three cases where the file does not return to its prior state:
    * it did not exist before (a `.claude/` directory and a `settings.local.json` holding
    * `{"mcpServers": {}}` stay behind); it held broken JSON (the injection write already
    * destroyed that content, and no rollback can bring it back); `mcpServers` was present but
-   * not an object (replaced by `{}`, and `{}` is what stays). None of the three leaves a
-   * bearer behind — which is the property that matters — but the promise this closure makes
-   * is about the entry.
+   * not an object (replaced by `{}`, and `{}` is what stays). Keiner der drei Faelle laesst
+   * etwas Vertrauliches zurueck — seit Paket D gilt das trivial, davor war es die Eigenschaft,
+   * auf die es ankam — aber die Zusage dieser Closure gilt dem Eintrag.
    *
    * Why it reports a `boolean`: a rollback that quietly did nothing used to reach the user as
    * a rollback that worked. The return value means exactly one sentence and nothing wider:
@@ -159,9 +170,10 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
    * carries an `mcpServers` object — in those cases the entry may still be sitting there and
    * nobody knows. A throwing `writeFileSync` propagates; the caller treats a throw as `false`.
    *
-   * Why restore rather than delete: one bearer key is minted per app start and shared by
-   * every session of a project (B5), so the entry this call overwrote may be a sibling's,
-   * byte for byte. A blind delete would hit a sibling that has been injected but whose
+   * Why restore rather than delete: one socket is opened per app start and shared by every
+   * session of a project, so the entry this call overwrote may be a sibling's, byte for byte
+   * — bis Paket D galt derselbe Satz ueber einen Bearer je App-Start (B5), und er galt aus
+   * demselben Grund. A blind delete would hit a sibling that has been injected but whose
    * `claude` process has NOT yet read the config (a concurrent `SESSION_CREATE`), and any
    * later restart of `claude` in an already-open pane. It would NOT hit an already-running
    * session: that process read its MCP config once, at its own start, and does not reload it —
@@ -174,31 +186,24 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
    * 1 and 3 below stand without it, and the I-1 reordering is safe either way, because
    * injecting early is harmless if the CLI does reload. Measuring it is still owed.
    *
-   * Path 2 is deliberately NOT undone, and the reason is not "a still-running sibling hangs
-   * on the entry" — by the fact just stated, it does not:
-   *   1. `claude mcp remove` can only delete, never restore. That is the actual difference
-   *      between the two paths: path 1 knows the prior value, path 2 does not.
-   *   2. The window it would damage is the narrow one named above (injected-but-not-yet-read
-   *      siblings, later `claude` restarts in the same pane), not running sessions.
-   *   3. From a synchronous closure it is not executable anyway: an external CLI call with a
-   *      seconds-long runtime and its own failure rate.
-   * Honestly alongside, because it otherwise goes unsaid: the SUCCESS path already runs
-   * `claude mcp remove -s local cipher-keel` on every single injection (below) and takes the
-   * very same collision — the difference is that there an equivalent entry follows
-   * immediately, while a rollback-remove would leave nothing behind.
+   * Hier stand bis Paket D ein langer Absatz darueber, warum Pfad 2 (`claude mcp add-json`)
+   * bewusst NICHT zurueckgenommen wird — `claude mcp remove` kann nur loeschen, nie
+   * wiederherstellen, und aus einer synchronen Closure heraus war ein sekundenlanger
+   * CLI-Aufruf ohnehin nicht ausfuehrbar. Der Absatz ist gegenstandslos: es gibt Pfad 2 nicht
+   * mehr, und damit auch keinen Rueckstand, der dem Aufrufer gemeldet werden muesste.
    *
-   * That residual is named to the caller instead (ipc-handlers.ts surfaces it in the thrown
-   * error's message) — it is self-limiting even so: rewritten by the next successful
-   * injection for this project, and moot once the app restarts. Moot, not gone: an app
-   * restart does not remove the entry, it rotates the key (B2) and thereby makes the entry
-   * worthless.
+   * Ein veralteter Eintrag ist seither nicht mehr wertlos, weil ein Schluessel rotiert, sondern
+   * weil der Socketpfad bei jedem App-Start ein anderer ist (mcp-socket-pfad.ts). Die Wirkung
+   * ist dieselbe, der Mechanismus ein anderer — und wer das eine fuer das andere haelt, sucht
+   * einen rotierenden Schluessel, den es nicht gibt.
    */
   async postLaunchInjection(ctx: AdapterContext): Promise<() => boolean> {
-    const mcpServerConfig = {
-      type: 'http',
-      url: ctx.mcpUrl,
-      headers: { Authorization: `Bearer ${ctx.mcpApiKey}` },
-    }
+    // Ein stdio-Eintrag, kein http-Eintrag mit Bearer (Paket D). Warum ueberhaupt eine
+    // Bruecke und nicht direkt eine Socket-URL: Claude Codes http-Transport nimmt keine.
+    // Am 2026-08-31 gemessen, nicht angenommen — `unix://…` wird von `claude mcp add`
+    // klaglos gespeichert und beim Verbinden abgewiesen: `ERR_INVALID_ARG_VALUE: protocol
+    // must be http:, https: or s3:`. Der stdio-Transport startet dagegen jedes Programm.
+    const mcpServerConfig = { ...ctx.mcpBruecke }
 
     // Path 1: Direct write to local settings.local.json — tracked so undoSettingsWrite can
     // put back exactly what was here before, not just delete what this call added.
@@ -238,7 +243,7 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
           // ENOENT is the one read failure where the promised sentence is provably true: a
           // file that does not exist carries no entry from this call. Every other failure —
           // unreadable file, broken JSON, and broken JSON is the dangerous one, because a
-          // half-written file can still hold the bearer verbatim — leaves the entry possibly
+          // half-written file can still hold the entry verbatim — leaves the entry possibly
           // in place, and until this fix round it left with a bare `return` that the caller
           // then reported as a successful rollback.
           if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return true
@@ -272,20 +277,16 @@ export class ClaudeCodeAdapter implements CliSitzungsAdapter {
       console.warn('[ClaudeCodeAdapter] Local settings.local.json write failed:', err)
     }
 
-    // Path 2: CLI command — not undone on rollback, see the doc comment above.
-    try {
-      const serverJson = JSON.stringify(mcpServerConfig)
-
-      await runCommand('claude', [
-        'mcp', 'remove', '-s', 'local', 'cipher-keel',
-      ], { cwd: ctx.projectPath, timeout: 10_000 }).catch(() => {})
-
-      await runCommand('claude', [
-        'mcp', 'add-json', '-s', 'local', 'cipher-keel', serverJson,
-      ], { cwd: ctx.projectPath, timeout: 15_000 })
-    } catch (err) {
-      console.warn('[ClaudeCodeAdapter] CLI MCP registration failed:', err)
-    }
+    // Es gab hier bis Paket D einen zweiten Weg: `claude mcp remove` gefolgt von
+    // `claude mcp add-json`, mit der Serverkonfiguration als KOMMANDOZEILENARGUMENT. Solange
+    // diese Konfiguration einen Bearer trug, stand er damit in `ps`, sichtbar fuer jeden
+    // Prozess desselben Nutzers — ein dritter Ort neben den beiden Dateien, und der einzige,
+    // den keine Ruecknahme je erreichen konnte.
+    //
+    // Er faellt ersatzlos, und das macht die Einspritzung nicht aermer, sondern ehrlicher:
+    // es gibt jetzt genau einen Weg, und der ist vollstaendig zuruecknehmbar. Der lange
+    // Absatz oben ueber "Pfad 2 wird bewusst NICHT zurueckgenommen" ist damit gegenstandslos
+    // und steht nicht mehr da.
 
     return () => {
       // No path-1 write happened at all (its own catch fired) — then the promised sentence

@@ -29,16 +29,16 @@
  * keel_zelle* below) are reachable from a session that was started while the current app
  * instance is running: `SESSION_CREATE` (ipc-handlers.ts) calls `postLaunchInjection` BEFORE
  * the tmux pane is created (moved there by an I-1 fix, 2026-08-30 — running it after used to
- * race the CLI's own one-time config read and could lose), handing the live HTTP server's
- * address and per-boot key to the not-yet-spawned Claude Code process. A session whose tmux
- * pane survives an app restart is not reachable and cannot be made reachable by re-injecting:
- * its `claude` process already read `settings.local.json` at its own start and does not
- * reload it live, while the server's address and key are both fresh every app start (the key
- * by design — config-store.ts keeps secrets out of the persisted config, and this key is
- * one). Such a session stays unreachable until it is destroyed and a new one created. See
- * mcp-http-server.ts's header comment for why that is a property of the boot-scoped key, not
- * something a fixed port would fix, and docs/anpassbare-flaechen.md ("Was fehlt") for the
- * human-facing half of this note.
+ * race the CLI's own one-time config read and could lose), handing the live server's bridge
+ * command to the not-yet-spawned Claude Code process. A session whose tmux pane survives an
+ * app restart is not reachable and cannot be made reachable by re-injecting: its `claude`
+ * process already read `settings.local.json` at its own start and does not reload it live,
+ * waehrend der Socketpfad bei jedem App-Start ein anderer ist (mcp-socket-pfad.ts, mit dem
+ * Grund). Such a session stays unreachable until it is destroyed and a new one created. See
+ * mcp-http-server.ts's header comment, und docs/anpassbare-flaechen.md ("Was fehlt") fuer die
+ * menschenlesbare Haelfte dieser Notiz. (Bis Paket D stand hier derselbe Satz ueber einen
+ * rotierenden Bearer; die Wirkung ist dieselbe, der Mechanismus ein anderer — wer den
+ * Schluessel sucht, sucht etwas, das es nicht mehr gibt.)
  *
  * **This is a measurement, not a promise (2026-08-30).** The freshly-started half of the
  * condition above was watched happen, not inferred from written files: the app was launched
@@ -54,13 +54,31 @@
  * this run did not touch, and which stays unmeasured: the restart-surviving branch — no
  * session has been carried across an app restart and then probed for reachability.
  *
- * The scoping this implies (B5): one key for every session of this app instance, not one key
- * per session. `keel_zelle_beauftragen`/`keel_zelle_ergebnis` are meant to let any strong
- * session reach any Niveau-B cell — that is the design above, not an oversight — so a
- * per-session key would buy authentication granularity (which session made this HTTP call)
- * without buying authorization granularity (which cells that session may touch), since nothing
- * in the tool logic ties a cell to an owning session. Accepted and named: these are sessions of
- * the same human, on his own machine.
+ * **B5, beantwortet (Paket D) — indem die Frage ihren Gegenstand verliert.** Sie lautete:
+ * *"darf jede Sitzung jede Zelle beauftragen, oder bindet der Schluessel an eine Sitzung?"*
+ * Es gibt keinen Schluessel mehr. Der Transport ist auf einen Unix-Socket unter `userData`
+ * umgezogen und prueft keinen Bearer (mcp-http-server.ts, Modulkopf, mit dem Grund).
+ *
+ * Das alte Argument an dieser Stelle bleibt richtig und verliert nur seine Voraussetzung: ein
+ * Schluessel je Sitzung haette Authentisierungsschaerfe gekauft (welche Sitzung ruft hier an)
+ * und keine Autorisierungsschaerfe (welche Zellen darf sie anfassen), weil nichts in der
+ * Werkzeuglogik eine Zelle an eine besitzende Sitzung bindet.
+ *
+ * Was ihn nicht gekauft haette, ist der Fall, um den es wirklich ging: ein gesandkastetes
+ * Kind von `shell_ausfuehren` liest einen GUELTIGEN Schluessel aus dem Projektbaum und spricht
+ * danach als die Sitzung, der er gehoert — ueber `keel_zelle_beauftragen` haette es damit eine
+ * Niveau-B-Zelle in der Hand, die OHNE Sandkasten laeuft. Das ist ein Ausbruch, und kein
+ * Zuschnitt eines Schluessels verhindert ihn.
+ *
+ * **Was ihn verhindert, steht in harness/sandkasten.ts und nirgends sonst:** das Profil nennt
+ * keine Unix-Sockets, also bleiben sie unter `(deny default)`. Wer hier oder dort etwas
+ * aendert, faellt diese Abwaegung neu — und merkt es nicht an einem roten Test in DIESER
+ * Datei, sondern an dem in tests/harness/sandkasten-lauf.test.ts.
+ *
+ * **Offen bleibt die eigentliche Autorisierungsfrage:** darf Sitzung A den Lauf von Sitzung B
+ * ueber `keel_zelle_ergebnis` auslesen? Heute ja. Das ist nach Paket D eine Frage zwischen
+ * Sitzungen desselben Menschen auf seiner eigenen Maschine und kein Ausbruchsweg mehr —
+ * benannt, nicht gebaut.
  */
 
 import type Database from 'better-sqlite3'
