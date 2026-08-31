@@ -109,8 +109,8 @@ describe('profilText — Grundgeruest', () => {
   it('erlaubt Schreiben in der Wurzel', () => {
     expect(p).toContain('(allow file-write* (subpath "/Users/x/projekt"))')
   })
-  it('verbietet Schreiben in .git', () => {
-    expect(p).toContain('(deny file-write* (subpath "/Users/x/projekt/.git"))')
+  it('verbietet Schreiben in .git, in jeder Tiefe', () => {
+    expect(p).toContain('(deny file-write* (regex #"^/Users/x/projekt/(.*/)?\\.git(/|$)"))')
   })
   it('erlaubt jeden mitgegebenen Zwischenspeicher', () => {
     expect(p).toContain('(allow file-write* (subpath "/Users/x/.npm"))')
@@ -142,11 +142,40 @@ describe('Waechter: jedes Leseverbot ist auch ein Schreibverbot', () => {
   })
 })
 
+describe('Waechter: kein Verbot steht vor einer Erlaubnis', () => {
+  // Der teuerste Fund dieser Strecke. SBPL entscheidet nach der **zuletzt** passenden Regel:
+  // ein `(deny ... .env)` vor `(allow file-write* (subpath <wurzel>))` ist wirkungslos, und im
+  // Profiltext sieht es trotzdem nach Schutz aus. Gemessen mit zwei Profilen, die sich nur in
+  // der Reihenfolge dieser zwei Zeilen unterschieden: davor gelang `echo > .env`, danach kam
+  // 'Operation not permitted'.
+  //
+  // Dieser Waechter ist der einzige Texttest, der das faengt — alle anderen pruefen, ob eine
+  // Zeile *da* ist, und da war sie.
+  it('jede allow-Zeile steht vor jeder deny-Zeile', () => {
+    const zeilen = profilText(ktx, 'offen').split('\n').map(z => z.trim())
+    const istDeny = (z: string): boolean => z.startsWith('(deny') && z !== '(deny default)'
+    const letzteErlaubnis = zeilen.findLastIndex(z => z.startsWith('(allow'))
+    const erstesVerbot = zeilen.findIndex(istDeny)
+    expect(erstesVerbot).toBeGreaterThan(-1)
+    expect(letzteErlaubnis).toBeGreaterThan(-1)
+    expect(
+      erstesVerbot,
+      `Verbot in Zeile ${erstesVerbot} steht vor Erlaubnis in Zeile ${letzteErlaubnis} — ` +
+      `SBPL nimmt die letzte passende Regel, das Verbot waere wirkungslos.`,
+    ).toBeGreaterThan(letzteErlaubnis)
+  })
+})
+
 describe('Waechter: jedes Verbot ist verankert', () => {
   // Ein globales deny auf *.pem sperrt /etc/ssl/cert.pem und bricht jedes TLS im Kindprozess —
   // also ausgerechnet npm ci.
   it('jede deny-Regel nennt die Wurzel oder das Heim', () => {
-    const zeilen = profilText(ktx, 'zu').split('\n').filter(z => z.trimStart().startsWith('(deny'))
+    // `(deny default)` ist die Grundregel des Profils und nennt keinen Pfad — sie ist keine der
+    // pfadbezogenen Verbotsregeln, gegen die dieser Waechter antritt. Genau diese eine woertliche
+    // Zeile faellt heraus, nichts sonst: der Ausschluss ist eng, damit eine Regel, die ihren
+    // Anker verliert, weiter auffliegt.
+    const zeilen = profilText(ktx, 'zu').split('\n')
+      .filter(z => z.trimStart().startsWith('(deny') && z.trim() !== '(deny default)')
     expect(zeilen.length).toBeGreaterThan(0)
     for (const z of zeilen) {
       const verankert = z.includes(ktx.wurzel) || z.includes(ktx.heim)
@@ -167,8 +196,9 @@ describe('profilText — die Verbote der Pfadwache, gespiegelt', () => {
       '(deny file-read* file-write* (subpath "/Users/x/Library/Application Support/cipher-keel"))',
     )
   })
-  it('sperrt ~/.cipher-* beidseitig', () => {
-    expect(alles).toContain('(deny file-read* file-write* (regex #"^/Users/x/\\.cipher-"))')
+  it('sperrt ~/.cipher-* beidseitig, in jeder Tiefe', () => {
+    // Die Tiefe ist der Punkt: pfadwache prueft den Basename unter dem ganzen Heim-Teilbaum.
+    expect(alles).toContain('(deny file-read* file-write* (regex #"^/Users/x/(.*/)?\\.cipher-"))')
   })
   it('sperrt .env unter der Wurzel, in jeder Tiefe', () => {
     expect(alles).toContain('#"^/Users/x/projekt/(.*/)?\\.env(\\..*)?$"')
@@ -179,8 +209,8 @@ describe('profilText — die Verbote der Pfadwache, gespiegelt', () => {
   it('sperrt Schluesselendungen unter der Wurzel', () => {
     expect(alles).toContain('#"^/Users/x/projekt/(.*/)?[^/]*\\.(pem|key|p12|keystore|jks)$"')
   })
-  it('sperrt Shell-Startdateien im Heim', () => {
-    expect(alles).toContain('#"^/Users/x/\\.(zshrc|zprofile|zshenv|bashrc|bash_profile|profile)$"')
+  it('sperrt Shell-Startdateien im Heim, in jeder Tiefe', () => {
+    expect(alles).toContain('#"^/Users/x/(.*/)?\\.(zshrc|zprofile|zshenv|bashrc|bash_profile|profile)$"')
   })
 })
 
@@ -280,28 +310,23 @@ export function profilText(ktx: SandkastenKontext, netz: NetzModus): string {
     zeilen.push('(allow network-outbound)', '(allow network-bind)', '')
   }
 
+  // ALLE Erlaubnisse zuerst, ALLE Verbote zuletzt. Das ist die tragende Regel dieser Funktion,
+  // und sie ist am 2026-08-30 gegen echtes sandbox-exec gemessen worden: **SBPL entscheidet nach
+  // der zuletzt passenden Regel**, nicht nach der ersten und nicht "deny gewinnt". Gemessen mit
+  // zwei Profilen, die sich nur in der Reihenfolge zweier Zeilen unterschieden:
+  //
+  //   deny .env  VOR  allow write <wurzel>  ->  echo zerstoert > .env  gelingt
+  //   deny .env  NACH allow write <wurzel>  ->  Operation not permitted, Inhalt unveraendert
+  //
+  // Ein Verbot vor einer umfassenderen Erlaubnis ist also wirkungslos — es sieht im Profiltext
+  // aus wie Schutz und ist keiner. Genau deshalb reicht eine Textpruefung ueber diesem Profil
+  // nicht: die Reihenfolge ist die Aussage, nicht das Vorhandensein der Zeile.
   zeilen.push(
-    '; Lesen: grundsaetzlich ja …',
+    '; Lesen: grundsaetzlich ja — die Verbote stehen unten und ueberstimmen das.',
     '(allow file-read*)',
     '',
-    '; … ausser den Verboten der Pfadwache. Beidseitig, nie nur lesend: ein deny auf file-read*',
-    '; allein laesst das Ueberschreiben zu, und dann ist das Geheimnis vertraulich und zerstoerbar.',
-    `(deny file-read* file-write* (subpath "${sbplLiteral(ktx.heim)}/.ssh"))`,
-    `(deny file-read* file-write* (subpath "${sbplLiteral(ktx.userDataPfad)}"))`,
-    `(deny file-read* file-write* (regex #"^${hRe}/\\.cipher-"))`,
-    `(deny file-read* file-write* (regex #"^${hRe}/\\.(zshrc|zprofile|zshenv|bashrc|bash_profile|profile)$"))`,
-    `(deny file-read* file-write* (regex #"^${wRe}/(.*/)?\\.env(\\..*)?$"))`,
-    `(deny file-read* file-write* (regex #"^${wRe}/(.*/)?(id_rsa|id_ed25519|id_ecdsa|id_dsa)$"))`,
-    // Anchored to the root, never global: a global deny on *.pem locks /etc/ssl/cert.pem and
-    // breaks TLS in the child — that is, `npm ci` itself.
-    `(deny file-read* file-write* (regex #"^${wRe}/(.*/)?[^/]*\\.(pem|key|p12|keystore|jks)$"))`,
-    '',
-    '; Schreiben: die Wurzel — und die Verwaltung des Rueckwegs ausdruecklich nicht. Ein',
-    '; `git reset --hard` naehme genau den Rueckweg weg, auf dem die Startvorbedingung beruht.',
+    '; Schreibziele: die Wurzel und die Zwischenspeicher der Toolchains.',
     `(allow file-write* (subpath "${w}"))`,
-    `(deny file-write* (subpath "${w}/.git"))`,
-    '',
-    '; Schreibziele ausserhalb der Wurzel: die Zwischenspeicher der Toolchains.',
     `(allow file-write* (subpath "${sbplLiteral(ktx.tmpdir)}"))`,
   )
 
@@ -309,7 +334,34 @@ export function profilText(ktx: SandkastenKontext, netz: NetzModus): string {
     zeilen.push(`(allow file-write* (subpath "${sbplLiteral(z)}"))`)
   }
 
-  zeilen.push('', '(allow file-write-data (literal "/dev/null"))', '')
+  zeilen.push(
+    '(allow file-write-data (literal "/dev/null"))',
+    '',
+    '; Ab hier nur noch Verbote, und keine Erlaubnis darf ihnen folgen. Beidseitig, nie nur',
+    '; lesend: ein deny auf file-read* allein laesst das Ueberschreiben zu, und dann ist das',
+    '; Geheimnis vertraulich und zerstoerbar.',
+    `(deny file-read* file-write* (subpath "${sbplLiteral(ktx.heim)}/.ssh"))`,
+    `(deny file-read* file-write* (subpath "${sbplLiteral(ktx.userDataPfad)}"))`,
+    // `(.*/)?` in jeder dieser Regeln, und das ist keine Kosmetik: pfadwache prueft den
+    // **Basename** und `istIn(pfad, heim)` — also jede Tiefe unter dem Heim. Eine Regel ohne
+    // dieses Segment traefe nur direkte Kinder, und der Sandkasten waere schwaecher als die
+    // Wache, die er spiegeln soll.
+    `(deny file-read* file-write* (regex #"^${hRe}/(.*/)?\\.cipher-"))`,
+    `(deny file-read* file-write* (regex #"^${hRe}/(.*/)?\\.(zshrc|zprofile|zshenv|bashrc|bash_profile|profile)$"))`,
+    `(deny file-read* file-write* (regex #"^${wRe}/(.*/)?\\.env(\\..*)?$"))`,
+    `(deny file-read* file-write* (regex #"^${wRe}/(.*/)?(id_rsa|id_ed25519|id_ecdsa|id_dsa)$"))`,
+    // Anchored to the root, never global: a global deny on *.pem locks /etc/ssl/cert.pem and
+    // breaks TLS in the child — that is, `npm ci` itself.
+    `(deny file-read* file-write* (regex #"^${wRe}/(.*/)?[^/]*\\.(pem|key|p12|keystore|jks)$"))`,
+    // Jedes `.git`-Segment in jeder Tiefe, nicht bloss `<wurzel>/.git`: pfadwache verwirft einen
+    // Pfad, sobald *irgendein* Segment `.git` heisst (pfadwache.ts:101). Ein Submodul oder ein
+    // eingebettetes Repo unter `vendor/` waere sonst beschreibbar, waehrend die Wache es
+    // verweigert — und die Rueckwegzusage gilt dann nur fuer das oberste Repo. Ein
+    // `git reset --hard` naehme ausserdem genau den Rueckweg weg, auf dem die
+    // Startvorbedingung beruht.
+    `(deny file-write* (regex #"^${wRe}/(.*/)?\\.git(/|$)"))`,
+    '',
+  )
   return zeilen.join('\n')
 }
 ```
@@ -375,15 +427,25 @@ beforeAll(() => {
   writeFileSync(join(wurzel, '.git', 'HEAD'), 'historie')
   writeFileSync(join(wurzel, '.env'), 'GEHEIM=original')
   writeFileSync(join(wurzel, 'a.ts'), 'export const a = 1')
-  writeFileSync(join(heim, '.ssh', 'id_rsa'), 'privat')
-  writeFileSync(join(heim, '.cipher-test.env'), 'TOKEN=x')
+  // Ein Inhalt, der in keinem Pfad vorkommen kann. 'privat' waere hier falsch: die kanonisierte
+  // Temp-Wurzel dieses Rechners heisst /private/var/..., und eine Zusicherung
+  // `not.toContain('privat')` pruefte dann den Pfad in der Fehlermeldung statt den Schluessel.
+  writeFileSync(join(heim, '.ssh', 'id_rsa'), 'SCHLUESSELMATERIAL-Q7X')
+  writeFileSync(join(heim, '.cipher-test.env'), 'TOKEN=GEHEIM-Q7X')
   mkdirSync(join(heim, 'fremd'), { recursive: true })
   writeFileSync(join(heim, 'fremd', 'wichtig.txt'), 'wichtige arbeit')
+  // Ein eigenes Verzeichnis, **nicht** die OS-Temp-Wurzel: `realpathSync(tmpdir())` ist der
+  // Vorfahr dieses ganzen Testbaums, und `(allow file-write* (subpath <tmpdir>))` machte damit
+  // jede Grenze des Profils gegenstandslos — der fremde Baum und `.git` lagen darunter. In der
+  // Produktion ist TMPDIR (/var/folders/...) kein Vorfahr einer Projektwurzel; die Fixture muss
+  // dieselbe Lage herstellen, sonst prueft sie einen Fall, den es nicht gibt.
+  const eigenesTmp = join(heim, 'tmp')
+  mkdirSync(eigenesTmp, { recursive: true })
   ktx = {
     wurzel, heim,
     userDataPfad: join(heim, 'Library', 'Application Support', 'cipher-keel'),
     zwischenspeicher: [],
-    tmpdir: realpathSync(tmpdir()),
+    tmpdir: eigenesTmp,
   }
 })
 
@@ -437,12 +499,12 @@ describe.skipIf(process.platform !== 'darwin')('starte — die Grenze haelt', ()
 
   it('liest keinen SSH-Schluessel', async () => {
     const r = await starte(`cat ${heim}/.ssh/id_rsa`, ktx, 'zu')
-    expect(r.ausgabe).not.toContain('privat')
+    expect(r.ausgabe).not.toContain('SCHLUESSELMATERIAL-Q7X')
   })
 
   it('liest keine .cipher-Datei', async () => {
     const r = await starte(`cat ${heim}/.cipher-test.env`, ktx, 'zu')
-    expect(r.ausgabe).not.toContain('TOKEN')
+    expect(r.ausgabe).not.toContain('GEHEIM-Q7X')
   })
 
   it('liest gewoehnlichen Quelltext', async () => {
@@ -472,6 +534,18 @@ describe.skipIf(process.platform !== 'darwin')('starte — Grenzen des Laufs', (
   it('bricht bei Zeitueberschreitung ab und sagt es', async () => {
     const r = await starte('sleep 5', ktx, 'zu', 300)
     expect(r.zeitueberschreitung).toBe(true)
+  }, 20_000)
+
+  it('bindet die Wanduhr auch bei einem Kommando, das forkt', async () => {
+    // Der Fall, der die Zeitgrenze wirklich braucht. `sleep 5` allein prueft die eine Form, die
+    // die Shell mit `exec` an sich zieht — dort genuegt ein Kill auf die eine Pid, und der Test
+    // war gruen, waehrend die Grenze fuer jede Pipeline und jeden Hintergrundjob nicht band.
+    // Gemessen ohne Gruppenkill: 5024 ms bei 300 ms Grenze, mit `zeitueberschreitung: true`.
+    // Die Wanduhr ist darum die Zusicherung, nicht die Flagge.
+    const t0 = Date.now()
+    const r = await starte('sleep 5 | cat', ktx, 'zu', 300)
+    expect(r.zeitueberschreitung).toBe(true)
+    expect(Date.now() - t0).toBeLessThan(2000)
   }, 20_000)
 
   it('deckelt die Ausgabe und sagt es', async () => {
@@ -515,6 +589,19 @@ import { getEnhancedPath } from '../util/exec-util'
 export const STANDARD_ZEITGRENZE_MS = 120_000
 
 /**
+ * Die Decke ueber der Vorgabe. `shell_ausfuehren` nimmt `zeitgrenzeMs` aus der Modelleingabe
+ * entgegen; ohne diese Grenze waere die Vorgabe darueber eine Empfehlung und kein Rand — ein
+ * `zeitgrenzeMs: 100000000` hielte den Lauf tagelang offen. Anpassbare Flaeche (CK-NFR-012).
+ *
+ * Dazu ein Testsaum (`_testSetzeMaxZeitgrenzeMs` / `_testMaxZeitgrenzeMsZuruecksetzen`) nach dem
+ * Muster von `_testSetzeSuchZeitbudgetMs` in werkzeug-datei.ts: fuenfzehn Minuten sind in einem
+ * Test nicht abwartbar, und eine Decke, die kein Test haelt, ist eine Zusage im Kommentar. Die
+ * Uebersteuerung ersetzt **nur die Konstante**, nicht die Klemmung — der Test faehrt also den
+ * echten Ausdruck und nicht den Saum. Produktionscode ruft ihn nie.
+ */
+export const MAX_ZEITGRENZE_MS = 15 * 60_000
+
+/**
  * Output cap. Not comfort: the output goes into the model context. An `npm ci` with 4 MB of
  * output blows a local 27B model's window in a single turn, and then the test track measures who
  * guessed `--silent`.
@@ -546,6 +633,14 @@ export function starte(
       ['-p', profil, '/bin/sh', '-c', kommando],
       {
         cwd: ktx.wurzel,
+        // `detached` makes the child a process *group* leader, and that is what makes the wall
+        // clock below binding. Without it, `kill` reaches only the `sandbox-exec` pid: for a
+        // command the shell can `exec` in place that is the same process and it works, but any
+        // command that forks — a pipeline, a background job, i.e. every real build tool — leaves
+        // grandchildren holding the stdout pipe open, and `close` does not fire until they finish
+        // on their own. Measured on 2026-08-30 against a 300 ms limit: `sleep 5` ended after
+        // 306 ms, `sleep 5 | cat` after 5024 ms with the flag already claiming a timeout.
+        detached: true,
         env: {
           PATH: getEnhancedPath(),
           HOME: ktx.heim,
@@ -572,7 +667,10 @@ export function starte(
 
     const wecker = setTimeout(() => {
       zeitueberschreitung = true
-      kind.kill('SIGKILL')
+      // The negated pid is the process *group*, which is the whole point of `detached` above.
+      // Wrapped, because the group can already be gone between the timer firing and the signal
+      // (ESRCH) — and a throw here would escape the promise instead of ending the run.
+      try { process.kill(-kind.pid!, 'SIGKILL') } catch { /* schon beendet */ }
     }, zeitgrenzeMs)
 
     kind.on('error', (err) => {
@@ -651,7 +749,11 @@ Das ist der Beweis, dass der Wächter beisst — er ist hier ohne Zutun rot gewo
 In `src/renderer/components/harness/EreignisPanel.tsx`, in `FARBE` nach `'tool.schema_loaded'`:
 
 ```ts
-  'tool.entschieden': '#e0af68',
+  // Nicht `#e0af68` — das ist `tool.intent`, und genau diese beiden stehen fuer denselben
+  // Aufruf direkt untereinander. Zwei gleiche Farben ausgerechnet dort heben die Farbspalte
+  // fuer das eine Paar auf, fuer das sie gebaut ist. Magenta ist in dieser Tabelle unbenutzt
+  // und von Gelb auf einen Blick zu unterscheiden.
+  'tool.entschieden': '#ff007c',
 ```
 
 In `kurzfassung`, nach dem Fall `'tool.schema_loaded'`:
@@ -665,16 +767,34 @@ In `kurzfassung`, nach dem Fall `'tool.schema_loaded'`:
         : `${String(n.name)} ABGELEHNT: ${String(n.grund)}`
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: Beide Zweige der Kurzfassung belegen**
+
+Der Reihen-Wächter läuft über `EREIGNIS_ARTEN` mit einer gemeinsamen Nutzlast, die kein `erlaubt`
+trägt — er trifft damit **nur** den Ablehnungszweig. Der Ja-Zweig ginge ungeprüft ins Feld, und er
+ist der häufigere. Zwei Tests dazu, neben den bestehenden Einzelfällen (`nennt bei skill.geladen…`):
+
+```ts
+  it('nennt bei tool.entschieden zuerst das Urteil, nicht den Grund', () => {
+    const e = { art: 'tool.entschieden', nutzlast: { aufrufId: 'a1', name: 'datei_schreiben', erlaubt: true, grund: 'Pfad liegt in der Wurzel' } }
+    expect(kurzfassung(e as never)).toBe('datei_schreiben erlaubt')
+  })
+
+  it('nennt bei einer Ablehnung den Grund, weil nur dort einer etwas aussagt', () => {
+    const e = { art: 'tool.entschieden', nutzlast: { aufrufId: 'a1', name: 'datei_schreiben', erlaubt: false, grund: 'Pfad liegt ausserhalb der Wurzel' } }
+    expect(kurzfassung(e as never)).toBe('datei_schreiben ABGELEHNT: Pfad liegt ausserhalb der Wurzel')
+  })
+```
+
+- [ ] **Step 5: Run tests to verify they pass**
 
 Run: `npx vitest run tests/renderer/ereignis-panel.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 npm run typecheck && npx vitest run tests/renderer/ereignis-panel.test.ts
-git add src/main/harness/ereignisse.ts src/renderer/components/harness/EreignisPanel.tsx
+git add src/main/harness/ereignisse.ts src/renderer/components/harness/EreignisPanel.tsx tests/renderer/ereignis-panel.test.ts
 git commit -m "feat(protokoll): tool.entschieden als eigene Ereignisart, im Panel sichtbar"
 ```
 
@@ -691,7 +811,9 @@ git commit -m "feat(protokoll): tool.entschieden als eigene Ereignisart, im Pane
 - Produces:
   - `const WIRKENDE_WERKZEUGE: ReadonlySet<string>` — `datei_schreiben`, `datei_loeschen`, `shell_ausfuehren`
   - `function istWirkend(name: string): boolean`
-  - `type Urteil = { erlaubt: true; grund: string } | { erlaubt: false; grund: string }`
+  - `type Urteil = { erlaubt: boolean; grund: string }` — **ein** Objekt, keine Union: der Grund
+    steht in beiden Fällen, weil auch ein Ja begründet ins Protokoll gehört. Wer nur Ablehnungen
+    begründet, macht aus einem geprüften Ja ein ungeprüftes.
   - `function entscheide(name: string, eingabe: Record<string, unknown>, wache: WacheKontext): Urteil`
   - `function effekteOhneEntscheidung(ereignisse: Ereignis[]): Ereignis[]`
 
@@ -1001,8 +1123,10 @@ describe('datei_schreiben', () => {
   })
 
   it('folgt keinem Symlink aus der Wurzel heraus', async () => {
-    // Die Pfadwache loest Symlinks auf und lehnt darum ab; O_NOFOLLOW schliesst zusaetzlich das
-    // Zeitfenster zwischen Pruefung und Oeffnen.
+    // Was dieser Test belegt, ist die **Pfadwache**, nicht O_NOFOLLOW: `pruefePfad` loest den
+    // Symlink auf, sieht ein Ziel ausserhalb der Wurzel und lehnt ab — `openSync` wird nie
+    // erreicht. O_NOFOLLOW greift nur bei einem Tausch *nach* der Aufloesung, und diesen Fall
+    // belegt kein Test dieser Strecke (siehe den Kommentar an `dateiSchreiben`).
     symlinkSync(join(heim, 'geheim', 'ziel.txt'), join(wurzel, 'abkuerzung.txt'))
     const r = await schreiben.ausfuehren({ pfad: 'abkuerzung.txt', inhalt: 'zerstoert' }, ktx)
     expect(r.ok).toBe(false)
@@ -1023,6 +1147,9 @@ describe('datei_schreiben', () => {
 
   it('nennt seine Quelle als lokal', async () => {
     const r = await schreiben.ausfuehren({ pfad: 'a.ts', inhalt: 'x' }, ktx)
+    // Unbedingt, nicht bloss hinter `if (r.ok)`: sonst besteht der Test auch dann, wenn das
+    // Schreiben scheiterte — und ein Test, der im Fehlerfall nichts zusichert, prueft nichts.
+    expect(r.ok).toBe(true)
     if (r.ok) expect(r.quelle).toBe('lokal')
   })
 })
@@ -1085,7 +1212,7 @@ Create `src/main/harness/werkzeug-schreiben.ts`:
  * evidence*, not on suspicion.
  */
 
-import { closeSync, constants, mkdirSync, openSync, statSync, unlinkSync, writeSync } from 'node:fs'
+import { closeSync, constants, mkdirSync, openSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, relative } from 'node:path'
 import { pruefePfad } from './pfadwache'
 import type { Werkzeug, WerkzeugErgebnis, WerkzeugKontext } from './werkzeuge'
@@ -1115,16 +1242,33 @@ const dateiSchreiben: Werkzeug = {
     if (!wache.ok) return { ok: false, meldung: wache.grund }
 
     try {
+      // Laeuft vor dem bewachten Oeffnen und hat kein Gegenstueck zu O_NOFOLLOW. Scheitert das
+      // Oeffnen danach, bleiben die hier angelegten Verzeichnisse liegen: das Ergebnis ist
+      // `ok: false`, die Verzeichnisse sind trotzdem da. Fuer einen von der Wache abgelehnten
+      // Pfad passiert das nicht — der kehrt oben um, bevor diese Zeile laeuft.
       mkdirSync(dirname(wache.pfad), { recursive: true })
-      // O_NOFOLLOW on the final component. pfadwache resolves symlinks *before* the check; between
-      // check and open a symlink can be swapped (TOCTOU). This closes that constructively instead
-      // of noting it as residual risk.
+      // O_NOFOLLOW auf der letzten Komponente. Was es leistet und was nicht, genau benannt —
+      // die erste Fassung dieses Kommentars war eine Ueberbehauptung und ein Review hat sie
+      // auseinandergenommen:
+      //
+      // pfadwache loest Symlinks auf und gibt den **aufgeloesten** Pfad zurueck. Im Normalbetrieb
+      // sieht `openSync` deshalb nie einen Symlink, und das Flag greift nicht — der Symlink-Test
+      // dieser Datei ist aus genau diesem Grund gruen, nicht wegen O_NOFOLLOW. Das Flag greift in
+      // einem Fall: die letzte Komponente wird zwischen Aufloesung und Oeffnen getauscht (TOCTOU).
+      // **Kein Test dieser Strecke belegt ihn** — synchron und ohne Mocks ist er nicht
+      // herstellbar. Tiefenverteidigung gegen ein echtes Rennen, keine gepruefte Zusage.
+      //
+      // Nicht gedeckt: dasselbe Rennen um ein *Zwischenverzeichnis* (siehe `mkdirSync` darueber).
+      // Benanntes Restrisiko, nicht geschlossen.
       const fd = openSync(
         wache.pfad,
         constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
         0o644,
       )
-      try { writeSync(fd, inhalt) } finally { closeSync(fd) }
+      // `writeFileSync` ueber dem Deskriptor, nicht `writeSync`: letzteres ist ein duenner Aufsatz
+      // auf write(2) und darf weniger schreiben als der Puffer haelt. Sein Rueckgabewert wurde
+      // nicht geprueft, ein Teilschreibvorgang waere also als Erfolg durchgegangen.
+      try { writeFileSync(fd, inhalt) } finally { closeSync(fd) }
     } catch (err) {
       const m = err instanceof Error ? err.message : String(err)
       return { ok: false, meldung: `Datei nicht schreibbar: ${relative(ktx.wache.wurzel, wache.pfad)} (${m})` }
@@ -1222,7 +1366,7 @@ Create `tests/harness/werkzeug-shell.test.ts`:
 
 ```ts
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { mkdtempSync, mkdirSync, rmSync, readFileSync, realpathSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, realpathSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { istPaketbefehl } from '../../src/main/harness/sandkasten'
@@ -1264,9 +1408,17 @@ beforeAll(() => {
   wurzel = join(heim, 'projekt')
   mkdirSync(wurzel, { recursive: true })
   const wache = { wurzel, heim, userDataPfad: join(heim, 'userData') }
+  // Ein eigenes Verzeichnis, **nicht** die OS-Temp-Wurzel: `realpathSync(tmpdir())` ist der
+  // Vorfahr dieses ganzen Testbaums (heim liegt selbst darunter), und
+  // `(allow file-write* (subpath <tmpdir>))` machte damit die Grenze um `heim` gegenstandslos —
+  // derselbe Fall wie in sandkasten-lauf.test.ts, dort schon einmal gefunden. In der Produktion
+  // ist TMPDIR kein Vorfahr des Heimatverzeichnisses; die Fixture muss dieselbe Lage herstellen,
+  // sonst prueft sie einen Fall, den es nicht gibt.
+  const eigenesTmp = join(heim, 'tmp')
+  mkdirSync(eigenesTmp, { recursive: true })
   ktx = {
     wache, graphDb: null,
-    sandkasten: { ...wache, zwischenspeicher: [], tmpdir: realpathSync(tmpdir()) },
+    sandkasten: { ...wache, zwischenspeicher: [], tmpdir: eigenesTmp },
   }
 })
 afterAll(() => rmSync(heim, { recursive: true, force: true }))
@@ -1275,13 +1427,15 @@ describe.skipIf(process.platform !== 'darwin')('shell_ausfuehren — echter Lauf
   it('fuehrt aus und gibt die Ausgabe zurueck', async () => {
     const r = await shell.ausfuehren({ kommando: 'echo hallo' }, ktx)
     expect(r.ok).toBe(true)
-    if (r.ok) expect(r.inhalt[0].text).toContain('hallo')
+    if (r.ok) expect((r.inhalt[0] as { text: string }).text).toContain('hallo')
   })
 
   it('nennt den Rueckgabecode bei einem Fehlschlag, statt still ok zu melden', async () => {
     const r = await shell.ausfuehren({ kommando: 'exit 3' }, ktx)
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.meldung).toContain('3')
+    // 'Rueckgabecode 3', nicht bloss '3': jede dreistellige Zahl in irgendeiner Meldung wuerde
+    // sonst genuegen, und der Test sagte nichts ueber den Code aus.
+    if (!r.ok) expect(r.meldung).toContain('Rueckgabecode 3')
   })
 
   it('schreibt in der Wurzel', async () => {
@@ -1293,13 +1447,22 @@ describe.skipIf(process.platform !== 'darwin')('shell_ausfuehren — echter Lauf
   it('schreibt nicht ausserhalb der Wurzel', async () => {
     const r = await shell.ausfuehren({ kommando: `echo raus > ${heim}/verboten.txt` }, ktx)
     expect(r.ok).toBe(false)
+    // Die eigentliche Zusicherung: `ok: false` allein bestuende auch, wenn der Sandkasten aus
+    // einem ganz anderen Grund nicht startete. Was zaehlt, ist dass die Datei nie entstand.
+    expect(existsSync(join(heim, 'verboten.txt'))).toBe(false)
   })
 
   it('bekommt ohne Paketbefehl kein Netz', async () => {
+    // `|| true` ist hier nicht Bequemlichkeit, sondern die Bedingung dafuer, dass der Test
+    // ueberhaupt etwas prueft: ohne Socket endet `curl` mit einem Fehlercode, `shell_ausfuehren`
+    // liefert dann `ok: false` — und eine Zusicherung hinter `if (r.ok)` liefe genau im
+    // geprueften Fall ins Leere. Mit `|| true` endet die Shell mit 0, das Ergebnis ist `ok`, und
+    // die Ausgabe traegt die 000, auf die es ankommt.
     const r = await shell.ausfuehren(
-      { kommando: 'curl -s -m 8 -o /dev/null -w "%{http_code}" https://example.com' }, ktx,
+      { kommando: 'curl -s -m 8 -o /dev/null -w "%{http_code}" https://example.com || true' }, ktx,
     )
-    if (r.ok) expect(r.inhalt[0].text).toContain('000')
+    expect(r.ok).toBe(true)
+    if (r.ok) expect((r.inhalt[0] as { text: string }).text).toContain('000')
   }, 20_000)
 
   it('nennt ein fehlendes Kommando', async () => {
@@ -1335,8 +1498,16 @@ Expected: FAIL — `istPaketbefehl` und das Modul `werkzeug-shell` fehlen.
  * does not match here. If the match is wrong, the failure case is a failing build, never an open
  * channel: it errs fail-closed, and that is exactly why it is allowed to be imprecise.
  *
- * What it does not close, and the tool text says so too: a `postinstall` script runs with full
- * network under `offen`. That is the same gap a human takes on when typing `npm ci` themselves.
+ * Zwei Loecher, beide benannt und keines geschlossen:
+ *
+ * - Ein `postinstall`-Skript laeuft unter `offen` mit vollem Netz. Dieselbe Luecke, die ein
+ *   Mensch eingeht, der selbst `npm ci` tippt.
+ * - Der Treffer gilt dem **fuehrenden** Kommando der Zeile, und das Profil gilt der ganzen Zeile:
+ *   `npm ci && curl …` traegt beides ins Netz. Ein vorangestelltes `cd sub && npm ci` trifft
+ *   dagegen nicht und laeuft ohne Netz — die Ungenauigkeit irrt also in beide Richtungen, nicht
+ *   nur in die sichere. Sie gewinnt nichts, was ein selbstgeschriebenes `postinstall` nicht auch
+ *   gaebe, und darum bleibt der Abgleich wie er ist; die Aussage darueber wird korrigiert, nicht
+ *   der Abgleich.
  */
 export const PAKETBEFEHLE = [
   'npm ci', 'npm install', 'npm i ', 'yarn install', 'pnpm install', 'pnpm i ',
@@ -1403,34 +1574,63 @@ const shellAusfuehren: Werkzeug = {
       return { ok: false, meldung: 'Fuer diesen Lauf ist kein Sandkasten eingerichtet — es wird nichts ausgefuehrt.' }
     }
 
-    const zeitgrenze = typeof eingabe.zeitgrenzeMs === 'number' && eingabe.zeitgrenzeMs > 0
+    // Gedeckelt, nicht bloss uebernommen: der Wert kommt aus der Modelleingabe, und ohne
+    // Obergrenze waere `STANDARD_ZEITGRENZE_MS` an dem einen Werkzeug, das Prozesse startet, eine
+    // Empfehlung statt einer Decke — ein `zeitgrenzeMs: 100000000` hielte den Lauf tagelang offen.
+    // Das ist keine Kommandopruefung: es sieht `kommando` nicht an.
+    const gewuenscht = typeof eingabe.zeitgrenzeMs === 'number' && eingabe.zeitgrenzeMs > 0
       ? eingabe.zeitgrenzeMs
       : STANDARD_ZEITGRENZE_MS
+    const zeitgrenze = Math.min(gewuenscht, MAX_ZEITGRENZE_MS)
 
     const netz = istPaketbefehl(kommando) ? 'offen' : 'zu'
     const r = await starte(kommando, ktx.sandkasten, netz, zeitgrenze)
 
+    // Vor der Fallunterscheidung berechnet, weil er in **jeden** Ausgang gehoert. Vorher hing er
+    // nur am Erfolg — und abgeschnitten wird am ehesten der fehlgeschlagene Bau, also genau der
+    // Fall, in dem das Modell sonst einen gekuerzten Fehler liest, den echten Fehler vermisst
+    // und raet.
+    const hinweis = r.abgeschnitten ? '\n(Ausgabe abgeschnitten.)' : ''
+
     // Named apart, because they mean different things to whoever reads the log: a wall-clock
     // ceiling that ran out, versus a boundary that refused. Conflating them turns a sandbox
     // rejection into a mysterious build error.
+    // In allen drei Ausgaengen steht keels Satz **vorn** und die fremde Ausgabe dahinter: eine
+    // Abhaengigkeit, die eine Zeile im Stil dieser Meldungen druckt, kann sie damit nicht
+    // vortaeuschen — sie kaeme immer danach.
     if (r.zeitueberschreitung) {
-      return { ok: false, meldung: `Abgebrochen: die Zeitgrenze von ${zeitgrenze} ms ist ueberschritten.` }
+      return {
+        ok: false,
+        meldung: `Abgebrochen: die Zeitgrenze von ${zeitgrenze} ms ist ueberschritten.\n${r.ausgabe}${hinweis}`,
+      }
+    }
+    // Ein Spawn-Fehler liefert ebenfalls `code: null` — ohne eigenen Zweig kaeme er als
+    // "Rueckgabecode null" heraus, und ein Modell suchte den Fehler in seinem Kommando statt im
+    // Sandkasten, der gar nicht erst startete. Drei Ausgaenge, drei Texte.
+    if (r.code === null) {
+      return { ok: false, meldung: `Der Sandkasten liess sich nicht starten: ${r.ausgabe}` }
     }
     if (r.code !== 0) {
       return {
         ok: false,
-        meldung: `Kommando endete mit Rueckgabecode ${String(r.code)}.\n${r.ausgabe}`,
+        meldung: `Kommando endete mit Rueckgabecode ${String(r.code)}.\n${r.ausgabe}${hinweis}`,
       }
     }
 
-    const hinweis = r.abgeschnitten ? '\n(Ausgabe abgeschnitten.)' : ''
     const netzHinweis = netz === 'offen' ? '\n(Als Paketbefehl erkannt — mit Netzzugang gelaufen.)' : ''
+    const notizen = (hinweis + netzHinweis).trimStart()
     return {
       ok: true,
       // `fremd`, not `lokal`: what a build tool prints is not keel's word. A dependency can print
       // whatever it likes into that stream, and it lands in the model's context.
       quelle: 'fremd',
-      inhalt: [{ art: 'text', text: r.ausgabe + hinweis + netzHinweis }],
+      // Keels eigene Notizen in einem **eigenen** Block, nicht an die fremde Ausgabe geklebt.
+      // Sonst faelscht eine Abhaengigkeit, die "(Als Paketbefehl erkannt …)" druckt, eine Aussage
+      // ueber den Netzmodus dieses Laufs — dieselbe Faelschungsklasse, deretwegen der Stummel
+      // dieses Werkzeugs einzeilig bleiben muss (siehe Modulkopf).
+      inhalt: notizen === ''
+        ? [{ art: 'text', text: r.ausgabe }]
+        : [{ art: 'text', text: r.ausgabe }, { art: 'text', text: notizen }],
     }
   },
 }
@@ -1523,8 +1723,6 @@ import { SCHREIB_WERKZEUGE } from '../../src/main/harness/werkzeug-schreiben'
 import { DATEI_WERKZEUGE } from '../../src/main/harness/werkzeug-datei'
 import { effekteOhneEntscheidung } from '../../src/main/harness/tor'
 import { effekteOhneIntent } from '../../src/main/harness/intent-vor-effekt'
-// baueUmgebung: aus tests/harness/lauf.test.ts uebernommen — dieselbe Zusammensetzung,
-// nur mit einer anderen Registry und einer Wurzel im Wegwerf-Verzeichnis.
 import { baueUmgebung } from './lauf.test-helfer'
 
 let heim: string
@@ -1636,9 +1834,39 @@ describe('Waechter ueber einem echten Lauf', () => {
 })
 ```
 
-**Schritt vor dem Schreiben dieser Datei:** `tests/harness/lauf.test.ts` lesen, den dortigen Aufbau der `LaufUmgebung` in eine neue Datei `tests/harness/lauf.test-helfer.ts` herausziehen (als `export function baueUmgebung(...)`), und `lauf.test.ts` auf den Helfer umstellen. Die bestehenden Tests dort müssen danach unverändert grün sein — das ist die Probe, dass der Auszug nichts verändert hat.
+**Schritt vor dem Schreiben dieser Datei — und er ist genau festgelegt, damit niemand raten muss.**
 
-Run nach dem Auszug: `npx vitest run tests/harness/lauf.test.ts` → **muss PASS sein**, bevor es weitergeht.
+`tests/harness/lauf.test.ts:29` hat heute `umgebungMit(antworten, gesendet)`. Sie nagelt zwei Dinge fest, die dieser Test variieren muss: `wurzel: '/tmp'` (Zeile 36) und `registry: new WerkzeugRegistry([])` (Zeile 38). Ausserdem hängen `EINTRAG` (Zeile 11) und `AUFTRAG` (Zeile 23) daneben.
+
+Zu tun:
+
+1. Neue Datei `tests/harness/lauf.test-helfer.ts`. Dorthin wandern **unverändert** `EINTRAG`, `AUFTRAG`, `antwort()`, `antwortLeer()` und der Rumpf von `umgebungMit`, letzterer erweitert um zwei optionale Felder:
+
+```ts
+export function baueUmgebung(opts: {
+  antworten: ModelAntwort[]
+  gesendet?: PraefixText[]
+  /** Vorgabe '/tmp', wie bisher. */
+  wurzel?: string
+  /** Vorgabe: dieselbe wie wurzel, wie bisher. */
+  heim?: string
+  /** Vorgabe: leer, wie bisher. */
+  registry?: WerkzeugRegistry
+  sandkasten?: SandkastenKontext
+}): LaufUmgebung
+```
+
+2. In `lauf.test.ts` bleibt `umgebungMit` als **dünne Hülle** stehen, damit keine der 359 Zeilen dort umgeschrieben werden muss:
+
+```ts
+function umgebungMit(antworten: ModelAntwort[], gesendet: PraefixText[] = []) {
+  return baueUmgebung({ antworten, gesendet })
+}
+```
+
+3. `npx vitest run tests/harness/lauf.test.ts` → **muss PASS sein, unverändert**, bevor irgendetwas anderes passiert. Das ist die Probe, dass der Auszug nichts verschoben hat. Schlägt auch nur ein Test dort fehl, ist der Auszug falsch — nicht der Test.
+
+**Warum die leere Registry der Vorgabewert bleiben muss:** Task 8 gibt Läufen mit wirkenden Werkzeugen eine Git-Vorbedingung. `lauf.test.ts` fährt über `/tmp` und würde daran scheitern — es scheitert nur deshalb nicht, weil seine Registry leer ist und die Bedingung gar nicht greift. Wer hier eine nicht-leere Vorgabe einsetzt, bricht Task 8 an einer Stelle, die niemand mit Task 8 in Verbindung bringt.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1653,7 +1881,13 @@ In `src/main/harness/lauf.ts`, in `fuehreAus`, **unmittelbar nach** der `tool.in
   // Ankuendigung, Entscheidung, Wirkung. Nur wirkende Werkzeuge: die Kette auch ueber die
   // lesenden zu legen hiesse, jedem Lesevorgang ein Ereignis zu spendieren, dessen Antwort immer
   // ja ist — das Protokoll wuerde laenger und nicht wahrer.
+  // `istWirkend` davor ist nicht bloss eine Abkuerzung, sondern die Bedingung, unter der
+  // `entscheide` ueberhaupt aussagekraeftig ist: fuer jeden Namen ausser `shell_ausfuehren` faellt
+  // es in den Pfadzweig und beurteilte ein `pfad`-Feld, das ein fremdes Werkzeug gar nicht hat.
   if (istWirkend(a.name)) {
+    // `.erlaubt` wird sofort gelesen. `entscheide` gibt **immer** ein Objekt zurueck, also waere
+    // ein `if (entscheide(...))` immer wahr und das Tor stillschweigend abgeschaltet — der Typ
+    // kann das nicht verhindern. Was es verhindert, ist die Mutationsprobe in Step 5.
     const urteil = entscheide(a.name, a.eingabe, u.wache)
     schreibe(u, laufId, 'tool.entschieden', {
       aufrufId: a.id, name: a.name, erlaubt: urteil.erlaubt, grund: urteil.grund,
@@ -1816,7 +2050,24 @@ describe('pruefeArbeitsbaum', () => {
   it('lehnt ein Verzeichnis ohne Git ab — nicht Start mit Warnung', async () => {
     const r = await pruefeArbeitsbaum(wurzel)
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.meldung).toContain('Git')
+    if (!r.ok) expect(r.meldung).toContain('kein Git-Repository')
+  })
+
+  it('unterscheidet ein fehlendes git-Binary vom fehlenden Repository', async () => {
+    // Ohne diese Unterscheidung schickt die Meldung jemanden zu `git init`, waehrend das Problem
+    // ein nicht installiertes git ist. Der PATH wird hier geleert, damit execFile ENOENT wirft.
+    const alterPfad = process.env.PATH
+    process.env.PATH = ''
+    try {
+      const r = await pruefeArbeitsbaum(wurzel)
+      expect(r.ok).toBe(false)
+      if (!r.ok) {
+        expect(r.meldung).toContain('nicht aufrufbar')
+        expect(r.meldung).not.toContain('git init')
+      }
+    } finally {
+      process.env.PATH = alterPfad
+    }
   })
 })
 ```
@@ -1852,9 +2103,26 @@ export async function pruefeArbeitsbaum(
 ): Promise<{ ok: true } | { ok: false; meldung: string }> {
   let ausgabe: string
   try {
+    // Ist `wurzel` ein Unterverzeichnis eines groesseren Repos, antwortet git ueber das
+    // **umschliessende** Repo. Eine schmutzige Datei irgendwo darin blockiert dann einen sauberen
+    // Teilbaum. Das ist die sichere Richtung (zu viel verweigert, nie zu wenig), und der Rueckweg
+    // gehoert ohnehin dem Repo, nicht dem Teilbaum — deshalb bleibt es so und steht hier, statt
+    // dass es jemand spaeter als Fehler meldet.
     const r = await execFileAsync('git', ['-C', wurzel, 'status', '--porcelain'])
     ausgabe = String(r.stdout)
-  } catch {
+  } catch (err) {
+    // Zwei Ausgaenge, nicht einer: fehlt das Binary, ist `git init` die falsche Antwort auf das
+    // falsche Problem, und wer der Meldung folgt, sucht an der falschen Stelle. Verweigert wird
+    // in beiden Faellen — unterschieden wird, was der Mensch dagegen tun kann.
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
+      return {
+        ok: false,
+        meldung:
+          `'git' ist auf diesem Rechner nicht aufrufbar. Ein Lauf mit schreibenden Werkzeugen ` +
+          `startet nur dort, wo ein Rueckweg pruefbar ist — installiere git oder nimm die ` +
+          `schreibenden Werkzeuge aus diesem Lauf.`,
+      }
+    }
     return {
       ok: false,
       meldung:
@@ -1868,7 +2136,8 @@ export async function pruefeArbeitsbaum(
       ok: false,
       meldung:
         `Der Arbeitsbaum ist nicht sauber. Ein Lauf mit schreibenden Werkzeugen wuerde Aenderungen ` +
-        `ueberschreiben, die nirgends gesichert sind:\n${ausgabe.trim()}`,
+        `ueberschreiben, die nirgends gesichert sind — sichere sie erst ('git commit' oder ` +
+        `'git stash'):\n${ausgabe.trim()}`,
     }
   }
   return { ok: true }
@@ -2001,6 +2270,9 @@ In `docs/anpassbare-flaechen.md` einen Abschnitt für Paket C ergänzen, mit je 
 - **`STANDARD_ZWISCHENSPEICHER`** (`sandkasten.ts`) — Schreibziele ausserhalb der Wurzel. Warum es sie gibt: `flutter pub get` schreibt nach `~/.pub-cache`, `npm ci` nach `~/.npm`; nur die Wurzel freizugeben hiesse, dass jede Installation scheitert. **Die weichste Stelle des Sandkastens** — jeder Eintrag ist ein Loch, die Liste steht darum an einer Stelle und wächst nicht stillschweigend. Wermutstropfen, der benannt gehört: sobald Flutter installiert ist, braucht es zusätzlich `$FLUTTER_ROOT/bin/cache`, denn Flutter schreibt in die eigene Installation.
 - **`PAKETBEFEHLE`** (`sandkasten.ts`) — welche Kommandos das Netzprofil `offen` bekommen. **Keine Positivliste dessen, was laufen darf:** ein nicht getroffenes Kommando läuft trotzdem, nur ohne Netz. Sie irrt fail-closed und darf darum ungenau sein.
 - **`STANDARD_ZEITGRENZE_MS`** (120 000) und **`MAX_AUSGABE_BYTES`** (65 536) — der Deckel ist kein Komfort: die Ausgabe geht in den Modellkontext.
+- **`MAX_ZEITGRENZE_MS`** (900 000) — die Decke über der Vorgabe. Sie existiert, weil `zeitgrenzeMs` aus der **Modelleingabe** kommt: ohne sie wäre die Vorgabe darüber eine Empfehlung und kein Rand, und ein `zeitgrenzeMs: 100000000` hielte den Lauf tagelang offen. Beim Task-6-Review gefunden, nicht beim Entwurf.
+
+**Der Abgleich ist Pflicht, nicht Kür:** die vier Einträge oben stammen aus dem ersten Entwurf, `MAX_ZEITGRENZE_MS` kam erst durch einen Review dazu. Vor dem Schreiben also `grep -n "^export const [A-Z_]*" src/main/harness/sandkasten.ts` fahren und gegen die Liste halten — eine anpassbare Fläche, die niemand dokumentiert hat, ist genau die, die später niemand findet.
 
 - [ ] **Step 6: Close the outdated promises**
 

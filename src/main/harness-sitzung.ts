@@ -20,7 +20,8 @@
 
 import { app } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
+import { realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { HARNESS_EREIGNIS } from '../shared/ipc-channels'
 import type { HarnessAntwort, HarnessEreignis, LaufAnzeige } from '../shared/harness-types'
@@ -37,9 +38,10 @@ import { baueNetzKontext } from './harness-netz'
 import {
   starteLauf, oeffneHarnessDb, lesen, laufIds, codecFuer, weiterOderFrisch, setzeFolgeauftrag,
   WerkzeugRegistry, DATEI_WERKZEUGE, GRAPH_WERKZEUGE, NETZ_WERKZEUGE, rechercheurWerkzeug,
-  leseFaehigkeiten, faehigkeitLesenWerkzeug,
+  leseFaehigkeiten, faehigkeitLesenWerkzeug, SCHREIB_WERKZEUGE, SHELL_WERKZEUGE,
+  STANDARD_ZWISCHENSPEICHER,
 } from './harness'
-import type { ModelAntwort, Auftrag, LaufUmgebung } from './harness'
+import type { ModelAntwort, Auftrag, LaufUmgebung, SandkastenKontext } from './harness'
 import type { AppServices } from './window-manager'
 import type { EntitaetsTeile, SchleifenStartOpts, SchleifenStartErgebnis } from './agent/agent-adapter'
 
@@ -111,9 +113,55 @@ export function harnessDb(): ReturnType<typeof oeffneHarnessDb> {
  */
 export function baueWerkzeugRegistry(): WerkzeugRegistry {
   return new WerkzeugRegistry([
-    ...DATEI_WERKZEUGE, ...GRAPH_WERKZEUGE, faehigkeitLesenWerkzeug,
+    ...DATEI_WERKZEUGE, ...SCHREIB_WERKZEUGE, ...SHELL_WERKZEUGE,
+    ...GRAPH_WERKZEUGE, faehigkeitLesenWerkzeug,
     ...NETZ_WERKZEUGE, rechercheurWerkzeug,
   ])
+}
+
+/**
+ * Der Sandkastenkontext eines Laufs. Er teilt sich die drei Pfadfelder mit `WacheKontext` — eine
+ * Quelle, damit die Argumentpruefung und die Prozessgrenze nicht ueber verschiedene Verzeichnisse
+ * reden.
+ *
+ * `SandkastenKontext extends WacheKontext` (harness/sandkasten.ts), und darum setzt
+ * `baueLaufUmgebung` unten **dasselbe Objekt** in beide Felder statt zweier Literale. `wurzel`
+ * kaeme in beiden aus demselben Parameter, `heim` und `userDataPfad` aber aus je einem eigenen
+ * Aufruf — und liefen die auseinander, prueft die Wache das eine Verzeichnis, waehrend der
+ * Kindprozess im anderen schreiben darf.
+ */
+/**
+ * Aufgeloest, weil Seatbelt seine Regeln gegen den **kanonischen** Pfad prueft und nicht gegen den
+ * Namen, unter dem wir hineingehen. Ein `(subpath "/var/folders/…")` trifft nichts, weil `/var`
+ * ein Symlink auf `/private/var` ist — und `os.tmpdir()` liefert genau diese Form. Am 2026-08-30
+ * gemessen: `echo x > $TMPDIR/probe` unter einem Profil mit `(allow file-write* (subpath
+ * "/var/folders/…"))` endete mit `Operation not permitted`. Dasselbe gilt fuer eine Projektwurzel,
+ * die ueber einen Symlink erreicht wird: das Kind darf dann in seiner eigenen Wurzel nicht
+ * schreiben, und `npm ci` scheitert als raetselhafter Rechtefehler. Fail-closed, also kein Loch —
+ * aber Annahme §10.2 des Entwurfs verlangt ausdruecklich, dass ein Sandkastenfehler *als solcher*
+ * erkennbar ist, und das war er hier nicht.
+ *
+ * `pfadwache` loest ihrerseits schon auf (`realpathSync` in `pruefePfad`); die beiden Schichten
+ * reden also erst mit dieser Zeile ueber dieselben Verzeichnisse.
+ *
+ * Ein nicht existierender Pfad behaelt seine Form, statt den Bau der Umgebung zu sprengen: dafuer
+ * ist die Git-Vorbedingung in `lauf.ts` zustaendig, und die lehnt eine fehlende Wurzel benannt ab.
+ * Bei den Zwischenspeichern ist es der Normalfall — `~/.pub-cache` gibt es auf dieser Maschine
+ * nicht, und das Profil darf es trotzdem nennen.
+ */
+function aufgeloest(pfad: string): string {
+  try { return realpathSync(pfad) } catch { return pfad }
+}
+
+export function baueSandkastenKontext(wurzel: string): SandkastenKontext {
+  const heim = aufgeloest(homedir())
+  return {
+    wurzel: aufgeloest(wurzel),
+    heim,
+    userDataPfad: aufgeloest(app.getPath('userData')),
+    zwischenspeicher: STANDARD_ZWISCHENSPEICHER.map(p => aufgeloest(join(heim, p))),
+    tmpdir: aufgeloest(tmpdir()),
+  }
 }
 
 export function fehler(err: unknown): HarnessAntwort<never> {
@@ -258,11 +306,22 @@ export async function baueLaufUmgebung(
   for (const u of befund.uebersprungen) {
     console.warn(`[harness-sitzung] Faehigkeit uebersprungen: ${u.pfad} — ${u.grund}`)
   }
+  // Einmal gebaut, zweimal eingesetzt. `SandkastenKontext` erweitert `WacheKontext`, also ist
+  // dasselbe Objekt der Kontext der Argumentpruefung *und* der der Prozessgrenze. Zwei getrennte
+  // Literale waeren zwei Stellen, an denen `heim` oder `userDataPfad` auseinanderlaufen koennen —
+  // und dann prueft die Wache das eine Verzeichnis, waehrend der Kindprozess im anderen schreiben
+  // darf. Genau die Naht, die §3 dieser Strecke aufgemacht hat.
+  const sandkasten = baueSandkastenKontext(wurzel)
   return {
     db: harnessDb(),
     eintrag,
     praefixTeile: assemblePraefixTeile(auftragstext, befund.faehigkeiten, entitaet),
-    wache: { wurzel, heim: homedir(), userDataPfad: app.getPath('userData') },
+    wache: sandkasten,
+    // Reicht bis `shell_ausfuehren`: lauf.ts stellt daraus den `WerkzeugKontext` jedes Aufrufs
+    // zusammen (`sandkasten: u.sandkasten`). Ohne diese Zeile ist das Werkzeug zwar in der
+    // Registry, antwortet aber auf **jeden** Aufruf „Fuer diesen Lauf ist kein Sandkasten
+    // eingerichtet" — verdrahtet und nutzlos, und jeder Test darunter bliebe gruen.
+    sandkasten,
     graphDb: services.graphDb,
     registry: baueWerkzeugRegistry(),
     // Der Hauptlauf faehrt gegen die Positivliste ('whitelist'). Der Unterlauf des Rechercheurs

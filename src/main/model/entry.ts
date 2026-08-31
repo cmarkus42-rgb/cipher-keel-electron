@@ -136,14 +136,20 @@ const FAEHIGKEITEN_RUECKFALL: Faehigkeiten = {
   bilder: false,
   dokumente: false,
   aufgeschobenesLaden: false,
-  // 12, weil der Harness zwoelf Stummel ausliefert: 3 Datei- + 4 Graph-Werkzeuge,
-  // `faehigkeit_lesen`, `web_suchen`, `seite_lesen`, `recherchieren` und `werkzeug_schema`
-  // (letzteres nur bei aufgeschobenem Laden). Mit einem zu kleinen Rueckfall schriebe jeder
-  // Eintrag mit aufgeschobenem Laden bei *jedem* Lauf einen Hinweis in `run.started` — eine
-  // Warnung, die bei der Vorgabekonfiguration immer anschlaegt, nutzt sich ab, bis niemand mehr
-  // hinsieht. Die Zahl haengt an tests/harness/werkzeugliste.test.ts, und der prueft gegen die
-  // echte Konstruktion in harness-sitzung.ts, nicht gegen einen Nachbau.
-  werkzeugObergrenze: 12,
+  // 15, weil der Harness fuenfzehn Stummel ausliefert: 3 Datei- + 2 Schreib- + 1 Shell-Werkzeug,
+  // 4 Graph-Werkzeuge, `faehigkeit_lesen`, `web_suchen`, `seite_lesen`, `recherchieren` und
+  // `werkzeug_schema` (letzteres nur bei aufgeschobenem Laden). Mit einem zu kleinen Rueckfall
+  // schriebe jeder Eintrag mit aufgeschobenem Laden bei *jedem* Lauf einen Hinweis in
+  // `run.started` — eine Warnung, die bei der Vorgabekonfiguration immer anschlaegt, nutzt sich
+  // ab, bis niemand mehr hinsieht. Die Zahl haengt an tests/harness/werkzeugliste.test.ts, und
+  // der prueft gegen die echte Konstruktion in harness-sitzung.ts, nicht gegen einen Nachbau.
+  //
+  // Von 12 auf 15 nachgezogen, als Paket C die drei wirkenden Werkzeuge verdrahtete. Das ist
+  // **keine** Aussage darueber, dass ein Modell fuenfzehn Werkzeuge besser vertraegt als zwoelf:
+  // dieser Rueckfall zaehlt aus, was ausgeliefert wird, und er ist `quelle: 'vermutet'`. Eine
+  // Faehigkeitszeile mit eigener, gemessener Zahl bleibt davon unberuehrt und bekommt den Hinweis
+  // — das ist der Sinn des Hinweises (M8 4.10), nicht sein Fehler.
+  werkzeugObergrenze: 15,
   nutzbaresKontextfenster: 8192,
   vertragsStrenge: { schemaTiefe: 1, reparaturversuche: 1 },
   rundenbudget: 12,

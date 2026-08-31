@@ -72,6 +72,16 @@ describe('EreignisPanel — jede Ereignisart ist sichtbar', () => {
     expect(kurzfassung(ereignis('auftrag.folgend'))).toBe(`${laenge} Zeichen`)
   })
 
+  it('nennt bei tool.entschieden zuerst das Urteil, nicht den Grund', () => {
+    const e = { art: 'tool.entschieden', nutzlast: { aufrufId: 'a1', name: 'datei_schreiben', erlaubt: true, grund: 'Pfad liegt in der Wurzel' } }
+    expect(kurzfassung(e as never)).toBe('datei_schreiben erlaubt')
+  })
+
+  it('nennt bei einer Ablehnung den Grund, weil nur dort einer etwas aussagt', () => {
+    const e = { art: 'tool.entschieden', nutzlast: { aufrufId: 'a1', name: 'datei_schreiben', erlaubt: false, grund: 'Pfad liegt ausserhalb der Wurzel' } }
+    expect(kurzfassung(e as never)).toBe('datei_schreiben ABGELEHNT: Pfad liegt ausserhalb der Wurzel')
+  })
+
   it('erfindet fuer eine unbekannte Art nichts', () => {
     // Die Gegenrichtung: der default-Zweig bleibt leer, statt zu raten. Eine erfundene
     // Kurzfassung fuer eine Art, die dieser Code nicht kennt, waere schlimmer als keine.

@@ -2,8 +2,9 @@
  * ereignisse — what the loop writes down, and nothing else.
  *
  * The list is deliberately shorter than M8 section 3.1: an event type whose trigger does not
- * exist yet is not declared. Tool events are here because this stretch has reading tools;
- * delegation, heartbeat and suspension are not.
+ * exist yet is not declared. Tool events are here because this stretch has tools — reading ones
+ * from the start, and writing and executing ones since 2026-08-30, which is what `tool.entschieden`
+ * below exists for. Delegation, heartbeat and suspension are still not.
  */
 
 /**
@@ -23,6 +24,16 @@ export const EREIGNIS_ARTEN = [
   'tool.completed',
   'tool.failed',
   'tool.schema_loaded',
+  /**
+   * Nutzlast `{aufrufId, name, erlaubt, grund}`. Die Entscheidung zwischen Ankuendigung und
+   * Wirkung, geschrieben fuer jedes wirkende Werkzeug (tor.ts).
+   *
+   * Eigenes Ereignis und kein Feld an `tool.intent`: der Intent wird geschrieben, *bevor*
+   * entschieden ist — nachtraeglich ein Feld hineinzuschreiben hiesse, ein Ereignis zu aendern,
+   * das schon steht. Ein abgelehnter Aufruf war vorher nur an einer ausbleibenden Wirkung zu
+   * erkennen, also gar nicht.
+   */
+  'tool.entschieden',
   // Nutzlast `{name, text}`. Eigenes Ereignis statt eines gewoehnlichen Werkzeugergebnisses, damit
   // im Protokoll sichtbar bleibt, dass eine Faehigkeit tatsaechlich geladen wurde (Spec 5.2, M7).
   'skill.geladen',

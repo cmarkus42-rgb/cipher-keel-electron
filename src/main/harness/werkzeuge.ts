@@ -15,6 +15,7 @@ import type { Block, WerkzeugQuelle } from './form'
 import type { WerkzeugStummel } from './codec'
 import type { WacheKontext } from './pfadwache'
 import type { NetzKontext } from './werkzeug-netz'
+import type { SandkastenKontext } from './sandkasten'
 
 export interface WerkzeugKontext {
   wache: WacheKontext
@@ -29,6 +30,12 @@ export interface WerkzeugKontext {
    * Stelle.
    */
   netz?: NetzKontext
+  /**
+   * Der Prozessrand fuer `shell_ausfuehren`. Optional, und das Werkzeug antwortet ohne ihn
+   * **benannt** statt zu laufen — dieselbe Regel wie bei `netz`: ein Werkzeug ohne seinen Kontext
+   * sagt, was fehlt, statt still etwas anderes zu tun.
+   */
+  sandkasten?: SandkastenKontext
 }
 
 export type WerkzeugErgebnis =

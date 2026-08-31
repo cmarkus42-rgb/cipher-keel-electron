@@ -9,6 +9,7 @@ import { starteLauf } from '../../src/main/harness/lauf'
 import { WerkzeugRegistry } from '../../src/main/harness/werkzeuge'
 import { DATEI_WERKZEUGE } from '../../src/main/harness/werkzeug-datei'
 import { effekteOhneIntent } from '../../src/main/harness/intent-vor-effekt'
+import { effekteOhneEntscheidung } from '../../src/main/harness/tor'
 import type { Ereignis } from '../../src/main/harness/ereignisse'
 import type { ModelAntwort } from '../../src/main/harness/form'
 import type { ModellEintrag } from '../../src/main/model/entry'
@@ -143,6 +144,17 @@ describe('Waechter: kein Effekt ohne Intent', () => {
       { laufId: 'l', seq: 2, ts: 't', art: 'tool.completed', nutzlast: { aufrufId: 'c1', inhalt: [] } },
     ]
     expect(effekteOhneIntent(ereignisse)).toEqual([])
+  })
+})
+
+describe('Waechter: kein Effekt ohne Entscheidung', () => {
+  it('effekteOhneEntscheidung findet ein wirkendes completed ohne vorherige Entscheidung', () => {
+    // Die Regel selbst, gegen Daten geprueft, die sie nicht zum Bestehen gebaut hat — das
+    // Gegenstueck zum echten Lauf in lauf-wirkende-werkzeuge.test.ts.
+    const v = effekteOhneEntscheidung([
+      { laufId: 'l', seq: 0, ts: 't', art: 'tool.completed', nutzlast: { aufrufId: '1', name: 'datei_schreiben' } },
+    ])
+    expect(v).toHaveLength(1)
   })
 })
 

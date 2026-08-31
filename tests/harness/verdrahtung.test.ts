@@ -11,7 +11,11 @@
  * jemand aufruft. Genau diese Luecke schliesst diese Datei — und zwar so, dass sie auch das
  * naechste Werkzeug faengt: geprueft wird gegen die Registry, die `harness-handlers.ts`
  * tatsaechlich baut, nicht gegen eine im Test nachgebaute Liste. Ein nachgebauter Aufruf haette
- * den Befund nicht gefunden (tests/harness/werkzeugliste.test.ts baut nach und war gruen).
+ * den Befund nicht gefunden — tests/harness/werkzeugliste.test.ts baute damals nach und war
+ * gruen. **Das gilt fuer ihn nicht mehr:** er laedt seit dem Befund dieselbe echte
+ * `baueWerkzeugRegistry` (siehe seinen Helfer `ausgelieferteRegistry`), ist also heute so
+ * belastbar wie diese Datei. Der Satz stand hier noch in der alten Form und liess einen Leser
+ * den falschen der beiden Waechter fuer den vertrauenswuerdigen halten.
  *
  * Gegenproben zum Zuordnungsplatz des Rechercheurs (2026-08-22), beide ausgefuehrt und rot
  * gesehen:
@@ -60,6 +64,8 @@ describe('Verdrahtung: gebaute Werkzeuge sind vom Lauf aus erreichbar', () => {
     // nie sieht — und das faellt sonst niemandem auf, weil sein eigener Test gruen bleibt.
     expect(namen).toEqual([
       'datei_lesen',
+      'datei_loeschen',
+      'datei_schreiben',
       'faehigkeit_lesen',
       'graph_abfragen',
       'graph_ausweiten',
@@ -68,10 +74,108 @@ describe('Verdrahtung: gebaute Werkzeuge sind vom Lauf aus erreichbar', () => {
       'inhalt_suchen',
       'recherchieren',
       'seite_lesen',
+      'shell_ausfuehren',
       'verzeichnis_listen',
       'web_suchen',
       'werkzeug_schema',
     ])
+  })
+
+  /**
+   * Die zweite Haelfte, wie beim Netzkontext: die Registry allein genuegt nicht.
+   * `shell_ausfuehren` antwortet ohne `ktx.sandkasten` auf **jeden** Aufruf „Fuer diesen Lauf ist
+   * kein Sandkasten eingerichtet" — ein verdrahtetes, nutzloses Werkzeug, und jeder Test darunter
+   * bliebe gruen. Gebaut wird der Kontext in `baueLaufUmgebung`, und die ist von hier aus nicht
+   * aufrufbar (echte `harness.db`, echtes better-sqlite3-Binding), also wird derselbe Rumpf
+   * gelesen wie beim Rechercheur-Modell darunter. Grob, und der einzige Test, der diesen Ausgang
+   * faengt.
+   */
+  it('setzt einen Sandkastenkontext in die LaufUmgebung ein', async () => {
+    const { readFileSync } = await import('node:fs')
+    const quelle = readFileSync(
+      new URL('../../src/main/harness-sitzung.ts', import.meta.url), 'utf8')
+    const beginn = quelle.indexOf('async function baueLaufUmgebung(')
+    expect(beginn, 'baueLaufUmgebung wurde umbenannt — dieser Test muss mit').toBeGreaterThan(0)
+    const ende = quelle.indexOf('\n}', beginn)
+    const rumpf = quelle.slice(beginn, ende)
+    expect(rumpf, 'baueLaufUmgebung baut keinen Sandkastenkontext — `shell_ausfuehren` steht dann ' +
+      'in der Registry und lehnt jeden Aufruf ab')
+      .toContain('baueSandkastenKontext(wurzel)')
+
+    // Und er muss auch **ankommen**: gebaut und nicht eingesetzt waere genau der Ausgang, um den
+    // es in dieser Datei geht. `wache` bekommt dasselbe Objekt, weil SandkastenKontext den
+    // WacheKontext erweitert — Argumentpruefung und Prozessgrenze reden so ueber ein Verzeichnis.
+    expect(rumpf).toMatch(/^\s*sandkasten,$/m)
+    expect(rumpf).toMatch(/^\s*wache: sandkasten,$/m)
+  })
+
+  /**
+   * Der Kontext muss die Pfade tragen, ueber die das Profil seine Verbote schreibt. Ein leeres
+   * `zwischenspeicher` waere kein Fehler, den irgendetwas anzeigt — `npm ci` schluege dann fehl
+   * und saehe aus wie ein Netzproblem.
+   */
+  it('gibt dem Sandkastenkontext absolute Zwischenspeicherpfade und ein tmpdir', async () => {
+    const { baueSandkastenKontext } = await import('../../src/main/harness-sitzung')
+    const { STANDARD_ZWISCHENSPEICHER } = await import('../../src/main/harness/sandkasten')
+    const { homedir, tmpdir } = await import('node:os')
+    const { realpathSync, mkdirSync } = await import('node:fs')
+    // Angelegt, damit die Aufloesung unten eine feste Antwort hat: `/tmp` ist auf macOS ein
+    // Symlink auf `/private/tmp`, und ob der Pfad existiert, haengt sonst von der Reihenfolge der
+    // Tests in dieser Datei ab.
+    mkdirSync('/tmp/keel-test', { recursive: true })
+    const k = baueSandkastenKontext('/tmp/keel-probe-wurzel')
+
+    expect(k.heim).toBe(realpathSync(homedir()))
+    // Der electron-Ersatz oben gibt diesen Pfad aus — geprueft wird, dass `app.getPath` gefragt
+    // wurde und nicht etwa `wurzel` ein zweites Mal.
+    expect(k.userDataPfad).toBe(realpathSync('/tmp/keel-test'))
+    // **Aufgeloest**, nicht wie geliefert: `os.tmpdir()` gibt auf macOS `/var/folders/…` zurueck,
+    // und `/var` ist ein Symlink auf `/private/var`. Seatbelt prueft gegen den kanonischen Pfad,
+    // ein `(subpath "/var/folders/…")` trifft also nichts — am 2026-08-30 gemessen: das Kind
+    // konnte nicht in sein eigenes TMPDIR schreiben.
+    expect(k.tmpdir).toBe(realpathSync(tmpdir()))
+    expect(k.zwischenspeicher).toHaveLength(STANDARD_ZWISCHENSPEICHER.length)
+    expect(k.zwischenspeicher).toContain(`${realpathSync(homedir())}/.npm`)
+    // Absolut, nicht heimrelativ: das Profil schreibt sie woertlich in ein `(subpath "...")`,
+    // und ein relativer Pfad waere dort eine Regel, die nie greift.
+    for (const p of k.zwischenspeicher) expect(p.startsWith('/')).toBe(true)
+  })
+
+  /**
+   * Die Wurzel geht **aufgeloest** ins Profil. `pfadwache` loest ohnehin auf (`realpathSync` in
+   * `pruefePfad`); das Profil bekam bis zum 2026-08-30 die rohe Zeichenkette, und damit reden die
+   * beiden Schichten ueber verschiedene Verzeichnisse, sobald die Wurzel ueber einen Symlink
+   * erreicht wird. Der Ausgang ist fail-closed und deshalb kein Loch — aber er sieht aus wie ein
+   * raetselhafter Rechtefehler in `npm ci` und nicht wie ein Sandkastenfehler, und genau das
+   * verbietet Annahme §10.2 des Entwurfs.
+   *
+   * Die Fixtures der Sandkastentests loesen selbst auf (`realpathSync(mkdtempSync(...))`, mit
+   * eigenem Kommentar), weshalb kein Test den Produktionsfall je sah.
+   */
+  it('loest die Wurzel auf, bevor sie ins Profil geht', async () => {
+    const { mkdtempSync, mkdirSync, symlinkSync, rmSync, realpathSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { baueSandkastenKontext } = await import('../../src/main/harness-sitzung')
+
+    const basis = realpathSync(mkdtempSync(join(tmpdir(), 'keel-symlink-')))
+    const echt = join(basis, 'echte-wurzel')
+    const ueberLink = join(basis, 'link-auf-wurzel')
+    mkdirSync(echt)
+    symlinkSync(echt, ueberLink)
+    try {
+      expect(baueSandkastenKontext(ueberLink).wurzel).toBe(echt)
+    } finally {
+      rmSync(basis, { recursive: true, force: true })
+    }
+  })
+
+  // Eine Wurzel, die es nicht gibt, behaelt ihre Form, statt den Bau der Umgebung zu sprengen —
+  // dafuer ist die Git-Vorbedingung zustaendig, und die lehnt benannt ab.
+  it('sprengt nichts, wenn es die Wurzel gar nicht gibt', async () => {
+    const { baueSandkastenKontext } = await import('../../src/main/harness-sitzung')
+    expect(baueSandkastenKontext('/gibt-es-nicht/keel-probe').wurzel)
+      .toBe('/gibt-es-nicht/keel-probe')
   })
 
   /**

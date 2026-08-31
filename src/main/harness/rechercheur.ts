@@ -603,6 +603,12 @@ export async function fuehreRecherche(
     // `unterlaufRegistry` traegt, hat es hier keine Datenbank. Zwei Schloesser fuer eine Tuer, weil
     // das eine (die Registry) beim naechsten Umbau geoeffnet werden koennte.
     graphDb: null,
+    // Dasselbe Schloss fuer den Prozessrand, und hier wiegt das Argument schwerer als beim
+    // Graphen: `...ktx.eltern` traegt den Sandkasten des Hauptlaufs herein, und der Verlauf
+    // dieses Unterlaufs ist voll fremden Netztextes. Heute hat `unterlaufRegistry` kein wirkendes
+    // Werkzeug, der geerbte Kontext also keinen Leser — genau der Zustand, in dem die Registry
+    // beim naechsten Umbau als einziges Schloss uebrig bliebe.
+    sandkasten: undefined,
     registry: unterlaufRegistry(tiefe.tiefe),
     // Die drei Schemata stehen im Praefix statt auf Abruf. Gemessen an zehn echten Recherchen
     // (M12, 2026-08-22): das Modell holte in acht von zehn Laeufen zuerst ein oder zwei Schemata

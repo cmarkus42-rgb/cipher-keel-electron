@@ -156,29 +156,39 @@ Funktionen mit je eigenen Tests, nicht eine mit einem Schalter.
 (allow sysctl-read)
 (allow mach-lookup)
 
-; Lesen: grundsaetzlich ja …
+; Lesen: grundsaetzlich ja — die Verbote unten ueberstimmen das
 (allow file-read*)
 
-; … ausser den Verboten der Pfadwache, hier gespiegelt und beidseitig
+; Schreibziele: die Wurzel und die Zwischenspeicher (4.4)
+(allow file-write* (subpath "<wurzel>"))
+(allow file-write* (subpath "<tmpdir>"))
+(allow file-write* (subpath "<zwischenspeicher-1>") …)
+(allow file-write-data (literal "/dev/null"))
+
+; ── Ab hier nur noch Verbote, und keine Erlaubnis darf ihnen folgen ──
 (deny file-read* file-write*
   (subpath "<heim>/.ssh")
   (subpath "<userData>")
-  (regex #"^<heim>/\.cipher-")
-  (regex #"^<heim>/\.(zshrc|zprofile|zshenv|bashrc|bash_profile|profile)$")
+  (regex #"^<heim>/(.*/)?\.cipher-")
+  (regex #"^<heim>/(.*/)?\.(zshrc|zprofile|zshenv|bashrc|bash_profile|profile)$")
   (regex #"^<wurzel>/(.*/)?\.env(\..*)?$")
   (regex #"^<wurzel>/(.*/)?(id_rsa|id_ed25519|id_ecdsa|id_dsa)$")
   (regex #"^<wurzel>/(.*/)?[^/]*\.(pem|key|p12|keystore|jks)$"))
 
-; Schreiben: die Wurzel, und die Verwaltung des Rueckwegs ausdruecklich nicht
-(allow file-write* (subpath "<wurzel>"))
-(deny  file-write* (subpath "<wurzel>/.git"))
-
-; Schreiben ausserhalb: nur die benannten Zwischenspeicher (4.4)
-(allow file-write* (subpath "<tmpdir>"))
-(allow file-write* (subpath "<zwischenspeicher-1>") …)
-
-(allow file-write-data (literal "/dev/null"))
+; Die Verwaltung des Rueckwegs ausdruecklich nicht
+(deny  file-write* (regex #"^<wurzel>/(.*/)?\.git(/|$)"))
 ```
+
+**Die Reihenfolge ist die Aussage, nicht das Vorhandensein der Zeile.** Der erste Entwurf stellte die Verbote nach oben — nach dem Muster von M8 §4.6 und der Pfadwache, wo *„deny rules never yield to an allow rule"* gilt. **SBPL funktioniert nicht so.** Beim Bau von Paket C gemessen, mit zwei Profilen, die sich nur in der Reihenfolge zweier Zeilen unterschieden:
+
+```
+deny .env  VOR  allow file-write* <wurzel>   ->  echo zerstoert > .env  gelingt
+deny .env  NACH allow file-write* <wurzel>   ->  Operation not permitted, Inhalt unveraendert
+```
+
+Seatbelt entscheidet nach der **zuletzt passenden** Regel. Ein Verbot vor einer umfassenderen Erlaubnis sieht im Profiltext aus wie Schutz und ist keiner — und zwar unsichtbar für jede Prüfung, die nur fragt, ob die Zeile da ist. Deshalb: alle Erlaubnisse zuerst, alle Verbote zuletzt, und ein eigener Wächter, der genau diese Ordnung hält.
+
+**Jede dieser Regeln trägt `(.*/)?`, und das ist beim Review aufgefallen, nicht beim Entwurf.** Die erste Fassung sperrte nur direkte Kinder — die Pfadwache prüft aber den **Basename** und `istIn(pfad, heim)`, also jede Tiefe (`pfadwache.ts:99-101`), und ihr `.git`-Verbot trifft *jedes* Segment mit diesem Namen. Ein Sandkasten, der nur `<wurzel>/.git` schützt, lässt das `.git` eines Submoduls offen und ist damit schwächer als die Wache, die er spiegeln soll. Gegen echtes `sandbox-exec` nachgemessen: mit `(.*/)?` fallen verschachteltes `.git` und verschachteltes `.cipher-` beide, ohne es beide nicht.
 
 **Die Endungsverbote sind auf die Wurzel und das Heimverzeichnis verankert, nicht global.** Ein
 globales `deny` auf `*.pem` sperrt `/etc/ssl/cert.pem` und bricht jedes TLS im Kindprozess — also
@@ -204,9 +214,17 @@ läuft das Kommando trotzdem — nur **ohne** Netz. Der Fehlerfall ist ein schei
 offener Kanal. Die Erkennung ist damit eine Bequemlichkeit, die fail-closed irrt, und genau
 deshalb darf sie ungenau sein.
 
-**Was das nicht schliesst, und es steht auch im Werkzeugtext:** ein `postinstall`-Skript läuft
-unter `offen` mit vollem Netz. Das ist dieselbe Lücke, die entsteht, wenn ein Mensch selbst
-`npm ci` tippt — sie wird hier benannt, nicht behauptet.
+**Was das nicht schliesst — und die erste Fassung dieses Absatzes hat es um einen Schritt zu klein
+gemacht:** ein `postinstall`-Skript läuft unter `offen` mit vollem Netz. Hier stand, das sei
+dieselbe Lücke, die entsteht, wenn ein Mensch selbst `npm ci` tippt. Das stimmt nicht: der Mensch,
+der `npm ci` tippt, hat die `package.json` nicht auch geschrieben. Der Lauf kann beides — er
+schreibt sich ein `preinstall`/`postinstall` in die `package.json` und ruft danach den
+Paketbefehl auf, der Netz freischaltet. Aus „eine fremde Abhängigkeit könnte das tun" wird damit
+„der Lauf kann es selbst wollen". Der Weg ins Netz steht ihm also offen, wenn er ihn sucht; was
+bleibt, ist der Rest des Profils (kein `~/.ssh`, kein `~/.cipher-*`, keine `.env`, kein `.git`,
+kein Schreiben ausserhalb der Wurzel und der Zwischenspeicher). Benannt, nicht geschlossen — der
+Abgleich in `PAKETBEFEHLE` wird deswegen *nicht* geändert, weil ein schärferer Abgleich denselben
+Weg nicht verstellt.
 
 **Was es schliesst, und das ist der Grund für den ganzen Modus:** `netzwache.ts` sagt über sich,
 keels §1.1 rechtfertige den Verzicht auf einen Sandkasten damit, *„the only channel out is the
@@ -220,6 +238,14 @@ DGX), das von dieser Maschine aus erreichbar ist.
 **Seatbelt kann `100.64/10` nicht ausdrücken.** Ein Profil kann `localhost` gezielt sperren, aber
 keine CIDR-Bereiche filtern. Das ist eine Grenze des Werkzeugs, keine Entwurfswahl — und der
 Grund, warum die Vorgabe `zu` heisst und nicht „offen ausser innen".
+
+**Nachgetragen am 2026-08-30:** das „kann" oben war lange nur ein Können — das gebaute Profil
+sperrte `localhost` unter `offen` *nicht*, und damit war der MCP-Server aus Paket B unter jedem
+Paketbefehl erreichbar, genau der Fall, den der Absatz darüber beschreibt. `(deny network-outbound
+(remote ip "localhost:*"))` steht jetzt hinter den Erlaubnissen im `offen`-Zweig. Gemessen gegen
+echtes `sandbox-exec`, in beide Richtungen: ohne die Zeile antwortete ein `http.createServer` auf
+`127.0.0.1` mit 200, mit ihr kam 000, während `https://example.com` weiter 200 lieferte. Das
+Tailnet bleibt davon unberührt — dafür bräuchte es den CIDR-Filter, den es nicht gibt.
 
 ### 4.4 Die Zwischenspeicher — eine anpassbare Fläche (CK-NFR-012)
 
@@ -300,10 +326,26 @@ too far should find out, not die."*
 `fuehreAus` — die Kette künstlich auch über sie zu legen hiesse, jedem Lesevorgang ein Ereignis zu
 spendieren, dessen Antwort immer „ja" ist. Das Protokoll würde länger und nicht wahrer.
 
-**Dass das Tor bei `shell_ausfuehren` heute immer ja sagt, ist keine Attrappe** — der Unterschied
-zu `intent-vor-effekt.ts` liegt darin, dass es bei den beiden anderen Werkzeugen wirklich ablehnt
-und die Ablehnung schreibt. Eine Stelle, die für zwei von drei Eingängen nein sagen kann, ist ein
-Tor; eine, die für keinen kann, war der Befund.
+**Was das Tor heute wirklich beiträgt — und es ist weniger, als dieser Abschnitt zuerst nahelegte.**
+Beim Bau von Task 7 gemessen und vom Review unabhängig bestätigt: **das Tor verhindert nie einen
+Effekt allein.** Jeder seiner Ablehnungszweige ist stromabwärts byte-gleich gespiegelt —
+Pfadablehnungen von `werkzeug-schreiben.ts` (das die Pfadwache absichtlich selbst noch einmal
+fragt, §6), fehlende Felder von denselben Stellen, und `shell_ausfuehren` lässt es ohnehin immer
+durch. Nimmt man den Abbruch im Tor heraus, sieht das Protokoll identisch aus.
+
+Sein Beitrag ist damit **der Eintrag `tool.entschieden`**: der prüfbare Nachweis, dass entschieden
+wurde und warum. Das ist kein kleiner Beitrag — eine Ablehnung war vorher nur an einem
+ausbleibenden Effekt zu erkennen, also gar nicht —, aber es ist ein anderer als „es hält die
+Wirkung auf".
+
+**Tragend wird es in dem Moment, in dem ein wirkendes Werkzeug nicht selbst nachprüft.** Genau
+diese Lage stellt der Test mit einem vertrauenden Werkzeug her, und nur dort beisst die
+Mutationsprobe. Das ist zugleich die Warnung an den nächsten Bau: wer ein viertes wirkendes
+Werkzeug ohne eigene Prüfung hinzufügt, verlässt sich auf das Tor — und dann muss es halten.
+
+**Ein Nebenbefund derselben Messung:** zwei Schutzmechanismen, die dieselbe Meldung ausgeben,
+machen einander unprüfbar. Die erste Fassung der Probe hätte das Tor bestätigt, ohne etwas zu
+zeigen.
 
 ---
 
@@ -368,6 +410,25 @@ Commit aufgesetzt, das gehört in den Aufbauschritt.
 zerschreiben; wiederherstellbar ist, was committet war. Das ist der Preis der Entscheidung aus
 Christians Antwort 2, und er wird hier benannt, nicht weggeredet.
 
+### Die Reichweite ist grösser, als dieser Abschnitt zuerst nahelegte
+
+Der Satz oben sagt „ein Lauf, dessen Registry ein wirkendes Werkzeug enthält" — und liest sich, als
+beträfe das manche Läufe. **Seit der Verdrahtung (Task 9) betrifft es alle.** `baueWerkzeugRegistry()`
+ist die einzige Registry der App und trägt die drei wirkenden Werkzeuge immer; die Bedingung ist
+damit unbedingt. Praktisch heisst das: **keel startet über keinem Verzeichnis mehr, das kein
+Git-Repo mit sauberem Arbeitsbaum ist** — auch nicht für eine rein lesende Aufgabe.
+
+Das ist spec-konform und war nicht beabsichtigt. Beim Review von Task 9 gefunden. Wer es ändern
+will, hat drei Wege, und keiner davon ist in diesem Paket gebaut:
+
+1. Die Registry je Lauf zuschneiden, statt eine für alle zu bauen — dann tragen lesende Aufgaben
+   die wirkenden Werkzeuge gar nicht erst.
+2. Die Bedingung an das Preset hängen statt an die Registry.
+3. Sie so lassen: ein Projektverzeichnis ohne Git ist für keel ohnehin ein Sonderfall.
+
+**Die Entscheidung gehört Christian**, weil sie seinen Alltag ändert und nicht bloss eine
+Innenkante berührt.
+
 ---
 
 ## 8. Single-Writer
@@ -429,6 +490,17 @@ Ergebnis gehört in den Bericht — nicht „war mal rot", sondern „beisst".
 4. **Kein CIDR-Filter.** Seatbelt kann `100.64/10` nicht; die Vorgabe `zu` ist die Antwort darauf.
 5. **Die TOCTOU-Lücke im Frisch-Zweig** (aus der Vorgängerübergabe, reiner Lesebefund) wird von
    diesem Paket **nicht** angefasst. `O_NOFOLLOW` in §6 betrifft die Schreibwerkzeuge, nicht sie.
+6. **`O_NOFOLLOW` ist unbelegt, und §6 hat das zunächst anders behauptet.** Der Review von Task 5
+   hat den Kontrollfluss verfolgt: `pruefePfad` gibt den **aufgelösten** Pfad zurück, `openSync`
+   sieht im Normalbetrieb also nie einen Symlink. Das Flag greift ausschliesslich, wenn die letzte
+   Pfadkomponente *zwischen* Auflösung und Öffnen getauscht wird — und dieser Fall ist ohne Mocks
+   nicht synchron herstellbar, also von keinem Test belegt. Der grüne Symlink-Test belegt die
+   Pfadwache, nicht das Flag. Es bleibt als Tiefenverteidigung gegen ein echtes Rennen; die Zusage
+   ist zurückgenommen.
+7. **Dasselbe Rennen um ein Zwischenverzeichnis ist gar nicht gedeckt.** `mkdirSync(…, recursive)`
+   läuft vor dem bewachten Öffnen und hat kein Gegenstück zu `O_NOFOLLOW`. Ein zur Prüfzeit
+   vorhandener Symlink im Pfad fällt bei der Pfadwache; einer, der erst danach entsteht, fällt
+   nirgends. Benannt, nicht geschlossen.
 
 ---
 

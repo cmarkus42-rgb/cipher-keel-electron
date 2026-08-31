@@ -1,9 +1,11 @@
 /**
  * pfadwache — what a reading tool is allowed to touch.
  *
- * This is why reading tools need no sandbox. A string check is theatre against a *shell*, where
- * `$(...)` and a rewritten npm script walk past it. Against a path argument the tool resolves
- * itself it is the thing itself — provided symlinks are resolved first, which is step one.
+ * This is why a tool that resolves its own path argument needs no sandbox — the reading three, and
+ * since 2026-08-30 the two writing ones as well (werkzeug-schreiben.ts). A string check is theatre
+ * against a *shell*, where `$(...)` and a rewritten npm script walk past it. Against a path
+ * argument the tool resolves itself it is the thing itself — provided symlinks are resolved first,
+ * which is step one.
  *
  * Order from M8 section 4.6, taken literally: protected paths first, then deny rules, then
  * allow rules. Deny rules never yield to an allow rule.
@@ -11,6 +13,24 @@
  * It is *not* an execution boundary and does not replace one. It holds as long as no tool starts
  * a process. When the shell arrives the sandbox arrives with it, and this stays alongside:
  * it checks tool arguments, the sandbox checks the process.
+ *
+ * That prediction came true on 2026-08-30: the shell is `shell_ausfuehren` (werkzeug-shell.ts) and
+ * the sandbox is `sandkasten.ts`, and this module did stay alongside. Read them together — the
+ * second layer is not a copy of this one but its mirror in the kernel, and the two are deliberately
+ * kept in step: `SandkastenKontext` extends `WacheKontext` (one source for the three paths), and
+ * where a rule here matches on a *basename* at any depth, the SBPL rule over there carries an
+ * any-depth segment of its own.
+ *
+ * The sentence that used to close this paragraph — "so the sandbox is never weaker than the guard
+ * it mirrors" — was true of the write rules it was written about and false for reads, and it is
+ * corrected here rather than trimmed, because a reader who believes it stops checking. What holds:
+ * for the *named* paths and basenames both layers deny — `.git`, `~/.ssh`, `~/.cipher-*`, `.env`,
+ * key files and key extensions, and the sandbox denies them for writing too. What does not hold:
+ * everything else that is merely *readable*. This guard confines reading to the project root; the
+ * profile grants `(allow file-read*)` and takes seven denies off it, so a shelled-out `cat` reads
+ * anything on this machine that is not on that list — the whole home directory, every other
+ * project, /etc. That is the price of running real build tools, and it is the reason the profile's
+ * deny list has to name every secret shape by hand rather than inherit a root boundary from here.
  */
 
 import { realpathSync } from 'node:fs'

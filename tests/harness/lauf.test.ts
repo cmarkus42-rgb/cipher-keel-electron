@@ -1,66 +1,19 @@
 import { describe, it, expect } from 'vitest'
 import { anhaengen, oeffneHarnessDb, lesen } from '../../src/main/harness/protokoll'
 import { starteLauf, setzeFort, verbrauchAusEreignissen } from '../../src/main/harness/lauf'
-import { WerkzeugRegistry } from '../../src/main/harness/werkzeuge'
-import type { ModellEintrag } from '../../src/main/model/entry'
 import type { ModelAntwort } from '../../src/main/harness/form'
 import type { Ereignis } from '../../src/main/harness/ereignisse'
 import type { PraefixText } from '../../src/main/harness/praefix'
 import { laufAbgeschlossen } from '../../src/main/harness-handlers'
+import { AUFTRAG, EINTRAG, antwort, antwortLeer, baueUmgebung } from './lauf.test-helfer'
 
-const EINTRAG: ModellEintrag = {
-  id: 'test-modell', name: 'Testmodell', art: 'api',
-  erreichbarkeit: { art: 'api', baseUrl: 'https://x/v1', model: 'm', keyRef: 'k' },
-  oertlichkeit: 'fremdes-netz', erklaertext: '', empfehlung: '',
-  faehigkeiten: {
-    codec: 'openai-chat', werkzeugmodus: 'nativ', paralleleAufrufe: true, denkbloecke: false,
-    bilder: true, dokumente: true, aufgeschobenesLaden: true, werkzeugObergrenze: 20,
-    nutzbaresKontextfenster: 100_000, vertragsStrenge: { schemaTiefe: 2, reparaturversuche: 1 },
-    rundenbudget: 12, gemessenAm: null, gemessenMit: null, quelle: 'vermutet',
-  },
-}
-
-const AUFTRAG = {
-  auftragstext: 'sag hallo', modellId: 'test-modell', wurzel: '/tmp',
-  budgets: { runden: 3, wanduhrMs: 60_000, kostenCent: 100, kontextAnteil: 0.8 },
-}
-
-/** A transport stand-in: the loop must not know it is not talking to a network. */
+/**
+ * Duenne Huelle ueber `baueUmgebung`, damit die Aufrufstellen unten unveraendert bleiben. Der
+ * Rumpf steht in lauf.test-helfer.ts, weil ihn eine zweite Testdatei mit anderer Wurzel und
+ * anderer Registry braucht — die Vorgabewerte hier sind dieselben wie vor dem Auszug.
+ */
 function umgebungMit(antworten: ModelAntwort[], gesendet: PraefixText[] = []) {
-  let i = 0
-  let t = 0
-  return {
-    db: oeffneHarnessDb(':memory:'),
-    eintrag: EINTRAG,
-    praefixTeile: { body: 'BODY', capabilities: '', persona: '', globaleRegeln: '', auftragstext: AUFTRAG.auftragstext, faehigkeiten: [] },
-    wache: { wurzel: '/tmp', heim: '/tmp', userDataPfad: '/tmp/ud' },
-    graphDb: null,
-    registry: new WerkzeugRegistry([]),
-    strom: () => {},
-    uhr: () => (t += 1000),
-    abgebrochen: () => false,
-    sende: async (_koerper: unknown, praefix: PraefixText): Promise<ModelAntwort> => {
-      gesendet.push(praefix)
-      return antworten[i++]
-    },
-  }
-}
-
-function antwort(text: string, stop: 'ende' | 'laenge' = 'ende'): ModelAntwort {
-  return {
-    bloecke: [{ art: 'text', text }],
-    stopGrund: { normalisiert: stop, roh: stop === 'ende' ? 'stop' : 'length' },
-    usage: { eingabeToken: 100, ausgabeToken: 10, roh: null },
-  }
-}
-
-/** A turn the model answered without any text block — the case Fund 2 is about. */
-function antwortLeer(): ModelAntwort {
-  return {
-    bloecke: [],
-    stopGrund: { normalisiert: 'ende', roh: 'stop' },
-    usage: { eingabeToken: 100, ausgabeToken: 10, roh: null },
-  }
+  return baueUmgebung({ antworten, gesendet })
 }
 
 describe('starteLauf', () => {

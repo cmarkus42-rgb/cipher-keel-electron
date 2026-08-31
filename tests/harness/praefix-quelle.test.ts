@@ -9,10 +9,16 @@ import type { Faehigkeit } from '../../src/main/harness'
 // also gerade nicht "exakt das bisherige Verhalten", was der Sinn dieses Tests ist. Aendert sich
 // der Text in harness-praefix-quelle.ts absichtlich, bricht dieser Test bewusst mit — die
 // Momentaufnahme wird dann hier nachgezogen, nicht stillschweigend toleriert.
+//
+// Am 2026-08-30 nachgezogen: der bisherige Text sagte „Du kannst nichts schreiben und nichts
+// ausfuehren" und war damit falsch, seit die Registry die drei wirkenden Werkzeuge traegt. Dass
+// diese Momentaufnahme dabei gruen blieb, ist genau ihre Aufgabe — sie pinnt den Text, sie
+// beurteilt ihn nicht. Beurteilt wird er vom Waechter in tests/harness/werkzeugliste.test.ts.
 const BODY_HEUTE =
-  'Du arbeitest in einem Projektverzeichnis und beantwortest die Frage, die im Auftrag steht. ' +
-  'Du kannst lesen, suchen und den Knowledge-Graph abfragen. Du kannst nichts schreiben und ' +
-  'nichts ausfuehren.'
+  'Du arbeitest in einem Projektverzeichnis und bearbeitest den Auftrag, der darin steht. ' +
+  'Du kannst lesen, suchen, den Knowledge-Graph abfragen, Dateien schreiben und loeschen und ' +
+  'Kommandos ausfuehren. Geschrieben und geloescht wird nur innerhalb der Projektwurzel; ' +
+  'Kommandos laufen in einem Sandkasten ohne Netz — Paketbefehle wie `npm ci` bekommen es.'
 
 const GLOBALE_REGELN_HEUTE = '## Regeln\n\n' + [
   'Belege schlagen Behauptungen: Nenne Datei und Zeile, wenn du etwas ueber den Code sagst.',

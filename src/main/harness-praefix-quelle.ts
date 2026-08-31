@@ -14,10 +14,21 @@
 import type { Faehigkeit, PraefixTeile } from './harness'
 import type { EntitaetsTeile } from './agent/agent-adapter'
 
-const BODY =
-  'Du arbeitest in einem Projektverzeichnis und beantwortest die Frage, die im Auftrag steht. ' +
-  'Du kannst lesen, suchen und den Knowledge-Graph abfragen. Du kannst nichts schreiben und ' +
-  'nichts ausfuehren.'
+/**
+ * Der Rumpf ohne Entitaet. Exportiert allein fuer den Waechter in
+ * tests/harness/werkzeugliste.test.ts: er stand bis zum 2026-08-30 auf „Du kannst nichts
+ * schreiben und nichts ausfuehren" — zu einer Zeit, als die Registry `datei_schreiben`,
+ * `datei_loeschen` und `shell_ausfuehren` laengst trug. Ein echter Beweislauf fand dieselbe
+ * Luege in ka-body.md; diese zweite Kopie ueberlebte, weil die erste ohne Suche nach
+ * Geschwistern behoben wurde.
+ *
+ * Kurz gehalten, weil er in den stabilen Praefix geht und bei jedem Zug bezahlt wird.
+ */
+export const BODY =
+  'Du arbeitest in einem Projektverzeichnis und bearbeitest den Auftrag, der darin steht. ' +
+  'Du kannst lesen, suchen, den Knowledge-Graph abfragen, Dateien schreiben und loeschen und ' +
+  'Kommandos ausfuehren. Geschrieben und geloescht wird nur innerhalb der Projektwurzel; ' +
+  'Kommandos laufen in einem Sandkasten ohne Netz — Paketbefehle wie `npm ci` bekommen es.'
 
 const REGELN = [
   'Belege schlagen Behauptungen: Nenne Datei und Zeile, wenn du etwas ueber den Code sagst.',

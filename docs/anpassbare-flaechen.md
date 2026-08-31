@@ -1,6 +1,15 @@
 # Anpassbare Flächen — Inventar (CK-NFR-012)
 
-**Stand:** 2026-08-30 — der MCP-Transport (Paket B) gebaut und gegen ein Sicherheitsreview
+**Stand:** 2026-08-30 — **Paket C**: der Sandkasten und die drei wirkenden Werkzeuge
+(`datei_schreiben`, `datei_loeschen`, `shell_ausfuehren`) gebaut *und verdrahtet*. Fünf neue
+anpassbare Flächen und drei ausdrückliche Nicht-Flächen, alle im eigenen Abschnitt „Sandkasten
+und die drei wirkenden Werkzeuge" unten. **Eine Folge davon gehört an diese Stelle, weil sie
+jeden Nutzer trifft:** die Git-Vorbedingung greift seit der Verdrahtung bei *jedem* Lauf, nicht
+mehr nur bei einem mit wirkenden Werkzeugen — eine Wurzel ohne Repository oder mit unsauberem
+Arbeitsbaum lässt keinen Lauf mehr starten, auch keinen rein lesenden. Siehe die Zeile
+„Die Git-Vorbedingung" im selben Abschnitt.
+
+Davor am selben Tag der MCP-Transport (Paket B) gebaut und gegen ein Sicherheitsreview
 nachgebessert: ein lokaler HTTP-Server (`127.0.0.1`, Port `0`/ephemer, Bearer-Schlüssel als
 `randomUUID()` je App-Start) macht alle zehn MCP-Werkzeuge (die sieben `graph_*` und die drei
 `keel_zelle*`) erreichbar — für eine Sitzung, die gestartet wurde, während die aktuelle
@@ -461,6 +470,52 @@ ist betreiberkonfiguriert, nicht modellgewählt** — es steht in der Config, ni
 Werkzeugargument. Der Preis dafür sind die eigenen Grenzen der Datei (Zeile `ZEITBUDGET_MS` /
 `MAX_ANTWORT_BYTES` oben). Für `seite_lesen`, dessen Ziel das Modell wählt, gilt das Gegenteil:
 dort ist die netzwache Pflicht.
+
+## Sandkasten und die drei wirkenden Werkzeuge — Stand 2026-08-30 (Paket C)
+
+Mit `datei_schreiben`, `datei_loeschen` und `shell_ausfuehren` verändert der Harness zum ersten
+Mal die Platte und startet fremde Prozesse. Die Grenze dagegen liegt in **zwei** Schichten, und
+beide bringen anpassbare Flächen mit: die Argumentprüfung (`pfadwache.ts`, sie prüft den *Pfad*,
+den ein Werkzeug bekommt) und die Prozessgrenze (`sandkasten.ts`, sie prüft den *Prozess* über
+`sandbox-exec`). **Keine der Flächen unten hat heute eine Oberfläche** — das ist der ehrliche
+Stand, und er steht hier, weil CK-NFR-012 die Nennung auch dann verlangt, wenn die App die Fläche
+nicht erreicht.
+
+Alle fünf stehen in `src/main/harness/sandkasten.ts`; die Liste ist gegen
+`grep -n "^export const [A-Z_]*" src/main/harness/sandkasten.ts` abgeglichen und vollständig.
+
+| Fläche | Herkunft | Wirkung | In der App sichtbar | Editierbar |
+|---|---|---|---|---|
+| **`STANDARD_ZWISCHENSPEICHER`** (`.npm`, `.pub-cache`, `.dart`, `.flutter`, `.cargo/registry`, `.gradle/caches`, `.gradle/wrapper`) | `src/main/harness/sandkasten.ts`; heimrelativ notiert, zu absoluten Pfaden aufgelöst in `baueSandkastenKontext` (`harness-sitzung.ts`) | Schreibziele **außerhalb** der Wurzel. Warum es sie gibt: `flutter pub get` schreibt nach `~/.pub-cache`, `npm ci` nach `~/.npm` — nur die Wurzel freizugeben hieße, dass jede Installation scheitert. **Die weichste Stelle des ganzen Sandkastens:** jeder Eintrag ist ein Loch. Sie steht darum an genau einer Stelle, sichtbar, und wächst nicht stillschweigend — festgenagelt mit `toEqual` in `tests/harness/sandkasten-profil.test.ts`, damit dieser Satz prüfbar ist und nicht bloß dasteht. **Am 2026-08-30 verengt:** die Liste trug ursprünglich `.gradle`, und dieser eine Eintrag war der Art nach kein Zwischenspeicher, sondern eine Ausführungsfläche — Gradle führt jede `*.gradle` unter `~/.gradle/init.d/` bei **jedem** späteren Aufruf aus, in der Sitzung des Menschen und ohne Sandkasten. Ein Lauf, der dort eine Datei ablegt, hätte damit Codeausführung auf dem Rechner *nach* seinem Ende. `.cargo` war aus demselben Grund schon auf `.cargo/registry` verengt worden; bei `.gradle` war dieselbe Verengung vergessen worden. Wermutstropfen, der dazugehört: sobald Flutter installiert ist, braucht es zusätzlich `$FLUTTER_ROOT/bin/cache` — Flutter schreibt in die eigene Installation, und die liegt nicht unter `~/.flutter` | nein | nein — Konstante im Quelltext, Neubau nötig |
+| **`PAKETBEFEHLE`** (`npm ci`, `npm install`, `npm i `, `yarn install`, `pnpm install`, `pnpm i `, `flutter pub get`, `dart pub get`, `pip install`, `pip3 install`, `cargo fetch`, `go mod download`, `bundle install`) | `src/main/harness/sandkasten.ts`, gelesen von `istPaketbefehl` | Welche Kommandos das Netzprofil `offen` bekommen. **Keine Positivliste dessen, was laufen darf:** ein nicht getroffenes Kommando läuft trotzdem, nur ohne Netz. Sie irrt fail-closed und darf darum ungenau sein. Zwei Löcher, benannt und keines geschlossen: ein `postinstall`-Skript läuft unter `offen` mit vollem Netz — **und das ist nicht dieselbe Lücke wie bei einem Menschen, der `npm ci` selbst tippt**, weil der Mensch die `package.json` nicht auch geschrieben hat; der Lauf kann sich ein `preinstall`/`postinstall` selbst hineinschreiben und danach den Paketbefehl aufrufen, der Netz freischaltet. Und der Treffer gilt dem **führenden** Kommando, das Profil aber der ganzen Zeile — `npm ci && curl …` trägt beides ins Netz, `cd sub && npm ci` trifft dagegen nicht und läuft ohne Netz. Unter `offen` bleibt `localhost` gesperrt (Paket Bs MCP-Server), das Tailnet dagegen erreichbar — Seatbelt kann keine CIDR-Bereiche | nein | nein — Konstante im Quelltext, Neubau nötig |
+| **`STANDARD_ZEITGRENZE_MS`** (120.000) | `src/main/harness/sandkasten.ts`, Vorgabe von `starte` | Wanduhr eines einzelnen Kommandos, wenn das Modell keine eigene nennt | nein | nein — Konstante im Quelltext, Neubau nötig |
+| **`MAX_AUSGABE_BYTES`** (65.536) | `src/main/harness/sandkasten.ts` | Deckel über stdout und stderr zusammen. **Kein Komfort:** die Ausgabe geht in den Modellkontext, und ein `npm ci` mit 4 MB Ausgabe sprengt das Fenster eines lokalen 27B in einem einzigen Zug — danach misst die Teststrecke, wer `--silent` erraten hat. Wird gekappt, sagt die Antwort das (`(Ausgabe abgeschnitten.)`), in **jedem** Ausgang und nicht nur im Erfolgsfall | nein | nein — Konstante im Quelltext, Neubau nötig |
+| **`MAX_ZEITGRENZE_MS`** (900.000) | `src/main/harness/sandkasten.ts`, angewandt in `werkzeug-shell.ts` | Die **Decke über der Vorgabe**, nicht ihre Wiederholung. Sie existiert, weil `zeitgrenzeMs` aus der **Modelleingabe** kommt: ohne sie wäre `STANDARD_ZEITGRENZE_MS` an dem einen Werkzeug, das Prozesse startet, eine Empfehlung und kein Rand, und ein `zeitgrenzeMs: 100000000` hielte den Lauf tagelang offen. Das ist ausdrücklich **keine** Kommandoprüfung — sie sieht `kommando` nie an. Beim Review zu Task 6 gefunden, nicht beim Entwurf | nein | nein — Konstante im Quelltext, Neubau nötig |
+
+**Keine Fläche, und das ist Absicht — beim Abgleich mit aufgefallen und deshalb hier benannt:**
+
+| Nicht-Fläche | Wo | Warum sie keine wird |
+|---|---|---|
+| **`WIRKENDE_WERKZEUGE`** (`datei_schreiben`, `datei_loeschen`, `shell_ausfuehren`) | `src/main/harness/tor.ts` | Eine Quelle, drei Verbraucher: das Tor, die Single-Writer-Regel in `lauf.ts` und die Git-Vorbedingung beim Laufstart. Wer diese Menge einstellbar machte, machte die drei Regeln einstellbar — dieselbe Begründung wie bei `unterlaufRegistry` oben |
+| **Der Profiltext selbst** (`profilText`) | `src/main/harness/sandkasten.ts` | Die verankerten Verbote (`~/.ssh`, `userData`, `.cipher-*`, Shell-Profile, `.env*`, Schlüsseldateien, jedes `.git`-Segment) sind die Sicherheitsgrenze dieser Strecke. Sie stehen **nach** allen Erlaubnissen, weil SBPL nach der zuletzt passenden Regel entscheidet — ein Schalter, der die Reihenfolge oder einen Eintrag anfasst, wäre ein Schalter für die Grenze |
+| **Die Git-Vorbedingung** (`pruefeArbeitsbaum`) | `src/main/harness/lauf.ts` | Ein Lauf mit wirkenden Werkzeugen startet nur über einem sauberen Arbeitsbaum. Es gibt dafür bewusst kein Übergehen: die Vorbedingung *ist* der Rückweg, auf den sich alles Übrige verlässt. **Seit der Verdrahtung von Paket C heißt das: jeder Lauf.** `starteLauf` zieht die Vorbedingung, sobald die Registry des Laufs auch nur ein wirkendes Werkzeug trägt, und `baueWerkzeugRegistry` ist die einzige Registry eines Hauptlaufs und trägt seither alle drei. Die Einschränkung „mit wirkenden Werkzeugen" unterscheidet damit nichts mehr. **Folge, die ein Nutzer zu sehen bekommt:** keel weigert sich zu starten, wenn die Projektwurzel kein Git-Repository ist oder ihr Arbeitsbaum nicht sauber ist — auch für einen rein lesenden Auftrag. Das ist spezifikationskonform und kein Fehler, aber es ist ein harter Startabbruch mit benannter Meldung, kein Hinweis. Die Möglichkeiten, das später wieder zu verengen, stehen im Entwurf dieser Strecke |
+
+**Eine Annahme, die zur Fläche gehört und deshalb nicht im Quelltext verstecken bleibt:**
+`sandbox-exec` existiert auf macOS und wird durchgesetzt — gemessen auf Darwin 25.4 am
+2026-08-30, und darüber hinaus nicht garantiert. Apple nennt das Werkzeug seit Jahren
+deprecated und liefert es seit Jahren aus. Verschwindet es, ist die Antwort ein Container;
+`profilText` und `starte` sind genau deshalb getrennt, damit eine zweite Umsetzung kommen kann,
+ohne die Regeln anzufassen.
+
+**Was die Verdrahtung an einer anderen Zahl geändert hat.** Die Werkzeugliste des Laufs ist mit
+diesen drei Werkzeugen von 12 auf 15 Stummel gewachsen. Der **Rückfallwert**
+`werkzeugObergrenze` in `src/main/model/entry.ts` ist deshalb von 12 auf 15 nachgezogen — er
+zählt aus, was ausgeliefert wird, und ein zu kleiner Rückfall schriebe bei *jedem* Lauf einen
+Hinweis in `run.started`. Die **Fähigkeitszeilen der Einträge** in `defaults.ts` sind
+unangetastet geblieben: `spark-qwen38-27b` steht weiter auf 12 und bekommt den Hinweis jetzt
+tatsächlich. Das ist ein Hinweis und kein Abbruch (M8 §4.10), und die Zahl dort ist eine Aussage
+über *dieses Modell* — sie ohne Messung anzuheben hieße, eine Warnung zum Schweigen zu bringen
+statt sie zu beantworten. Sie ist im Settings-Fenster editierbar (Tabelle „Einstellungen" oben).
 
 ## Kostenbudget — versionierte Preistabelle
 
