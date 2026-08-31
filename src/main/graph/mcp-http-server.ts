@@ -1,30 +1,45 @@
 /**
- * mcp-http-server.ts — the transport that makes GraphMcpServer reachable (Paket B).
+ * mcp-http-server.ts — the transport that makes GraphMcpServer reachable (Paket B, umgezogen
+ * in Paket D).
  *
  * Before this file existed, `GraphMcpServer.handleRequest` had no production caller and
  * `startStdioServer` (mcp-server.ts) was never invoked — see the header comment on
  * mcp-server.ts and docs/anpassbare-flaechen.md ("Was fehlt") for the full history of that
- * gap. This is the missing half: a local HTTP server, started once per app run from
+ * gap. This is the missing half: a local server, started once per app run from
  * service-lifecycle.ts (same pattern as initGraph/initNotes), that speaks JSON-RPC 2.0 over
  * a single `POST /mcp` route.
  *
- * Three properties are load-bearing, not incidental:
+ * **Paket D hat das Ohr getauscht, und mit ihm alle drei tragenden Eigenschaften.** Bis dahin
+ * lauschte dieser Server auf `127.0.0.1` an einem fluechtigen Port und pruefte einen Bearer im
+ * Anfragekopf. Keine der drei Aussagen gilt noch. Was an ihre Stelle getreten ist:
  *
- *   - Bound to 127.0.0.1, never 0.0.0.0 — this is a local tool surface for sessions running
- *     on the same machine, not a network service.
- *   - Bound to port 0 (ephemeral) and read back after listen() resolves, so two app
- *     instances (or a restart while an old process lingers) can never collide on a fixed
- *     port. The actual port only ever needs to reach `postLaunchInjection`
- *     (agent/adapters/claude-code.ts), which runs in the same process right after the
- *     server starts — nothing outside this process needs to guess it in advance.
- *   - The bearer key this module mints is fresh per app start (`randomUUID()`, see
- *     startMcpHttpServer below) and lives only in memory here — this file itself never
- *     writes it to a persisted config file, and config-store.ts is explicit that secrets do
- *     not belong there. That claim is about this module's own storage, not about every place
- *     the key ends up: `postLaunchInjection` deliberately writes it to a spawned session's
- *     own `.claude/settings.local.json` and hands it to `claude mcp add-json` as a CLI
- *     argument (see claude-code.ts) — that disclosure is the point of injection, not a leak
- *     this file causes.
+ *   - **Ein Unix-Socket unter `userData`, kein TCP.** Der Grund ist der Sandkasten: seit
+ *     Paket D bekommt ein Kindprozess von `shell_ausfuehren` Loopback, weil ein Testrunner
+ *     ohne einen eigenen Server-Socket auf 127.0.0.1 nicht laufen kann (`flutter test`,
+ *     Uebergabe vom 2026-08-31 §5). Damit waere dieser Server fuer dieses Kind erreichbar
+ *     gewesen — und ueber `keel_zelle_beauftragen` haette es eine Niveau-B-Zelle in der Hand
+ *     gehabt, die OHNE Sandkasten laeuft. Das ist ein Ausbruch, keine Datenpreisgabe.
+ *     Seatbelt kann keinen einzelnen Port aussperren (gemessen, Paket C §4:
+ *     `(remote ip "127.0.0.1:8802")` ist ein Syntaxfehler, `(remote ip "*:8802")` wird
+ *     angenommen und greift nicht) — wohl aber Unix-Sockets als ganze Klasse. Deshalb der
+ *     Umzug: nicht weil ein Socket schneller waere, sondern weil er die einzige Grenze ist,
+ *     die Seatbelt an dieser Stelle ziehen kann.
+ *   - **Ein frischer Pfad je App-Start** (`mcp-socket-pfad.ts`). Das erhaelt die Eigenschaft,
+ *     fuer die vorher Port 0 gewaehlt wurde: zwei Instanzen, oder ein Neustart ueber einem
+ *     noch lebenden alten Prozess, koennen nie auf demselben Ohr landen.
+ *   - **Kein Geheimnis, nirgends.** Der Bearer ist in Paket D ersatzlos entfallen, und das ist
+ *     die Antwort auf B5: die Frage war *"darf jede Sitzung jede Zelle beauftragen, oder
+ *     bindet der Schluessel an eine Sitzung?"* — sie hat keinen Gegenstand mehr. Gegen das
+ *     gesandkastete Kind hat ein Schluessel ohnehin nie geholfen: es liest ihn aus
+ *     `.claude/settings.local.json`, das im Projektbaum liegt und lesbar ist, und spricht
+ *     danach als die Sitzung, der er gehoert. Ein Schluessel je Sitzung haette den Schaden
+ *     begrenzt und den Ausbruch nicht verhindert. Was ihn verhindert, steht in
+ *     harness/sandkasten.ts und nirgends sonst.
+ *
+ * **Wer hier etwas aendert, faellt diese Abwaegung neu.** Ein `server.listen(port, host)`
+ * zurueck auf 127.0.0.1 macht keinen Test rot, den es hier gibt — es macht den Sandkasten
+ * durchlaessig, und das sieht man dieser Datei nicht an. Der Test, der es sieht, steht in
+ * tests/harness/sandkasten-lauf.test.ts ("erreicht keinen Unix-Socket").
  *
  * What this buys, and what it does not: every session created while this app instance is
  * running can reach all ten tools. That half is a measurement, not a promise (2026-08-30):
@@ -33,24 +48,19 @@
  * `graph_search` call from that very process returning the uid of a node written seconds
  * earlier — see mcp-server.ts's "This is a measurement, not a promise" note and
  * docs/anpassbare-flaechen.md for the full record, including what stayed unmeasured (the
- * restart-surviving branch below). The mechanism behind it: postLaunchInjection's call site
- * in ipc-handlers.ts, SESSION_CREATE — called *before* the tmux pane is created, on purpose:
- * `postLaunchInjection` reads none of `AdapterContext`'s fields from a live tmux session, so
- * running it after `createSession` was a race it could not reliably win against the very
- * process it was configuring — see the security-review finding I-1 in the Paket B history for
- * the measured version of that race. A session whose tmux pane survives an app restart cannot be healed
- * by re-injecting even so — its `claude` process already read `settings.local.json` at its
- * own start and does not reload it live. That session stays unreachable until it is
- * destroyed and a new one created. This is not a bug this file introduces and not one it can
- * fix: making the port fixed would not help (the key still rotates by design, see
- * startMcpHttpServer), and making the key stable across restarts would undo the reason it
- * rotates. Named here, not silently accepted — see docs/anpassbare-flaechen.md, "Was fehlt",
- * for the full note.
- *
- * Auth (B2): every request needs `Authorization: Bearer <key>`. Missing or wrong -> 401,
- * no body — a body would confirm to an unauthenticated caller that something is listening
- * at all. The comparison is `crypto.timingSafeEqual`, not `===`: a local single-user tool
- * is still worth not leaking key material through a timing side channel for free.
+ * restart-surviving branch below). Diese Messung stammt aus der TCP-Zeit; Paket D schuldet
+ * ihre Wiederholung ueber dem Socket (Task 8 des Umsetzungsplans). The mechanism behind it:
+ * postLaunchInjection's call site in ipc-handlers.ts, SESSION_CREATE — called *before* the
+ * tmux pane is created, on purpose: `postLaunchInjection` reads none of `AdapterContext`'s
+ * fields from a live tmux session, so running it after `createSession` was a race it could
+ * not reliably win against the very process it was configuring — see the security-review
+ * finding I-1 in the Paket B history for the measured version of that race. A session whose
+ * tmux pane survives an app restart cannot be healed by re-injecting even so — its `claude`
+ * process already read `settings.local.json` at its own start and does not reload it live.
+ * That session stays unreachable until it is destroyed and a new one created. This is not a
+ * bug this file introduces and not one it can fix: der Socketpfad ist bei jedem Start ein
+ * anderer, aus demselben Grund, aus dem der Port es war. Named here, not silently accepted —
+ * see docs/anpassbare-flaechen.md, "Was fehlt", for the full note.
  *
  * Error path (B6): reuses exactly the two-way split `startStdioServer` already has
  * (-32700 for a body that isn't valid JSON, -32603 for handleRequest throwing in a way its
@@ -59,79 +69,104 @@
  */
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http'
-import { randomUUID, timingSafeEqual } from 'node:crypto'
+import { join } from 'node:path'
 import type { GraphMcpServer, JsonRpcRequest, JsonRpcResponse } from './mcp-server'
+import { sockelPfad, entferneLeiche } from './mcp-socket-pfad'
+import { toUnpackedPath } from './native-binding'
 
 /** A body larger than this is rejected before JSON.parse ever runs (413, no body). */
 const MAX_BODY_BYTES = 25 * 1024 * 1024
 
+/**
+ * Wie ein CLI-Harness die Bruecke startet — genau die Form, die
+ * `.claude/settings.local.json` und `.kimi-code/mcp.json` als `stdio`-Eintrag erwarten.
+ *
+ * Es steht bewusst kein `url` und kein `headers` darin: was hier hineingeschrieben wird,
+ * landet in einer Datei im Projektbaum des Nutzers, und seit Paket D soll dort nichts mehr
+ * stehen, das jemand geheim halten muesste.
+ */
+export interface BrueckenBefehl {
+  readonly command: string
+  readonly args: string[]
+  readonly env: Record<string, string>
+}
+
 export interface McpHttpServerHandle {
   readonly server: Server
-  /** The bound ephemeral port, read back from the OS after listen() resolves (B3). */
-  readonly port: number
+  /** Der Pfad, auf dem gelauscht wird. Frisch je App-Start (mcp-socket-pfad.ts). */
+  readonly sockelPfad: string
   /**
-   * The per-app-start bearer key (B2) — this module keeps it in memory only and never
-   * writes it to disk itself. `postLaunchInjection` (claude-code.ts) does write it, into a
-   * spawned session's own project settings and CLI invocation — an intentional disclosure
-   * to the session that needs to authenticate, not a claim that the key never touches disk
-   * anywhere in the app.
+   * Der Startbefehl fuer die stdio-Bruecke. `postLaunchInjection` schreibt ihn in die
+   * Konfiguration der jeweiligen Sitzung — eine absichtliche Offenlegung, aber keines
+   * Geheimnisses mehr: der Befehl nennt einen Pfad, und wer diesen Pfad erreichen darf,
+   * entscheidet das Sandkastenprofil, nicht diese Datei.
    */
-  readonly apiKey: string
-  /** Full URL of the one route this server answers, e.g. http://127.0.0.1:54321/mcp. */
-  readonly url: string
+  readonly brueckenBefehl: BrueckenBefehl
 }
 
 /**
- * Starts the MCP HTTP transport bound to 127.0.0.1 on an OS-assigned ephemeral port.
- * Resolves once the socket is actually listening and the real port is known.
+ * Der Pfad zur Bruecke, im Entwicklungsbaum wie im gepackten Programm.
+ *
+ * `toUnpackedPath` ist hier nicht Vorsicht, sondern Pflicht: die Bruecke wird von einem
+ * FREMDEN Prozess gestartet (dem CLI-Harness), und der hat keine asar-Kenntnis. Deshalb
+ * traegt package.json `resources/**` sowohl in `files` als auch in `asarUnpack` — ohne das
+ * zweite laege die Datei nur im Archiv und kein `spawn` faende sie.
  */
-export function startMcpHttpServer(mcpServer: GraphMcpServer): Promise<McpHttpServerHandle> {
-  const apiKey = randomUUID()
+export function brueckenPfad(appPath: string): string {
+  return toUnpackedPath(join(appPath, 'resources', 'mcp-bridge.mjs'))
+}
+
+/**
+ * Starts the MCP transport on a Unix socket under `userDataPfad`.
+ * Resolves once the socket is actually listening.
+ */
+export function startMcpHttpServer(
+  mcpServer: GraphMcpServer,
+  userDataPfad: string,
+  appPath: string,
+): Promise<McpHttpServerHandle> {
+  // Wirft bei einem zu langen Pfad, statt einen abgeschnittenen zu binden — siehe
+  // mcp-socket-pfad.ts. Der Aufrufer (service-lifecycle.ts) faengt das und meldet `mcp`
+  // als `degraded`, so wie bei einem degradierten Graphen.
+  const pfad = sockelPfad(userDataPfad)
 
   return new Promise((resolve, reject) => {
+    // Vor dem listen, nicht danach: eine liegengebliebene Socketdatei aus einem Absturz
+    // laesst `listen` mit EADDRINUSE scheitern — ein Fehlerbild, das nach "eine zweite
+    // Instanz laeuft" aussieht und keine ist. Bei einem frisch gewuerfelten Namen ist das
+    // beinahe nie der Fall; "beinahe nie" ist der Grund, warum die Zeile trotzdem hier steht.
+    try {
+      entferneLeiche(pfad)
+    } catch (err) {
+      reject(err)
+      return
+    }
+
     const server = createServer((req, res) => {
-      void handleHttpRequest(req, res, mcpServer, apiKey)
+      void handleHttpRequest(req, res, mcpServer)
     })
 
-    // A bind failure (e.g. no loopback interface, exhausted fds) must reject the promise
-    // rather than leave the caller waiting on a server that will never come up.
+    // A bind failure (e.g. a path the process may not write, exhausted fds) must reject the
+    // promise rather than leave the caller waiting on a server that will never come up.
     server.once('error', reject)
 
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(pfad, () => {
       server.removeListener('error', reject)
-      const address = server.address()
-      if (address === null || typeof address === 'string') {
-        // Cannot happen for a TCP listener bound to a hostname+port — named rather than
-        // silently defaulted to a made-up port, which would be worse than throwing.
-        reject(new Error('[mcp-http-server] server.address() did not return a TCP address'))
-        return
-      }
-      const { port } = address
       resolve({
         server,
-        port,
-        apiKey,
-        url: `http://127.0.0.1:${port}/mcp`,
+        sockelPfad: pfad,
+        brueckenBefehl: {
+          // Das eigene Node der App, nicht eines vom System: `process.execPath` ist unter
+          // Electron das Programm selbst, und `ELECTRON_RUN_AS_NODE=1` laesst es als Node
+          // laufen. Ein `"command": "node"` waere eine Abhaengigkeit von der Maschine des
+          // Nutzers, die keine Fehlermeldung ankuendigt.
+          command: process.execPath,
+          args: [brueckenPfad(appPath), pfad],
+          env: { ELECTRON_RUN_AS_NODE: '1' },
+        },
       })
     })
   })
-}
-
-/** Constant-time string comparison — two different lengths are unequal, checked first
- *  so timingSafeEqual (which throws on a length mismatch) is only ever called on
- *  equal-length buffers. The length check itself leaks length, not content; the
- *  bearer key format (a UUID) makes that leak meaningless in practice. */
-function safeEqual(a: string, b: string): boolean {
-  const bufA = Buffer.from(a, 'utf8')
-  const bufB = Buffer.from(b, 'utf8')
-  if (bufA.length !== bufB.length) return false
-  return timingSafeEqual(bufA, bufB)
-}
-
-function isAuthorized(req: IncomingMessage, apiKey: string): boolean {
-  const header = req.headers.authorization
-  if (typeof header !== 'string') return false
-  return safeEqual(header, `Bearer ${apiKey}`)
 }
 
 /**
@@ -174,18 +209,9 @@ async function handleHttpRequest(
   req: IncomingMessage,
   res: ServerResponse,
   mcpServer: GraphMcpServer,
-  apiKey: string,
 ): Promise<void> {
   if (req.method !== 'POST' || req.url !== '/mcp') {
     res.writeHead(404)
-    res.end()
-    return
-  }
-
-  // B2: unauthenticated request gets 401 with no body, before the request body is even
-  // read — nothing about a wrong key should be distinguishable from a missing one.
-  if (!isAuthorized(req, apiKey)) {
-    res.writeHead(401)
     res.end()
     return
   }
@@ -216,6 +242,22 @@ async function handleHttpRequest(
       error: { code: -32700, message: 'Parse error' },
     }
     writeJson(res, 200, errorResponse)
+    return
+  }
+
+  // Eine Nachricht ohne `id` ist per JSON-RPC eine Notification, und auf eine Notification
+  // gehoert KEINE Antwort. Bis Paket D war das folgenlos: `handleRequest` schickt fuer
+  // `notifications/initialized` ein `-32601 Method not found` mit `id: null`, und ueber HTTP
+  // hat der Klient diesen Rumpf schlicht weggeworfen. Ueber die stdio-Bruecke ist derselbe
+  // Rumpf eine unaufgeforderte Zeile im Protokollstrom — eine Antwort auf etwas, das der
+  // Klient nie gefragt hat, mit einer `id`, die er nie vergeben hat. Deshalb ein leerer
+  // Rumpf: die Bruecke schreibt nichts nach stdout, wenn nichts kommt (mcp-bridge.mjs).
+  //
+  // Die Zeile steht NACH dem Parsen, weil sie die geparste Nachricht braucht, und VOR
+  // `handleRequest`, weil sonst genau die Antwort entstuende, die hier nicht entstehen soll.
+  if (request.id === undefined) {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end()
     return
   }
 
