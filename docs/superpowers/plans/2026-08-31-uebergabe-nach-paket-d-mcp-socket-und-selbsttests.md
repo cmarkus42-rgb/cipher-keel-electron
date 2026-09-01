@@ -1,16 +1,21 @@
 # Übergabe nach Paket D — der MCP-Socket, und die Selbsttests laufen
 
-**Stand:** 2026-08-31 · Zweig `paket-d-mcp-socket-und-selbsttests`, sechs Commits über `a51742e` ·
-**3101 Tests** in 224 Dateien, `typecheck`, `lint` und `test` grün · Arbeitsbaum sauber, nicht
-gemergt.
+**Stand:** 2026-09-01 · **gemergt und gepusht** — `main` bei `0b6b9cd`, Merge-Commit
+`merge: Paket D`, der Zweig ist gelöscht · **3101 Tests** in 224 Dateien, `typecheck`, `lint` und
+`test` grün auf dem Merge-Ergebnis, nicht nur auf dem Zweig · Arbeitsbaum sauber.
+
+Christian hat die zwei Abwägungen aus §8 freigegeben (offener Loopback, zugesperrte
+Unix-Sockets) und beides ist als Auflage ins README gewandert.
 
 Vorgänger: `2026-08-31-uebergabe-nach-paket-c-und-der-auftrag-selbsttests.md`.
 Entwurf: `specs/2026-08-31-mcp-unix-socket-und-selbsttests-design.md` ·
 Plan: `plans/2026-08-31-paket-d-mcp-socket-und-selbsttests.md`.
 
-> **Wenn du die nächste Inferenz bist:** §1–5 berichten, §8 ist der Auftrag. **Fang nicht an zu
-> bauen** — der Zweig ist fertig und wartet auf Christians Durchsicht, und die Frage in §8 ist
-> eine, die er beantwortet, nicht du. Lies §4, bevor du irgendetwas am Sandkasten anfasst.
+> **Wenn du die nächste Inferenz bist:** §1–5 berichten, §8 ist der Auftrag. Paket D ist
+> **durch** — gemergt, gepusht, Zweig weg; die Durchsicht, die hier einmal als erster Schritt
+> stand, hat Christian am 2026-09-01 gemacht. Der Auftrag ist jetzt: **die Teststrecke fahren.**
+> Lies §4, bevor du irgendetwas am Sandkasten anfasst, und §3, bevor du eine Aussage über
+> Seatbelt triffst.
 
 ---
 
@@ -187,19 +192,24 @@ das Sandkastenprofil sagt in beiden Netzmodi etwas anderes als vorher.
 
 ## 8. Der Auftrag
 
-### Zuerst, und ohne das nichts weiter: der Zweig geht durch Christians Durchsicht
+### Erledigt: die Durchsicht, 2026-09-01
 
-Acht Commits, zwei davon mit `!`. Zwei Dinge gehören ausdrücklich vor einen Merge, weil sie
-Abwägungen sind und keine Fehler:
+Christian hat die zwei Abwägungen ausdrücklich freigegeben — **„für mich erstmal beides OK"**:
 
-1. **Der offene Loopback** (§4.1). Ein gesandkastetes Kind erreicht jetzt Ollama, llama-server
-   und `adb` — letzteres erlaubt Kommandos auf einem angeschlossenen Android-Gerät. Das ist der
-   Preis dafür, dass ein Lauf seine eigenen Tests fahren kann. Christian trägt ihn, nicht ich.
+1. **Der offene Loopback** (§4.1). Ein gesandkastetes Kind erreicht Ollama, llama-server und
+   `adb` — letzteres erlaubt Kommandos auf einem angeschlossenen Android-Gerät. Der Preis dafür,
+   dass ein Lauf seine eigenen Tests fahren kann.
 2. **Unix-Sockets sind in beiden Modi zu** (§4.3). Docker über `/var/run/docker.sock` scheitert
-   damit im Sandkasten — laut, nicht als Hänger. Auf dieser Maschine ist Docker nicht
-   installiert, also fällt es heute nicht auf; auf einer anderen sofort.
+   im Sandkasten — laut, nicht als Hänger. Auf dieser Maschine ist Docker nicht installiert, also
+   fällt es hier nicht auf; auf einer anderen sofort.
 
-### Danach — die Empfehlung, nicht eine Liste von Möglichkeiten
+Seine Auflage dazu: **Hinweise auf zusätzlich nötige Programme gehören ins README, bevor
+gepusht wird.** Erledigt — `README.md`, Abschnitt „What a Level-B/C run needs, and what it
+cannot reach": der erweiterte PATH (`EXTRA_PATHS` wörtlich nachgesehen, nicht aus dem Kopf —
+`~/.cargo/bin` steht *nicht* darin), Flutter mit seinem einmaligen `precache`, die gesperrten
+Unix-Sockets und der erreichbare Loopback.
+
+### Der Auftrag — die Empfehlung, nicht eine Liste von Möglichkeiten
 
 **Die Teststrecke fahren.** Alles, was sie braucht, existiert jetzt zum ersten Mal: Flutter ist
 da, der Sandkasten lässt Tests zu, die Engine wird vorgeladen, keels Werkzeuge sind erreichbar
