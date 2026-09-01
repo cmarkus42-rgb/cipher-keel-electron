@@ -8,6 +8,10 @@ Vorgänger: `2026-08-31-uebergabe-nach-paket-c-und-der-auftrag-selbsttests.md`.
 Entwurf: `specs/2026-08-31-mcp-unix-socket-und-selbsttests-design.md` ·
 Plan: `plans/2026-08-31-paket-d-mcp-socket-und-selbsttests.md`.
 
+> **Wenn du die nächste Inferenz bist:** §1–5 berichten, §8 ist der Auftrag. **Fang nicht an zu
+> bauen** — der Zweig ist fertig und wartet auf Christians Durchsicht, und die Frage in §8 ist
+> eine, die er beantwortet, nicht du. Lies §4, bevor du irgendetwas am Sandkasten anfasst.
+
 ---
 
 ## 1. Was gebaut wurde, in einem Satz
@@ -131,13 +135,26 @@ Git-Vorbedingung gilt für jeden Lauf, auch rein lesende · `package.json` schre
 schreibbar · `(allow mach-lookup)` ungefiltert · ein `"` im Projektpfad bricht `sandbox-exec` ab.
 **Punkt 1 dieser Liste ist weiterhin der einzige Restposten mit Alltagsschmerz.**
 
-## 5. Was beim Aufsetzen einer Flutter-Teststrecke dazugehört
+## 5. Die Teststrecke lädt die Engine jetzt selbst vor — erledigt 2026-09-01
 
-`flutter precache` **vor** dem ersten Lauf. Ohne die vorgeladenen Engine-Artefakte hängt der
-erste Lauf im Sandkasten beim Nachladen, statt zu scheitern. Das steht in keinem Code und gehört
-in `~/keel-teststrecke/neuer-lauf.sh` — **dort habe ich es nicht eingetragen**, weil das
-Verzeichnis unter `/Users/cipher` liegt und ein Schreibvorgang dorthin dein ausdrückliches Go
-braucht. Eine Zeile, wenn du sie willst.
+`~/keel-teststrecke/neuer-lauf.sh` ruft `flutter precache`, **bevor** es den Baum anlegt, und
+bricht ab, wenn das scheitert. Fehlt `flutter` ganz, warnt es laut und macht weiter — das Skript
+legt einen Baum an, es entscheidet nicht über die Maschine.
+
+Der Grund gehört dazu, sonst nimmt ihn die nächste Aufräumrunde wieder heraus: keels Sandkasten
+gibt nur vier Dateinamen unter `$FLUTTER_ROOT/bin/cache` frei und **nicht** den Baum darunter
+(dort liegen `dart-sdk/bin/dart` und ausführbare Bibliotheken, die der Mensch danach ohne
+Sandkasten aufruft — das `.gradle`-Muster). Fährt ein Lauf gegen eine leere Engine, will
+`flutter` sie nachladen, darf nicht schreiben und **wartet bis zur Wanduhr, statt zu scheitern**.
+Das sähe wie ein langsames Modell aus und verbrennte das ganze Zeitbudget ohne eine Meldung.
+
+Mit einem echten Lauf des Skripts geprüft (`bash -n` grün, Baum angelegt, Spec-Prüfsumme
+`5fb46fa8…`, sauberes Repo), Probebaum danach wieder entfernt. Der Grund steht auch in
+`~/keel-teststrecke/README.md`.
+
+**Anmerkung für die nächste Inferenz:** `~/keel-teststrecke/` liegt unter `/Users/cipher` und
+damit ausserhalb der Vorgabe-Schreibzone. Christian hat den Schreibvorgang für genau diese zwei
+Dateien freigegeben; das ist **keine** stehende Erlaubnis für das Verzeichnis.
 
 ## 6. Der Zweig
 
@@ -165,3 +182,49 @@ das Sandkastenprofil sagt in beiden Netzmodi etwas anderes als vorher.
   der Fehler, vor dem der eigene Plan in §6 warnt.
 - **Der `toEqual`-Wächter über `STANDARD_ZWISCHENSPEICHER` hat sich bewährt:** er hat die
   Änderung eingefordert, statt sie durchzulassen. Ein `toContain` hätte geschwiegen.
+
+---
+
+## 8. Der Auftrag
+
+### Zuerst, und ohne das nichts weiter: der Zweig geht durch Christians Durchsicht
+
+Acht Commits, zwei davon mit `!`. Zwei Dinge gehören ausdrücklich vor einen Merge, weil sie
+Abwägungen sind und keine Fehler:
+
+1. **Der offene Loopback** (§4.1). Ein gesandkastetes Kind erreicht jetzt Ollama, llama-server
+   und `adb` — letzteres erlaubt Kommandos auf einem angeschlossenen Android-Gerät. Das ist der
+   Preis dafür, dass ein Lauf seine eigenen Tests fahren kann. Christian trägt ihn, nicht ich.
+2. **Unix-Sockets sind in beiden Modi zu** (§4.3). Docker über `/var/run/docker.sock` scheitert
+   damit im Sandkasten — laut, nicht als Hänger. Auf dieser Maschine ist Docker nicht
+   installiert, also fällt es heute nicht auf; auf einer anderen sofort.
+
+### Danach — die Empfehlung, nicht eine Liste von Möglichkeiten
+
+**Die Teststrecke fahren.** Alles, was sie braucht, existiert jetzt zum ersten Mal: Flutter ist
+da, der Sandkasten lässt Tests zu, die Engine wird vorgeladen, keels Werkzeuge sind erreichbar
+und der Sandkasten kommt nicht an sie heran. Paket C und Paket D waren beide Vorarbeit dafür —
+und das Überziel („trägt die billige Ebene die Arbeit?") ist bisher **nicht einmal gemessen**.
+
+Zwei Dinge davor, beide klein und beide Messungen, keine Bauarbeiten:
+
+- **Ist `keel-qwen38:27b` auf dem DGX dasselbe Gewicht wie der Tag im Referenzlauf?** Die Namen
+  legen es nahe, gemessen ist es nicht. Die ganze Aussage „gleiches Modell, anderer Harness"
+  hängt daran — ohne diese Prüfung vergleicht die Strecke womöglich zwei Modelle und nennt es
+  Harness-Qualität. Steht seit der Paket-C-Übergabe offen.
+- **Der DGX ist ausgeschaltet.** Er wird für die untere Ebene gebraucht (`spark-*`), sonst nicht.
+  Christian schaltet ihn ein, wenn man es ihm sagt.
+
+### Wovon ich abraten würde, und warum
+
+Der offene Punkt 1 aus Paket C (ein Abbruch erreicht kein laufendes Kommando; `detached: true`
+lässt eine Prozessgruppe verwaist weiterlaufen) ist weiterhin der einzige Restposten mit
+**Alltagsschmerz** — und genau deshalb wird man ihn in der ersten Teststrecken-Sitzung wirklich
+spüren, statt ihn zu schätzen. Ein Fahren-und-dann-Reparieren ist hier besser als andersherum:
+ein 50-Stunden-Lauf, den man nicht abbrechen kann, ist eine andere Dringlichkeit als eine Zeile
+in einer Liste.
+
+**Was in jeden Aufgabenbrief gehört**, unverändert aus §7 und der Paket-C-Übergabe: `npm run
+lint` mitlaufen lassen · Listen messen statt abschreiben · bei jeder neuen Grenze fragen
+*scheitert das laut, oder wartet es?* · und **zwei Wege, die dasselbe Ziel bedienen, machen
+einander unprüfbar** — dieses Paket hat den Satz teuer bezahlt.
