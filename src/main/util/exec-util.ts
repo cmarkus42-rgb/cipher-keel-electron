@@ -36,14 +36,29 @@ export function getEnhancedPath(): string {
  * today passes anything else; add explicit path handling before any caller does.
  */
 export function isCommandOnPath(cmd: string): boolean {
+  return pfadZumBefehl(cmd) !== null
+}
+
+/**
+ * Der volle Pfad zu cmd auf dem erweiterten PATH, oder null.
+ *
+ * Dieselbe Logik wie `isCommandOnPath` — und deshalb steht sie hier einmal und nicht zweimal:
+ * `isCommandOnPath` ist seit Paket D die Ja/Nein-Sicht auf genau diese Funktion. Wer den Pfad
+ * braucht statt der Antwort, ruft diese; wer nur wissen will, ob es das Werkzeug gibt, jene.
+ *
+ * Derselbe Vertrag: cmd ist ein blosser Befehlsname, kein Pfad — siehe `isCommandOnPath`.
+ */
+export function pfadZumBefehl(cmd: string): string | null {
   const dirs = getEnhancedPath().split(':').filter(Boolean)
-  return dirs.some((dir) => {
+  for (const dir of dirs) {
+    const kandidat = join(dir, cmd)
     try {
-      return statSync(join(dir, cmd)).isFile()
+      if (statSync(kandidat).isFile()) return kandidat
     } catch {
-      return false
+      // Verzeichnis gibt es nicht, oder cmd liegt nicht darin — der Normalfall beim Suchen.
     }
-  })
+  }
+  return null
 }
 
 /**

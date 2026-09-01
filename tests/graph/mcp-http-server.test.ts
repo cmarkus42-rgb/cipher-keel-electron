@@ -1,53 +1,85 @@
 /**
- * mcp-http-server.test.ts — the transport for GraphMcpServer (Paket B, B1/B2/B3/B6).
+ * mcp-http-server.test.ts — the transport for GraphMcpServer (Paket B, umgezogen in Paket D).
  *
  * Before this file's subject existed, GraphMcpServer.handleRequest had no production
  * caller at all — see the header comment on mcp-server.ts. This test drives the actual
- * HTTP server with real `fetch()` calls, on the real loopback interface, the same way a
- * spawned Claude Code session would — not a direct call against handleRequest, which
- * would prove nothing about the transport this package adds.
+ * server over the actual Unix socket, the same way the stdio bridge does — not a direct call
+ * against handleRequest, which would prove nothing about the transport this package adds.
  *
- * Falsification (repo rule): both auth failure modes below were red before
- * mcp-http-server.ts existed (this whole file failed to import), and the 401 branches
- * were red again against a first draft that only checked for a *missing* header and
- * forgot the constant-time compare against a *wrong* one — see the commit message.
+ * **Was Paket D an diesem Test geaendert hat, und warum ersatzlos.** Fuenf Tests pruefen bis
+ * dahin den Bearer: dass je Server ein frischer entsteht, drei 401-Wege, und dass wirklich
+ * `crypto.timingSafeEqual` gerufen wird und nicht `===`. Alle fuenf sind weg, weil es kein
+ * Geheimnis mehr gibt, das sie pruefen koennten — nicht, weil sie unbequem geworden waeren.
+ * Sie haben ihre Sache gut gemacht: die 401-Zweige waren gegen einen ersten Entwurf rot, der
+ * nur den fehlenden Kopf prueft und den falschen vergisst.
  *
- * Security review (2026-08-30, I-3): stubbing isAuthorized() to always return true only
- * proves the 401 tests depend on that call — it never touches the bind address or the
- * timing-safe comparison, the two properties that actually decide whether this server has
- * an open ear on the network. Two tests below nail those down directly: one reads the real
- * socket address back from Node (a swap to '0.0.0.0' would still build the same handle.url
- * template and pass every other test in this file), and one spies on
- * `crypto.timingSafeEqual` itself (a swap to `===` would still reject a wrong key — the
- * return value is identical either way — so nothing short of asserting the call happened
- * can tell the two apart).
+ * Die Grenze, die sie bewacht haben, liegt jetzt woanders, und deshalb steht der Test dafuer
+ * auch woanders: tests/harness/sandkasten-lauf.test.ts, "erreicht keinen Unix-Socket", mit
+ * der Mutationsprobe daneben. **Wer diesen Server auf 127.0.0.1 zurueckdreht, macht keinen
+ * Test in DIESER Datei rot** — das ist keine Nachlaessigkeit, sondern die Folge davon, dass
+ * die Zusage nicht mehr hier lebt. Der Modulkopf von mcp-http-server.ts sagt es ebenso.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import type { AddressInfo } from 'node:net'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { request as httpRequest } from 'node:http'
+import * as fs from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
 import type Database from 'better-sqlite3'
 import { openGraphDb } from '../../src/main/graph/db'
 import { GraphMcpServer } from '../../src/main/graph/mcp-server'
-import { startMcpHttpServer, type McpHttpServerHandle } from '../../src/main/graph/mcp-http-server'
+import {
+  startMcpHttpServer,
+  brueckenPfad,
+  type McpHttpServerHandle,
+} from '../../src/main/graph/mcp-http-server'
 
-// Partial mock, same pattern as tests/service-lifecycle.test.ts's exec-util mock: every
-// export stays real (timingSafeEqual actually runs and actually compares), only wrapped in
-// vi.fn so a call to it is observable.
-vi.mock('node:crypto', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:crypto')>()
-  return { ...actual, timingSafeEqual: vi.fn(actual.timingSafeEqual) }
-})
-import { timingSafeEqual } from 'node:crypto'
+/** Eine Anfrage ueber den Socket — genau der Weg, den die Bruecke nimmt. */
+function ueberSocket(
+  sockel: string,
+  rumpf: string,
+  opts: { method?: string; pfad?: string } = {},
+): Promise<{ status: number; text: string }> {
+  return new Promise((aufl, ab) => {
+    const anfrage = httpRequest(
+      {
+        socketPath: sockel,
+        path: opts.pfad ?? '/mcp',
+        method: opts.method ?? 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(rumpf),
+        },
+      },
+      (antwort) => {
+        let text = ''
+        antwort.on('data', (c) => { text += c })
+        antwort.on('end', () => aufl({ status: antwort.statusCode ?? 0, text }))
+      },
+    )
+    anfrage.on('error', ab)
+    anfrage.end(rumpf)
+  })
+}
 
-describe('MCP HTTP transport (Paket B)', () => {
+async function rufe(sockel: string, nachricht: unknown): Promise<unknown> {
+  const { text } = await ueberSocket(sockel, JSON.stringify(nachricht))
+  return JSON.parse(text)
+}
+
+describe('MCP transport ueber Unix-Socket (Paket B/D)', () => {
   let db: Database.Database
   let mcpServer: GraphMcpServer
   let handle: McpHttpServerHandle
+  let userDataDir: string
 
   beforeEach(async () => {
     db = openGraphDb({ path: ':memory:' })
     mcpServer = new GraphMcpServer(db)
-    handle = await startMcpHttpServer(mcpServer)
+    // Ein kurzer Pfad ist hier kein Zufall: os.tmpdir() liefert unter macOS
+    // /var/folders/… und bleibt weit unter der sun_path-Grenze von 104.
+    userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keel-ud-'))
+    handle = await startMcpHttpServer(mcpServer, userDataDir, '/app')
   })
 
   afterEach(async () => {
@@ -55,141 +87,95 @@ describe('MCP HTTP transport (Paket B)', () => {
     db.close()
   })
 
-  // --- B3: ephemeral port ---
+  // --- Paket D: das Ohr ---
 
-  it('binds to 127.0.0.1 on an OS-assigned port, not a fixed one', () => {
-    expect(handle.port).toBeGreaterThan(0)
-    expect(handle.url).toBe(`http://127.0.0.1:${handle.port}/mcp`)
+  it('lauscht auf einem Socket unter userData, nicht auf einem TCP-Port', () => {
+    expect(handle.sockelPfad.startsWith(userDataDir)).toBe(true)
+    expect(fs.statSync(handle.sockelPfad).isSocket()).toBe(true)
+    // Ein TCP-Listener gaebe hier ein AddressInfo-Objekt zurueck, kein Pfad. Das ist die
+    // Zeile, die einen Rueckfall auf 127.0.0.1 sieht — anders als der Rest dieser Datei,
+    // der ueber jeden Transport gleich laeuft.
+    expect(handle.server.address()).toBe(handle.sockelPfad)
   })
 
-  // I-3: handle.url is built from the same string template this asserts against — it would
-  // read "http://0.0.0.0:<port>/mcp" just as happily if the bind address regressed. Only
-  // asking the OS what address the socket is actually bound to catches that.
-  it('is actually bound to 127.0.0.1 on the socket, not just in the URL string', () => {
-    const address = handle.server.address() as AddressInfo
-    expect(address.address).toBe('127.0.0.1')
-  })
-
-  it('mints a fresh key per server, not a shared constant', async () => {
-    const other = await startMcpHttpServer(new GraphMcpServer(db))
+  it('vergibt je Server einen anderen Pfad — zwei Instanzen kollidieren nie', async () => {
+    const anderer = await startMcpHttpServer(new GraphMcpServer(db), userDataDir, '/app')
     try {
-      expect(other.apiKey).not.toBe(handle.apiKey)
-      expect(other.port).not.toBe(handle.port)
+      expect(anderer.sockelPfad).not.toBe(handle.sockelPfad)
     } finally {
-      await new Promise<void>((resolve) => other.server.close(() => resolve()))
+      await new Promise<void>((resolve) => anderer.server.close(() => resolve()))
     }
   })
 
-  // --- B2: auth ---
-
-  it('rejects a request with no Authorization header — 401, no body', async () => {
-    const res = await fetch(handle.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
-    })
-    expect(res.status).toBe(401)
-    const text = await res.text()
-    expect(text).toBe('')
-  })
-
-  it('rejects a request with the wrong bearer key — 401, no body', async () => {
-    const res = await fetch(handle.url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer not-the-real-key',
-      },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
-    })
-    expect(res.status).toBe(401)
-    const text = await res.text()
-    expect(text).toBe('')
-  })
-
-  it('rejects a bearer key of the same length as the real one but wrong content', async () => {
-    const wrongSameLength = handle.apiKey.slice(0, -1) + (handle.apiKey.endsWith('0') ? '1' : '0')
-    const res = await fetch(handle.url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${wrongSameLength}`,
-      },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
-    })
-    expect(res.status).toBe(401)
-  })
-
-  it('accepts the real bearer key', async () => {
-    const res = await fetch(handle.url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${handle.apiKey}`,
-      },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
-    })
-    expect(res.status).toBe(200)
-    const json = (await res.json()) as { result: { tools: Array<{ name: string }> } }
+  it('nimmt eine Anfrage ohne jeden Authorization-Kopf an — es gibt kein Geheimnis mehr', async () => {
+    const json = await rufe(handle.sockelPfad, { jsonrpc: '2.0', id: 1, method: 'tools/list' }) as
+      { result: { tools: Array<{ name: string }> } }
     expect(json.result.tools).toHaveLength(10)
     expect(json.result.tools.map((t) => t.name)).toContain('graph_search')
     expect(json.result.tools.map((t) => t.name)).toContain('keel_zelle_beauftragen')
   })
 
-  // I-3: a wrong key of the SAME length as the real one is the one request that must reach
-  // the actual crypto.timingSafeEqual call (a length mismatch short-circuits before it).
-  // `===` would reject this key just as correctly — same boolean, same 401 — so the only
-  // way to tell a constant-time compare from `===` apart is to see the real call happen.
-  it('actually calls crypto.timingSafeEqual for a same-length wrong key, not just ===', async () => {
-    vi.mocked(timingSafeEqual).mockClear()
-    const wrongSameLength = handle.apiKey.slice(0, -1) + (handle.apiKey.endsWith('0') ? '1' : '0')
+  it('schreibt in keine Antwort ein Geheimnis hinein', async () => {
+    const { text } = await ueberSocket(
+      handle.sockelPfad,
+      JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
+    )
+    expect(text).not.toMatch(/Bearer|Authorization|apiKey/i)
+  })
 
-    await fetch(handle.url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${wrongSameLength}`,
-      },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
-    })
+  // --- Paket D: der Startbefehl fuer die Bruecke ---
 
-    expect(timingSafeEqual).toHaveBeenCalledTimes(1)
-    const [a, b] = vi.mocked(timingSafeEqual).mock.calls[0]
-    expect(Buffer.from(a as Uint8Array).length).toBe(Buffer.from(b as Uint8Array).length)
+  it('nennt die Bruecke mit dem eigenen Node und ELECTRON_RUN_AS_NODE', () => {
+    expect(handle.brueckenBefehl.command).toBe(process.execPath)
+    expect(handle.brueckenBefehl.args.at(-1)).toBe(handle.sockelPfad)
+    expect(handle.brueckenBefehl.env.ELECTRON_RUN_AS_NODE).toBe('1')
+  })
+
+  it('traegt kein url- und kein headers-Feld — nichts, das jemand geheim halten muesste', () => {
+    expect(Object.keys(handle.brueckenBefehl).sort()).toEqual(['args', 'command', 'env'])
+    expect(JSON.stringify(handle.brueckenBefehl)).not.toMatch(/Bearer|Authorization/)
+  })
+
+  it('zeigt auf die entpackte Bruecke, nicht in das asar-Archiv', () => {
+    // Ein fremder Prozess startet diese Datei, und der hat keine asar-Kenntnis.
+    expect(brueckenPfad('/A/Contents/Resources/app.asar'))
+      .toBe('/A/Contents/Resources/app.asar.unpacked/resources/mcp-bridge.mjs')
+    // Im Entwicklungsbaum bleibt der Pfad unveraendert.
+    expect(brueckenPfad('/repo')).toBe('/repo/resources/mcp-bridge.mjs')
+  })
+
+  it('bindet auch dann, wenn eine Socketleiche im Weg liegt', async () => {
+    // `close()` raeumt die Datei NICHT weg — das ist der Zustand, den ein Absturz hinterlaesst.
+    const leiche = path.join(userDataDir, 'leiche.sock')
+    fs.writeFileSync(leiche, '')
+    // entferneLeiche laeuft im Serverstart; hier wird nur belegt, dass eine vorhandene Datei
+    // den Start nicht blockiert, indem der Start ueber ein Verzeichnis mit Leichen laeuft.
+    const zweiter = await startMcpHttpServer(new GraphMcpServer(db), userDataDir, '/app')
+    try {
+      expect(fs.statSync(zweiter.sockelPfad).isSocket()).toBe(true)
+    } finally {
+      await new Promise<void>((resolve) => zweiter.server.close(() => resolve()))
+    }
   })
 
   // --- Route ---
 
   it('answers 404 for any path other than POST /mcp', async () => {
-    const res = await fetch(`http://127.0.0.1:${handle.port}/other`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${handle.apiKey}` },
-      body: '{}',
-    })
-    expect(res.status).toBe(404)
+    const { status } = await ueberSocket(handle.sockelPfad, '{}', { pfad: '/other' })
+    expect(status).toBe(404)
   })
 
   it('answers 404 for GET /mcp', async () => {
-    const res = await fetch(handle.url, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${handle.apiKey}` },
-    })
-    expect(res.status).toBe(404)
+    const { status } = await ueberSocket(handle.sockelPfad, '', { method: 'GET' })
+    expect(status).toBe(404)
   })
 
   // --- B6: the error path is a JSON-RPC error body, never a bare 500 ---
 
   it('turns an unparseable body into a -32700 JSON-RPC error, HTTP 200', async () => {
-    const res = await fetch(handle.url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${handle.apiKey}`,
-      },
-      body: '{ this is not json',
-    })
-    expect(res.status).toBe(200)
-    const json = (await res.json()) as { error: { code: number; message: string } }
+    const { status, text } = await ueberSocket(handle.sockelPfad, '{ this is not json')
+    expect(status).toBe(200)
+    const json = JSON.parse(text) as { error: { code: number } }
     expect(json.error.code).toBe(-32700)
   })
 
@@ -197,19 +183,12 @@ describe('MCP HTTP transport (Paket B)', () => {
     // graph_get_node with a missing uid throws inside validateSearchParams-equivalent
     // validation before ever reaching the database — the exact "a tool that throws"
     // case B6 is about.
-    const res = await fetch(handle.url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${handle.apiKey}`,
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0', id: 7, method: 'tools/call',
-        params: { name: 'graph_get_node', arguments: {} },
-      }),
-    })
-    expect(res.status).toBe(200)
-    const json = (await res.json()) as {
+    const { status, text } = await ueberSocket(handle.sockelPfad, JSON.stringify({
+      jsonrpc: '2.0', id: 7, method: 'tools/call',
+      params: { name: 'graph_get_node', arguments: {} },
+    }))
+    expect(status).toBe(200)
+    const json = JSON.parse(text) as {
       result: { content: Array<{ type: string; text: string }>; isError?: boolean }
     }
     expect(json.result.isError).toBe(true)
@@ -217,22 +196,41 @@ describe('MCP HTTP transport (Paket B)', () => {
     expect(payload.error).toMatch(/uid/i)
   })
 
+  // --- Paket D: Notifications ---
+
+  it('antwortet auf eine Notification (ohne id) mit leerem Rumpf, nicht mit -32601', async () => {
+    // Ueber HTTP war der Fehlerrumpf folgenlos; ueber die stdio-Bruecke waere er eine
+    // unaufgeforderte Zeile im Protokollstrom, mit einer id, die der Klient nie vergeben hat.
+    const { status, text } = await ueberSocket(handle.sockelPfad, JSON.stringify({
+      jsonrpc: '2.0', method: 'notifications/initialized',
+    }))
+    expect(status).toBe(200)
+    expect(text).toBe('')
+  })
+
+  it('beantwortet eine unbekannte Methode MIT id weiterhin mit -32601', async () => {
+    // Die Gegenprobe zum Test darueber: die Notification-Regel haengt an der fehlenden id,
+    // nicht an der Methode. Ohne diese Zeile koennte man -32601 ganz abschalten und beide
+    // Tests blieben gruen.
+    const json = await rufe(handle.sockelPfad, {
+      jsonrpc: '2.0', id: 3, method: 'gibt/es/nicht',
+    }) as { error: { code: number } }
+    expect(json.error.code).toBe(-32601)
+  })
+
   it('round-trips a real tool call end to end (graph_upsert_node then graph_search)', async () => {
-    const call = async (method: string, params: unknown) => {
-      const res = await fetch(handle.url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${handle.apiKey}`,
-        },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-      })
-      return res.json() as Promise<{ result: { content: Array<{ type: string; text: string }> } }>
-    }
+    const call = (method: string, params: unknown) =>
+      rufe(handle.sockelPfad, { jsonrpc: '2.0', id: 1, method, params }) as
+        Promise<{ result: { content: Array<{ type: string; text: string }> } }>
 
     await call('tools/call', {
       name: 'graph_upsert_node',
-      arguments: { kind: 'note', title: 'Transporttest', path: '/http-transport-beweis.md', body: 'ueber echten Server geschrieben' },
+      arguments: {
+        kind: 'note',
+        title: 'Transporttest',
+        path: '/socket-transport-beweis.md',
+        body: 'ueber echten Socket geschrieben',
+      },
     })
 
     const searchResult = await call('tools/call', {

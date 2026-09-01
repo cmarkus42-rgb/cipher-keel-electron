@@ -225,8 +225,11 @@ describe('KimiCodeAdapter postLaunchInjection', () => {
   let datei: string
   const ctx = () => ({
     projectPath: tmp,
-    mcpUrl: 'http://127.0.0.1:4711/mcp',
-    mcpApiKey: 'schluessel-1',
+    mcpBruecke: {
+      command: '/pfad/zu/electron',
+      args: ['/pfad/zu/resources/mcp-bridge.mjs', '/pfad/zu/userData/mcp-4711abcd.sock'],
+      env: { ELECTRON_RUN_AS_NODE: '1' },
+    },
     sessionId: 'keel-x',
   })
 
@@ -240,8 +243,9 @@ describe('KimiCodeAdapter postLaunchInjection', () => {
     await adapter().postLaunchInjection(ctx())
     const geschrieben = JSON.parse(fs.readFileSync(datei, 'utf-8'))
     expect(geschrieben.mcpServers['cipher-keel']).toEqual({
-      url: 'http://127.0.0.1:4711/mcp',
-      headers: { Authorization: 'Bearer schluessel-1' },
+      command: '/pfad/zu/electron',
+      args: ['/pfad/zu/resources/mcp-bridge.mjs', '/pfad/zu/userData/mcp-4711abcd.sock'],
+      env: { ELECTRON_RUN_AS_NODE: '1' },
     })
   })
 
@@ -265,7 +269,11 @@ describe('KimiCodeAdapter postLaunchInjection', () => {
 
   it('stellt einen vorher vorhandenen cipher-keel-Eintrag im Wortlaut wieder her', async () => {
     fs.mkdirSync(path.dirname(datei), { recursive: true })
-    const vorher = { url: 'http://127.0.0.1:1/mcp', headers: { Authorization: 'Bearer alt' } }
+    const vorher = {
+      command: '/pfad/zu/electron',
+      args: ['/pfad/zu/resources/mcp-bridge.mjs', '/alter/sock/mcp-00000001.sock'],
+      env: { ELECTRON_RUN_AS_NODE: '1' },
+    }
     fs.writeFileSync(datei, JSON.stringify({ mcpServers: { 'cipher-keel': vorher } }))
     const zurueck = await adapter().postLaunchInjection(ctx())
     expect(zurueck()).toBe(true)

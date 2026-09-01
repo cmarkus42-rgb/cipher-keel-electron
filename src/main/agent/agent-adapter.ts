@@ -28,6 +28,7 @@
 import type { AdapterFeature, AdapterCapabilities, ContextUsage } from '../../shared/types'
 import type { CapabilityNiveau } from '../preset/niveau'
 import type { Laeufer } from '../model/eignung'
+import type { BrueckenBefehl } from '../graph/mcp-http-server'
 
 export type { AdapterFeature, AdapterCapabilities }
 
@@ -92,10 +93,20 @@ export interface LaunchOpts {
 export interface AdapterContext {
   /** Absolute path to the project directory */
   projectPath: string
-  /** MCP server URL (full, including /mcp path) */
-  mcpUrl: string
-  /** MCP auth key */
-  mcpApiKey: string
+  /**
+   * Wie diese Sitzung die stdio-Bruecke zu keels MCP-Server startet (Paket D).
+   *
+   * Bis dahin standen hier `mcpUrl` und `mcpApiKey`: eine Adresse auf 127.0.0.1 und ein
+   * Bearer. Beides ist entfallen, weil der Server auf einen Unix-Socket umgezogen ist —
+   * den Grund traegt der Modulkopf von graph/mcp-http-server.ts, kurz: der Sandkasten
+   * bekommt seit Paket D Loopback (sonst laeuft kein Testrunner), Seatbelt kann keinen
+   * einzelnen Port aussperren, Unix-Sockets als Klasse aber schon.
+   *
+   * Der Vertrag sagt seither, was er meint: nicht "hier ist eine Adresse und ein
+   * Geheimnis", sondern "so startest du den Weg zu mir". Was ein Adapter davon in eine
+   * Datei im Projektbaum schreibt, ist danach kein Geheimnis mehr.
+   */
+  mcpBruecke: BrueckenBefehl
   /**
    * The session's chosen name. Not a runtime-assigned id and not a ULID (nothing in this
    * codebase mints one for a session) — `postLaunchInjection` runs before
@@ -230,11 +241,15 @@ export interface McpEinspritzungsBeschreibung {
    */
   readonly vertrauensHinweis?: string
   /**
-   * What a rollback provably cannot take back, if anything. Claude Code registers a second
-   * time through `claude mcp add-json`, and `claude mcp remove` can only delete, never
-   * restore — so that entry stays and gets named to the user instead. Kimi Code has no `mcp`
-   * command at all and therefore no second path: an adapter with nothing left over leaves
-   * this unset, and the caller then says nothing rather than hedging.
+   * What a rollback provably cannot take back, if anything. An adapter with nothing left over
+   * leaves this unset, and the caller then says nothing rather than hedging.
+   *
+   * **Zurzeit setzt es kein Adapter**, und das Feld bleibt trotzdem. Bis Paket D registrierte
+   * Claude Code ein zweites Mal ueber `claude mcp add-json`, und `claude mcp remove` kann nur
+   * loeschen, nie wiederherstellen — genau dafuer gab es dieses Feld. Der Weg ist weg. Das
+   * Feld bleibt, weil die Frage bleibt: der naechste Adapter kann sehr wohl einen Weg haben,
+   * den keine Ruecknahme erreicht, und dann ist es besser, er findet hier einen Platz dafuer,
+   * als dass er schweigt.
    */
   readonly nichtZuruecknehmbarerRest?: string
 }

@@ -53,7 +53,7 @@ beforeAll(() => {
   mkdirSync(eigenesTmp, { recursive: true })
   ktx = {
     wache, graphDb: null,
-    sandkasten: { ...wache, zwischenspeicher: [], tmpdir: eigenesTmp },
+    sandkasten: { ...wache, zwischenspeicher: [], tmpdir: eigenesTmp, flutterWurzel: null },
   }
 })
 afterAll(() => rmSync(heim, { recursive: true, force: true }))

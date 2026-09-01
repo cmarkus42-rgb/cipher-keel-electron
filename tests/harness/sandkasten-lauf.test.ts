@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { starte, type SandkastenKontext } from '../../src/main/harness/sandkasten'
+import { starte, profilText, type SandkastenKontext } from '../../src/main/harness/sandkasten'
 
 let heim: string
 let wurzel: string
@@ -35,10 +35,29 @@ beforeAll(() => {
     userDataPfad: join(heim, 'Library', 'Application Support', 'cipher-keel'),
     zwischenspeicher: [],
     tmpdir: eigenesTmp,
+    flutterWurzel: null,
   }
 })
 
 afterAll(() => rmSync(heim, { recursive: true, force: true }))
+
+/**
+ * Faehrt ein BELIEBIGES Profil gegen ein Kommando — nur fuer die Mutationsprobe unten.
+ *
+ * `starte` nimmt einen Kontext und baut sein Profil selbst; das ist richtig so und macht es
+ * fuer eine Mutationsprobe unbrauchbar, denn die muss ein absichtlich kaputtes Profil fahren.
+ * Deshalb hier der direkte Weg zu `sandbox-exec`, und NUR hier.
+ */
+async function starteMitProfil(profil: string, kommando: string): Promise<string> {
+  const { execFile } = await import('node:child_process')
+  return new Promise((aufl) => {
+    execFile(
+      'sandbox-exec', ['-p', profil, '/bin/sh', '-c', kommando],
+      { timeout: 15_000 },
+      (_fehler, aus, err) => aufl(`${aus}${err}`),
+    )
+  })
+}
 
 // sandbox-exec gibt es nur auf macOS.
 describe.skipIf(process.platform !== 'darwin')('starte — die Grenze haelt', () => {
@@ -117,22 +136,30 @@ describe.skipIf(process.platform !== 'darwin')('starte — die Grenze haelt', ()
  * ausgehende Verbindungen. Das war eine Aussage ueber die Maschine: im Zug oder auf einem
  * abgeschotteten Runner wird der Test rot, ohne dass sich eine Zeile Code geaendert haette —
  * genau die Sorte Test, die tests/harness/verdrahtung.test.ts fuer den Schluesselbund schon
- * einmal ausgebaut hat („Ein Test, dessen Farbe an der Maschine haengt, sagt ueber den Code
- * nichts"). Und sie unterschied „das Profil erlaubt ausgehend" nicht von „diese Maschine hat DNS".
+ * einmal ausgebaut hat. Zwei Gegenstellen auf dieser Maschine statt einer draussen: ein
+ * HTTP-Server auf 127.0.0.1 und ein Unix-Socket im Projektbaum.
  *
- * Zwei Gegenstellen auf dieser Maschine statt einer draussen:
+ * **PAKET D HAT DIE AUSSAGE BEIDER GEGENSTELLEN GEDREHT, und das ist keine Anpassung an den
+ * Code, sondern der Kern der Aenderung:**
  *
- * - **Ein Unix-Socket** im Projektbaum. Ein `connect(2)` darauf faellt in Seatbelt unter
- *   `network-outbound` — es ist also derselbe Schalter, den `offen` umlegt, und er braucht keine
- *   Netzwerkschnittstelle. Das ist der Nachweis, dass `offen` ausgehende Verbindungen erlaubt und
- *   `zu` sie verbietet.
- * - **Ein HTTP-Server auf 127.0.0.1.** Er belegt die Gegenrichtung: `offen` erlaubt ausgehend und
- *   sperrt trotzdem die eigene Maschine, weil dort Paket Bs MCP-Server mit einem Bearer aus dem
- *   Projektbaum lauscht.
+ * - **Loopback ist jetzt offen, auch unter `zu`.** Es muss das sein, damit ein Lauf seine
+ *   eigenen Tests fahren kann: der Dart-Testrunner oeffnet einen Server-Socket auf 127.0.0.1,
+ *   und `flutter test` ist kein Paketbefehl, laeuft also unter `zu`. Zwei Tests unten behaupten
+ *   deshalb das Gegenteil dessen, was sie bis Paket C behauptet haben.
+ * - **Der Unix-Socket ist jetzt gesperrt, auch unter `offen`.** Er war bis Paket C der Beleg
+ *   dafuer, dass `offen` ausgehende Verbindungen erlaubt; jetzt ist er der Beleg fuer die
+ *   Grenze, an der alles haengt: keels MCP-Server lauscht seit Paket D auf einem Socket unter
+ *   `userData`, und ein gesandkastetes Kind, das ihn erreichte, koennte ueber
+ *   `keel_zelle_beauftragen` eine Niveau-B-Zelle beauftragen — die OHNE Sandkasten laeuft.
+ *   Das ist ein Ausbruch, kein Datenleck.
  *
- * Am 2026-08-30 daneben gemessen, damit die Kenntnis nicht verlorengeht, ohne dass ein Test
- * daran haengt: unter `offen` mit dem localhost-Verbot antwortete `curl https://example.com`
- * weiter mit 200 — das Verbot verengt den Modus, es hebt ihn nicht auf.
+ * Die Mutationsprobe daneben ist deshalb Pflicht und kein Beiwerk: ohne sie belegte ein
+ * gescheitertes `nc -U` nur, dass der Socket nicht da war (Paket C, Task 7 — zwei
+ * Schutzmechanismen mit derselben Meldung machen einander unprueftbar).
+ *
+ * Am 2026-08-30 daneben gemessen, damit die Kenntnis nicht verlorengeht: unter `offen` mit dem
+ * inzwischen gestrichenen localhost-Verbot antwortete `curl https://example.com` weiter mit
+ * 200 — das Verbot verengte den Modus, es hob ihn nicht auf.
  */
 describe.skipIf(process.platform !== 'darwin')('starte — Netz', () => {
   let port = 0
@@ -156,38 +183,79 @@ describe.skipIf(process.platform !== 'darwin')('starte — Netz', () => {
     await new Promise<void>(f => sockServer.close(() => f()))
   })
 
-  it('offen: erlaubt eine ausgehende Verbindung', async () => {
-    const r = await starte(`nc -U ${sockPfad} < /dev/null`, ktx, 'offen')
-    expect(r.ausgabe).toContain('SOCKET-ANTWORT')
-    expect(r.code).toBe(0)
-  }, 20_000)
+  // --- Loopback: seit Paket D offen, und das ist der Zweck ---
 
-  it('zu: erlaubt keine ausgehende Verbindung', async () => {
-    const r = await starte(`nc -U ${sockPfad} < /dev/null`, ktx, 'zu')
-    expect(r.ausgabe).not.toContain('SOCKET-ANTWORT')
-    expect(r.code).not.toBe(0)
-  }, 20_000)
-
-  it('offen: erreicht die eigene Maschine trotzdem nicht', async () => {
-    const r = await starte(
-      `curl -s -m 8 -o /dev/null -w "%{http_code}" http://127.0.0.1:${port}/`, ktx, 'offen',
-    )
-    expect(r.ausgabe.trim()).toContain('000')
-  }, 20_000)
-
-  it('zu: erreicht die eigene Maschine nicht', async () => {
+  it('zu: erreicht die eigene Maschine — dafuer ist das Loch da', async () => {
     const r = await starte(
       `curl -s -m 8 -o /dev/null -w "%{http_code}" http://127.0.0.1:${port}/`, ktx, 'zu',
     )
+    expect(r.ausgabe.trim()).toContain('200')
+  }, 20_000)
+
+  it('offen: erreicht die eigene Maschine ebenfalls', async () => {
+    const r = await starte(
+      `curl -s -m 8 -o /dev/null -w "%{http_code}" http://127.0.0.1:${port}/`, ktx, 'offen',
+    )
+    expect(r.ausgabe.trim()).toContain('200')
+  }, 20_000)
+
+  // `zu` heisst seit Paket D "nur die eigene Maschine", nicht "kein Netz" — und die zweite
+  // Haelfte dieses Satzes braucht ihren eigenen Test, sonst hiesse `zu` unbemerkt "alles".
+  // Eine Adresse im Dokumentationsbereich (TEST-NET-1, RFC 5737): sie ist nicht geroutet, ein
+  // Verbindungsversuch scheitert also auch ohne Sandkasten — was hier zaehlt, ist, dass er
+  // SOFORT scheitert und nicht erst am Zeitablauf. `-m 3` deckelt beides.
+  it('zu: erreicht nichts ausserhalb von localhost', async () => {
+    const r = await starte(
+      `curl -s -m 3 -o /dev/null -w "%{http_code}" http://192.0.2.1/`, ktx, 'zu',
+    )
     expect(r.ausgabe.trim()).toContain('000')
   }, 20_000)
 
-  // Die Gegenprobe zum Test darueber, und ohne sie sagte er nichts: die 000 koennte auch von
-  // einem Server kommen, der gar nicht laeuft. Ungesandboxed muss dieselbe Adresse antworten.
+  // Die Gegenprobe: die 200 oben koennte auch von einem Sandkasten kommen, der gar nichts
+  // prueft. Ungesandboxed muss dieselbe Adresse dasselbe antworten.
   it('der Server dieser Probe antwortet ausserhalb des Sandkastens', async () => {
     const antwort = await fetch(`http://127.0.0.1:${port}/`)
     expect(await antwort.text()).toBe('LOOPBACK-ANTWORT')
   })
+
+  it('darf einen eigenen Server-Socket oeffnen — listen(2) braucht network-inbound', async () => {
+    // Der Fall, um den es wirklich geht: der Dart-Testrunner oeffnet einen Server-Socket auf
+    // 127.0.0.1. Mit `(allow network-bind)` allein scheitert das `listen` mit
+    // `Operation not permitted` — am 2026-08-31 gemessen, auch bei UNGEFILTERTEM bind.
+    const r = await starte(
+      `python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1',0)); s.listen(1); print('LISTEN-OK')"`,
+      ktx, 'zu',
+    )
+    expect(r.ausgabe).toContain('LISTEN-OK')
+  }, 20_000)
+
+  // --- Unix-Sockets: seit Paket D zu, und daran haengt die ganze Grenze ---
+
+  it('erreicht keinen Unix-Socket — hier haengt die Grenze zu keels eigenen Werkzeugen', async () => {
+    // keels MCP-Server lauscht seit Paket D auf einem Socket unter userData. Ein Kind, das
+    // ihn erreichte, koennte ueber `keel_zelle_beauftragen` eine Niveau-B-Zelle beauftragen —
+    // und die laeuft OHNE Sandkasten. Das ist ein Ausbruch, kein Datenleck.
+    for (const netz of ['zu', 'offen'] as const) {
+      const r = await starte(`nc -U ${sockPfad} < /dev/null`, ktx, netz)
+      expect(r.ausgabe).not.toContain('SOCKET-ANTWORT')
+      expect(r.code).not.toBe(0)
+    }
+  }, 30_000)
+
+  it('Mutationsprobe: mit ungefilterter Netz-Erlaubnis gelingt derselbe Aufruf', async () => {
+    // Ohne diese Probe belegt der Test darueber nur, dass der Socket nicht da war oder `nc`
+    // aus einem anderen Grund scheiterte. Zwei Schutzmechanismen, die dieselbe Meldung
+    // ausgeben, machen einander unprueftbar — das kostete in Paket C, Task 7, eine
+    // Mutationsprobe, die gruen blieb und nichts bewies.
+    //
+    // `(allow network-outbound)` UNGEFILTERT ist die eine Aenderung, die Unix-Sockets wieder
+    // gewaehrt. Sie steht hier hinter dem echten Profil, weil SBPL nach der zuletzt passenden
+    // gleichartig gefilterten Regel entscheidet — und eine ungefilterte Erlaubnis oeffnet, was
+    // eine gefilterte nicht abgedeckt hat.
+    const mutiert = profilText(ktx, 'offen') + '\n(allow network-outbound)\n'
+    const r = await starteMitProfil(mutiert, `nc -U ${sockPfad} < /dev/null`)
+    expect(r).toContain('SOCKET-ANTWORT')
+  }, 20_000)
 })
 
 describe.skipIf(process.platform !== 'darwin')('starte — Grenzen des Laufs', () => {

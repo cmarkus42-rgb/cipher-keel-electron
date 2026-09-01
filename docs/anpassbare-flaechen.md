@@ -1,6 +1,30 @@
 # Anpassbare Flächen — Inventar (CK-NFR-012)
 
-**Stand:** 2026-08-30 — **Paket C**: der Sandkasten und die drei wirkenden Werkzeuge
+**Stand:** 2026-08-31 — **Paket D**: der MCP-Transport ist von `127.0.0.1` auf einen
+**Unix-Socket** unter `userData` umgezogen (`mcp-<8 hex>.sock`, frisch je App-Start), und der
+**Bearer-Schlüssel ist ersatzlos entfallen**. Die CLI-Harnesse erreichen den Server über eine
+mitgelieferte `stdio`-Brücke (`resources/mcp-bridge.mjs`), weil Claude Codes `http`-Transport
+keine Socket-URL annimmt — am 2026-08-31 gemessen: `ERR_INVALID_ARG_VALUE: protocol must be
+http:, https: or s3:`.
+
+**Der Grund ist der Sandkasten, nicht der Transport.** Damit `flutter test` überhaupt laufen
+kann, braucht ein gesandkastetes Kind Loopback (der Dart-Testrunner öffnet einen Server-Socket
+auf `127.0.0.1`). Damit wäre keels MCP-Server für dieses Kind erreichbar gewesen — und über
+`keel_zelle_beauftragen` hätte es eine Niveau-B-Zelle in der Hand gehabt, die **ohne**
+Sandkasten läuft. Das ist ein Ausbruch. Seatbelt kann keinen einzelnen Port aussperren
+(Paket C, §4), Unix-Sockets als Klasse aber schon:
+`(allow network-outbound (remote ip "*:*"))` gewährt IP-Netz und keine Sockets.
+
+**Damit ist auch B5 beantwortet** („darf jede Sitzung jede Zelle beauftragen, oder bindet der
+Schlüssel an eine Sitzung?") — die Frage hat keinen Gegenstand mehr. Ein Schlüssel je Sitzung
+hätte den Ausbruch ohnehin nicht verhindert: das Kind liest einen *gültigen* Schlüssel aus dem
+Projektbaum und spricht danach als die Sitzung, der er gehört. **Alles unten, was von einem
+Bearer, einer URL auf `127.0.0.1` oder von `claude mcp add-json` spricht, ist damit historisch
+und nicht mehr der Stand.** Der zweite Einspritzungsweg (`claude mcp add-json`) ist mit dem
+Schlüssel zusammen gestrichen; es gibt jetzt genau einen Weg, und der ist vollständig
+zurücknehmbar.
+
+**Stand davor:** 2026-08-30 — **Paket C**: der Sandkasten und die drei wirkenden Werkzeuge
 (`datei_schreiben`, `datei_loeschen`, `shell_ausfuehren`) gebaut *und verdrahtet*. Fünf neue
 anpassbare Flächen und drei ausdrückliche Nicht-Flächen, alle im eigenen Abschnitt „Sandkasten
 und die drei wirkenden Werkzeuge" unten. **Eine Folge davon gehört an diese Stelle, weil sie
@@ -483,6 +507,31 @@ nicht erreicht.
 
 Alle fünf stehen in `src/main/harness/sandkasten.ts`; die Liste ist gegen
 `grep -n "^export const [A-Z_]*" src/main/harness/sandkasten.ts` abgeglichen und vollständig.
+
+### Nachtrag Paket D (2026-08-31) — zwei Flächen dazu, drei Regeln geändert
+
+- **`FLUTTER_CACHE_DATEIEN`** (neu, `sandkasten.ts`): die drei Namen unter
+  `$FLUTTER_ROOT/bin/cache`, die `flutter test` beschreiben muss, plus eine Regex für
+  `engine.stamp.tmp.<pid>`. **Namen, nie der Baum** — unter `bin/cache` liegen
+  `dart-sdk/bin/dart` und ausführbare Bibliotheken, die der Mensch danach ohne Sandkasten
+  aufruft. Exakt das `.gradle`-Muster, das schon einmal korrigiert wurde.
+- **`SandkastenKontext.flutterWurzel`** (neu): `$FLUTTER_ROOT` oder der Ort, auf den
+  `which flutter` zeigt — sonst `null`. **`null` heißt „keine Regel", nicht „Vorgabepfad".**
+  Ein geratener Pfad gäbe eine Schreiberlaubnis auf ein Verzeichnis, von dem niemand weiß,
+  was darin liegt.
+- **`STANDARD_ZWISCHENSPEICHER`**: `.dart` und `.flutter` **raus** (existieren auf dieser
+  Maschine nicht — abgeschrieben statt gemessen), `.dart-tool` **rein**.
+- **Die Netzregeln**: `zu` heißt jetzt „nur die eigene Maschine", nicht „kein Netz"; `offen`
+  heißt „alles". Beide Modi erlauben **keine Unix-Sockets** — daran hängt die Grenze zu keels
+  eigenem MCP-Server (siehe die Stand-Zeile ganz oben). Gemessen: `listen(2)` braucht
+  `network-inbound`; mit `(allow network-bind)` allein scheitert es, auch ungefiltert.
+- **`(allow signal (target self) (target children))`**: ohne `children` **hängt** jeder
+  Testrunner, der einen Kindprozess beendet, bis zur Wanduhr — gemessen 2:29 min statt 1 s.
+
+**Was beim Aufsetzen einer Flutter-Teststrecke dazugehört und in keinem Code steht:**
+`flutter precache`. Ohne die vorgeladenen Engine-Artefakte **hängt** der erste Lauf im
+Sandkasten beim Nachladen, statt zu scheitern — und ein Hänger ist schlimmer als ein
+Fehlschlag.
 
 | Fläche | Herkunft | Wirkung | In der App sichtbar | Editierbar |
 |---|---|---|---|---|

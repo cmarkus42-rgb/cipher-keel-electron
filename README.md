@@ -352,6 +352,37 @@ being terse about a missing signature, not a corrupted download.
 
 Everything else — the knowledge graph, notes, kanban — works without those two.
 
+### What a Level-B/C run needs, and what it cannot reach
+
+When keel's own loop runs `shell_ausfuehren`, the child process is confined by a macOS
+Seatbelt profile (`src/main/harness/sandkasten.ts`). Two consequences are worth knowing
+*before* you wonder why a build behaves differently inside a run than in your own shell:
+
+- **The toolchain must be on the enhanced PATH** — your `PATH` plus `/usr/local/bin`,
+  `/opt/homebrew/bin`, `~/.npm-global/bin`, `~/.local/bin`, `~/.claude/local`
+  (`EXTRA_PATHS` in `src/main/util/exec-util.ts`). A tool installed anywhere else is
+  invisible to a run even though your own shell finds it. The child otherwise gets a
+  minimal environment on purpose: no API keys, no inherited secrets.
+- **Flutter is optional but needs one setup step if you use it.** Install it
+  (`brew install --cask flutter`), then run **`flutter precache` once** before any run.
+  The sandbox grants write access to four filenames under `$FLUTTER_ROOT/bin/cache` and
+  deliberately *not* the tree below them — `dart-sdk/bin/dart` and executable libraries
+  live there, and a run that could write to them would have code execution on your machine
+  after it ended. Without a pre-warmed engine, `flutter` tries to download it, is denied,
+  and then **hangs until the wall clock** instead of failing. `flutter test` inside the
+  sandbox is measured at 1.4s with `rc=0` once the engine is cached.
+- **No Unix domain sockets, in either network mode.** Anything that talks over one fails
+  with `Operation not permitted`: **Docker** (`/var/run/docker.sock`), and daemon-based
+  build tools that use a socket for IPC. This is not an oversight — it is the boundary that
+  keeps a sandboxed run away from keel's own MCP server, which listens on a Unix socket
+  under `userData`. Reaching it would let a run commission a Level-B cell, and cells run
+  *outside* the sandbox. Widening this rule reopens that path.
+- **Loopback IS reachable.** A sandboxed run can talk to anything listening on
+  `127.0.0.1` — Ollama, a local database, a dev server. That is the deliberate price of
+  letting a run execute its own test suite (test runners open a server socket on
+  loopback). Outbound traffic beyond localhost is still denied unless the command matches
+  the package-manager list.
+
 ## Repository layout
 
 ```

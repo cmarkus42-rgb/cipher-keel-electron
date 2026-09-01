@@ -6,6 +6,8 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
+import * as fsSync from 'node:fs'
+import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -128,19 +130,22 @@ describe('initializeServices — graph (Befund 1)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Paket B — the MCP HTTP transport
+// Paket B — der MCP-Transport, seit Paket D auf einem Unix-Socket
 // ---------------------------------------------------------------------------
 
-describe('initializeServices — mcp transport (Paket B)', () => {
-  it('starts an HTTP server bound to 127.0.0.1 on an ephemeral port, with a fresh key', async () => {
+describe('initializeServices — mcp transport (Paket B/D)', () => {
+  it('startet einen Server auf einem Socket unter userData, nicht auf einem TCP-Port', async () => {
     const services = makeServices()
 
     await initializeServices(services, makeContext())
 
     expect(services.mcpHttpServer).not.toBeNull()
-    expect(services.mcpHttpServer!.port).toBeGreaterThan(0)
-    expect(services.mcpHttpServer!.url).toBe(`http://127.0.0.1:${services.mcpHttpServer!.port}/mcp`)
-    expect(services.mcpHttpServer!.apiKey).toMatch(/^[0-9a-f-]{36}$/)
+    expect(services.mcpHttpServer!.sockelPfad.endsWith('.sock')).toBe(true)
+    expect(fsSync.statSync(services.mcpHttpServer!.sockelPfad).isSocket()).toBe(true)
+    // Ein TCP-Listener gaebe hier ein AddressInfo-Objekt zurueck. Diese Zeile sieht einen
+    // Rueckfall auf 127.0.0.1 — und der waere kein Schoenheitsfehler, sondern machte den
+    // Sandkasten durchlaessig (siehe den Modulkopf von graph/mcp-http-server.ts).
+    expect(services.mcpHttpServer!.server.address()).toBe(services.mcpHttpServer!.sockelPfad)
   })
 
   it('reports mcp as ready once graph is ready', async () => {
@@ -149,21 +154,44 @@ describe('initializeServices — mcp transport (Paket B)', () => {
     expect(status.mcp.state).toBe('ready')
   })
 
-  it('serves the real graphMcpServer instance — a genuine HTTP call reaches a tool', async () => {
+  it('serves the real graphMcpServer instance — ein echter Aufruf ueber den Socket erreicht ein Werkzeug', async () => {
     const services = makeServices()
     await initializeServices(services, makeContext())
 
-    const res = await fetch(services.mcpHttpServer!.url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${services.mcpHttpServer!.apiKey}`,
-      },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    const rumpf = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
+    const text = await new Promise<string>((aufl, ab) => {
+      const anfrage = httpRequest(
+        {
+          socketPath: services.mcpHttpServer!.sockelPfad,
+          path: '/mcp',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(rumpf),
+          },
+        },
+        (antwort) => {
+          let t = ''
+          antwort.on('data', (c) => { t += c })
+          antwort.on('end', () => aufl(t))
+        },
+      )
+      anfrage.on('error', ab)
+      anfrage.end(rumpf)
     })
-    expect(res.status).toBe(200)
-    const json = (await res.json()) as { result: { tools: Array<{ name: string }> } }
+    const json = JSON.parse(text) as { result: { tools: Array<{ name: string }> } }
     expect(json.result.tools.map((t) => t.name)).toContain('graph_search')
+  })
+
+  it('entfernt die Socketdatei beim Herunterfahren — close() tut das nicht', async () => {
+    const services = makeServices()
+    await initializeServices(services, makeContext())
+    const pfad = services.mcpHttpServer!.sockelPfad
+    expect(fsSync.existsSync(pfad)).toBe(true)
+
+    await shutdownServices(services)
+
+    expect(fsSync.existsSync(pfad)).toBe(false)
   })
 })
 
